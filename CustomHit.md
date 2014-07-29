@@ -65,7 +65,7 @@ Second thing is natural armor regeneration. If victim take half damage, he/she w
 `Player.ArmorGain = 0;`
 
 ## Set ammo max for a weapon
-It's not the best solution to set max ammo for weapon, but it works. Click "Custom mode" while editing action and add this after `EnergyReload = C_EnergyReload`:
+It's not the best solution to set max ammo for weapon, but it works. Click "Custom mode" while editing action and add this in the script after `EnergyReload = C_EnergyReload`:
 ```
 declare Integer[Text] Player_AmmoCount for Owner;
 Player_AmmoCount["ActionName"] = EnergyMax / EnergyCost;

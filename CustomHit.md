@@ -1,5 +1,7 @@
-# Script: Custom weapon hit
-So there is small help about handling hit of custom weapon in maniascript. To do it correctly, paste following code in ```PendingEvents``` foreach loop:
+# Script: Custom weapons
+
+## Weapon hit event
+So this is small help about handling hit of custom weapon in maniascript. To do it correctly, paste following code in ```PendingEvents``` foreach loop:
 ```
   // ---------------------------------- //
   // On custom weapon hit

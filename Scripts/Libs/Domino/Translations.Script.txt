@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  TRANSLATIONS LIB by domino54          //
-//  script version: 0.1                   //
+//  script version: 0.1.1                 //
 // -------------------------------------- //
 
 #Const Version		"2014-08-19"
@@ -185,7 +185,7 @@ Text Private_GetMessage_Polish(Integer _Ident) {
 		51 => "Wyeliminowano Cię!",
 		52 => "Krytyczne trafienie zadaje dwa razy większe obrażenia niż zwykłe trafienie.",
 		53 => "Dotknij masztu!",
-		54 => "Musisz dtknąć masztu, zanim będziesz w stanie podnieść jakiekolwiek przedmioty!",
+		54 => "Musisz dotknąć masztu, aby moć podnieść jakiekolwiek przedmioty!",
 		55 => "$<%1$> dołącza do Igrzysk.",
 		56 => "Czas dołączenia do gry minął. Zby zagrać, poczekaj do następnej mapy.",
 		57 => "Zespawnowano Żabki."
@@ -222,7 +222,7 @@ Text Private_GetTranslation(CPlayer _Player, Text _Message) {
 		"Critical hit!" => 5,
 		"Critical damage" => 6,
 		"Remaining tributes: %1" => 7,
-		"You cannot respawn in Hunger Games." => 8,
+		"You can not respawn in Hunger Games." => 8,
 		"Respawning..." => 9,
 		"Respawn denied" => 10,
 		"Successfully respawned!" => 11,
@@ -270,8 +270,8 @@ Text Private_GetTranslation(CPlayer _Player, Text _Message) {
 		"Touch the pole!" => 53,
 		"You have to touch the pole before you can pick any item!" => 54,
 		"$<%1$> has joined the Games." => 55,
-		"Time for join has expired. Please wait for the next map." => 55,
-		"Toads have been spawned." => 56
+		"Time for join has expired. Please wait for the next map." => 56,
+		"Toads have been spawned." => 57
 	];
 	
 	if (EnglishMessageOrder.existskey(_Message)) {
@@ -293,6 +293,34 @@ Text Private_GetTranslation(CPlayer _Player, Text _Message) {
 	return ReturnedMessage;
 }
 
+// ---------------------------------- //
+/** HG: Show tip window
+ *
+ *	@param	_Player		Player that gets translated tip
+ *	@param	_Title		Message displayed on window header
+ *	@param	_Message	A message that has to be translated
+ *	@param	_Duration	How long window is displayed
+ *	@param	_Icon		Square icon type at left side
+ */
+Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Integer _Duration, Text _Icon) {
+	declare UI for _Player <=> UIManager.GetUI(_Player);
+	
+	if (UI == Null) return;
+	
+	declare netwrite Text		Net_SentTipTitle	for UI;
+	declare netwrite Text		Net_SentTipMessage	for UI;
+	declare netwrite Integer	Net_SentTipDuration	for UI;
+	declare netwrite Text		Net_SentTipIcon		for UI;
+	
+	Net_SentTipTitle	= Private_GetTranslation(_Player, _Title);
+	Net_SentTipMessage	= Private_GetTranslation(_Player, _Message);
+	Net_SentTipDuration	= _Duration;
+	Net_SentTipIcon		= _Icon;
+}
+
+// ---------------------------------- //
+// Message Library basic extension
+// ---------------------------------- //
 Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
 	Message::SendBigMessage(_Player, Private_GetTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
 }

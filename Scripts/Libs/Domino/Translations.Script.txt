@@ -6,6 +6,7 @@
 #Const Version		"2014-08-19"
 #Const ScriptName	"Translations.Script.txt"
 
+#Include "TextLib" as TL
 #Include "Libs/Nadeo/Message.Script.txt" as Message
 
 #Const C_NoTranslationMsg "<no translation>"
@@ -278,6 +279,7 @@ Text Private_GetTranslation(CPlayer _Player, Text _Message) {
 		MessageIndex = EnglishMessageOrder[_Message];
 		
 		switch (_Player.User.Language) {
+			case "fr" : ReturnedMessage = Private_GetMessage_French(MessageIndex);
 			case "pl" : ReturnedMessage = Private_GetMessage_Polish(MessageIndex);
 			default : ReturnedMessage = _Message;
 		}
@@ -299,13 +301,26 @@ Text Private_GetTranslation(CPlayer _Player, Text _Message) {
  *	@param	_Player		Player that gets translated tip
  *	@param	_Title		Message displayed on window header
  *	@param	_Message	A message that has to be translated
+ *	@param	_Composes	Array of aditional keys to compose
  *	@param	_Duration	How long window is displayed
  *	@param	_Icon		Square icon type at left side
  */
-Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Integer _Duration, Text _Icon) {
+Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Text[] _Composes, Integer _Duration, Text _Icon) {
 	declare UI for _Player <=> UIManager.GetUI(_Player);
-	
 	if (UI == Null) return;
+	
+	declare Text TranslatedInputMessage;
+	declare Text OutputMessage;
+	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
+	
+	switch (_Composes.count) {
+		case 1 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0]);
+		case 2 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0], _Composes[1]);
+		case 3 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0], _Composes[1], _Composes[2]);
+		case 4 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0], _Composes[1], _Composes[2], _Composes[3]);
+		case 5 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0], _Composes[1], _Composes[2], _Composes[3], _Composes[4]);
+		default : OutputMessage = TranslatedInputMessage,
+	}
 	
 	declare netwrite Text		Net_SentTipTitle	for UI;
 	declare netwrite Text		Net_SentTipMessage	for UI;
@@ -313,7 +328,7 @@ Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Integer _Durati
 	declare netwrite Text		Net_SentTipIcon		for UI;
 	
 	Net_SentTipTitle	= Private_GetTranslation(_Player, _Title);
-	Net_SentTipMessage	= Private_GetTranslation(_Player, _Message);
+	Net_SentTipMessage	= TranslatedInputMessage;
 	Net_SentTipDuration	= _Duration;
 	Net_SentTipIcon		= _Icon;
 }

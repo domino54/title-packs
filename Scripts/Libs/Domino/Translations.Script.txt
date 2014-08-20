@@ -17,6 +17,8 @@
 	"polish" => ["domino54"]
 ]
 
+declare Text[] G_Lib_EmptyTextArray;
+
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
@@ -91,7 +93,7 @@ Text Private_GetMessage_French(Integer _Ident) {
 		37 => "Vous possédez le nombre maximum d'armes autorisé !",
 		38 => "Carte de Mini-Recharge",
 		39 => "Les cartes rouges vous retirent un point d'Armure en échange d'une amélioration équivalente à 2 cartes de Recharge (jaunes).",
-		40 => "Vous n'avez pas assez de points d'Armures pour ramasser cette carte !,
+		40 => "Vous n'avez pas assez de points d'Armures pour ramasser cette carte !",
 		41 => "Carte Replie",
 		42 => "Les cartes roses vous permettent de récupérer un point d'Armure à tout moment. Appuyez sur %1 pour l'utiliser.",
 		43 => "Vous possédez le nombre maximum de Replies autorisé !",
@@ -159,13 +161,13 @@ Text Private_GetMessage_German(Integer _Ident) {
 		23 => "Beschreibung",
 		24 => "Map schließen mit %1",
 		25 => "Rennen Sie zum Turm um ihre Waffe zu aktivieren!",
-		26 => "Sie wurden eliminiert. Bitte warten sie bis zur nächsten Map um erneut zu spielem. Viel Glück beim nächsten mal!",
+		26 => "Sie wurden eliminiert. Bitte warten sie bis zur nächsten Map um erneut zu spielen. Viel Glück beim nächsten mal!",
 		27 => "Sie haben die Kiste gefunden!",
 		28 => "Sie haben die Kiste gefunden! Sie können bis zu %1 Lenkraketen einsetzen, aber nicht verschwenderisch sein!",
 		29 => "Die Kiste wurde fallen gelassen",
-		30 => "Sie haben die Kiste fallen gelassen und können es nicht wieder aufheben!",
-		31 => "Gesundheit Voll",
-		32 => "Sie können keine Rüstungsitems aufsammeln, wenn sie vollen Gesundheit haben.",
+		30 => "Sie haben die Kiste fallen gelassen und können Sie nicht wieder aufheben!",
+		31 => "Gesundheit voll",
+		32 => "Sie können keine Rüstungsitems aufsammeln, wenn Ihre Gesundheit voll gefüllt ist.",
 		33 => "Füllkarte",
 		34 => "Die gelbe Füllkarte erhöht die Munitionsnachladezeit um 5% und die Ausdauernachladezeit um 10%.",
 		35 => "Waffenkarte",
@@ -178,7 +180,7 @@ Text Private_GetMessage_German(Integer _Ident) {
 		42 => "Die Repliekarte ist ein Medi-Pack, um dir einen Rüstungspunkt wiederherzustellen, wann immer sie wollen. Um sie zu benutzen drücken sie %1.",
 		43 => "Sie haben die maximale Anzahl der verfügbaren Replies erreicht!",
 		44 => "Goldener Kristall",
-      		45 => "Der goldene Kristall verschafft Ihnen einen Geschwindigkeitsschub von 5%.",
+		45 => "Der goldene Kristall verschafft Ihnen einen Geschwindigkeitsschub von 5%.",
 		46 => "Der Standard Charakter kann den Goldenen Kristall nicht einsammeln!",
 		47 => "Sie haben den Maximalwert der erlaubten Geschwindigkeit erreicht!",
 		48 => "Blauer Kristall",
@@ -255,7 +257,7 @@ Text Private_GetMessage_Polish(Integer _Ident) {
 		37 => "Posiadasz już maksymalną dostępną liczbę broni!",
 		38 => "Karta MiniBaterii",
 		39 => "Czerwona MiniBateria odbiera jeden pancerz, lecz ulepsza gracza jak dwie żółte Baterie.",
-		40 => "Nie posiadasz wystarczająco dużo pancerza, aby to podnieść!,
+		40 => "Nie posiadasz wystarczająco dużo pancerza, aby to podnieść!",
 		41 => "Karta Replie",
 		42 => "Możesz uleczyć punkt pancerza w dowolnej chwili przy użyciu kart Replie. Naciśnij %1 aby użyć.",
 		43 => "Posiadasz już maksymalną dostępną liczbę Replie!",
@@ -338,7 +340,7 @@ Text Private_GetTranslation(CPlayer _Player, Text _Message) {
 		"You reached the maximum amount of available weapons!" => 37,
 		"MiniCharge Card" => 38,
 		"Red MiniCharge is taking one damage point, but upgrades you as 2 regular yellow Charges." => 39,
-		"You don't have enough armor to pick up this item! => 40,
+		"You don't have enough armor to pick up this item!" => 40,
 		"Replie Card" => 41,
 		"With pink card you can heal one armor when you want. Press %1 to use it." => 42,
 		"You reached the maximum amount of available Replies!" => 43,
@@ -379,13 +381,29 @@ Text Private_GetTranslation(CPlayer _Player, Text _Message) {
 	return ReturnedMessage;
 }
 
+Text Private_SetComposes(Text _Message, Text[] _Composes) {
+	if (_Composes.count < 1) return _Message;
+	
+	declare Text OutputMessage;
+	
+	switch (_Composes.count) {
+		case 1 : OutputMessage = TL::Compose(_Message, _Composes[0]);
+		case 2 : OutputMessage = TL::Compose(_Message, _Composes[0], _Composes[1]);
+		case 3 : OutputMessage = TL::Compose(_Message, _Composes[0], _Composes[1], _Composes[2]);
+		case 4 : OutputMessage = TL::Compose(_Message, _Composes[0], _Composes[1], _Composes[2], _Composes[3]);
+		case 5 : OutputMessage = TL::Compose(_Message, _Composes[0], _Composes[1], _Composes[2], _Composes[3], _Composes[4]);
+	}
+	
+	return OutputMessage;
+}
+
 // ---------------------------------- //
 /** HG: Show tip window
  *
  *	@param	_Player		Player that gets translated tip
  *	@param	_Title		Message displayed on window header
  *	@param	_Message	A message that has to be translated
- *	@param	_Composes	Array of aditional keys to compose
+ *	@param	_Composes	Array of additional keys to compose
  *	@param	_Duration	How long window is displayed
  *	@param	_Icon		Square icon type at left side
  */
@@ -395,16 +413,10 @@ Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Text[] _Compose
 	
 	declare Text TranslatedInputMessage;
 	declare Text OutputMessage;
-	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
 	
-	switch (_Composes.count) {
-		case 1 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0]);
-		case 2 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0], _Composes[1]);
-		case 3 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0], _Composes[1], _Composes[2]);
-		case 4 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0], _Composes[1], _Composes[2], _Composes[3]);
-		case 5 : OutputMessage = TL::Compose(TranslatedInputMessage, _Composes[0], _Composes[1], _Composes[2], _Composes[3], _Composes[4]);
-		default : OutputMessage = TranslatedInputMessage,
-	}
+	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
+	if (_Composes.count > 0) OutputMessage = Private_SetComposes(TranslatedInputMessage, _Composes);
+	else OutputMessage = TranslatedInputMessage;
 	
 	declare netwrite Text		Net_SentTipTitle	for UI;
 	declare netwrite Text		Net_SentTipMessage	for UI;
@@ -417,25 +429,73 @@ Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Text[] _Compose
 	Net_SentTipIcon		= _Icon;
 }
 
+Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Integer _Duration, Text _Icon) {
+	SendTipMessage(_Player, _Title, _Message, G_Lib_EmptyTextArray, _Duration, _Icon);
+}
+
+// ---------------------------------- //
+/** Send UI notice (ShootMania only)
+ *
+ *	@param	_Player		Player that gets translated notice
+ *	@param	_Message	A message that has to be translated
+ *	@param	_Composes	Array of additional keys to compose
+ */
+Void SendNotice(CPlayer _Player, Text _Message, Text[] _Composes, Boolean _NoticeSound) {
+	declare UI for _Player <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	declare Text TranslatedInputMessage;
+	declare Text OutputMessage;
+	declare CUIConfig::EUISound Sound;
+	
+	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
+	if (_Composes.count > 0) OutputMessage = Private_SetComposes(TranslatedInputMessage, _Composes);
+	else OutputMessage = TranslatedInputMessage;
+	
+	if (_NoticeSound) Sound = CUIConfig::EUISound::Notice;
+	else Sound = CUIConfig::EUISound::Silence;
+	
+	UI.SendNotice(
+		OutputMessage, 
+		CUIConfig::ENoticeLevel::Default, Null, 
+		CUIConfig::EAvatarVariant::Default, Sound, 0
+	);
+}
+
+Void SendNotice(CPlayer _Player, Text _Message, Boolean _NoticeSound) {
+	SendNotice(_Player, _Message, G_Lib_EmptyTextArray, _NoticeSound);
+}
+
+Void SendNotice(Text _Message, Text[] _Composes, Boolean _NoticeSound) {
+	foreach (Player in AllPlayers) SendNotice(Player, _Message, _Composes, _NoticeSound);
+}
+
+Void SendNotice(Text _Message, Boolean _NoticeSound) {
+	foreach (Player in AllPlayers) SendNotice(Player, _Message, G_Lib_EmptyTextArray, _NoticeSound);
+}
+
 // ---------------------------------- //
 // Message Library basic extension
-// ---------------------------------- //
-Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	Message::SendBigMessage(_Player, Private_GetTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+Void SendMessage(CPlayer _Player, Text _Message, Text[] _Composes, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant, Boolean _IsBigMessage) {
+	declare Text TranslatedInputMessage;
+	declare Text OutputMessage;
+	
+	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
+	if (_Composes.count > 0) OutputMessage = Private_SetComposes(TranslatedInputMessage, _Composes);
+	else OutputMessage = TranslatedInputMessage;
+	
+	if (_IsBigMessage) Message::SendBigMessage(_Player, OutputMessage, _Duration, _Priority, _Sound, _SoundVariant);
+	else Message::SendStatusMessage(_Player, OutputMessage, _Duration, _Priority, _Sound, _SoundVariant);
 }
 
-Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	foreach (Player in AllPlayers) {
-		Message::SendBigMessage(Player, Private_GetTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
-	}
+Void SendMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant, Boolean _IsBigMessage) {
+	SendMessage(_Player, _Message, G_Lib_EmptyTextArray, _Duration, _Priority, _Sound, _SoundVariant, _IsBigMessage);
 }
 
-Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	Message::SendStatusMessage(_Player, Private_GetTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+Void SendMessage(Text _Message, Text[] _Composes, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant, Boolean _IsBigMessage) {
+	foreach (Player in AllPlayers) SendMessage(Player, _Message, _Composes, _Duration, _Priority, _Sound, _SoundVariant, _IsBigMessage);
 }
 
-Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	foreach (Player in AllPlayers) {
-		Message::SendStatusMessage(Player, Private_GetTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
-	}
+Void SendMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant, Boolean _IsBigMessage) {
+	foreach (Player in AllPlayers) SendMessage(Player, _Message, G_Lib_EmptyTextArray, _Duration, _Priority, _Sound, _SoundVariant, _IsBigMessage);
 }

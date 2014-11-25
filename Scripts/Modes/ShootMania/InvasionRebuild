@@ -1,0 +1,636 @@
+/**
+ *	INVASION BETA 1 by domino54
+ */
+
+#Extends "Modes/ShootMania/ModeBase.Script.txt"
+
+#Const CompatibleMapTypes	"InvasionArena"
+#Const Version				"25-11-2014"
+#Const ScriptName			"Invasion.Script.txt"
+
+#Include "AnimLib" as AnimLib
+#Include "MathLib" as MathLib
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
+#Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
+#Include "Libs/Nadeo/ShootMania/SpawnScreen.Script.txt" as SpawnScreen
+#Include "Libs/Nadeo/ShootMania/WeaponSwitch.Script.txt" as WeaponSwitch
+#Include "Libs/Domino/Graph.Script.txt" as Graph
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_PoleLimit			20	as _("Pole limit")
+#Setting S_FakeUsersCount		0	as _("Number of fake players")
+#Setting S_WavesBeforeInvasion	15	as _("Waves before Invasion mode")
+#Setting S_ToadsPerWave			6	as _("Toads per wave")
+#Setting S_TimeBetweenWaves		20	as _("Time between each wave")
+#Setting S_ToadAggroRadiusMax	40	as _("Maximum Toad reaction distance")
+
+#Setting S_MaxBotPlayersCount	56	as "<hidden>"
+
+#Const Description _("""$fffIn $f00Time Attack$fff mode, the goal is to set the $f00best time$fff.
+
+You have as many tries as you want, and you can $ff0retry$fff when you want by pressing the $ff0'Backspace'$fff key.
+
+When the time is up, the $f00winner$fff is the player with the $f00best time$fff.""")
+
+#Const C_FirstWaveDelay			5000
+#Const C_ArmorBonusWavesStep	3
+
+#Const C_WavesToadsMaxDelay		1000
+
+#Const C_ToadShootPeriodMin		200
+#Const C_ToadShootPeriodMax		3000
+#Const C_ToadSpeedMin			.2
+#Const C_ToadSpeedMax			.5
+#Const C_ToadAggroRadiusMin		8.
+#Const C_ToadDisengageSurplus	16.
+
+#Const C_EventHitAmmoBonus[
+	"Laser"		=> 1.,
+	"Rocket"	=> .33
+]
+
+#Const C_PlayerWeapons[
+	CSmMode::EWeapon::Laser		=> 1.,
+	CSmMode::EWeapon::Nucleus	=> 1.,
+	CSmMode::EWeapon::Arrow		=> 1.,
+	CSmMode::EWeapon::Rocket	=> 1.
+]
+#Const C_PlayerAmmoGain			1.5
+#Const C_PlayerMaxArmor			400
+#Const C_PlayerStaminaMax		2.
+
+#Const C_SinglePlayer		False
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident[]		G_SpawnsList;		///< Id of all the landmarks with a player spawn of the map
+declare Ident		G_LatestSpawnId;	///< Id of the last landmark used
+declare Ident[Text]	G_ObjectId;			///< Id of all objects
+declare Real		G_Difficulty;		///< Percentage value of game difficulty
+declare Boolean		G_InvasionMode;		///< When Toads spawn constantly
+
+declare Integer		G_SpawnedToadsNb;	///< Used to determine special classes of Toads
+declare Integer		G_BotWeaponNumber;	///< Id of weapon used by next Toad
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+MB_LogVersion(Message::GetScriptName(), Message::GetScriptVersion());
+MB_LogVersion(SM::GetScriptName(), SM::GetScriptVersion());
+MB_LogVersion(Score::GetScriptName(), Score::GetScriptVersion());
+MB_LogVersion(SpawnScreen::GetScriptName(), SpawnScreen::GetScriptVersion());
+MB_LogVersion(WeaponSwitch::GetScriptName(), WeaponSwitch::GetScriptVersion());
+MB_LogVersion(Graph::GetScriptName(), Graph::GetScriptVersion());
+***
+
+// ---------------------------------- //
+// Set rules
+// ---------------------------------- //
+***Rules***
+***
+declare ModeName = "Invasion";
+declare ModeRules = TextLib::Compose(_("$<%11.$> Protect Goal from Toads take it over as long as you can.\n$<%12.$> The game is over when Toads reach the Pole limit.\n$<%13.$> Use mouse roll or 1 - 4 keys to switch between weapons."), "$"^SpawnScreen::GetModeColor());
+SpawnScreen::ResetRulesSection();
+SpawnScreen::AddSubsection(_("Type"), _("Free for all"), 0.);
+SpawnScreen::AddSubsection(_("Objectives"), ModeRules, 20.);
+SpawnScreen::CreatePrettyRules(ModeName);
+ModeStatusMessage = Description;
+***
+
+// ---------------------------------- //
+// Server start
+// ---------------------------------- //
+***StartServer***
+***
+// ---------------------------------- //
+// Set mode options
+UseClans = False;
+UseAmmoBonusOnHit = False;
+ForceNavMapsComputation = True;
+
+// ---------------------------------- //
+// Create the rules
+---Rules---
+
+// ---------------------------------- //
+// Load items
+ItemList_Begin();
+G_ObjectId["ToadSample"] = ItemList_Add("Characters\\ToadSample.Item.gbx");
+ItemList_End();
+
+// ---------------------------------- //
+// Debug: Graph
+Graph::SetGraphTitle("BotPlayers count");
+Graph::SetValueDisplayMode(1);
+Graph::SetMinMaxValues(0., S_MaxBotPlayersCount * 1.);
+Graph::SetValueScript("""
+	declare Integer BotPlayersCount;
+	BotPlayersCount = 0;
+	
+	foreach (Player in Players) {
+		if (Player.IsBot && Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) BotPlayersCount += 1;
+	}
+	
+	OutputReal = ML::ToReal(BotPlayersCount);
+""");
+Graph::Build();
+
+// ---------------------------------- //
+// Initialize UI
+SpawnScreen::CreateScores("Score.RoundPoints");
+SpawnScreen::CreateMapInfo();
+Layers::Create("Invasion-Interface", CreateInterface());
+Layers::Attach("Invasion-Interface");
+UIManager.UIAll.OverlayHideCountdown = True;
+
+// ---------------------------------- //
+// Create the scores table
+ST2::SetStyle("LibST_SMBaseSolo");
+ST2::SetStyle("LibST_SMBasePoints");
+MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
+ST2::Build("SM");
+***
+
+// ---------------------------------- //
+// Global loop
+// ---------------------------------- //
+***Yield***
+***
+Users_SetNbFakeUsers(S_FakeUsersCount, 0);
+Message::Loop();
+***
+
+// ---------------------------------- //
+// Map start
+// ---------------------------------- //
+***StartMap***
+***
+G_SpawnsList.clear();
+G_LatestSpawnId = NullId;
+Score::MatchBegin();
+Score::RoundBegin();
+
+SM::SetupDefaultVisibility();
+
+G_Difficulty = 0.;
+G_InvasionMode = False;
+G_SpawnedToadsNb = 5;
+
+// ---------------------------------- //
+// Init bases
+foreach (Base in MapBases) {
+	Base.Clan = 0;
+	Base.IsActive = True;
+}
+
+// ---------------------------------- //
+// Init leader
+declare LeaderId = NullId;
+if (Scores.existskey(0)) LeaderId = Scores[0].User.Id;
+
+// ---------------------------------- //
+// Set mode variables
+declare Integer	NbWavesSpawned;
+declare Integer	NbToadsReachedPole;
+declare Integer	NextWaveSpawnTime;
+declare Integer ToadArmorBonus;
+declare Integer ArmorIncreasionWaveNb;
+declare Integer NextToadSpawnTime;
+
+NbWavesSpawned			= 0;
+NbToadsReachedPole		= 0;
+NextWaveSpawnTime		= 0;
+ToadArmorBonus			= 0;
+ArmorIncreasionWaveNb	= 0;
+NextToadSpawnTime		= 0;
+
+declare Integer Gimp_BlinkStartTime = Now;
+declare Boolean Gimp_BlinkPhase = False;
+
+// ---------------------------------- //
+// New map sound
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+StartTime = Now;
+EndTime = -1;
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***PlayLoop***
+***
+// ---------------------------------- //
+// Manage ongoing events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On armor empty
+	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		if (Event.Shooter == Event.Victim || Event.Shooter == Null || Event.Shooter.IsBot) {
+			Score::RemovePoints(Event.Victim, 1);
+		}
+		XmlRpc::OnArmorEmpty(Event);
+		PassOn(Event);
+	}
+	// ---------------------------------- //
+	// On hit
+	else if (Event.Type == CSmModeEvent::EType::OnHit) {
+		if (Event.Victim == Null || Event.Shooter == Null || Event.Shooter == Event.Victim) {
+			Discard(Event);
+		} else {
+			Event.Damage = 100;
+			XmlRpc::OnHit(Event);
+			
+			// Shooter is Toad
+			if (Event.Shooter.IsBot) {
+				if (Event.Victim.IsBot) Discard(Event);
+				else PassOn(Event);
+			}
+			
+			// Shooter is Player
+			else {
+				if (Event.Victim.IsBot) {
+					Score::AddPoints(Event.Shooter, 1);
+					PassOn(Event);
+				} else {
+					Discard(Event);
+				}
+				
+				// Add ammo hit bonus
+				switch (Event.Shooter.CurWeapon) {
+					case 1 : AddPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Laser, C_EventHitAmmoBonus["Laser"]);
+					case 2 : AddPlayerAmmo(Event.Shooter, CSmMode::EWeapon::Rocket, C_EventHitAmmoBonus["Rocket"]);
+				}
+			}
+		}
+	}
+	// ---------------------------------- //
+	// On player request respawn
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		Score::RemovePoints(Event.Player, 1);
+		XmlRpc::OnPlayerRequestRespawn(Event);
+		PassOn(Event);
+	}
+	// ---------------------------------- //
+	// Action hotkeys
+	if (Event.Type == CSmModeEvent::EType::OnActionEvent) {
+		WeaponSwitch::SwitchWeapon(Event.Player, Event.ActionInput);
+	}
+	// ---------------------------------- //
+	// Mouse roll
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestActionChange) {
+		WeaponSwitch::CycleWeapon(Event.Player, Event.ActionChange);
+	}
+}
+
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) {
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate) {
+		// ---------------------------------- //
+		// Fake players
+		if (Player.IsFakePlayer) {
+			Player.Driver.Behaviour		= CSmPlayerDriver::ESmDriverBehaviour::IA;
+			Player.Driver.AttackFilter	= CSmPlayerDriver::ESmAttackFilter::AllBots;
+			Player.Driver.Accuracy 			= MathLib::Rand(.95, 1.);
+			Player.Driver.ShootPeriodMin 	= 200;
+			Player.Driver.ShootPeriodMax 	= 300;
+			Player.Driver.ReactionTime		= MathLib::Rand(0, 250);
+			Player.Driver.AggroRadius		= MathLib::Rand(80., 120.);
+			Player.Driver.DisengageDistance = Player.Driver.AggroRadius + MathLib::Rand(10., 40.);
+		}
+		
+		// Player is always in his favorite color
+		Player.ForceColor = Player.User.Color;
+		
+		// Special parameters
+		Player.ArmorMax		= C_PlayerMaxArmor;
+		Player.Armor		= Player.ArmorMax;
+		Player.AmmoGain		= C_PlayerAmmoGain;
+		Player.StaminaMax	= C_PlayerStaminaMax;
+		
+		WeaponSwitch::SetAvailableWeapons(Player, C_PlayerWeapons);
+		SetPlayerReloadAllWeapons(Player, True);
+		
+		// Call the spawn function
+		MeleeSpawnPlayer(Player);
+	}		
+}
+
+// ---------------------------------- //
+// Play sound and notice if someone is taking the lead
+if (Scores.existskey(0) && Scores[0].User.Id != LeaderId) {
+	LeaderId = Scores[0].User.Id;
+	Message::SendStatusMessage(TextLib::Compose(_("$<%1$> takes the lead!"), Scores[0].User.Name), 3000, 1, CUIConfig::EUISound::PhaseChange, 1);
+}
+
+// ---------------------------------- //
+// Spawn Toads
+if (Now >= StartTime + C_FirstWaveDelay) {
+	// Check if we can send a wave
+	declare CanSendWave = (BotPlayers.count <= S_MaxBotPlayersCount - (MapLandmarks_BotPath.count * S_ToadsPerWave));
+	
+	// ---------------------------------- //
+	// Invasion mode
+	if (NbWavesSpawned >= S_WavesBeforeInvasion && Now >= NextWaveSpawnTime) {
+		G_InvasionMode = True;
+		G_Difficulty = 1.;
+		
+		// ---------------------------------- //
+		// Spawn toads
+		if (BotPlayers.count <= S_MaxBotPlayersCount - MapLandmarks_BotPath.count && Now >= NextToadSpawnTime) {
+			NextToadSpawnTime = Now + MathLib::NearestInteger(C_WavesToadsMaxDelay - (C_WavesToadsMaxDelay / (C_ToadSpeedMax / C_ToadSpeedMin)));
+			
+			foreach (MapLandmark in MapLandmarks_BotPath) {	
+				SpawnToad(MapLandmark.BotPath, 0, ToadArmorBonus);
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Regular waves
+	if (!G_InvasionMode && NbWavesSpawned < S_WavesBeforeInvasion && S_WavesBeforeInvasion > 0 && Now >= NextWaveSpawnTime && BotPlayers.count < 60) {
+		// ---------------------------------- //
+		// Increase Toad armor each second wave
+		if (NbWavesSpawned == 0) ArmorIncreasionWaveNb = 0;
+		else ArmorIncreasionWaveNb += 1;
+		
+		if (ArmorIncreasionWaveNb >= 3) {
+			ToadArmorBonus += 100;
+			ArmorIncreasionWaveNb = 0;
+		}
+		
+		declare netwrite Integer Net_ToadArmorBonus for Teams[0];
+		Net_ToadArmorBonus = ToadArmorBonus;
+		
+		// Growing difficulty
+		G_Difficulty = MathLib::ToReal(NbWavesSpawned) / S_WavesBeforeInvasion;
+		
+		// ---------------------------------- //
+		// Spawn toads
+		foreach (MapLandmark in MapLandmarks_BotPath) {				
+			for (I, 0, S_ToadsPerWave - 1) {
+				SpawnToad(MapLandmark.BotPath, I, ToadArmorBonus);
+			}
+		}
+		
+		Message::SendBigMessage(_("Incoming wave!"), 4000, 1, CUIConfig::EUISound::PhaseChange, 0);
+		
+		NextWaveSpawnTime = Now + (S_TimeBetweenWaves * 1000);
+		NbWavesSpawned += 1;
+	}
+}
+
+// ---------------------------------- //
+// Manage BotPlayers
+foreach (Bot in BotPlayers) {
+	declare Boolean Bot_IsGimp for Bot;
+	
+	// ---------------------------------- //
+	// Destroy unspawned Toads
+	if (Bot.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+		DestroyBotPlayer(Bot);
+	}
+	
+	// ---------------------------------- //
+	// Score if Toad touched Goal
+	foreach (MapLandmark in MapLandmarks_Gauge) {
+		if (MapLandmark.Gate == Null && MapLandmark.Sector.PlayersIds.exists(Bot.Id)) {
+			if (Bot_IsGimp) NbToadsReachedPole += 2;
+			else NbToadsReachedPole += 1;
+			
+			if (NbToadsReachedPole > S_PoleLimit) NbToadsReachedPole = S_PoleLimit;
+			
+			UnspawnPlayer(Bot);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Make gimps blinking
+	if (Bot_IsGimp) {
+		switch (Gimp_BlinkPhase) {
+			case False : Bot.EnergyLevel = 0.;
+			case True :  Bot.EnergyLevel = 1.;
+		}
+	}
+	
+	if (Now >= Gimp_BlinkStartTime + 100) {
+		Gimp_BlinkStartTime = Now;
+		Gimp_BlinkPhase = !Gimp_BlinkPhase;
+	}
+}
+
+// ---------------------------------- //
+// NET Variables
+declare netwrite Integer Net_NbToadsReachedPole for Teams[0];
+Net_NbToadsReachedPole = NbToadsReachedPole;
+
+declare netwrite Integer Net_S_PoleLimit for Teams[0];
+Net_S_PoleLimit = S_PoleLimit;
+
+// ---------------------------------- //
+// Game end conditions
+if (NbToadsReachedPole >= S_PoleLimit) MatchEnd = True;
+***
+
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+***EndMap***
+***
+foreach (Player in AllPlayers) UnspawnPlayer(Player);
+DestrouAllBotPlayers();
+
+Score::RoundEnd();
+Score::MatchEnd();
+
+Message::CleanBigMessages();
+UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+UIManager.UIAll.BigMessage = "Game over";
+
+MB_Sleep(5000);
+
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+
+while(!UIManager.UIAll.UISequenceIsCompleted) {
+	MB_Yield();
+}
+
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+UIManager.UIAll.BigMessage = "";
+***
+
+// ---------------------------------- //
+// Server end
+// ---------------------------------- //
+***EndServer***
+***
+Layers::Detach("Invasion-Interface");
+Layers::Destroy("Invasion-Interface");
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+/* ------------------------------------- */
+/** Spawn a player
+ *
+ * @param	_Player		The player to spawn
+ */
+Void MeleeSpawnPlayer(CSmPlayer _Player) {
+	if (G_SpawnsList.count == 0) {
+		foreach (MapLandmark in MapLandmarks_PlayerSpawn) G_SpawnsList.add(MapLandmark.Id);
+	}
+	
+	declare SpawnId = NullId;
+	while (True) {
+		SpawnId = G_SpawnsList[MathLib::Rand(0, G_SpawnsList.count - 1)];
+		if (SpawnId != G_LatestSpawnId) break;
+		if (G_SpawnsList.count == 1) break;
+	}
+	G_LatestSpawnId = SpawnId;
+	SM::SpawnPlayer(_Player, 0, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+	declare Removed = G_SpawnsList.remove(SpawnId);
+}
+
+/* ------------------------------------- */
+/** Spawn Toad
+ *
+ * @param	_Player		The player to spawn
+ */
+Void SpawnToad(CSmMapBotPath _BotPath, Integer _Order, Integer _ArmorBonus) {
+	declare BotPlayer = CreateBotPlayer(G_ObjectId["ToadSample"], 0);
+	
+	G_SpawnedToadsNb += 1;
+	if (G_SpawnedToadsNb > 12) G_SpawnedToadsNb = 1;
+	
+	declare ToadSpeedBonus		= (C_ToadSpeedMax - C_ToadSpeedMin) * G_Difficulty;
+	declare ToadAggroRadius		= (S_ToadAggroRadiusMax - C_ToadAggroRadiusMin) * G_Difficulty;
+	declare ToadShootPeriod		= MathLib::NearestInteger((C_ToadShootPeriodMax - C_ToadShootPeriodMin) * (1-G_Difficulty));
+	
+	BotPlayer.Driver.Behaviour		= CSmPlayerDriver::ESmDriverBehaviour::Patrol;
+	BotPlayer.Driver.AttackFilter	= CSmPlayerDriver::ESmAttackFilter::AllPlayers;
+	
+	BotPlayer.Driver.ShootPeriodMax = C_ToadShootPeriodMin + ToadShootPeriod;
+	BotPlayer.Driver.ShootPeriodMin = BotPlayer.Driver.ShootPeriodMax;
+	BotPlayer.Driver.Accuracy 		= MathLib::Rand(0.95, 1.0);
+	BotPlayer.Driver.ReactionTime	= MathLib::Rand(75, 125);
+	
+	BotPlayer.AmmoGain 			= 1.25;
+	BotPlayer.ArmorMax			= 100 + _ArmorBonus;
+	BotPlayer.Driver.AggroRadius		= C_ToadAggroRadiusMin + ToadAggroRadius;
+	BotPlayer.Driver.DisengageDistance	= BotPlayer.Driver.AggroRadius + C_ToadDisengageSurplus;
+	BotPlayer.ForceColor		= <0., 1., 0.>;
+	BotPlayer.EnergyLevel		= 0.;
+	BotPlayer.SpeedPower		= C_ToadSpeedMin + ToadSpeedBonus;
+	
+	switch (G_SpawnedToadsNb) {
+		case 11 : {
+			declare Bot_IsGimp for BotPlayer = True;
+		}
+		case 12 : {
+			G_BotWeaponNumber += 1;
+			if (G_BotWeaponNumber > 2) G_BotWeaponNumber = 0;
+			
+			switch (G_BotWeaponNumber) {
+				case 0 : {
+					SetPlayerWeapon(BotPlayer, CSmMode::EWeapon::Arrow, False);
+					BotPlayer.ForceColor = <1., 1., 0.>;
+				}
+				case 1 : {
+					SetPlayerWeapon(BotPlayer, CSmMode::EWeapon::Nucleus, False);
+					BotPlayer.ForceColor = <0., .5, 1.>;
+				}
+				case 2 : {
+					SetPlayerWeapon(BotPlayer, CSmMode::EWeapon::Laser, False);
+					BotPlayer.ForceColor = <1., 0., 0.>;
+				}
+			}
+		}
+	}
+	
+	SetPlayerAmmoMax(BotPlayer, CSmMode::EWeapon::Rocket, 3);
+	
+	declare ActivationTime = MathLib::NearestInteger(C_WavesToadsMaxDelay - (C_WavesToadsMaxDelay / (C_ToadSpeedMax / C_ToadSpeedMin) * G_Difficulty)) * _Order;
+	
+	SpawnBotPlayer(BotPlayer, 0, 100 + _ArmorBonus, _BotPath, ActivationTime + Now + 3000);
+}
+
+Text CreateInterface() {
+	return """
+		<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+		<manialink version="2" name="Invasion:Interface">
+			<stylesheet>
+				<style class="gauge-current" style="TextRaceMessageBig" textcolor="FFF" textsize="4"/>
+				<style class="gauge-max" scale=".7" textcolor="777"/>
+				<style class="gauge-description" style="TextTitle3" scale=".65" textcolor="666"/>
+				<style class="gauge-armors" scale=".6" textemboss="1" textcolor="BBB"/>
+			</stylesheet>
+			<frame posn="0 90">
+				<quad sizen="40 12" halign="center" image="file://Media/Manialinks/topbgz.png"/>
+				<label posn="0 -2 1" scale="0.55" halign="center" valign="center2" textemboss="1" textcolor="FFF" text="15 waves to Invasion"/>
+				<label posn="0 -6 1" scale="0.7" halign="center" valign="center" textcolor="FD0" style="TextRaceChrono" text="0:00"/>
+			</frame>
+			<frame id="Frame_ProgressBar" posn="160 -90">
+				<quad posn="-80 20 0" sizen="80 20" image="file://Media/Manialinks/ShootMania/Invasion/Corner_Shadow.png"/>
+				<frame id="Frame_Gauge" posn="-62 10.5 2">
+					<quad sizen="61 7.5" image="file://Media/Manialinks/ShootMania/Invasion/Gauge_Overlay.png"/>
+					<quad posn="60.5 -7 -1" sizen="0 6.5" rot="180" bgcolor="DF0" id="Quad_GaugeIndicator"/>
+					<label posn="59 -3.75 2" halign="right" valign="center2" class="gauge-current" id="Label_GaugeReached"/>
+					<label posn="2 -3.75 2" valign="center2" class="gauge-max" id="Label_GaugeMaximum"/>
+					<label posn="60.25 -7.75" class="gauge-description" halign="right" text="Toads reached pole"/>
+				</frame>
+				
+				<frame posn="-8 22">
+					<quad sizen="6 8.75" style="Bgs1" substyle="BgPager" opacity=".25"/>
+					<quad posn="3 -.75 1" sizen="4.5 4.5" halign="center" image="file://Media/Manialinks/ShootMania/Invasion/wp_replie_gray.png"/>
+					<label posn="3 -5.25 1" halign="center" class="gauge-armors" id="Label_ArmorBonusCounter"/>
+				</frame>
+			</frame>
+			<script><!--
+				#Include "TextLib" as TL
+				#Include "MathLib" as ML
+				
+				#Const C_IndicatorLength	60.25
+				
+				main() {
+					declare Label_GaugeReached		<=> (Page.GetFirstChild("Label_GaugeReached") as CMlLabel);
+					declare Label_GaugeMaximum		<=> (Page.GetFirstChild("Label_GaugeMaximum") as CMlLabel);
+					declare Quad_GaugeIndicator		<=> (Page.GetFirstChild("Quad_GaugeIndicator") as CMlQuad);
+					declare Label_ArmorBonusCounter	<=> (Page.GetFirstChild("Label_ArmorBonusCounter") as CMlLabel);
+					
+					declare netread Integer Net_NbToadsReachedPole	for Teams[0];
+					declare netread Integer Net_S_PoleLimit			for Teams[0];
+					declare netread Integer Net_ToadArmorBonus		for Teams[0];
+					
+					while (True) {
+						yield;
+						
+						Label_GaugeReached.Value = TL::ToText(Net_NbToadsReachedPole);
+						Label_GaugeMaximum.Value = TL::ToText(Net_S_PoleLimit);
+						Label_ArmorBonusCounter.Value = TL::ToText(1 + Net_ToadArmorBonus/100);
+						
+						if (Net_NbToadsReachedPole <= Net_S_PoleLimit && Net_S_PoleLimit > 0) {
+							Quad_GaugeIndicator.Size.X = C_IndicatorLength * (ML::ToReal(Net_NbToadsReachedPole) / Net_S_PoleLimit);
+						} else {
+							// Display indicator correctly if something went wrong
+							Quad_GaugeIndicator.Size.X = C_IndicatorLength;
+						}
+					}
+				}
+			--></script>
+		</manialink>
+	""";
+}

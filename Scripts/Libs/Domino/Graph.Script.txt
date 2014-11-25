@@ -1,0 +1,273 @@
+/**
+ *	GRAPH LIBRARY v1.0 by domino54
+ */
+
+#Const Version				"2014-11-18"
+#Const ScriptName			"Graph.Script.txt"
+
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+#Const C_LibGraph_DefaultTitle			"Untitled"
+#Const C_LibGraph_DefaultDisplayMode	0
+
+declare Real	G_LibGraph_MinOffset;
+declare Real	G_LibGraph_MaxOffset;
+declare Text	G_LibGraph_ValueScript;
+declare Text	G_LibGraph_TitleMessage;
+declare Integer	G_LibGraph_ValueDisplayMode;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+Text Private_GetGraphLayer() {
+	return """
+		<frame posn="-159 -50 10" id="Frame_GraphWindow" hidden="1">
+			<quad sizen="100 24.5" bgcolor="363636" opacity=".9"/>
+			<quad posn="0 0 2" sizen="91.5 5" id="Quad_WindowDragbox" ScriptEvents="1"/>
+			
+			<quad posn="91.5 0 1" sizen="4 4" style="Icons128x32_1" substyle="Minimize" id="Quad_MinimizeButton" ScriptEvents="1"/>
+			<quad posn="95.5 0 1" sizen="4 4" style="Icons128x32_1" substyle="Close" id="Quad_CloseButton" ScriptEvents="1"/>
+			<label posn="1 -1.875 1" style="StyleTextScriptEditor" valign="center" scale=".75" textcolor="DDD" id="Label_WindowTitle"/>
+			
+			<graph posn="0.5 -4 2" scale="{{{1./3}}}" sizen="297 60" id="Graph_Main"/>
+			<quad posn="0.5 -4 1" sizen="99 20" bgcolor="000"/>
+		</frame>
+		<frame posn="-160 -84.5" id="Frame_Minimized" hidden="1">
+			<quad sizen="24.5 5.25" style="Bgs1" substyle="BgTitlePage" modulatecolor="555"/>
+			<label posn="1.5 -1.5 1" style="StyleTextScriptEditor" textsize="1" textcolor="CCC" text="Graph..."/>
+			<quad posn="15 -0.3 1" sizen="4.5 4.5" style="Icons128x32_1" substyle="Windowed" opacity=".6" id="Quad_MinimizeButton" ScriptEvents="1"/>
+			<quad posn="19.5 -0.4 1" sizen="4.5 4.5" style="Icons128x32_1" substyle="Close" opacity=".6" id="Quad_CloseButton" ScriptEvents="1"/>
+		</frame>
+		<script><!--
+		#Include "MathLib" as ML
+		#Include "AnimLib" as AL
+		
+		#Const C_KeysCount		600
+		#Const C_TickDelay		100
+		
+		Real GetKeyValue() {
+			declare Real OutputReal;
+			
+			{{{G_LibGraph_ValueScript}}}
+			
+			return OutputReal;
+		}
+
+		main() {
+			declare Graph				<=> (Page.GetFirstChild("Graph_Main") as CMlGraph);
+			declare Frame_GraphWindow	<=> (Page.GetFirstChild("Frame_GraphWindow") as CMlFrame);
+			declare Frame_Minimized		<=> (Page.GetFirstChild("Frame_Minimized") as CMlFrame);
+			declare Quad_WindowDragbox	<=> (Page.GetFirstChild("Quad_WindowDragbox") as CMlQuad);
+			declare Label_WindowTitle	<=> (Page.GetFirstChild("Label_WindowTitle") as CMlLabel);
+			
+			declare CMlGraphCurve Curve = Graph.AddCurve();
+			
+			Graph.CoordsMin = <0., 0.>;
+			Graph.CoordsMax = <ML::ToReal(C_KeysCount), 0.>;
+			
+			declare TickEnd = Now + 100;
+			
+			for (I, 0, C_KeysCount) {
+				Curve.Points.add(<ML::ToReal(I), 0.>);
+			}
+			
+			Curve.Color = <.7, .7, .7>;
+			
+			declare HasCustomTitle = ("{{{G_LibGraph_TitleMessage}}}" != "");
+			declare Text WindowTitle;
+			if (HasCustomTitle) WindowTitle = "{{{G_LibGraph_TitleMessage}}}";
+			else WindowTitle = "{{{C_LibGraph_DefaultTitle}}}";
+			
+			declare Real MinimalValue = 0.;
+			declare Real MaximalValue = 0.;
+			
+			declare ValueDisplayMode = {{{G_LibGraph_ValueDisplayMode}}};
+			declare Boolean IsOverWindow;
+			declare Boolean IsOverWindow_Last;
+			declare Boolean MouseLeftButton_Last;
+			declare Vec2 LastMouseCoords;
+			declare Vec3 LastWindowPosition;
+			declare Boolean WindowMinimized = False;
+			declare Boolean UseGraphLibrary = False;
+			
+			while(True) {
+				yield;
+				
+				if (UseGraphLibrary) {
+					Frame_GraphWindow.Visible = !WindowMinimized;
+					Frame_Minimized.Visible = WindowMinimized;
+				} else {
+					Frame_GraphWindow.Visible = False;
+					Frame_Minimized.Visible = False;
+				}
+				
+				foreach (Event in PendingEvents) {
+					switch (Event.Type) {
+						case CMlEvent::Type::MouseOver : {
+							if (Event.ControlId == "Quad_WindowDragbox") {
+								IsOverWindow = True;
+							}
+						}
+						case CMlEvent::Type::MouseOut : {
+							if (Event.ControlId == "Quad_WindowDragbox") {
+								IsOverWindow = False;
+							}
+						}
+						case CMlEvent::Type::MouseClick : {
+							if (Event.ControlId == "Quad_MinimizeButton") {
+								WindowMinimized = !WindowMinimized;
+							} else if (Event.ControlId == "Quad_CloseButton") {
+								UseGraphLibrary = False;
+							}
+						}
+						case CMlEvent::Type::KeyPress : {
+							if (Event.KeyName == "F5") {
+								UseGraphLibrary = True;
+								WindowMinimized = False;
+							}
+						}
+					}
+				}
+				
+				if (UseGraphLibrary) {
+					if (Now >= TickEnd) {
+						for (I, 1, C_KeysCount) {
+							Curve.Points[C_KeysCount+1-I].Y = Curve.Points[C_KeysCount-I].Y;
+						}
+						
+						if (InputPlayer != Null) {
+							Curve.Points[0].Y = GetKeyValue();
+						}
+						
+						TickEnd = Now + C_TickDelay;
+					}
+					
+					if ({{{G_LibGraph_MinOffset}}} == 0.) {
+						if (GetKeyValue() < MinimalValue) {
+							MinimalValue = GetKeyValue();
+							Graph.CoordsMin.Y = MinimalValue;
+						}
+					} else {
+						Graph.CoordsMin.Y = {{{G_LibGraph_MinOffset}}};
+					}
+					
+					if ({{{G_LibGraph_MaxOffset}}} == 0.) {
+						if (GetKeyValue() > MaximalValue) {
+							MaximalValue = GetKeyValue();
+							Graph.CoordsMax.Y = MaximalValue;
+						}
+					} else {
+						Graph.CoordsMax.Y = {{{G_LibGraph_MaxOffset}}};
+					}
+					
+					switch (ValueDisplayMode) {
+						case 2 : Label_WindowTitle.Value = "Graph: "^WindowTitle;
+						case 0 : Label_WindowTitle.Value = "Graph: "^WindowTitle^" - "^GetKeyValue();
+						case 1 : Label_WindowTitle.Value = "Graph: "^WindowTitle^" - "^ML::FloorInteger(GetKeyValue());
+					}
+					
+					if (MouseLeftButton != MouseLeftButton_Last) {
+						LastMouseCoords = <MouseX, MouseY>;
+						LastWindowPosition = Frame_GraphWindow.RelativePosition;
+						MouseLeftButton_Last = MouseLeftButton;
+						IsOverWindow_Last = IsOverWindow;
+					}
+					
+					if (IsOverWindow_Last && MouseLeftButton_Last && Frame_GraphWindow.Visible) {
+						if (MouseX > -159 && MouseX < 159) Frame_GraphWindow.RelativePosition.X = LastWindowPosition.X - (LastMouseCoords.X - MouseX);
+						if (MouseY > -89 && MouseY < 89) Frame_GraphWindow.RelativePosition.Y = LastWindowPosition.Y - (LastMouseCoords.Y - MouseY);
+					}
+				}
+			}
+		}
+		--></script>
+	""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Load library
+ * /!\ You have to setup graph FIRST then call build function /!\
+ */
+Void Build() {
+	Layers::Create("GraphLibrary", Private_GetGraphLayer());
+	Layers::Attach("GraphLibrary");
+}
+
+Void Destroy() {
+	Layers::Detach("GraphLibrary");
+	Layers::Destroy("GraphLibrary");
+}
+
+// ---------------------------------- //
+/** Set script changing value
+ * Example:
+ *
+ * Graph::SetValueScript("""
+ *     declare netread Integer Net_GraphValue for Teams[0];
+ *     OutputReal = ML::ToReal(Net_GraphValue);
+ * """;
+ *
+ * /!\ Value MUST be Real. You can use MathLib (ML) and AnimLib (AL) /!\
+ */
+Void SetValueScript(Text _Script) {
+	G_LibGraph_ValueScript = _Script;
+}
+
+
+// ---------------------------------- //
+/** Set window title message
+ *
+ * @param	_WindowTitle	Message displayed in window title
+ */
+Void SetGraphTitle(Text _WindowTitle) {
+	G_LibGraph_TitleMessage = _WindowTitle;
+}
+
+// ---------------------------------- //
+/** Set current value display mode in title
+ * [0 => Real, 1 => Integer, 2 => Hidden]
+ *
+ * @param	_DisplayMode	Selected display mode
+ */
+Void SetValueDisplayMode(Integer _DisplayMode) {
+	G_LibGraph_ValueDisplayMode = _DisplayMode;
+}
+
+// ---------------------------------- //
+/** Set current value display mode in title
+ * /!\ Setting value to 0 will cause dynamic offset change /!\
+ *
+ * @param	_MinValue		Offset Minimum
+ * @param	_MaxValue		Offset Maximum
+ */
+Void SetMinMaxValues(Real _MinValue, Real _MaxValue) {
+	G_LibGraph_MinOffset = _MinValue;
+	G_LibGraph_MaxOffset = _MaxValue;
+}

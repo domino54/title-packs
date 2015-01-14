@@ -1,0 +1,550 @@
+// -------------------------------------- //
+//  TORNADO HUNT by domino54              //
+//  script version: 1.0.0                 //
+// -------------------------------------- //
+
+#Extends "Modes/ShootMania/ModeBase.Script.txt"
+
+#Const	CompatibleMapTypes	"TornadoHuntArena, RealmArena, BattleArena, GoalHuntArena"
+#Const	Version				"2014-07-25"
+#Const	ScriptName			"TornadoHunt.Script.txt"
+
+#Include "MathLib" as MathLib
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/Interface.Script.txt" as Interface
+#Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
+#Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
+#Include "Libs/Nadeo/ShootMania/SpawnScreen.Script.txt" as SpawnScreen
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit		600		as _("Time limit")							///< Time limit on a map
+#Setting S_PointLimit		25		as _("Points limit")						///< Points limit on a map
+#Setting S_StaminaBuff		True	as _("Reload player stamina")				///< Reload player stamina
+#Setting S_PoleTimeOutTime	20		as _("Capture time limit (0 = no limit)")	///< Time before pole is changed to another one
+#Setting S_FriendlyFire		False	as _("Friendly Fire (damage clanmates)")	///< Damage clanmates
+
+// Clublinks settings
+#Setting S_UsePlayerClublinks	False	as _("Use players clublinks")
+#Setting S_ForceClublinkTeam1	""		as "<hidden>"
+#Setting S_ForceClublinkTeam2	""		as "<hidden>"
+
+#Setting S_NbBots	0	as _("Fake players")	///< Number of bots
+
+#Const C_RequiredPlayersNb	1	///< Required number of players to start the game
+#Const C_RequiredPolesNb	2	///< Required number of poles on map
+
+#Const C_PlayerStaminaMax	2.	///< Amount of player stamina
+#Const C_OffZoneRadius		5.	///< Radius of the OffZone
+
+#Const Description _("TYPE: Free for all\nOBJECTIVE: Catch Tornado to score points for your team. The first team to reach the points limit or the team with the highest score at the end of the time limit wins the map.")
+
+// ---------------------------------- //
+// Globales variables
+// ---------------------------------- //
+declare Ident[]	G_SpawnsList;		///< Id of all the landmarks with a player spawn of the map
+declare Ident	G_LatestSpawnId;	///< Id of the last landmark used
+
+declare Ident[]	G_PolesList;		///< Id of all the landmarks with a player spawn of the map
+declare Ident	G_LatestPoleId;		///< Id of the last landmark used
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+MB_LogVersion(SM::GetScriptName(), SM::GetScriptVersion());
+MB_LogVersion(Score::GetScriptName(), Score::GetScriptVersion());
+MB_LogVersion(Message::GetScriptName(), Message::GetScriptVersion());
+MB_LogVersion(Interface::GetScriptName(), Interface::GetScriptVersion());
+MB_LogVersion(SpawnScreen::GetScriptName(), SpawnScreen::GetScriptVersion());
+***
+
+// ---------------------------------- //
+// Set rules
+// ---------------------------------- //
+***Rules***
+***
+declare ModeName = "Tornado Hunt";
+declare ModeRules = TextLib::Compose(_("$<%11. $>Catch Tornado to score points for your team.\n$<%12. $>The first team to reach the points limit or team with the highest score at the end of the time limit wins the map."), "$"^SpawnScreen::GetModeColor());
+SpawnScreen::ResetRulesSection();
+SpawnScreen::AddSubsection(_("Type"), _("Team versus Team"), 0.);
+SpawnScreen::AddSubsection(_("Objectives"), ModeRules, 20.);
+SpawnScreen::CreatePrettyRules(ModeName);
+ModeStatusMessage = _("TYPE: Team versus Team\nOBJECTIVE: Catch Tornado maximum times to win the game.");
+***
+
+// ---------------------------------- //
+// Server start
+// ---------------------------------- //
+***StartServer***
+***
+// ---------------------------------- //
+// Set mode options
+MB_UsePlayerClublinks = S_UsePlayerClublinks;
+UseClans = True;
+ForceNavMapsComputation = True;
+
+// ---------------------------------- //
+// Create the rules
+---Rules---
+
+// ---------------------------------- //
+// Initialize UI
+SpawnScreen::CreateMapInfo();
+SpawnScreen::SetModeName("Tornado Hunt");
+SpawnScreen::CreateScores("Score.RoundPoints");
+Interface::CreateRank();
+Layers::Create("PlayerLists", CreateLayerPlayerLists());
+
+// UIAll
+UIManager.UIAll.OverlayScoreSummary = True;
+UIManager.UIAll.ScreenIn3dHideScoreSummary = True;
+
+// ---------------------------------- //
+// Create the scores table
+ST2::SetStyle("LibST_SMBaseTeams");
+ST2::SetStyle("LibST_SMBasePoints");
+ST2::SetStyle("LibST_SMWithLegends");
+ST2::SetFormat(2, 6);
+ST2::SetColWidth("LibST_Avatar", 2.);
+ST2::SetColWidth("LibST_Tags", 0.);
+ST2::SetColWidth("LibST_ManiaStars", 2.);
+ST2::CreateCol("Capture", _("|Capture,Substantive|Cap"), "", 2.5, 80.);
+ST2::CreateCol("Hit", _("|Capture,Substantive|Hit"), "", 2.5, 90.);
+MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
+ST2::Build("SM");
+***
+
+***InitMap***
+***
+declare PrevPointsLimit = -1;
+***
+
+// ---------------------------------- //
+// Map start
+// ---------------------------------- //
+***StartMap***
+***
+Score::MatchBegin();
+Score::RoundBegin();
+
+G_SpawnsList.clear();
+G_LatestSpawnId = NullId;
+G_PolesList.clear();
+G_LatestPoleId = NullId;
+
+SM::SetupDefaultVisibility();
+
+UIManager.UIAll.ScoreSummary_Points1 = 0;
+UIManager.UIAll.ScoreSummary_Points2 = 0;
+
+// ---------------------------------- //
+// Init bases
+foreach (Base in MapBases) {
+	Base.Clan = 0;
+	Base.IsActive = True;
+}
+
+// ---------------------------------- //
+// Let the server sleep until there's enough players to start a game
+while (!ServerShutdownRequested && !MatchEndRequested && PlayersNbTotal < C_RequiredPlayersNb) {
+	MB_Yield();
+	UIManager.UIAll.BigMessage = _("Waiting for players...");
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
+}
+UIManager.UIAll.BigMessage = "";
+
+// ---------------------------------- //
+// Update the players clublinks
+if (S_ForceClublinkTeam1 == "" && S_ForceClublinkTeam2 == "") Clublink::DefineTeamAuto();
+else Clublink::DefineTeamFromUrl(S_ForceClublinkTeam1, S_ForceClublinkTeam2);
+Clublink::SyncUpdate();
+
+// ---------------------------------- //
+// Init scores
+MB_Sleep(1); ///< Allow the scores array to be sorted
+foreach (Score in Scores) {
+	declare Integer LastPoint for Score;
+	LastPoint = 0;
+	
+	declare Integer TopScoreHit for Score;
+	TopScoreHit = 0;
+	ST2::SetColValue("Hit", Score, "");
+	
+	declare Integer TopScoreCapture for Score;
+	TopScoreCapture = 0;
+	ST2::SetColValue("Capture", Score, "");
+}
+declare LeadClan = 0;
+declare PrevLeadClan = 0;
+
+// ---------------------------------- //
+// Set first pole
+if (MapLandmarks_Gauge.count >= C_RequiredPolesNb) {
+	OffZoneRadius = C_OffZoneRadius;
+	OffZoneRadiusSpeed = 0.;
+	SetNextPole();
+} else {
+	MB_StopMap = True;
+	UIManager.UIAll.SendChat(_("Too less poles on map."));
+}
+
+// ---------------------------------- //
+// New map sound
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+
+StartTime = Now;
+if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
+else EndTime = -1;
+
+Layers::Attach("PlayerLists");
+
+declare CurrentTimeLimit = S_TimeLimit;
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+***
+
+// ---------------------------------- //
+// Global loop
+// ---------------------------------- //
+***Yield***
+***
+Users_SetNbFakeUsers(S_NbBots/2, S_NbBots-(S_NbBots/2));
+Message::Loop();
+Clublink::DefineTeamAuto();
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***PlayLoop***
+***
+SM::UnspawnPlayersChangingClan();
+
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On armor empty
+	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		if (Event.Victim != Null) {
+			if (Event.Victim.Armor == 0) {
+				XmlRpc::OnArmorEmpty(Event);
+				PassOn(Event);
+			} else {
+				Discard(Event);
+			}
+		}
+	} 
+	// ---------------------------------- //
+	// On hit
+	else if (Event.Type == CSmModeEvent::EType::OnHit) {
+		declare Points = Event.Damage / 100;
+		// Catch invalid events
+		if (Event.Shooter == Null || Event.Victim == Null || Event.Shooter == Event.Victim) {
+			Discard(Event);
+		}
+		// Friendly Fire
+		else if (Event.Shooter.CurrentClan == Event.Victim.CurrentClan) {
+			if (S_FriendlyFire) {
+				Score::RemovePoints(Event.Shooter, Points);
+				Score::AddPoints(Event.Victim, Points);
+				
+				Event.ShooterPoints = -Points;
+				
+				Message::SendStatusMessage(Event.Shooter, _("$F00Friendly fire!"), 2000, 2, CUIConfig::EUISound::Warning, 0);
+				
+				XmlRpc::OnHit(Event);
+				PassOn(Event);
+			} else {
+				Discard(Event);
+			}
+		}
+		// Normal hit
+		else {
+			Score::AddPoints(Event.Shooter, Points);
+			Event.ShooterPoints = Points;
+			
+			declare Integer TopScoreHit for Event.Shooter.Score;
+			TopScoreHit += 1;
+			ST2::SetColValue("Hit", Event.Shooter.Score, TextLib::ToText(TopScoreHit));
+			
+			XmlRpc::OnHit(Event);
+			PassOn(Event);
+		}
+	}
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		Discard(Event);
+	}
+	// ---------------------------------- //
+	// Others
+	else {
+		PassOn(Event);
+	}
+}	
+
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) {
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate) {
+		Player.StaminaMax = C_PlayerStaminaMax;
+		
+		MeleeSpawnPlayer(Player);
+	}
+	
+	if (Player.CapturedLandmark != Null) {
+		if (Player.CapturedLandmark.Id == OffZoneCenterBlockId) {
+			OnCapture(Player);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Pole time limit
+foreach (MapLandmark in MapLandmarks_Gauge) {
+	if (MapLandmark.Id == OffZoneCenterBlockId && MapLandmark.Gate == Null) {
+		if (MapLandmark.Gauge.Value == 0 && MapLandmark.Gauge.Max != 1) {
+			SetNextPole();
+			UIManager.UIAll.SendNotice(_("Pole timed out!"), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::PlayerHit, 1);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Play sound and notice if someone is taking the lead
+if (LeadClan != PrevLeadClan && LeadClan != 0) {
+	PrevLeadClan = LeadClan;
+	Message::SendStatusMessage(TextLib::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 1, CUIConfig::EUISound::PhaseChange, 1);
+}
+
+// ---------------------------------- //
+// Server info change
+if (PrevPointsLimit != S_PointLimit) {
+	PrevPointsLimit = S_PointLimit;
+	ST2::SetFooterText(TextLib::Compose("%1 "^S_PointLimit, _("Points limit : ")));
+}
+
+// ---------------------------------- //
+// Update time limit
+if (CurrentTimeLimit != S_TimeLimit) {
+	CurrentTimeLimit = S_TimeLimit;
+	if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
+	else EndTime = -1;
+}
+
+// ---------------------------------- //
+// victory conditions
+if (ClanScores[1] == ClanScores[2]) LeadClan = 0;
+else if (ClanScores[1] > ClanScores[2]) LeadClan = 1;
+else LeadClan = 2;
+
+declare IsMatchOver = False;
+if (S_TimeLimit > 0 && Now > EndTime) IsMatchOver = True;
+if (S_PointLimit > 0) {
+	foreach (Score in ClanScores) {
+		if (Score >= S_PointLimit) IsMatchOver = True;
+	}
+}
+
+if (IsMatchOver) {
+	OffZoneRadius = 0.;
+	MB_StopMap = True;
+}
+***
+
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+***EndMap***
+***
+EndTime = -1;
+Score::RoundEnd();
+Score::MatchEnd(True);
+ClearPoleIndicators();
+
+log (ClanScores);
+
+// ---------------------------------- //
+// End match sequence
+foreach (Player in Players) {
+	if (Player.CurrentClan != LeadClan) UnspawnPlayer(Player);
+}
+
+MB_Sleep(3000);
+Layers::Detach("PlayerLists");
+Message::CleanAllMessages();
+UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+UIManager.UIAll.BigMessageSoundVariant = 0;
+if (LeadClan != 0) {
+	UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> wins the match!"), Teams[LeadClan - 1].ColorizedName);
+} else {
+	UIManager.UIAll.BigMessage = _("|Match|Draw");
+}
+MB_Sleep(2000);
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+MB_Sleep(5000);
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+while (!UIManager.UIAll.UISequenceIsCompleted) {
+	MB_Yield();
+}
+
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+UIManager.UIAll.BigMessage = "";
+***
+
+// ---------------------------------- //
+// Server end
+// ---------------------------------- //
+***EndServer***
+***
+Interface::DestroyRank();
+SpawnScreen::DestroyRules();
+SpawnScreen::DestroyScores();
+SpawnScreen::DestroyMapInfo();
+Layers::Destroy("PlayerLists");
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+/* ------------------------------------- */
+/** Spawn a player
+ *
+ * @param	_Player		The player to spawn
+ */
+Void MeleeSpawnPlayer(CSmPlayer _Player) {
+	if (G_SpawnsList.count == 0) {
+		foreach (MapLandmark in MapLandmarks_PlayerSpawn) G_SpawnsList.add(MapLandmark.Id);
+	}
+	
+	declare SpawnId = NullId;
+	while (True) {
+		SpawnId = G_SpawnsList[MathLib::Rand(0, G_SpawnsList.count - 1)];
+		if (SpawnId != G_LatestSpawnId) break;
+		if (G_SpawnsList.count == 1) break;
+	}
+	G_LatestSpawnId = SpawnId;
+	SM::SpawnPlayer(_Player, _Player.RequestedClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+	declare Removed = G_SpawnsList.remove(SpawnId);
+}
+
+/* ------------------------------------- */
+/** Indicate pole
+ *
+ * @param	_PoleId		Id of Pole to light up
+ */
+Void IndicatePole(Ident _PoleId) {
+	foreach (MapLandmark in MapLandmarks_Gauge) {
+		if (MapLandmark.Gate == Null) {
+			if (S_PoleTimeOutTime > 0) MapLandmark.Gauge.Max = S_PoleTimeOutTime * 1000;
+			else MapLandmark.Gauge.Max = 1;
+			
+			// Tornado pole
+			if (MapLandmark.Id == _PoleId) {
+				MapLandmark.Gauge.Value = MapLandmark.Gauge.Max;
+				if (S_PoleTimeOutTime > 0) MapLandmark.Gauge.Speed = -1;
+				else MapLandmark.Gauge.Speed = 0;
+				
+				// Marker
+				UIManager.UIAll.MarkersXML = """<marker pos="{{{MapLandmark.Position.X}}} {{{MapLandmark.Position.Y + 25.}}} {{{MapLandmark.Position.Z}}}" icon="PointA"/>""";
+			}
+			
+			// Other poles
+			else {
+				MapLandmark.Gauge.Value = 0;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Clear poles colors
+Void ClearPoleIndicators() {
+	foreach (MapLandmark in MapLandmarks_Gauge) {
+		if (MapLandmark.Gate == Null) {
+			MapLandmark.Gauge.Value = 0;
+		}
+	}
+	// Marker
+	UIManager.UIAll.MarkersXML = "";
+}
+
+// ---------------------------------- //
+/// Set next pole
+Void SetNextPole() {
+	if (G_PolesList.count == 0) {
+		foreach (MapLandmark in MapLandmarks_Gauge) if (MapLandmark.Gate == Null) G_PolesList.add(MapLandmark.Id);
+	}
+	
+	declare PoleId = NullId;
+	while (True) {
+		PoleId = G_PolesList[MathLib::Rand(0, G_PolesList.count - 1)];
+		if (PoleId != G_LatestPoleId) break;
+		if (G_PolesList.count == 1) break;
+	}
+	G_LatestPoleId = PoleId;
+	OffZoneCenterBlockId = PoleId;
+	declare Removed = G_PolesList.remove(PoleId);
+	IndicatePole(PoleId);
+}
+
+/* ------------------------------------- */
+/** Player touched pole
+ *
+ * @param	_Player		Player that touched pole
+ */
+Void OnCapture(CSmPlayer _Player) {
+	Score::AddPoints(_Player, 1);
+	ClanScores[_Player.CurrentClan] += 1;
+	
+	declare Integer TopScoreCapture for _Player.Score;
+	TopScoreCapture += 1;
+	ST2::SetColValue("Capture", _Player.Score, TextLib::ToText(TopScoreCapture));
+	
+	switch (_Player.CurrentClan) {
+		case 1 : UIManager.UIAll.ScoreSummary_Points1 += 1;
+		case 2 : UIManager.UIAll.ScoreSummary_Points2 += 1;
+	}
+	
+	Message::SendBigMessage(_Player, "\n\n$FF0+1", 500, 0, CUIConfig::EUISound::ScoreProgress, 1);
+	UIManager.UIAll.SendNotice(TextLib::Compose(_("$<%1$> captured the pole."), _Player.Name), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::PlayerHit, 1);
+	
+	_Player.Stamina = MathLib::FloorInteger(3600 * _Player.StaminaMax);
+	
+	SetNextPole();
+	
+	// ---------------------------------- //
+	// Play sound and notice if someone is close to win
+	declare Gap = S_PointLimit - ClanScores[_Player.CurrentClan];
+	if (Gap > 0 && Gap <= 3) {
+		declare Variant = 3 - Gap;
+		declare Msg = "";
+		if (Gap > 1) Msg = TextLib::Compose(_("$<%1$> is %2 points from victory!"), Teams[_Player.CurrentClan - 1].ColorizedName, TextLib::ToText(Gap));
+		else Msg = TextLib::Compose(_("$<%1$> is 1 point from victory!"), Teams[_Player.CurrentClan - 1].ColorizedName);
+		Message::SendStatusMessage(Msg, 3000, 3, CUIConfig::EUISound::TieBreakPoint, Variant);
+	}
+	else if (Gap == 0) {
+		Message::SendStatusMessage(
+			TextLib::Compose(_("$<%1$> captured all goals!"), Teams[_Player.CurrentClan - 1].ColorizedName),
+			3000, 3, CUIConfig::EUISound::VictoryPoint, 0
+		);
+	}
+}
+
+/* ------------------------------------- */
+/** Create players lists layer
+ *
+ * @return		Created players lists layer
+ */
+Text CreateLayerPlayerLists() {
+	return """
+		<playerlist posn="-160 68" halign="left" substyle="Small" lines="5" columns="1" team="1" status="Playing"/>
+		<playerlist posn="160 68" halign="right" substyle="Small" lines="5" columns="1" team="2" status="Playing"/>
+	""";
+}

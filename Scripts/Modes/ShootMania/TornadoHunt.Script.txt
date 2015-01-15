@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  TORNADO HUNT by domino54              //
-//  script version: 1.0.0                 //
+//  script version: 1.0.1                 //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeBase.Script.txt"
 
 #Const	CompatibleMapTypes	"TornadoHuntArena, RealmArena, BattleArena, GoalHuntArena"
-#Const	Version				"2015-01-14"
+#Const	Version				"2015-01-15"
 #Const	ScriptName			"TornadoHunt.Script.txt"
 
 #Include "MathLib" as MathLib
@@ -308,7 +308,7 @@ foreach (MapLandmark in MapLandmarks_Gauge) {
 	if (MapLandmark.Id == OffZoneCenterBlockId && MapLandmark.Gate == Null) {
 		if (MapLandmark.Gauge.Value == 0 && MapLandmark.Gauge.Max != 1) {
 			SetNextPole();
-			UIManager.UIAll.SendNotice(_("Pole timed out!"), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::PlayerHit, 1);
+			Message::SendStatusMessage(_("Pole timed out!"), 3000, 1, CUIConfig::EUISound::PlayerHit, 0);
 		}
 	}
 }
@@ -317,7 +317,7 @@ foreach (MapLandmark in MapLandmarks_Gauge) {
 // Play sound and notice if someone is taking the lead
 if (LeadClan != PrevLeadClan && LeadClan != 0) {
 	PrevLeadClan = LeadClan;
-	Message::SendStatusMessage(TextLib::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 1, CUIConfig::EUISound::PhaseChange, 1);
+	Message::SendBigMessage(TextLib::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 2, CUIConfig::EUISound::PhaseChange, 1);
 }
 
 // ---------------------------------- //
@@ -515,8 +515,11 @@ Void OnCapture(CSmPlayer _Player) {
 		case 2 : UIManager.UIAll.ScoreSummary_Points2 += 1;
 	}
 	
-	Message::SendBigMessage(_Player, "\n\n$FF0+1", 500, 0, CUIConfig::EUISound::ScoreProgress, 1);
-	UIManager.UIAll.SendNotice(TextLib::Compose(_("$<%1$> captured the pole."), _Player.Name), CUIConfig::ENoticeLevel::Default, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::PlayerHit, 1);
+	Message::SendStatusMessage(_Player, "", 500, 0, CUIConfig::EUISound::ScoreProgress, 1);
+	Message::SendStatusMessage(
+		TextLib::Compose(_("$<%1$> captured the pole."), _Player.Name),
+		3000, 1, CUIConfig::EUISound::PlayerHit, 0
+	);
 	
 	_Player.Stamina = MathLib::FloorInteger(3600 * _Player.StaminaMax);
 	
@@ -530,10 +533,10 @@ Void OnCapture(CSmPlayer _Player) {
 		declare Msg = "";
 		if (Gap > 1) Msg = TextLib::Compose(_("$<%1$> is %2 points from victory!"), Teams[_Player.CurrentClan - 1].ColorizedName, TextLib::ToText(Gap));
 		else Msg = TextLib::Compose(_("$<%1$> is 1 point from victory!"), Teams[_Player.CurrentClan - 1].ColorizedName);
-		Message::SendStatusMessage(Msg, 3000, 3, CUIConfig::EUISound::TieBreakPoint, Variant);
+		Message::SendBigMessage(Msg, 3000, 3, CUIConfig::EUISound::TieBreakPoint, Variant);
 	}
 	else if (Gap == 0) {
-		Message::SendStatusMessage(
+		Message::SendBigMessage(
 			TextLib::Compose(_("$<%1$> captured all goals!"), Teams[_Player.CurrentClan - 1].ColorizedName),
 			3000, 3, CUIConfig::EUISound::VictoryPoint, 0
 		);

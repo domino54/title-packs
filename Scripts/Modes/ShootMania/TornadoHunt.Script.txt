@@ -25,6 +25,7 @@
 #Setting S_PointLimit		25		as _("Points limit")						///< Points limit on a map
 #Setting S_StaminaBuff		True	as _("Reload player stamina")				///< Reload player stamina
 #Setting S_PoleTimeOutTime	20		as _("Capture time limit (0 = no limit)")	///< Time before pole is changed to another one
+#Setting S_HideTornado		False	as _("Hide Tornado (may increase performance)")		///< Hide Tornado to increase client GPU performance
 #Setting S_FriendlyFire		False	as _("Friendly Fire (damage clanmates)")	///< Damage clanmates
 
 // Clublinks settings
@@ -87,6 +88,7 @@ ModeStatusMessage = _("TYPE: Team versus Team\nOBJECTIVE: Catch Tornado maximum 
 MB_UsePlayerClublinks = S_UsePlayerClublinks;
 UseClans = True;
 ForceNavMapsComputation = True;
+OffZoneRadiusSpeed = 0.;
 
 // ---------------------------------- //
 // Create the rules
@@ -185,8 +187,6 @@ declare PrevLeadClan = 0;
 // ---------------------------------- //
 // Set first pole
 if (MapLandmarks_Gauge.count >= C_RequiredPolesNb) {
-	OffZoneRadius = C_OffZoneRadius;
-	OffZoneRadiusSpeed = 0.;
 	SetNextPole();
 } else {
 	MB_StopMap = True;
@@ -336,6 +336,11 @@ if (CurrentTimeLimit != S_TimeLimit) {
 }
 
 // ---------------------------------- //
+// Update Tornado visibility
+if (S_HideTornado) OffZoneRadius = 0.;
+else OffZoneRadius = C_OffZoneRadius;
+
+// ---------------------------------- //
 // victory conditions
 if (ClanScores[1] == ClanScores[2]) LeadClan = 0;
 else if (ClanScores[1] > ClanScores[2]) LeadClan = 1;
@@ -360,10 +365,12 @@ if (IsMatchOver) {
 // ---------------------------------- //
 ***EndMap***
 ***
-EndTime = -1;
 Score::RoundEnd();
 Score::MatchEnd(True);
+
+EndTime = -1;
 ClearPoleIndicators();
+OffZoneRadius = 0.;
 
 // ---------------------------------- //
 // End match sequence
@@ -440,6 +447,7 @@ Void MeleeSpawnPlayer(CSmPlayer _Player) {
 Void IndicatePole(Ident _PoleId) {
 	foreach (MapLandmark in MapLandmarks_Gauge) {
 		if (MapLandmark.Gate == Null) {
+			// Pole time out
 			if (S_PoleTimeOutTime > 0) MapLandmark.Gauge.Max = S_PoleTimeOutTime * 1000;
 			else MapLandmark.Gauge.Max = 1;
 			
@@ -459,18 +467,15 @@ Void IndicatePole(Ident _PoleId) {
 			}
 		}
 	}
+	
+	// Reset marker
+	if (_PoleId == NullId) UIManager.UIAll.MarkersXML = "";
 }
 
 // ---------------------------------- //
 /// Clear poles colors
 Void ClearPoleIndicators() {
-	foreach (MapLandmark in MapLandmarks_Gauge) {
-		if (MapLandmark.Gate == Null) {
-			MapLandmark.Gauge.Value = 0;
-		}
-	}
-	// Marker
-	UIManager.UIAll.MarkersXML = "";
+	IndicatePole(NullId);
 }
 
 // ---------------------------------- //

@@ -36,25 +36,22 @@
 
 #Const C_RequiredPlayersNb	1	///< Required number of players to start the game
 #Const C_RequiredPolesNb	2	///< Required number of poles on map
-
 #Const C_PlayerStaminaMax	2.	///< Amount of player stamina
 #Const C_OffZoneRadius		5.	///< Radius of the OffZone
 
-#Const Description _("TYPE: Free for all\nOBJECTIVE: Catch Tornado to score points for your team. The first team to reach the points limit or the team with the highest score at the end of the time limit wins the map.")
+#Const Description _("TYPE: Team versus Team\nOBJECTIVE: Catch Tornado to score points for your team. The first team to reach the points limit or the team with the highest score at the end of the time limit wins the map.")
 
 // ---------------------------------- //
 // Globales variables
 // ---------------------------------- //
 declare Ident[]	G_SpawnsList;		///< Id of all the landmarks with a player spawn of the map
 declare Ident	G_LatestSpawnId;	///< Id of the last landmark used
-
 declare Ident[]	G_PolesList;		///< Id of all the landmarks with a player spawn of the map
 declare Ident	G_LatestPoleId;		///< Id of the last landmark used
 
 // ---------------------------------- //
-// Extend
+// Log version
 // ---------------------------------- //
-
 ***LogVersion***
 ***
 MB_LogVersion(ScriptName, Version);
@@ -233,6 +230,7 @@ foreach (Event in PendingEvents) {
 	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
 		if (Event.Victim != Null) {
 			if (Event.Victim.Armor == 0) {
+				Score::RemovePoints(Event.Victim, 1);
 				XmlRpc::OnArmorEmpty(Event);
 				PassOn(Event);
 			} else {
@@ -292,10 +290,11 @@ foreach (Event in PendingEvents) {
 foreach (Player in Players) {
 	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate) {
 		Player.StaminaMax = C_PlayerStaminaMax;
-		
 		MeleeSpawnPlayer(Player);
 	}
 	
+	// ---------------------------------- //
+	// Pole capture
 	if (Player.CapturedLandmark != Null) {
 		if (Player.CapturedLandmark.Id == OffZoneCenterBlockId) {
 			OnCapture(Player);
@@ -365,8 +364,6 @@ EndTime = -1;
 Score::RoundEnd();
 Score::MatchEnd(True);
 ClearPoleIndicators();
-
-log (ClanScores);
 
 // ---------------------------------- //
 // End match sequence

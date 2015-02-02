@@ -1,0 +1,174 @@
+// -------------------------------------- //
+//  CUSTOM WEAPONS PLUS by domino54       //
+//  script version: 1.0.1                 //
+// -------------------------------------- //
+
+#Extends "Modes/ShootMania/Melee.Script.txt"
+
+#Const	DeluxeVersion		"1.0.1"
+#Const	DeluxeScriptName	"CustomActions+.Script.txt"
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_RequestedActions		""	as _("Primary random weapons (separate with \"|\")")
+#Setting S_PlayerArmorCount		3	as _("Player armor count (1 - 10)")
+
+// ---------------------------------- //
+// Globales variables
+// ---------------------------------- //
+declare Ident[]	G_ActionId;			///< Complete array with actions
+declare Ident[]	G_ActionsList;		///< Id of all the actions
+declare Integer	G_LatestActionId;	///< Id of the last action used
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+
+***LogVersion***
+***
+MB_LogVersion(DeluxeVersion, DeluxeScriptName);
+***
+
+// ---------------------------------- //
+// Server start
+// ---------------------------------- //
+***StartServer***
+***
+declare Text[] SplitActionPaths;
+declare Text Last_RequestedActions;
+
+while (!MatchEndRequested && !ServerShutdownRequested && SplitActionPaths.count == 0) {
+	yield;
+	if (Last_RequestedActions != S_RequestedActions) {
+		Last_RequestedActions = S_RequestedActions;
+		SplitActionPaths = TextLib::Split("|", S_RequestedActions);
+	}
+}
+
+ActionList_Begin();
+foreach (ActionPath in SplitActionPaths) G_ActionId.add(ActionList_Add(ActionPath^".Action.gbx"));
+ActionList_End();
+***
+
+// ---------------------------------- //
+// Map start
+// ---------------------------------- //
+***StartMap***
+***
+// ---------------------------------- //
+// Reset actions
+foreach (Player in AllPlayers) {
+	declare Boolean PlayerActionAttached for Player;
+	PlayerActionAttached = False;
+}
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***PlayLoop***
+***
+Users_SetNbFakeUsers(10, 0);
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On armor empty
+	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		declare Boolean PlayerActionAttached for Event.Victim;
+		PlayerActionAttached = False;
+	}
+	// ---------------------------------- //
+	// On custom action hit
+	else if (Event.Type == CSmModeEvent::EType::OnActionCustomEvent) {
+		if (Event.Param1 == "damage" && Event.Victim != Null && Event.Shooter != Event.Victim) {
+			declare EventDamage = TextLib::ToInteger(Event.Param2[0]);
+			declare Points = EventDamage / 100;
+			Score::AddPoints(Event.Shooter, Points);
+			Event.ShooterPoints = Points;
+			
+			// ---------------------------------- //
+			// Play sound and notice if someone is close to win
+			if (Event.Shooter != Null && Event.Shooter.Score != Null) {	
+				declare LastPoint for Event.Shooter.Score = 0;
+				declare Gap = S_PointLimit - Event.Shooter.Score.RoundPoints;
+				if (Gap > 0 && Gap <= 3) {
+					declare Variant = 3 - Gap;
+					declare Msg = "";
+					if (Gap > 1) Msg = TextLib::Compose(_("$<%1$> is %2 points from victory!"), Event.Shooter.Name, TextLib::ToText(Gap));
+					else Msg = TextLib::Compose(_("$<%1$> is 1 point from victory!"), Event.Shooter.Name);
+					Message::SendBigMessage(Msg, 3000, 2, CUIConfig::EUISound::TieBreakPoint, Variant);
+				} else if (Gap <= 0) {
+					Message::SendBigMessage(
+						TextLib::Compose(_("$<%1$> gets the final hit!"), Event.Shooter.Name),
+						3000, 3, CUIConfig::EUISound::VictoryPoint, 0
+					);
+				} else {
+					declare SoundGap = S_PointLimit / 5;
+					if (SoundGap < 5) SoundGap = 5;
+					if (Event.Shooter.Score.RoundPoints / SoundGap > LastPoint) {
+						LastPoint = Event.Shooter.Score.RoundPoints / SoundGap;
+						declare Msg = TextLib::Compose(
+							"$666%1 : $fff%2 / %3", _("Score"), TextLib::ToText(Event.Shooter.Score.RoundPoints), TextLib::ToText(S_PointLimit)
+						);
+						declare Variant = ((Event.Shooter.Score.RoundPoints / SoundGap) - 1);
+						Message::SendBigMessage(Event.Shooter, Msg, 3000, 0, CUIConfig::EUISound::ScoreProgress, Variant);
+					}
+				}
+			}
+			
+			RemovePlayerArmor(Event.Victim, EventDamage, Event.Shooter, Points);
+		}
+	}
+	// ---------------------------------- //
+	// On player request respawn
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		declare Boolean PlayerActionAttached for Event.Player;
+		PlayerActionAttached = False;
+	}
+}	
+
+// ---------------------------------- //
+// Bind actions
+foreach (Player in Players) {
+	declare Boolean PlayerActionAttached for Player = False;
+	
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawning && !PlayerActionAttached) {
+		BindRandomAction(Player);
+		PlayerActionAttached = True;
+		
+		if (S_PlayerArmorCount < 1) Player.ArmorMax = 100;
+		else if (S_PlayerArmorCount > 10) Player.ArmorMax = 1000;
+		else Player.ArmorMax = S_PlayerArmorCount * 100; 
+		
+		Player.Armor = Player.ArmorMax;
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Bind random action
+ *
+ * @param	_Player		The player to bind action
+ */
+Void BindRandomAction(CSmPlayer _Player) {
+	if (G_ActionsList.count == 0) {
+		foreach (Action in G_ActionId) G_ActionsList.add(Action);
+	}
+	
+	declare ActionId = 0;
+	while (True) {
+		ActionId = MathLib::Rand(0, G_ActionsList.count - 1);
+		if (ActionId != G_LatestActionId) break;
+		if (G_ActionsList.count == 1) break;
+	}
+	G_LatestActionId = ActionId;
+	
+	ActionLoad(_Player, CSmMode::EActionSlot::Slot_A, G_ActionsList[ActionId]);
+	ActionBind(_Player, CSmMode::EActionSlot::Slot_A, CSmMode::EActionInput::Weapon);
+	
+	declare Removed = G_ActionsList.remove(G_ActionsList[ActionId]);
+}

@@ -1,14 +1,21 @@
-/**
- *	GRAPH LIBRARY v1.0 by domino54
- */
+// -------------------------------------- //
+//  GRAPH LIBRARY by domino54             //
+//  script version: 1.2.1                 //
+// -------------------------------------- //
 
-#Const Version				"2014-11-18"
+#Const Version				"1.2.1"
 #Const ScriptName			"Graph.Script.txt"
 
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 
+#Const C_LibGraph_DefaultPosition		<-159.5, -24., 10.>
 #Const C_LibGraph_DefaultTitle			"Untitled"
 #Const C_LibGraph_DefaultDisplayMode	0
+
+#Const C_LibGraph_CurveColor			<.75, .75, .75>
+
+#Const C_LibGraph_RecordingDuration		60
+#Const C_LibGraph_PointsPerSecond		10
 
 declare Real	G_LibGraph_MinOffset;
 declare Real	G_LibGraph_MaxOffset;
@@ -26,166 +33,234 @@ declare Integer	G_LibGraph_ValueDisplayMode;
 
 Text Private_GetGraphLayer() {
 	return """
-		<frame posn="-159 -50 10" id="Frame_GraphWindow" hidden="1">
-			<quad sizen="100 24.5" bgcolor="363636" opacity=".9"/>
-			<quad posn="0 0 2" sizen="91.5 5" id="Quad_WindowDragbox" ScriptEvents="1"/>
-			
-			<quad posn="91.5 0 1" sizen="4 4" style="Icons128x32_1" substyle="Minimize" id="Quad_MinimizeButton" ScriptEvents="1"/>
-			<quad posn="95.5 0 1" sizen="4 4" style="Icons128x32_1" substyle="Close" id="Quad_CloseButton" ScriptEvents="1"/>
-			<label posn="1 -1.875 1" style="StyleTextScriptEditor" valign="center" scale=".75" textcolor="DDD" id="Label_WindowTitle"/>
-			
-			<graph posn="0.5 -4 2" scale="{{{1./3}}}" sizen="297 60" id="Graph_Main"/>
-			<quad posn="0.5 -4 1" sizen="99 20" bgcolor="000"/>
-		</frame>
-		<frame posn="-160 -84.5" id="Frame_Minimized" hidden="1">
-			<quad sizen="24.5 5.25" style="Bgs1" substyle="BgTitlePage" modulatecolor="555"/>
-			<label posn="1.5 -1.5 1" style="StyleTextScriptEditor" textsize="1" textcolor="CCC" text="Graph..."/>
-			<quad posn="15 -0.3 1" sizen="4.5 4.5" style="Icons128x32_1" substyle="Windowed" opacity=".6" id="Quad_MinimizeButton" ScriptEvents="1"/>
-			<quad posn="19.5 -0.4 1" sizen="4.5 4.5" style="Icons128x32_1" substyle="Close" opacity=".6" id="Quad_CloseButton" ScriptEvents="1"/>
-		</frame>
-		<script><!--
-		#Include "MathLib" as ML
-		#Include "AnimLib" as AL
-		
-		#Const C_KeysCount		600
-		#Const C_TickDelay		100
-		
-		Real GetKeyValue() {
-			declare Real OutputReal;
-			
-			{{{G_LibGraph_ValueScript}}}
-			
-			return OutputReal;
-		}
+<manialink version="2" name="LibGraph">
+<script><!--
+/**
+ *	GRAPH LIBRARY  by domino54
+ */
 
-		main() {
-			declare Graph				<=> (Page.GetFirstChild("Graph_Main") as CMlGraph);
-			declare Frame_GraphWindow	<=> (Page.GetFirstChild("Frame_GraphWindow") as CMlFrame);
-			declare Frame_Minimized		<=> (Page.GetFirstChild("Frame_Minimized") as CMlFrame);
-			declare Quad_WindowDragbox	<=> (Page.GetFirstChild("Quad_WindowDragbox") as CMlQuad);
-			declare Label_WindowTitle	<=> (Page.GetFirstChild("Label_WindowTitle") as CMlLabel);
-			
-			declare CMlGraphCurve Curve = Graph.AddCurve();
-			
-			Graph.CoordsMin = <0., 0.>;
-			Graph.CoordsMax = <ML::ToReal(C_KeysCount), 0.>;
-			
-			declare TickEnd = Now + 100;
-			
-			for (I, 0, C_KeysCount) {
-				Curve.Points.add(<ML::ToReal(I), 0.>);
-			}
-			
-			Curve.Color = <.7, .7, .7>;
-			
-			declare HasCustomTitle = ("{{{G_LibGraph_TitleMessage}}}" != "");
-			declare Text WindowTitle;
-			if (HasCustomTitle) WindowTitle = "{{{G_LibGraph_TitleMessage}}}";
-			else WindowTitle = "{{{C_LibGraph_DefaultTitle}}}";
-			
-			declare Real MinimalValue = 0.;
-			declare Real MaximalValue = 0.;
-			
-			declare ValueDisplayMode = {{{G_LibGraph_ValueDisplayMode}}};
-			declare Boolean IsOverWindow;
-			declare Boolean IsOverWindow_Last;
-			declare Boolean MouseLeftButton_Last;
-			declare Vec2 LastMouseCoords;
-			declare Vec3 LastWindowPosition;
-			declare Boolean WindowMinimized = False;
-			declare Boolean UseGraphLibrary = False;
-			
-			while(True) {
-				yield;
-				
-				if (UseGraphLibrary) {
-					Frame_GraphWindow.Visible = !WindowMinimized;
-					Frame_Minimized.Visible = WindowMinimized;
-				} else {
-					Frame_GraphWindow.Visible = False;
-					Frame_Minimized.Visible = False;
-				}
-				
-				foreach (Event in PendingEvents) {
-					switch (Event.Type) {
-						case CMlEvent::Type::MouseOver : {
-							if (Event.ControlId == "Quad_WindowDragbox") {
-								IsOverWindow = True;
-							}
-						}
-						case CMlEvent::Type::MouseOut : {
-							if (Event.ControlId == "Quad_WindowDragbox") {
-								IsOverWindow = False;
-							}
-						}
-						case CMlEvent::Type::MouseClick : {
-							if (Event.ControlId == "Quad_MinimizeButton") {
-								WindowMinimized = !WindowMinimized;
-							} else if (Event.ControlId == "Quad_CloseButton") {
-								UseGraphLibrary = False;
-							}
-						}
-						case CMlEvent::Type::KeyPress : {
-							if (Event.KeyName == "F5") {
-								UseGraphLibrary = True;
-								WindowMinimized = False;
-							}
-						}
-					}
-				}
-				
-				if (UseGraphLibrary) {
-					if (Now >= TickEnd) {
-						for (I, 1, C_KeysCount) {
-							Curve.Points[C_KeysCount+1-I].Y = Curve.Points[C_KeysCount-I].Y;
-						}
-						
-						if (InputPlayer != Null) {
-							Curve.Points[0].Y = GetKeyValue();
-						}
-						
-						TickEnd = Now + C_TickDelay;
-					}
-					
-					if ({{{G_LibGraph_MinOffset}}} == 0.) {
-						if (GetKeyValue() < MinimalValue) {
-							MinimalValue = GetKeyValue();
-							Graph.CoordsMin.Y = MinimalValue;
-						}
-					} else {
-						Graph.CoordsMin.Y = {{{G_LibGraph_MinOffset}}};
-					}
-					
-					if ({{{G_LibGraph_MaxOffset}}} == 0.) {
-						if (GetKeyValue() > MaximalValue) {
-							MaximalValue = GetKeyValue();
-							Graph.CoordsMax.Y = MaximalValue;
-						}
-					} else {
-						Graph.CoordsMax.Y = {{{G_LibGraph_MaxOffset}}};
-					}
-					
-					switch (ValueDisplayMode) {
-						case 2 : Label_WindowTitle.Value = "Graph: "^WindowTitle;
-						case 0 : Label_WindowTitle.Value = "Graph: "^WindowTitle^" - "^GetKeyValue();
-						case 1 : Label_WindowTitle.Value = "Graph: "^WindowTitle^" - "^ML::FloorInteger(GetKeyValue());
-					}
-					
-					if (MouseLeftButton != MouseLeftButton_Last) {
-						LastMouseCoords = <MouseX, MouseY>;
-						LastWindowPosition = Frame_GraphWindow.RelativePosition;
-						MouseLeftButton_Last = MouseLeftButton;
-						IsOverWindow_Last = IsOverWindow;
-					}
-					
-					if (IsOverWindow_Last && MouseLeftButton_Last && Frame_GraphWindow.Visible) {
-						if (MouseX > -159 && MouseX < 159) Frame_GraphWindow.RelativePosition.X = LastWindowPosition.X - (LastMouseCoords.X - MouseX);
-						if (MouseY > -89 && MouseY < 89) Frame_GraphWindow.RelativePosition.Y = LastWindowPosition.Y - (LastMouseCoords.Y - MouseY);
-					}
-				}
-			}
+#Include "AnimLib" as AL
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Const C_LibGraph_KeysCount		{{{C_LibGraph_RecordingDuration * C_LibGraph_PointsPerSecond}}}
+#Const C_LibGraph_TickDelay		{{{1000 / C_LibGraph_PointsPerSecond}}}
+
+// ---------------------------------- //
+// Start manialink
+// ---------------------------------- //
+***StartManialink***
+***
+// Set manialink options
+declare Boolean LibGraph_UseGraphLibrary = False;
+declare Boolean LibGraph_WindowMinimized = False;
+
+// Create elements
+declare Frame_LibGraph_Window			<=> (Page.GetFirstChild("Frame_LibGraph_Window") as CMlFrame);
+declare Frame_LibGraph_Minimized		<=> (Page.GetFirstChild("Frame_LibGraph_Minimized") as CMlFrame);
+declare Graph_LibGraph_Main				<=> (Page.GetFirstChild("Graph_LibGraph_Main") as CMlGraph);
+declare Label_LibGraph_WindowTitle		<=> (Page.GetFirstChild("Label_LibGraph_WindowTitle") as CMlLabel);
+declare Label_LibGraph_MinimizedTitle	<=> (Page.GetFirstChild("Label_LibGraph_MinimizedTitle") as CMlLabel);
+
+// Min/max value
+declare Real LibGraph_MinimalValue = 0.;
+declare Real LibGraph_MaximalValue = 0.;
+Graph_LibGraph_Main.CoordsMin = <0., 0.>;
+Graph_LibGraph_Main.CoordsMax = <ML::ToReal(C_LibGraph_KeysCount), 0.>;
+
+declare LibGraph_TickEndTime = Now;
+
+// ---------------------------------- //
+// Create main graph curve
+declare CMlGraphCurve LibGraph_Curve = Graph_LibGraph_Main.AddCurve();
+LibGraph_Curve.Color = {{{C_LibGraph_CurveColor}}};
+
+for (I, 0, C_LibGraph_KeysCount-1) {
+	LibGraph_Curve.Points.add(<ML::ToReal(I), 0.>);
+}
+
+// ---------------------------------- //
+// Load window title
+declare Text LibGraph_WindowTitle;
+if ("{{{G_LibGraph_TitleMessage}}}" != "") LibGraph_WindowTitle = "{{{G_LibGraph_TitleMessage}}}";
+else LibGraph_WindowTitle = "{{{C_LibGraph_DefaultTitle}}}";
+
+// ---------------------------------- //
+// Variables
+declare Integer		LibGraph_ValueDisplayMode = {{{G_LibGraph_ValueDisplayMode}}};
+declare Boolean		LibGraph_IsOverWindow;
+declare Boolean		LibGraph_IsOverWindow_Last;
+declare Boolean		LibGraph_MouseLeftButton_Last;
+declare Vec2		LibGraph_LastMouseCoords;
+declare Vec3		LibGraph_LastWindowPosition;
+***
+
+// ---------------------------------- //
+// Global loop
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		if (Event.ControlId == "Quad_LibGraph_MinimizeButton") {
+			LibGraph_WindowMinimized = !LibGraph_WindowMinimized;
+		} else if (Event.ControlId == "Quad_LibGraph_CloseButton") {
+			LibGraph_UseGraphLibrary = False;
 		}
-		--></script>
+	}
+	// ---------------------------------- //
+	// Keyboard key pressed
+	else if (Event.Type == CMlEvent::Type::KeyPress) {
+		if (Event.KeyName == "F5") {
+			LibGraph_UseGraphLibrary = !LibGraph_UseGraphLibrary;
+		}
+	}
+	// ---------------------------------- //
+	// Mouse hover start
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		if (Event.ControlId == "Quad_LibGraph_WindowDragbox") {
+			LibGraph_IsOverWindow = True;
+		}
+	}
+	// ---------------------------------- //
+	// Mouse hover end
+	else if (Event.Type == CMlEvent::Type::MouseOut) {
+		if (Event.ControlId == "Quad_LibGraph_WindowDragbox") {
+			LibGraph_IsOverWindow = False;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Setup visibility
+Frame_LibGraph_Window.Visible = (LibGraph_UseGraphLibrary && !LibGraph_WindowMinimized);
+Frame_LibGraph_Minimized.Visible = (LibGraph_UseGraphLibrary && LibGraph_WindowMinimized);
+
+// ---------------------------------- //
+// Use graph library		
+if (LibGraph_UseGraphLibrary) {
+	// ---------------------------------- //
+	// Register value change and move keys
+	if (Now >= LibGraph_TickEndTime && !LibGraph_WindowMinimized) {
+		LibGraph_Curve.Points[C_LibGraph_KeysCount-1].Y = GetKeyValue();
+		
+		for (I, 0, C_LibGraph_KeysCount - 2) {
+			LibGraph_Curve.Points[I].Y = LibGraph_Curve.Points[I+1].Y;
+		}
+		
+		LibGraph_TickEndTime = Now + C_LibGraph_TickDelay;
+	}
+	
+	// ---------------------------------- //
+	// Adjust minimal coordinate
+	if ({{{G_LibGraph_MinOffset}}} == 0.) {
+		if (GetKeyValue() < LibGraph_MinimalValue) {
+			LibGraph_MinimalValue = GetKeyValue();
+			Graph_LibGraph_Main.CoordsMin.Y = LibGraph_MinimalValue;
+		}
+	} else {
+		Graph_LibGraph_Main.CoordsMin.Y = {{{G_LibGraph_MinOffset}}};
+	}
+	
+	// ---------------------------------- //
+	// Adjust maximal coordinate
+	if ({{{G_LibGraph_MaxOffset}}} == 0.) {
+		if (GetKeyValue() > LibGraph_MaximalValue) {
+			LibGraph_MaximalValue = GetKeyValue();
+			Graph_LibGraph_Main.CoordsMax.Y = LibGraph_MaximalValue;
+		}
+	} else {
+		Graph_LibGraph_Main.CoordsMax.Y = {{{G_LibGraph_MaxOffset}}};
+	}
+	
+	// ---------------------------------- //
+	// Set window title and display value
+	switch (LibGraph_ValueDisplayMode) {
+		// Real (default)
+		case 0 : {
+			Label_LibGraph_WindowTitle.Value = TL::Compose("Graph: $<%1$> - %2", LibGraph_WindowTitle, TL::ToText(GetKeyValue()));
+			Label_LibGraph_MinimizedTitle.Value = TL::Compose("Graph: %1", TL::ToText(GetKeyValue()));
+		}
+		// Integer
+		case 1 : {
+			Label_LibGraph_WindowTitle.Value = TL::Compose("Graph: $<%1$> - %2", LibGraph_WindowTitle, TL::ToText(ML::FloorInteger(GetKeyValue())));
+			Label_LibGraph_MinimizedTitle.Value = TL::Compose("Graph: %1", TL::ToText(ML::FloorInteger(GetKeyValue())));
+		}
+		// Don't show
+		case 2 : {
+			Label_LibGraph_WindowTitle.Value = TL::Compose("Graph: $<%1$>", LibGraph_WindowTitle);
+			Label_LibGraph_MinimizedTitle.Value = "Graph";
+		}
+	}
+	
+	// ---------------------------------- //
+	// Drag window
+	if (MouseLeftButton != LibGraph_MouseLeftButton_Last) {
+		LibGraph_LastMouseCoords = <MouseX, MouseY>;
+		LibGraph_LastWindowPosition = Frame_LibGraph_Window.RelativePosition;
+		LibGraph_MouseLeftButton_Last = MouseLeftButton;
+		LibGraph_IsOverWindow_Last = LibGraph_IsOverWindow;
+	}
+	
+	if (LibGraph_IsOverWindow_Last && LibGraph_MouseLeftButton_Last && Frame_LibGraph_Window.Visible) {
+		if (MouseX > -159 && MouseX < 159) Frame_LibGraph_Window.RelativePosition.X = LibGraph_LastWindowPosition.X - (LibGraph_LastMouseCoords.X - MouseX);
+		if (MouseY > -89 && MouseY < 89) Frame_LibGraph_Window.RelativePosition.Y = LibGraph_LastWindowPosition.Y - (LibGraph_LastMouseCoords.Y - MouseY);
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get lastest value change
+ *
+ *	@return		Lastest value in Real
+ */
+Real GetKeyValue() {
+	declare Real OutputReal;
+	{{{G_LibGraph_ValueScript}}}
+	return OutputReal;
+} 
+
+// ---------------------------------- //
+// Main function
+// ---------------------------------- //
+main() {
+	---StartManialink---
+	
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+
+<frame posn="{{{C_LibGraph_DefaultPosition.X}}} {{{C_LibGraph_DefaultPosition.Y}}} {{{C_LibGraph_DefaultPosition.Z}}}" id="Frame_LibGraph_Window" hidden="1">
+	<quad posn="0 0 -1" sizen="100 24.5" bgcolor="333" opacity=".875"/>
+	<label posn="1 -2.25" style="StyleTextScriptEditor" valign="center2" scale=".75" textcolor="DDD" id="Label_LibGraph_WindowTitle"/>
+	<quad posn="0 0 1" sizen="91.5 5" id="Quad_LibGraph_WindowDragbox" ScriptEvents="1"/>
+	<quad posn="91.5" sizen="4 4" style="Icons128x32_1" substyle="Minimize" id="Quad_LibGraph_MinimizeButton" ScriptEvents="1"/>
+	<quad posn="95.5" sizen="4 4" style="Icons128x32_1" substyle="Close" id="Quad_LibGraph_CloseButton" ScriptEvents="1"/>
+	<graph posn="0.5 -4 2" scale="{{{1./3}}}" sizen="297 60" id="Graph_LibGraph_Main"/>
+	<quad posn="0.5 -4 1" sizen="99 20" bgcolor="000" opacity=".5"/>
+</frame>
+
+<frame posn="-159.5 -85.5" id="Frame_LibGraph_Minimized" hidden="1">
+	<quad posn="0 0 -1" sizen="30 4" bgcolor="333" opacity=".875"/>
+	<label posn="1 -2.25" style="StyleTextScriptEditor" valign="center2" scale=".75" textcolor="DDD" id="Label_LibGraph_MinimizedTitle"/>
+	<quad posn="21.5" sizen="4 4" style="Icons128x32_1" substyle="Windowed" id="Quad_LibGraph_MinimizeButton" ScriptEvents="1"/>
+	<quad posn="25.5" sizen="4 4" style="Icons128x32_1" substyle="Close" id="Quad_LibGraph_CloseButton" ScriptEvents="1"/>
+</frame>
+</manialink>
 	""";
 }
 
@@ -212,26 +287,12 @@ Text GetScriptName() {
 }
 
 // ---------------------------------- //
-/** Load library
- * /!\ You have to setup graph FIRST then call build function /!\
- */
-Void Build() {
-	Layers::Create("GraphLibrary", Private_GetGraphLayer());
-	Layers::Attach("GraphLibrary");
-}
-
-Void Destroy() {
-	Layers::Detach("GraphLibrary");
-	Layers::Destroy("GraphLibrary");
-}
-
-// ---------------------------------- //
 /** Set script changing value
  * Example:
  *
- * Graph::SetValueScript("""
- *     declare netread Integer Net_GraphValue for Teams[0];
- *     OutputReal = ML::ToReal(Net_GraphValue);
+ * Graph_LibGraph_Main::SetValueScript("""
+ *     declare netread Integer Net_Graph_LibGraph_MainValue for Teams[0];
+ *     OutputReal = ML::ToReal(Net_Graph_LibGraph_MainValue);
  * """;
  *
  * /!\ Value MUST be Real. You can use MathLib (ML) and AnimLib (AL) /!\
@@ -244,10 +305,10 @@ Void SetValueScript(Text _Script) {
 // ---------------------------------- //
 /** Set window title message
  *
- * @param	_WindowTitle	Message displayed in window title
+ * @param	_LibGraph_WindowTitle	Message displayed in window title
  */
-Void SetGraphTitle(Text _WindowTitle) {
-	G_LibGraph_TitleMessage = _WindowTitle;
+Void SetGraphTitle(Text _LibGraph_WindowTitle) {
+	G_LibGraph_TitleMessage = _LibGraph_WindowTitle;
 }
 
 // ---------------------------------- //
@@ -270,4 +331,20 @@ Void SetValueDisplayMode(Integer _DisplayMode) {
 Void SetMinMaxValues(Real _MinValue, Real _MaxValue) {
 	G_LibGraph_MinOffset = _MinValue;
 	G_LibGraph_MaxOffset = _MaxValue;
+}
+
+// ---------------------------------- //
+/** Create Graph Manialink
+ * /!\ You have to setup graph FIRST then call build function /!\
+ */
+Void Build() {
+	Layers::Create("LibGraph", Private_GetGraphLayer());
+	Layers::Attach("LibGraph");
+}
+
+// ---------------------------------- //
+/// Destroy Graph Manialink
+Void Destroy() {
+	Layers::Detach("LibGraph");
+	Layers::Destroy("LibGraph");
 }

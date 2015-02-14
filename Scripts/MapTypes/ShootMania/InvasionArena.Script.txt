@@ -1,0 +1,218 @@
+// -------------------------------------- //
+//  INVASION ARENA by domino54            //
+//  script version: 2.0.0                 //
+// -------------------------------------- //
+
+#RequireContext CSmMapType
+
+#Const Version			"2.0.0"
+#Const MapTypeVersion	1
+#Const ScriptName		"InvasionArena.Script.txt"
+
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+
+#Const C_WindowSize		<100., 60.>
+#Const C_WindowTitle	_("Map objectives")
+
+// ---------------------------------- //
+// Start map type
+// ---------------------------------- //
+***StartMapType***
+***
+MapType::SetVersion(MapTypeVersion);
+UpdateValidability();
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On map modified
+	if (Event.Type == CPluginEvent::Type::MapModified) {
+		UpdateValidability();			
+	}
+	// ---------------------------------- //
+	// On validation
+	else if (Event.Type == CPluginEvent::Type::StartValidation) {
+		StartTestMapWithMode("InvasionSolo.Script.txt");			
+	}
+	// ---------------------------------- //
+	// Edit objectives
+	else if (Event.Type == CPluginEvent::Type::EditObjectives) {
+		EditObjectives();			
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Check if the map is valid
+Void UpdateValidability() {
+	foreach (Data in AnchorData) {
+		Data.Tag = Data.DefaultTag;
+		Data.Order = Data.DefaultOrder;
+		if (Data.Tag == "Checkpoint") Data.Tag = "Goal";
+	}
+	
+	Anchor::UpdateAnchorCounts();
+				
+	if (!Anchor::HasAtLeastOneAnchor("Spawn", 0, _("You must place at least one Spawn"))) return;
+	if (!Anchor::HasAtLeastOneAnchor("Goal", 0, _("You must place at least one Goal"))) return;
+	
+	ValidationStatus = CMapType::ValidationStatus::Validated;
+}
+
+// ---------------------------------- //
+/// Edit objectives
+Void EditObjectives() {  
+	ManialinkText = """
+<manialink version="2" name="InvasionArena:Objectives">
+<quad posn="0 0 20" sizen="330 190" halign="center" valign="center" bgcolor="000" opacity=".75" scriptevents="1"/>
+<frame>
+	<frame posn="0 {{{(C_WindowSize.Y + 12) / 2}}} 21">
+		<quad posn="0 4.75 .2" halign="center" sizen="{{{C_WindowSize.X + 7.5}}} 8" style="Bgs1InRace" substyle="BgGlow2"/>
+		<quad posn="0 0 .1" halign="center" sizen="{{{C_WindowSize.X + .5}}} 12" style="Bgs1" substyle="BgTitle"/>
+		<label posn="0 -6 .5" halign="center" valign="center2" style="TextTitle3" text="{{{C_WindowTitle}}}" translate="1"/>
+		<quad posn="0 0" halign="center" sizen="{{{C_WindowSize.X}}} {{{C_WindowSize.Y + 12}}}" style="Bgs1" substyle="BgWindow2"/>
+		<quad posn="0 -{{{C_WindowSize.Y + 12}}} .1" halign="center" sizen="{{{C_WindowSize.X + .5}}} 2" style="Bgs1" substyle="BgMetalBar"/>
+	</frame>
+	<label posn="0 19 22" halign="center" textemboss="1" textsize="2" textcolor="FFF" text="Score in points"/>
+	<frame posn="0 12 22">
+		<frame posn="-33">
+			<quad halign="center" sizen="20 20" style="MedalsBig" substyle="MedalBronze"/>
+			<entry posn="0 -23" sizen="16 5" halign="center" valign="center2" textsize="2" textcolor="FFF" textemboss="1" default="" id="Entry_Bronze"/>
+		</frame>
+		<frame posn="-11">
+			<quad halign="center" sizen="20 20" style="MedalsBig" substyle="MedalSilver"/>
+			<entry posn="0 -23" sizen="16 5" halign="center" valign="center2" textsize="2" textcolor="FFF" textemboss="1" default="" id="Entry_Silver"/>
+		</frame>
+		<frame posn="11">
+			<quad halign="center" sizen="20 20" style="MedalsBig" substyle="MedalGold"/>
+			<entry posn="0 -23" sizen="16 5" halign="center" valign="center2" textsize="2" textcolor="FFF" textemboss="1" default="" id="Entry_Gold"/>
+		</frame>
+		<frame posn="33">
+			<quad halign="center" sizen="20 20" style="MedalsBig" substyle="MedalNadeo"/>
+			<entry posn="0 -23" sizen="16 5" halign="center" valign="center2" textsize="2" textcolor="FFF" textemboss="1" default="" id="Entry_Author"/>
+		</frame>
+	</frame>
+	<label posn="0 -16 22" sizen="140 10" halign="center" autonewline="1" textemboss="1" scale=".7" textcolor="F00" id="Label_Error"/>
+	<label posn="-20 -26 22" halign="center" style="CardButtonMedium" text="OK" scriptevents="1" id="Button_OK"/>
+	<label posn="20 -26 22" halign="center" style="CardButtonMedium" text="Cancel" scriptevents="1" id="Button_Cancel"/>
+</frame>
+<script><!--
+/**
+ *	Ugliest manialink script you have ever seen xD (but it works!)
+ */
+
+#Include "TextLib" as TL
+
+main() {
+	declare Boolean EditionEnd for Page = False;
+	declare Boolean UpdateValues for Page = False;
+	
+	declare Label_Error <=> (Page.GetFirstChild("Label_Error") as CMlLabel);
+	declare Button_OK <=> (Page.GetFirstChild("Button_OK") as CMlLabel);
+	
+	declare Entry_Bronze <=> (Page.GetFirstChild("Entry_Bronze") as CMlEntry);
+	declare Entry_Silver <=> (Page.GetFirstChild("Entry_Silver") as CMlEntry);
+	declare Entry_Gold <=> (Page.GetFirstChild("Entry_Gold") as CMlEntry);
+	declare Entry_Author <=> (Page.GetFirstChild("Entry_Author") as CMlEntry);
+	
+	declare Integer ScoreBronze for Page;
+	declare Integer ScoreSilver for Page;
+	declare Integer ScoreGold for Page;
+	declare Integer ScoreAuthor for Page;
+	
+	Entry_Bronze.Value = TL::ToText(TL::ToInteger("{{{Map.ObjectiveTextBronze}}}"));
+	Entry_Silver.Value = TL::ToText(TL::ToInteger("{{{Map.ObjectiveTextSilver}}}"));
+	Entry_Gold.Value = TL::ToText(TL::ToInteger("{{{Map.ObjectiveTextGold}}}"));
+	Entry_Author.Value = TL::ToText(TL::ToInteger("{{{Map.ObjectiveTextAuthor}}}"));
+	
+	while (True) {
+		yield;
+		
+		ScoreBronze = TL::ToInteger(Entry_Bronze.Value);
+		ScoreSilver = TL::ToInteger(Entry_Silver.Value);
+		ScoreGold = TL::ToInteger(Entry_Gold.Value);
+		ScoreAuthor = TL::ToInteger(Entry_Author.Value);
+		
+		if (ScoreBronze <= 0 || ScoreSilver <= 0 || ScoreGold <= 0 || ScoreAuthor <= 0) {
+			Label_Error.Value = "All scores have to be greater than 0!";
+		}
+		else if (ScoreBronze > ScoreSilver || ScoreBronze > ScoreGold || ScoreBronze > ScoreAuthor) {
+			Label_Error.Value = "Bronze score must be smaller than Silver, Gold and Author!";
+		}
+		else if (ScoreSilver < ScoreBronze || ScoreSilver > ScoreGold || ScoreSilver > ScoreAuthor) {
+			Label_Error.Value = "Silver score must be greater than Bronze and smaller than Gold and Author!";
+		}
+		else if (ScoreGold < ScoreBronze || ScoreGold < ScoreSilver|| ScoreGold > ScoreAuthor) {
+			Label_Error.Value = "Gold score must be greater than Bronze and Silver and smaller than Author!";
+		}
+		else if (ScoreAuthor < ScoreBronze || ScoreAuthor < ScoreSilver|| ScoreAuthor < ScoreGold) {
+			Label_Error.Value = "Author score must be greater than Bronze, Silver and Gold!";
+		}
+		else {
+			Label_Error.Value = "$0f0All scores are OK!";
+		}
+		
+		Button_OK.Visible = (Label_Error.Value == "$0f0All scores are OK!");
+		
+		foreach (Event in PendingEvents) {
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Button_OK" && Label_Error.Value == "$0f0All scores are OK!") {
+					EditionEnd = True;
+					UpdateValues = True;
+				}
+				else if (Event.ControlId == "Button_Cancel") {
+					EditionEnd = True;
+					UpdateValues = False;
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+	
+	declare Boolean EditionEnd for ManialinkPage;
+	declare Boolean UpdateValues for ManialinkPage;
+	
+	wait(EditionEnd);
+	EditionEnd = False;
+	
+	if (UpdateValues) {
+		declare Entry_Bronze <=> (ManialinkPage.GetFirstChild("Entry_Bronze") as CMlEntry);
+		declare Entry_Silver <=> (ManialinkPage.GetFirstChild("Entry_Silver") as CMlEntry);
+		declare Entry_Gold <=> (ManialinkPage.GetFirstChild("Entry_Gold") as CMlEntry);
+		declare Entry_Author <=> (ManialinkPage.GetFirstChild("Entry_Author") as CMlEntry);
+		
+		Map.ObjectiveTextBronze = Entry_Bronze.Value;
+		Map.ObjectiveTextSilver = Entry_Silver.Value;
+		Map.ObjectiveTextGold = Entry_Gold.Value;
+		Map.ObjectiveTextAuthor = Entry_Author.Value;
+	}
+
+	ManialinkText = """""";
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++StartMapType+++
+	while (True) {	
+		yield;	
+		+++Yield+++
+	}	
+}

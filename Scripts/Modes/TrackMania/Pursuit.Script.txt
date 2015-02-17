@@ -1,0 +1,497 @@
+// -------------------------------------- //
+//  PURSUIT by domino54                   //
+//  script version: 1.0.0                 //
+// -------------------------------------- //
+
+#Extends "Modes/TrackMania/ModeBase.Script.txt"
+
+#Const	Version		"1.0.0"
+#Const	ScriptName	"Pursuit.Script.txt"
+
+#Include "MathLib" as MathLib
+#Include "TextLib" as TextLib
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit 		600		as _("Time limit :")
+#Setting S_SafePhaseTime	15		as _("Time before tossing first policeman")
+#Setting S_LastThiefTime	60		as _("Time limit when last thief remains")
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_BotsNb 0
+
+#Const Description "The $07FPolice$g must catch all $f00Thieves$g by driving through them.\nFirst policeman is randomly choosen at beginning."
+
+declare Boolean G_SafePhase;
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+MB_LogVersion(Layers::GetScriptName(), Layers::GetScriptVersion());
+MB_LogVersion(Manialink::GetScriptName(), Manialink::GetScriptVersion());
+MB_LogVersion(Message::GetScriptName(), Message::GetScriptVersion());
+***
+
+***InitServer***
+***
+declare Integer PrevTimeLimit = S_TimeLimit;
+declare Integer StartTime;
+***
+
+***StartServer***
+***
+// ---------------------------------- //
+// Initialize mode
+UseMinimap = True;
+PrevTimeLimit = S_TimeLimit;
+StartTime = -1;
+IndependantLaps = True;
+MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour::AlwaysGiveUp);
+
+// ---------------------------------- //
+// Initialize UI
+UIManager.UIAll.OverlayHideChrono = True;
+UIManager.UIAll.OverlayHideMultilapInfos = True;
+UIManager.UIAll.OverlayHidePersonnalBestAndRank = True;
+UIManager.UIAll.OverlayHideCheckPointTime = True;
+UIManager.UIAll.OverlayHideCheckPointList = True;
+UIManager.UIAll.OverlayHideOpponentsInfo = True;
+
+Layers::Create("Interface", GetInterface());
+Layers::Attach("Interface");
+
+// ---------------------------------- //
+// Create scores table
+ST2::SetStyle("LibST_TMBaseSolo");
+ST2::SetStyle("LibST_TMBasePoints");
+ST2::SetStyle("LibST_TMWithLegends");
+
+// ShootMania scoretable settings
+ST2::SetFormat(2, 6);
+ST2::SetTextScale(.875);
+ST2::SetModeIcon("Icons128x32_1|RT_Team");
+ST2::SetPos(<0., 39.2, 20.>);
+ST2::SetSize(<72., -1.>, <177., -1.>, <170., -1.>);
+ST2::SetPlayerDarkening(True);
+ST2::SetBackgroundProperties(<0., 5.>, <220., 100.>);
+
+ST2::SetColWidth("LibST_Avatar", 2.5);
+ST2::SetColWidth("LibST_Tags", 0.);
+ST2::SetColWidth("LibST_ManiaStars", 2.5);
+ST2::SetColWidth("LibST_Tools", 1.5);
+
+// Columns
+ST2::CreateCol("Survival", _("Sv"), "", 2.5, 80.);
+ST2::CreateCol("Capture", _("Cap"), "", 2.5, 90.);
+ST2::CreateCol("Clan", _("Task"), "", 6., 100.);
+
+// Score points
+ST2::CreateCol("LibST_TMPoints", _("Pts"), "0", 4., 110.);
+ST2::SetColTextAlign("LibST_TMPoints", CMlControl::AlignHorizontal::Right);
+ST2::SetColTextSize("LibST_TMPoints", 3.);
+ST2::SetColScript("LibST_TMPoints", """
+declare Score <=> (_Score as CTmScore);
+Label_Col.Value = TL::ToText(Score.Points);""");
+
+ST2::SetFooterText(TextLib::Compose("%1 "^TextLib::TimeToText(S_TimeLimit*1000, False), _("Time Limit :")));
+MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
+
+ST2::Build("TM");
+***
+
+***InitMap***
+***
+// ---------------------------------- //
+// Initialize scores
+Scores_Clear();
+ST2::ClearScores();
+***
+
+***StartMap***
+***
+UseClans = True;
+UseForcedClans = True;
+// ---------------------------------- //
+// Initialize map
+MB_Ladder_OpenMatch_All();
+Users_SetNbFakeUsers(C_BotsNb, 0);
+G_SafePhase = True;
+
+foreach (Score in Scores) {
+	Score.Points = 0;
+	declare Integer PointsSurvival for Score;
+	PointsSurvival = 0;
+	declare Integer PointsCapture for Score;
+	PointsCapture = 0;
+}
+
+WaitForPlayers(2);
+
+// ---------------------------------- //
+// Initialize race
+StartTime = Now + S_SafePhaseTime * 1000 + 3000;
+SetTimeLimit(StartTime, S_TimeLimit);
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+
+UIManager.UIAll.AlliesLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+
+foreach (Player in Players) {
+	SetPlayerClan(Player, 2);
+	ST2::SetPlayerColor(Player.Score, Teams[Player.CurrentClan-1].ColorPrimary);
+	
+	declare Boolean RespawnRequested for Player;
+	RespawnRequested = False;
+}
+
+declare Boolean SetLastThieve;
+SetLastThieve = False;
+declare Text PrevPolicemanLogin;
+PrevPolicemanLogin = "";
+
+// ---------------------------------- //
+// New map sound
+Message::SendStatusMessage(_("Drive far away!"), S_SafePhaseTime * 1000 + 3000, 1, CUIConfig::EUISound::StartRound, 0);
+***
+
+***Yield***
+***
+declare netwrite Integer Net_ThievesCount for Teams[0];
+Net_ThievesCount = ClansNbPlayers[2];
+
+foreach (Spectator in Spectators) {
+	ST2::SetPlayerColor(Spectator.Score, <0., 0., 0.>);
+	ST2::SetColValue("Clan", Spectator.Score, "$BBB"^"Spec.");
+}
+***
+
+***PlayLoop***
+***
+G_SafePhase = (Now <= StartTime);
+Message::Loop();
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) TM2::WaitRace(Event.Player);
+		Discard(Event);
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		if (Event.Player.CurrentClan == 2) {
+			Discard(Event);
+			
+			declare Boolean RespawnRequested for Event.Player;
+			RespawnRequested = !RespawnRequested;
+			
+			if (!RespawnRequested) {
+				Message::SendStatusMessage(Event.Player, _("Respawn cancelled"), 4000, 0);
+			}
+		} else {
+			PassOn(Event);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Set new policeman
+if (!G_SafePhase && ClansNbPlayers[1] == 0) {
+	declare NewPoliceman = Players[MathLib::Rand(0, Players.count - 1)];
+	TM2::WaitRace(NewPoliceman);
+	SetPlayerClan(NewPoliceman, 1);
+	
+	if (NewPoliceman.Score != Null) {
+		NewPoliceman.Score.Points += 1;
+	}
+	
+	declare Integer PoliceImmuneTime for NewPoliceman;
+	PoliceImmuneTime = Now + 3000;
+	
+	declare Text BigMessage;
+	declare Text StatusMessage;
+	
+	if (PrevPolicemanLogin != "") {
+		BigMessage = _("$<%1$> is new policeman!");
+		StatusMessage = _("Previous policeman has quit");
+	}
+	else {
+		BigMessage = _("$<%1$> is first policeman!");
+		StatusMessage = "";
+	}
+	
+	Message::SendBigMessage(TextLib::Compose(BigMessage, NewPoliceman.Name), 4000, 1);
+	Message::SendStatusMessage(StatusMessage, 4000, 1);
+	
+	PrevPolicemanLogin = NewPoliceman.Login;
+	
+	Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+}
+
+// ---------------------------------- //
+// Update the map duration setting
+if (PrevTimeLimit != S_TimeLimit) {
+	PrevTimeLimit = S_TimeLimit;
+	SetTimeLimit(StartTime, S_TimeLimit);
+}
+
+// ---------------------------------- //
+// Catch thief
+foreach (Policeman in Players) {
+	foreach (Thief in Players) {
+		if (Policeman != Thief && Policeman.CurrentClan == 1 && Thief.CurrentClan == 2) {
+			if (Policeman.IsSpawned && Thief.IsSpawned && Policeman.Position != <0., 0., 0.> && Thief.Position != <0., 0., 0.>) {
+				if (MathLib::Distance(Policeman.Position, Thief.Position) <= 3) CatchThief(Policeman, Thief);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) {
+	if (TM2::IsWaiting(Player)) {
+		if (Player.CurrentClan == 0) {
+			declare TargetClan for Player = 0;
+			if (G_SafePhase) TargetClan = 2;
+			else TargetClan = 1;
+			SetPlayerClan(Player, TargetClan);
+		}
+		TM2::StartRace(Player);
+	}
+	
+	if (Player != Null && Player.Score != Null) {
+		if (Player.CurrentClan != 0) {
+			ST2::SetPlayerColor(Player.Score, Teams[Player.CurrentClan - 1].ColorPrimary);
+			declare Text TaskName for Player;
+			switch (Player.CurrentClan) {
+				case 1 : TaskName = "$07F"^"Police";
+				case 2 : TaskName = "$F00"^"Thief";
+			}
+			ST2::SetColValue("Clan", Player.Score, TaskName);
+		} else {
+			ST2::SetPlayerColor(Player.Score, <0., 0., 0.>);
+			ST2::SetColValue("Clan", Player.Score, "");
+		}
+	}
+	
+	if ((Player.Position.X < 0 || Player.Position.X > 2048 || Player.Position.Z < 0 || Player.Position.Z > 2048) && Player.CurrentClan == 2) {
+		TM2::StartRace(Player);
+		Message::SendBigMessage(Player, _("Don't break the map"), 4000, 0);
+	}
+	
+	declare Integer RespawnRequestTime for Player;
+	declare Boolean RespawnRequested for Player;
+	
+	if (Player.CurrentClan == 2 && RespawnRequested) {
+		Message::SendStatusMessage(Player, ""^1+(RespawnRequestTime-Now)/1000, 1000, 0);
+		if (Now >= RespawnRequestTime) {
+			RespawnRequested = False;
+			TM2::WaitRace(Player);
+			Message::SendStatusMessage(Player, _("Respawned!"), 4000, 0);
+		}
+	} else {
+		RespawnRequestTime = Now + 30000;
+	}
+}
+
+// ---------------------------------- //
+// Set lest thief
+if (ClansNbPlayers[2] == 1 && !SetLastThieve) {
+	CutOffTimeLimit = Now + S_LastThiefTime * 1000;
+	SetLastThieve = True;
+	
+	foreach (Player in Players) {
+		if (Player.CurrentClan == 2) {
+			Message::SendBigMessage(TextLib::Compose(_("$<%1$> is last thief!"), Player.Name), 4000, 1);
+		}
+	}
+}
+
+// ---------------------------------- //
+// End the map when time limit is reached
+if ((CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) || (!G_SafePhase && ClansNbPlayers[2] == 0)) {
+	MB_StopMap = True;
+}
+***
+
+***EndMap***
+***
+TM2::WaitRaceAll();
+
+switch (ClansNbPlayers[2]) {
+	case 1 : {
+		foreach (Player in Players) {
+			if (Player.CurrentClan == 2) {
+				Player.Score.Points += 5;
+				Message::SendBigMessage(TextLib::Compose(_("$<%1$> has fled!"), Player.Name), 4000, 1);
+			}
+		}
+	}
+	case 0 : {
+		Message::SendBigMessage(_("All thieves caught!"), 4000, 1);
+	}
+	default : {
+		Message::SendBigMessage(_("Thieves have fled!"), 4000, 1);
+	}
+}
+
+foreach (Player in Players) {
+	SetPlayerClan(Player, 0);
+}
+
+// ---------------------------------- //
+// Close ladder
+Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+Ladder_ComputeRank(CTmMode::ETmScoreSortOrder::TotalPoints);
+MB_Ladder_CloseMatch();
+
+if (Scores.existskey(0) && Scores[0].Points > 0) {
+	MB_VictoryMessage = TextLib::Compose(_("$<%1$> wins the map!"), Scores[0].User.Name);
+}
+
+UseClans = False;
+UseForcedClans = False;
+
+MB_Sleep(6000);
+
+Message::CleanAllMessages();
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Catch thief
+ *
+ *	@param	_Policeman	Policeman that caught thief
+ *	@param	_Thief		Catched thief
+ */
+Void CatchThief(CTmPlayer _Policeman, CTmPlayer _Thief) {
+	if (_Policeman == Null || _Thief == Null) return;
+	
+	declare Integer PoliceImmuneTime for _Policeman;
+	if (Now < PoliceImmuneTime) return;
+	
+	TM2::WaitRace(_Thief);
+	SetPlayerClan(_Thief, 1);
+	
+	declare Integer PoliceImmuneTime as ThiefImmune for _Thief;
+	ThiefImmune = Now + 3000;
+	
+	if (_Policeman.Score != Null) {
+		declare Integer PointsCapture for _Policeman.Score;
+		PointsCapture += 1;
+		_Policeman.Score.Points += 1;
+		ST2::SetColValue("Capture", _Policeman.Score, TextLib::ToText(PointsCapture));
+	}
+	
+	foreach (Player in Players) {
+		if (Player.Score != Null && Player.CurrentClan == 2) {
+			declare Integer PointsSurvival for Player.Score;
+			PointsSurvival += 1;
+			Player.Score.Points += 1;
+			ST2::SetColValue("Survival", Player.Score, TextLib::ToText(PointsSurvival));
+		}
+	}
+		
+	Message::SendStatusMessage(TextLib::Compose(_("$<%1$> has caught $<%2$>!"), _Policeman.Name, _Thief.Name), 4000, 1, CUIConfig::EUISound::Default, 0);
+	
+	Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+}
+
+Void SetTimeLimit(Integer _StartTime, Integer _NewTimeLimit) {
+	if (_NewTimeLimit <= 0) {
+		CutOffTimeLimit = -1;
+		ST2::SetFooterText(TextLib::Compose("%1 -", _("Time Limit :")));
+	} else {
+		CutOffTimeLimit = _StartTime + (S_TimeLimit * 1000);
+		ST2::SetFooterText(TextLib::Compose("%1 "^TextLib::TimeToText(S_TimeLimit*1000, False), _("Time Limit :")));
+	}
+}
+
+// ---------------------------------- //
+/** Wait for players
+ *
+ *	@param	_Count		Required players number to play
+ */
+Void WaitForPlayers(Integer _Count) {
+	if (Players.count >= _Count) return;
+	
+	while (!ServerShutdownRequested && !MatchEndRequested && Players.count < _Count) {
+		yield;
+		
+		UIManager.UIAll.BigMessage = _("Waiting for players...");
+		UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::RollingBackgroundIntro;
+	}
+	
+	UIManager.UIAll.BigMessage = _("New player joined the game");
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Default;
+	
+	sleep(2000);
+	
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.SpectatorForcedTarget = NullId;
+}
+
+Text GetInterface() {
+	return """
+<frame posn="0 -90" id="Frame_Bottom">
+	<quad posn="-40 15 -2" sizen="80 30" style="Bgs1InRace" substyle="BgShadow"/>
+	<quad posn="-40 15 -1" sizen="80 30" style="Bgs1InRace" substyle="BgShadow"/>
+	<gauge posn="-170 17.5 -100" sizen="340 50" drawbg="0" color="000" ratio="1" id="Gauge_Glow"/>
+	<label posn="0 2 2" halign="center" valign="center2" style="TextValueSmallSm" textsize="1" text="$tThieves left"/>
+	<label posn="0 11.5 2" halign="center" style="TextRaceChrono" textsize="7" text="0" id="Label_ThievesCount"/>
+</frame>
+<script><!--
+{{{Manialink::Includes(["TextLib" => "TL", "MathLib" => "ML"])}}}
+
+#Const Colors ["000", "00F", "F00"]
+
+{{{Manialink::Animations(["EaseInOutCubic"])}}}
+
+main() {
+	declare Frame_Bottom <=> (Page.GetFirstChild("Frame_Bottom") as CMlFrame);
+	declare Label_ThievesCount <=> (Page.GetFirstChild("Label_ThievesCount") as CMlLabel);
+	declare Gauge_Glow <=> (Page.GetFirstChild("Gauge_Glow") as CMlGauge);
+	
+	declare LastTask = -1;
+	declare CurrentTask = 0;
+	
+	declare netread Integer Net_ThievesCount for Teams[0];
+	
+	while (True) {
+		yield;
+		LibManialink_AnimLoop();
+		
+		Frame_Bottom.Visible = (UI.UISequence == CUIConfig::EUISequence::Playing);
+		Label_ThievesCount.Value = TL::ToText(Net_ThievesCount);
+		
+		if (GUIPlayer != Null) {
+			CurrentTask = GUIPlayer.CurrentClan;
+		} else {
+			CurrentTask = 0;
+		}
+		
+		if (LastTask != CurrentTask) {
+			LastTask = CurrentTask;
+			LibManialink_Anim("<gauge color=\""^Colors[LastTask]^"\" id=\"Gauge_Glow\" />", 1000, "EaseInOutCubic");
+		}
+	}
+}
+--></script>
+	""";
+}

@@ -1,11 +1,11 @@
 // -------------------------------------- //
 //  PURSUIT by domino54                   //
-//  script version: 1.0.0                 //
+//  script version: 1.1.0                 //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/ModeBase.Script.txt"
 
-#Const	Version		"1.0.0"
+#Const	Version		"1.1.0"
 #Const	ScriptName	"Pursuit.Script.txt"
 
 #Include "MathLib" as MathLib
@@ -18,6 +18,7 @@
 // Settings
 // ---------------------------------- //
 #Setting S_TimeLimit 		600		as _("Time limit :")
+#Setting S_RoundsNb 		3		as _("Rounds number")
 #Setting S_SafePhaseTime	15		as _("Time before tossing first policeman")
 #Setting S_LastThiefTime	60		as _("Time limit when last thief remains")
 
@@ -28,11 +29,16 @@
 
 #Const Description "The $07FPolice$g must catch all $f00Thieves$g by driving through them.\nFirst policeman is randomly choosen at beginning."
 
-declare Boolean G_SafePhase;
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Boolean G_SafePhase;		///< Phase with no police
+declare Integer G_CurrentRound;		///< Nb of current round
 
 // ---------------------------------- //
 // Extend
 // ---------------------------------- //
+
 ***LogVersion***
 ***
 MB_LogVersion(ScriptName, Version);
@@ -41,21 +47,63 @@ MB_LogVersion(Manialink::GetScriptName(), Manialink::GetScriptVersion());
 MB_LogVersion(Message::GetScriptName(), Message::GetScriptVersion());
 ***
 
-***InitServer***
+// ---------------------------------- //
+// Create the scores table
+// ---------------------------------- //
+***ScoresTable***
 ***
-declare Integer PrevTimeLimit = S_TimeLimit;
-declare Integer StartTime;
+ST2::SetStyle("LibST_TMBaseSolo");
+ST2::SetStyle("LibST_TMBasePoints");
+ST2::SetStyle("LibST_TMWithLegends");
+
+ST2::SetPos(<0., 39.2, 20.>);
+ST2::SetSize(<72., -1.>, <177., -1.>, <170., -1.>);
+ST2::SetBackgroundProperties(<0., 5.>, <220., 100.>);
+ST2::SetFormat(2, 6);
+ST2::SetTextScale(.875);
+ST2::SetModeIcon("Icons128x32_1|RT_Team");
+ST2::SetPlayerDarkening(True);
+
+ST2::SetColWidth("LibST_Avatar", 2.5);
+ST2::SetColWidth("LibST_Tags", 0.);
+ST2::SetColWidth("LibST_ManiaStars", 2.5);
+ST2::SetColWidth("LibST_Tools", 1.5);
+
+// Columns
+ST2::CreateCol("Survival", _("Sv"), "", 2.5, 70.);
+ST2::CreateCol("Capture", _("Cap"), "", 2.5, 80.);
+ST2::CreateCol("Clan", _("Task"), "", 6., 90.);
+
+// Score points
+ST2::CreateCol("LibST_TMPoints", _("Score"), "0", 4., 100.);
+ST2::SetColTextAlign("LibST_TMPoints", CMlControl::AlignHorizontal::Right);
+ST2::SetColTextSize("LibST_TMPoints", 3.);
+ST2::SetColScript("LibST_TMPoints", """
+declare Score <=> (_Score as CTmScore);
+Label_Col.Value = TL::ToText(Score.Points);""");
+
+MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
+ST2::Build("TM");
 ***
 
+// ---------------------------------- //
+// Start server
+// ---------------------------------- //
 ***StartServer***
 ***
 // ---------------------------------- //
 // Initialize mode
-UseMinimap = True;
-PrevTimeLimit = S_TimeLimit;
+declare Integer PrevTimeLimit = S_TimeLimit;
+declare Integer StartTime;
 StartTime = -1;
 IndependantLaps = True;
 MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour::AlwaysGiveUp);
+MB_UseSectionRound = True;
+G_CurrentRound = 0;
+
+// ---------------------------------- //
+// Create scores table
++++ScoresTable+++
 
 // ---------------------------------- //
 // Initialize UI
@@ -68,73 +116,46 @@ UIManager.UIAll.OverlayHideOpponentsInfo = True;
 
 Layers::Create("Interface", GetInterface());
 Layers::Attach("Interface");
-
-// ---------------------------------- //
-// Create scores table
-ST2::SetStyle("LibST_TMBaseSolo");
-ST2::SetStyle("LibST_TMBasePoints");
-ST2::SetStyle("LibST_TMWithLegends");
-
-// ShootMania scoretable settings
-ST2::SetFormat(2, 6);
-ST2::SetTextScale(.875);
-ST2::SetModeIcon("Icons128x32_1|RT_Team");
-ST2::SetPos(<0., 39.2, 20.>);
-ST2::SetSize(<72., -1.>, <177., -1.>, <170., -1.>);
-ST2::SetPlayerDarkening(True);
-ST2::SetBackgroundProperties(<0., 5.>, <220., 100.>);
-
-ST2::SetColWidth("LibST_Avatar", 2.5);
-ST2::SetColWidth("LibST_Tags", 0.);
-ST2::SetColWidth("LibST_ManiaStars", 2.5);
-ST2::SetColWidth("LibST_Tools", 1.5);
-
-// Columns
-ST2::CreateCol("Survival", _("Sv"), "", 2.5, 80.);
-ST2::CreateCol("Capture", _("Cap"), "", 2.5, 90.);
-ST2::CreateCol("Clan", _("Task"), "", 6., 100.);
-
-// Score points
-ST2::CreateCol("LibST_TMPoints", _("Pts"), "0", 4., 110.);
-ST2::SetColTextAlign("LibST_TMPoints", CMlControl::AlignHorizontal::Right);
-ST2::SetColTextSize("LibST_TMPoints", 3.);
-ST2::SetColScript("LibST_TMPoints", """
-declare Score <=> (_Score as CTmScore);
-Label_Col.Value = TL::ToText(Score.Points);""");
-
-ST2::SetFooterText(TextLib::Compose("%1 "^TextLib::TimeToText(S_TimeLimit*1000, False), _("Time Limit :")));
-MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
-
-ST2::Build("TM");
 ***
 
-***InitMap***
+// ---------------------------------- //
+// Start map
+// ---------------------------------- //
+***StartMap***
 ***
 // ---------------------------------- //
 // Initialize scores
 Scores_Clear();
 ST2::ClearScores();
-***
+MB_Ladder_OpenMatch_All();
 
-***StartMap***
-***
 UseClans = True;
 UseForcedClans = True;
+
+declare Boolean SetLastThieve;
+declare Text PrevPolicemanLogin;
+***
+
 // ---------------------------------- //
-// Initialize map
-MB_Ladder_OpenMatch_All();
+// Start round
+// ---------------------------------- //
+***StartRound***
+***
 Users_SetNbFakeUsers(C_BotsNb, 0);
 G_SafePhase = True;
+G_CurrentRound += 1;
+
+SetLastThieve = False;
+PrevPolicemanLogin = "";
+
+WaitForPlayers(2);
 
 foreach (Score in Scores) {
-	Score.Points = 0;
 	declare Integer PointsSurvival for Score;
 	PointsSurvival = 0;
 	declare Integer PointsCapture for Score;
 	PointsCapture = 0;
 }
-
-WaitForPlayers(2);
 
 // ---------------------------------- //
 // Initialize race
@@ -142,37 +163,33 @@ StartTime = Now + S_SafePhaseTime * 1000 + 3000;
 SetTimeLimit(StartTime, S_TimeLimit);
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 
-UIManager.UIAll.AlliesLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
-
 foreach (Player in Players) {
 	SetPlayerClan(Player, 2);
 	ST2::SetPlayerColor(Player.Score, Teams[Player.CurrentClan-1].ColorPrimary);
-	
 	declare Boolean RespawnRequested for Player;
 	RespawnRequested = False;
 }
 
-declare Boolean SetLastThieve;
-SetLastThieve = False;
-declare Text PrevPolicemanLogin;
-PrevPolicemanLogin = "";
+ST2::SetFooterText(TextLib::Compose("Round %1 / %2", TextLib::ToText(G_CurrentRound), TextLib::ToText(S_RoundsNb)));
 
 // ---------------------------------- //
 // New map sound
-Message::SendStatusMessage(_("Drive far away!"), S_SafePhaseTime * 1000 + 3000, 1, CUIConfig::EUISound::StartRound, 0);
+Message::SendStatusMessage(_("Drive far away!"), S_SafePhaseTime * 1000 + 3000, 1);
+Message::SendBigMessage(TextLib::Compose(_("Round %1 / %2"), TextLib::ToText(G_CurrentRound), TextLib::ToText(S_RoundsNb)), 3000, 1);
 ***
 
+// ---------------------------------- //
+// Global loop
+// ---------------------------------- //
 ***Yield***
 ***
 declare netwrite Integer Net_ThievesCount for Teams[0];
 Net_ThievesCount = ClansNbPlayers[2];
-
-foreach (Spectator in Spectators) {
-	ST2::SetPlayerColor(Spectator.Score, <0., 0., 0.>);
-	ST2::SetColValue("Clan", Spectator.Score, "$BBB"^"Spec.");
-}
 ***
 
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
 ***PlayLoop***
 ***
 G_SafePhase = (Now <= StartTime);
@@ -208,7 +225,9 @@ foreach (Event in PendingEvents) {
 // ---------------------------------- //
 // Set new policeman
 if (!G_SafePhase && ClansNbPlayers[1] == 0) {
-	declare NewPoliceman = Players[MathLib::Rand(0, Players.count - 1)];
+	declare CTmPlayer NewPoliceman;
+	NewPoliceman = Players[MathLib::Rand(0, Players.count - 1)];
+	
 	TM2::WaitRace(NewPoliceman);
 	SetPlayerClan(NewPoliceman, 1);
 	
@@ -322,11 +341,14 @@ if (ClansNbPlayers[2] == 1 && !SetLastThieve) {
 // ---------------------------------- //
 // End the map when time limit is reached
 if ((CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) || (!G_SafePhase && ClansNbPlayers[2] == 0)) {
-	MB_StopMap = True;
+	MB_StopRound = True;
 }
 ***
 
-***EndMap***
+// ---------------------------------- //
+// Round end
+// ---------------------------------- //
+***EndRound***
 ***
 TM2::WaitRaceAll();
 
@@ -335,25 +357,41 @@ switch (ClansNbPlayers[2]) {
 		foreach (Player in Players) {
 			if (Player.CurrentClan == 2) {
 				Player.Score.Points += 5;
-				Message::SendBigMessage(TextLib::Compose(_("$<%1$> has fled!"), Player.Name), 4000, 1);
+				Message::SendBigMessage(TextLib::Compose(_("$<%1$> wins the round!"), Player.Name), 5000, 1);
 			}
 		}
 	}
 	case 0 : {
-		Message::SendBigMessage(_("All thieves caught!"), 4000, 1);
+		Message::SendBigMessage(_("All thieves caught!"), 5000, 1);
 	}
 	default : {
-		Message::SendBigMessage(_("Thieves have fled!"), 4000, 1);
+		Message::SendBigMessage(_("Thieves have fled!"), 5000, 1);
+		foreach (Player in Players) {
+			if (Player.CurrentClan == 2) {
+				Player.Score.Points += 2;
+			}
+		}
 	}
 }
+
+Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
 
 foreach (Player in Players) {
 	SetPlayerClan(Player, 0);
 }
 
+MB_Sleep(5000);
+Message::CleanAllMessages();
+if (G_CurrentRound >= S_RoundsNb) MB_StopMap = True;
+***
+
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+***EndMap***
+***
 // ---------------------------------- //
 // Close ladder
-Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
 Ladder_ComputeRank(CTmMode::ETmScoreSortOrder::TotalPoints);
 MB_Ladder_CloseMatch();
 
@@ -363,10 +401,16 @@ if (Scores.existskey(0) && Scores[0].Points > 0) {
 
 UseClans = False;
 UseForcedClans = False;
+***
 
-MB_Sleep(6000);
-
-Message::CleanAllMessages();
+// ---------------------------------- //
+// End server
+// ---------------------------------- //
+***EndServer***
+***
+Layers::Detach("Interface");
+Layers::Destroy("Interface");
+UIManager.ResetAll();
 ***
 
 // ---------------------------------- //
@@ -415,10 +459,8 @@ Void CatchThief(CTmPlayer _Policeman, CTmPlayer _Thief) {
 Void SetTimeLimit(Integer _StartTime, Integer _NewTimeLimit) {
 	if (_NewTimeLimit <= 0) {
 		CutOffTimeLimit = -1;
-		ST2::SetFooterText(TextLib::Compose("%1 -", _("Time Limit :")));
 	} else {
 		CutOffTimeLimit = _StartTime + (S_TimeLimit * 1000);
-		ST2::SetFooterText(TextLib::Compose("%1 "^TextLib::TimeToText(S_TimeLimit*1000, False), _("Time Limit :")));
 	}
 }
 

@@ -1,11 +1,11 @@
 // -------------------------------------- //
 //  PURSUIT by domino54                   //
-//  script version: 1.1.0                 //
+//  script version: 1.0.0                 //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/ModeBase.Script.txt"
 
-#Const	Version		"1.1.0"
+#Const	Version		"1.0.0"
 #Const	ScriptName	"Pursuit.Script.txt"
 
 #Include "MathLib" as MathLib
@@ -27,7 +27,7 @@
 // ---------------------------------- //
 #Const C_BotsNb 0
 
-#Const Description "The $07FPolice$g must catch all $f00Thieves$g by driving through them.\nFirst policeman is randomly choosen at beginning."
+#Const Description "1. The $07FPolice$g must catch all $f00Thieves$g by driving through them.\n2. First policeman is randomly choosed at beginning.\n3. TrackMania has little display delay, so not all catches may be detected."
 
 // ---------------------------------- //
 // Global variables
@@ -99,7 +99,6 @@ StartTime = -1;
 IndependantLaps = True;
 MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour::AlwaysGiveUp);
 MB_UseSectionRound = True;
-G_CurrentRound = 0;
 
 // ---------------------------------- //
 // Create scores table
@@ -113,6 +112,8 @@ UIManager.UIAll.OverlayHidePersonnalBestAndRank = True;
 UIManager.UIAll.OverlayHideCheckPointTime = True;
 UIManager.UIAll.OverlayHideCheckPointList = True;
 UIManager.UIAll.OverlayHideOpponentsInfo = True;
+UIManager.UIAll.OverlayHideSpectatorControllers = True;
+UIManager.UIAll.OverlayHideSpectatorInfos = True;
 
 Layers::Create("Interface", GetInterface());
 Layers::Attach("Interface");
@@ -128,6 +129,7 @@ Layers::Attach("Interface");
 Scores_Clear();
 ST2::ClearScores();
 MB_Ladder_OpenMatch_All();
+G_CurrentRound = 0;
 
 UseClans = True;
 UseForcedClans = True;
@@ -141,6 +143,7 @@ declare Text PrevPolicemanLogin;
 // ---------------------------------- //
 ***StartRound***
 ***
+ST2::ClearScores();
 Users_SetNbFakeUsers(C_BotsNb, 0);
 G_SafePhase = True;
 G_CurrentRound += 1;
@@ -477,8 +480,34 @@ Void WaitForPlayers(Integer _Count) {
 		
 		UIManager.UIAll.BigMessage = _("Waiting for players...");
 		UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
-		UIManager.UIAll.UISequence = CUIConfig::EUISequence::RollingBackgroundIntro;
+		
+		// ---------------------------------- //
+		// Spawn players
+		foreach (Player in Players) {
+			if (TM2::IsWaiting(Player)) {
+				TM2::StartRace(Player);
+			}
+		}
+		
+		// ---------------------------------- //
+		// Manage events
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// Waypoint
+			if (Event.Type == CTmModeEvent::EType::WayPoint) {
+				if (Event.IsEndRace) TM2::WaitRace(Event.Player);
+				Discard(Event);
+			}
+			// ---------------------------------- //
+			// GiveUp
+			else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+				TM2::WaitRace(Event.Player);
+				PassOn(Event);
+			}
+		}
 	}
+	
+	TM2::WaitRaceAll();
 	
 	UIManager.UIAll.BigMessage = _("New player joined the game");
 	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Default;

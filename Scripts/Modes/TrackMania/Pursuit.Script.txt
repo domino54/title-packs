@@ -18,14 +18,14 @@
 // Settings
 // ---------------------------------- //
 #Setting S_TimeLimit 		600		as _("Time limit :")
-#Setting S_RoundsNb 		3		as _("Rounds number")
-#Setting S_SafePhaseTime	15		as _("Time before tossing first policeman")
-#Setting S_LastThiefTime	60		as _("Time limit when last thief remains")
+#Setting S_RoundsNb 		3		as _("Rounds per map :")
+#Setting S_SafePhaseTime	15		as _("Time before tossing first policeman:")
+#Setting S_LastThiefTime	90		as _("Time limit when last thief remains:")
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_BotsNb 0
+#Const C_BotsNb 10
 
 #Const Description "1. The $07FPolice$g must catch all $f00Thieves$g by driving through them.\n2. First policeman is randomly choosed at beginning.\n3. TrackMania has little display delay, so not all catches may be detected."
 
@@ -106,7 +106,9 @@ MB_UseSectionRound = True;
 
 // ---------------------------------- //
 // Initialize UI
-UIManager.UIAll.OverlayHideChrono = True;
+UiRaceChrono = CTmMode::ETmRaceChronoBehaviour::Hidden;
+UiDisplayStuntsNames = True;
+
 UIManager.UIAll.OverlayHideMultilapInfos = True;
 UIManager.UIAll.OverlayHidePersonnalBestAndRank = True;
 UIManager.UIAll.OverlayHideCheckPointTime = True;
@@ -114,6 +116,12 @@ UIManager.UIAll.OverlayHideCheckPointList = True;
 UIManager.UIAll.OverlayHideOpponentsInfo = True;
 UIManager.UIAll.OverlayHideSpectatorControllers = True;
 UIManager.UIAll.OverlayHideSpectatorInfos = True;
+
+UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+UIManager.UIAll.TeamLabelsShowNames = CUIConfig::EVisibility::ForcedVisible;
+
+UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+UIManager.UIAll.OpposingTeamLabelsShowNames = CUIConfig::EVisibility::ForcedVisible;
 
 Layers::Create("Interface", GetInterface());
 Layers::Attach("Interface");
@@ -222,6 +230,11 @@ foreach (Event in PendingEvents) {
 		} else {
 			PassOn(Event);
 		}
+	}
+	// ---------------------------------- //
+	// Other
+	else {
+		PassOn(Event);
 	}
 }
 
@@ -504,6 +517,11 @@ Void WaitForPlayers(Integer _Count) {
 				TM2::WaitRace(Event.Player);
 				PassOn(Event);
 			}
+			// ---------------------------------- //
+			// Other
+			else {
+				PassOn(Event);
+			}
 		}
 	}
 	
@@ -521,11 +539,11 @@ Void WaitForPlayers(Integer _Count) {
 Text GetInterface() {
 	return """
 <frame posn="0 -90" id="Frame_Bottom">
-	<quad posn="-40 15 -2" sizen="80 30" style="Bgs1InRace" substyle="BgShadow"/>
-	<quad posn="-40 15 -1" sizen="80 30" style="Bgs1InRace" substyle="BgShadow"/>
-	<gauge posn="-170 17.5 -100" sizen="340 50" drawbg="0" color="000" ratio="1" id="Gauge_Glow"/>
-	<label posn="0 2 2" halign="center" valign="center2" style="TextValueSmallSm" textsize="1" text="$tThieves left"/>
-	<label posn="0 11.5 2" halign="center" style="TextRaceChrono" textsize="7" text="0" id="Label_ThievesCount"/>
+	<quad sizen="50 50" halign="center" valign="center" style="Bgs1InRace" substyle="BgShadow"/>
+	<quad sizen="50 50" halign="center" valign="center" style="Bgs1InRace" substyle="BgShadow"/>
+	<gauge posn="0 17.5 -60" halign="center" sizen="330 50" drawbg="0" color="000" ratio="1" id="Gauge_Glow"/>
+	<label posn="0 1.75 2" halign="center" valign="center2" style="TextValueSmallSm" textsize="1" text="$tThieves left"/>
+	<label posn="0 2 2" halign="center" valign="bottom" style="TextRaceChrono" textsize="7" text="0" id="Label_ThievesCount"/>
 </frame>
 <script><!--
 {{{Manialink::Includes(["TextLib" => "TL", "MathLib" => "ML"])}}}

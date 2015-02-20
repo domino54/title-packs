@@ -1,11 +1,11 @@
 // -------------------------------------- //
 //  PURSUIT by domino54                   //
-//  script version: 1.0.0                 //
+//  script version: 1.2.0                 //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/ModeBase.Script.txt"
 
-#Const	Version		"1.0.0"
+#Const	Version		"1.2.0"
 #Const	ScriptName	"Pursuit.Script.txt"
 
 #Include "MathLib" as MathLib
@@ -17,23 +17,37 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_TimeLimit 		600		as _("Time limit :")
-#Setting S_RoundsNb 		3		as _("Rounds per map :")
-#Setting S_SafePhaseTime	15		as _("Time before tossing first policeman:")
-#Setting S_LastThiefTime	90		as _("Time limit when last thief remains:")
+#Setting S_TimeLimit 			600		as _("Time limit :")
+#Setting S_RoundsNb 			3		as _("Rounds per map :")
+#Setting S_SafePhaseTime		15		as _("Time before tossing first policeman:")
+#Setting S_LastThiefTime		90		as _("Time limit when last thief remains:")
+#Setting S_LabelsVisibility		True	as _("Player names visible through walls:")
+#Setting S_NbFakePlayers		0		as _("Number of fake players (bots)")
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_BotsNb 0
-
 #Const Description "1. The $07FPolice$g must catch all $f00Thieves$g by driving through them.\n2. First policeman is randomly choosed at beginning.\n3. TrackMania has little display delay, so not all catches may be detected."
+
+#Const C_ModeStatusMessage _("TYPE: Free for all\nOBJECTIVE: The $07FPolice$g must catch all $F00Thieves$g.")
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
 declare Boolean G_SafePhase;		///< Phase with no police
 declare Integer G_CurrentRound;		///< Nb of current round
+
+/*
++ Displayed stunt names
++ Improved bottom UI
++ Added mode status message like in SM
++ Reduced display delay
++ ILabels setting: visible through walls
++ Added bots number setting
++ Longer time limit on last thief
++ Scores reset before map is loaded
++ Manual replay management: record whole game
+*/
 
 // ---------------------------------- //
 // Extend
@@ -87,18 +101,31 @@ ST2::Build("TM");
 ***
 
 // ---------------------------------- //
+// Init server
+// ---------------------------------- //
+***InitServer***
+***
+declare Integer PrevTimeLimit = S_TimeLimit;
+declare Integer StartTime;
+***
+
+// ---------------------------------- //
 // Start server
 // ---------------------------------- //
 ***StartServer***
 ***
-// ---------------------------------- //
-// Initialize mode
-declare Integer PrevTimeLimit = S_TimeLimit;
-declare Integer StartTime;
+MB_UseSectionRound = True;
+
+// Boost netcode
+UiLaps = True;
+UiRounds = True;
+
+// Mode variables
+MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour::AlwaysGiveUp);
 StartTime = -1;
 IndependantLaps = True;
-MB_SetDefaultRespawnMode(CTmMode::ETMRespawnBehaviour::AlwaysGiveUp);
-MB_UseSectionRound = True;
+Replay_AutoStart = False;
+ModeStatusMessage = C_ModeStatusMessage;
 
 // ---------------------------------- //
 // Create scores table
@@ -117,14 +144,24 @@ UIManager.UIAll.OverlayHideOpponentsInfo = True;
 UIManager.UIAll.OverlayHideSpectatorControllers = True;
 UIManager.UIAll.OverlayHideSpectatorInfos = True;
 
-UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
 UIManager.UIAll.TeamLabelsShowNames = CUIConfig::EVisibility::ForcedVisible;
-
-UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
 UIManager.UIAll.OpposingTeamLabelsShowNames = CUIConfig::EVisibility::ForcedVisible;
 
+// Create interface
 Layers::Create("Interface", GetInterface());
 Layers::Attach("Interface");
+***
+
+// ---------------------------------- //
+// Init map
+// ---------------------------------- //
+***InitMap***
+***
+declare Boolean SetLastThieve;
+declare Text PrevPolicemanLogin;
+declare Boolean PrevLabelsSetting;
+Scores_Clear();
+ST2::ClearScores();
 ***
 
 // ---------------------------------- //
@@ -132,18 +169,11 @@ Layers::Attach("Interface");
 // ---------------------------------- //
 ***StartMap***
 ***
-// ---------------------------------- //
-// Initialize scores
-Scores_Clear();
-ST2::ClearScores();
 MB_Ladder_OpenMatch_All();
 G_CurrentRound = 0;
 
 UseClans = True;
 UseForcedClans = True;
-
-declare Boolean SetLastThieve;
-declare Text PrevPolicemanLogin;
 ***
 
 // ---------------------------------- //
@@ -152,7 +182,7 @@ declare Text PrevPolicemanLogin;
 ***StartRound***
 ***
 ST2::ClearScores();
-Users_SetNbFakeUsers(C_BotsNb, 0);
+Users_SetNbFakeUsers(S_NbFakePlayers, 0);
 G_SafePhase = True;
 G_CurrentRound += 1;
 
@@ -181,12 +211,17 @@ foreach (Player in Players) {
 	RespawnRequested = False;
 }
 
-ST2::SetFooterText(TextLib::Compose("Round %1 / %2", TextLib::ToText(G_CurrentRound), TextLib::ToText(S_RoundsNb)));
+ST2::SetFooterText(TextLib::Compose(_("Round %1"), TextLib::ToText(G_CurrentRound)^" / "^TextLib::ToText(S_RoundsNb)));
+Replay_Start();
+
+PrevLabelsSetting = True;
+UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::Always;
+UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::Always;
 
 // ---------------------------------- //
 // New map sound
 Message::SendStatusMessage(_("Drive far away!"), S_SafePhaseTime * 1000 + 3000, 1);
-Message::SendBigMessage(TextLib::Compose(_("Round %1 / %2"), TextLib::ToText(G_CurrentRound), TextLib::ToText(S_RoundsNb)), 3000, 1);
+Message::SendBigMessage(TextLib::Compose(_("Round %1"), TextLib::ToText(G_CurrentRound)^" / "^TextLib::ToText(S_RoundsNb)), 3000, 1);
 ***
 
 // ---------------------------------- //
@@ -333,6 +368,8 @@ foreach (Player in Players) {
 		Message::SendStatusMessage(Player, ""^1+(RespawnRequestTime-Now)/1000, 1000, 0);
 		if (Now >= RespawnRequestTime) {
 			RespawnRequested = False;
+			declare Integer ThiefImmuneTime for Player;
+			ThiefImmuneTime = Now + 6000;
 			TM2::WaitRace(Player);
 			Message::SendStatusMessage(Player, _("Respawned!"), 4000, 0);
 		}
@@ -355,6 +392,19 @@ if (ClansNbPlayers[2] == 1 && !SetLastThieve) {
 }
 
 // ---------------------------------- //
+// Update labels visibility
+if (PrevLabelsSetting != S_LabelsVisibility) {
+	PrevLabelsSetting = S_LabelsVisibility;
+	if (S_LabelsVisibility) {
+		UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::Always;
+		UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::Always;
+	} else {
+		UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+		UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+	}
+}
+
+// ---------------------------------- //
 // End the map when time limit is reached
 if ((CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) || (!G_SafePhase && ClansNbPlayers[2] == 0)) {
 	MB_StopRound = True;
@@ -367,6 +417,7 @@ if ((CutOffTimeLimit > 0 && Now >= CutOffTimeLimit) || (!G_SafePhase && ClansNbP
 ***EndRound***
 ***
 TM2::WaitRaceAll();
+Replay_Stop();
 
 switch (ClansNbPlayers[2]) {
 	case 1 : {
@@ -397,6 +448,7 @@ foreach (Player in Players) {
 }
 
 MB_Sleep(5000);
+
 Message::CleanAllMessages();
 if (G_CurrentRound >= S_RoundsNb) MB_StopMap = True;
 ***
@@ -445,6 +497,9 @@ Void CatchThief(CTmPlayer _Policeman, CTmPlayer _Thief) {
 	declare Integer PoliceImmuneTime for _Policeman;
 	if (Now < PoliceImmuneTime) return;
 	
+	declare Integer ThiefImmuneTime for _Thief;
+	if (Now < ThiefImmuneTime) return;
+	
 	TM2::WaitRace(_Thief);
 	SetPlayerClan(_Thief, 1);
 	
@@ -466,12 +521,18 @@ Void CatchThief(CTmPlayer _Policeman, CTmPlayer _Thief) {
 			ST2::SetColValue("Survival", Player.Score, TextLib::ToText(PointsSurvival));
 		}
 	}
-		
-	Message::SendStatusMessage(TextLib::Compose(_("$<%1$> has caught $<%2$>!"), _Policeman.Name, _Thief.Name), 4000, 1, CUIConfig::EUISound::Default, 0);
+	
+	Message::SendStatusMessage(TextLib::Compose(_("$<%1$> has caught $<%2$>"), _Policeman.Name, _Thief.Name), 4000, 1);
 	
 	Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
 }
 
+// ---------------------------------- //
+/** Set new time limit
+ *
+ *	@param	_StartTime		Game start time
+ *	@param	_NewTimeLimit	New time limit
+ */
 Void SetTimeLimit(Integer _StartTime, Integer _NewTimeLimit) {
 	if (_NewTimeLimit <= 0) {
 		CutOffTimeLimit = -1;
@@ -536,12 +597,19 @@ Void WaitForPlayers(Integer _Count) {
 	UIManager.UIAll.SpectatorForcedTarget = NullId;
 }
 
+// ---------------------------------- //
+/** Get interface layer
+ *
+ *	@return		Created text interface
+ */
 Text GetInterface() {
-	return """
-<frame posn="0 -90" id="Frame_Bottom">
+	declare Text OutputManialink;
+	
+	OutputManialink = """
+<manialink version="2" name="Pursuit:Interface">
+<frame posn="0 -90" id="Frame_Bottom" hidden="1">
 	<quad sizen="50 50" halign="center" valign="center" style="Bgs1InRace" substyle="BgShadow"/>
-	<quad sizen="50 50" halign="center" valign="center" style="Bgs1InRace" substyle="BgShadow"/>
-	<gauge posn="0 17.5 -60" halign="center" sizen="330 50" drawbg="0" color="000" ratio="1" id="Gauge_Glow"/>
+	<gauge posn="0 17.5 -60" halign="center" sizen="328 50" drawbg="0" color="000" ratio="1" id="Gauge_Glow"/>
 	<label posn="0 1.75 2" halign="center" valign="center2" style="TextValueSmallSm" textsize="1" text="$tThieves left"/>
 	<label posn="0 2 2" halign="center" valign="bottom" style="TextRaceChrono" textsize="7" text="0" id="Label_ThievesCount"/>
 </frame>
@@ -550,37 +618,73 @@ Text GetInterface() {
 
 #Const Colors ["000", "00F", "F00"]
 
-{{{Manialink::Animations(["EaseInOutCubic"])}}}
+// ---------------------------------- //
+// Start manialink
+// ---------------------------------- //
+***StartManialink***
+***
+// UI elements
+declare Frame_Bottom <=> (Page.GetFirstChild("Frame_Bottom") as CMlFrame);
+declare Label_ThievesCount <=> (Page.GetFirstChild("Label_ThievesCount") as CMlLabel);
+declare Gauge_Glow <=> (Page.GetFirstChild("Gauge_Glow") as CMlGauge);
 
+// Net variables
+declare netread Integer Net_ThievesCount for Teams[0];
+
+// Mode variables
+declare CurrentTask = 0;
+declare Last_Task = -1;
+declare Last_ThievesCount = -1;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+Frame_Bottom.Visible = (UI.UISequence == CUIConfig::EUISequence::Playing);
+
+if (GUIPlayer != Null) {
+	CurrentTask = GUIPlayer.CurrentClan;
+} else {
+	CurrentTask = 0;
+}
+
+if (Last_Task != CurrentTask) {
+	Last_Task = CurrentTask;
+	LibManialink_Anim("<gauge color=\""^Colors[Last_Task]^"\" id=\"Gauge_Glow\" />", 750, "EaseInOutSine");
+}
+
+if (Last_ThievesCount != Net_ThievesCount) {
+	Last_ThievesCount = Net_ThievesCount;
+	
+	Label_ThievesCount.SetText(TL::ToText(Net_ThievesCount));
+	
+	LibManialink_Anim("<label scale=\"1.25\" textcolor=\"F00\" id=\"Label_ThievesCount\" />", 500, "EaseInOutCirc");
+	LibManialink_AnimInsert("<label scale=\"1\" textcolor=\"FFF\" id=\"Label_ThievesCount\" />", 500, 500, "EaseInOutCirc");
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+{{{Manialink::Animations(["EaseInOutSine", "EaseInOutCirc"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
 main() {
-	declare Frame_Bottom <=> (Page.GetFirstChild("Frame_Bottom") as CMlFrame);
-	declare Label_ThievesCount <=> (Page.GetFirstChild("Label_ThievesCount") as CMlLabel);
-	declare Gauge_Glow <=> (Page.GetFirstChild("Gauge_Glow") as CMlGauge);
-	
-	declare LastTask = -1;
-	declare CurrentTask = 0;
-	
-	declare netread Integer Net_ThievesCount for Teams[0];
-	
+	+++StartManialink+++
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		
-		Frame_Bottom.Visible = (UI.UISequence == CUIConfig::EUISequence::Playing);
-		Label_ThievesCount.Value = TL::ToText(Net_ThievesCount);
-		
-		if (GUIPlayer != Null) {
-			CurrentTask = GUIPlayer.CurrentClan;
-		} else {
-			CurrentTask = 0;
-		}
-		
-		if (LastTask != CurrentTask) {
-			LastTask = CurrentTask;
-			LibManialink_Anim("<gauge color=\""^Colors[LastTask]^"\" id=\"Gauge_Glow\" />", 1000, "EaseInOutCubic");
-		}
+		+++Yield+++
 	}
 }
 --></script>
+</manialink>
 	""";
+	
+	return OutputManialink;
 }

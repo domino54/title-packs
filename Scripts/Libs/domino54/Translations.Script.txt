@@ -1,490 +1,26 @@
 // -------------------------------------- //
 //  TRANSLATIONS LIB by domino54          //
-//  script version: 1.0                   //
+//  script version: 2015-03-08            //
 // -------------------------------------- //
 
-#Const Version		"2014-08-21"
-#Const ScriptName	"Translations.Script.txt"
+/**
+ *	This library can be used to display translated
+ *	messages, if they exists in SentenceBank lib.
+ */
 
-#Include "TextLib" as TL
+#Const Version			"2015-03-08"
+#Const ScriptName		"Translations.Script.txt"
+
+#Include "TextLib" as TextLib
 #Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/domino54/SentenceBank.Script.txt" as SentenceBank
 
-// ---------------------------------- //
-// Constants
-// ---------------------------------- //
-#Const C_NoTranslationMsg "<no translation>"
-
-#Const C_DefaultPrefixColor		<.4, .7, 1.>
-#Const C_DefaultMessageColor	<1., 1., 1.>
-
-#Const C_TranslationAuthors [
-	"dutch"	=> ["erwin1234"],
-	"french" => ["doryt", "fleo"],
-	"german" => ["tombuilder", "tm-jinzo", "cartoonlink"],
-	"polish" => ["domino54"]
-]
-
-// ---------------------------------- //
-// Global variables
-// ---------------------------------- //
-declare Text[]	G_LibTranslations_EmptyTextArray;	///< Used to fill when composes are skipped
-declare Vec3	G_LibTranslations_PrefixColor;		///< Color of arrow quote mark in chat
-declare Vec3	G_LibTranslations_MessageColor;		///< Color of chat message
+#Const C_ErrorMessage		"$F00Translation error!"	///< Something went wrong while translating
+#Const C_DefaultChatPrefix	"$777» $FFF"				///< Default chat message prefix
 
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
-
-// ---------------------------------- //
-// Private
-// ---------------------------------- //
-
-// ---------------------------------- //
-/** Get Dutch translation
- *
- *	@param	_Ident		Message index
- *
- *	@return		Translated message
- */
-Text Private_GetMessage_Language(Integer _Ident) {
-	declare Text TranslatedMessage;
-	
-	// List of dutch translations
-	declare SentenceBank_Dutch = [
-		0 => "$<%1$> heeft de Hongerspelen gewonnen!",
-		1 => "$<%1$> probeerde de arena te verlaten.",
-		2 => "$<%1$> heeft het wapendoos gevonden!",
-		3 => "$<%1$> heeft het wapendoos laten vallen!",
-		4 => "$<%1$> heeft het wapendoos opgepakt!",
-		5 => "Kritiek geraakt!",
-		6 => "Kritieke schade",
-		7 => "Overgebleven Tributen: %1",
-		8 => "Je kan niet respawnen in de Hongerspelen.",
-		9 => "Respawnen...",
-		10 => "Respawn geblokkeerd",
-		11 => "Succesvol gerespawned!",
-		12 => "Jij",
-		13 => "Hoorn van Overvloed",
-		14 => "Doos",
-		15 => "Kikkers",
-		16 => "Pantserpunten",
-		17 => "Karaktersnelheid",
-		18 => "Herlaadsnelheid",
-		19 => "Stamina regeneratie",
-		20 => "Kans op kritiek geraakt",
-		21 => "Kies je karakter",
-		22 => "Wapens",
-		23 => "Omschrijving",
-		24 => "Druk op %1 om de minimap te sluiten",
-		25 => "Ren naar de paal om je wapens te activeren!",
-		26 => "Je bent geëlimineerd, om opnieuw te spelen, wacht je tot de volgende map. Veel Geluk!",
-		27 => "Je hebt het wapendoos gevonden!",
-		28 => "Je hebt het wapendoos gevonden, je kan nu %1 torpedo's afvuren, gebruik je minutie zuinig!",
-		29 => "Je hebt het wapendoos laten vallen.",
-		30 => "Je hebt het wapendoos laten vallen! Je kan het niet meer oppakken, maar een ander kan dat wel!",
-		31 => "Compleet gezond",
-		32 => "Je kan geen pantser oppakken als je al het maximum aantal pantsers hebt!",
-		33 => "Batterijenkaart",
-		34 => "Basis gele kaarten verhogen je herlaadsnelheid met 5% en staminaregeneratie met 10%.",
-		35 => "Wapenkaart",
-		36 => "Paarse wapenkaarten geven je een kogel aan een willekeurig wapen.",
-		37 => "Je hebt het maximale aantal wapens bereikt!",
-		38 => "Minibatterij",
-		39 => "Rode minibatterijen halen een punt van je pantsers weg, maar geven je twee keer zo veel als gele minibatterijen.",
-		40 => "Je hebt niet genoeg pantser om deze kaart op te pakken!",
-		41 => "Pantserbatterij",
-		42 => "Met roze kaarten kan je pantsers helen wanneer je wilt. Druk op %1 om pantsers te hervullen.",
-		43 => "Je hebt het maximale aantal Pantserbatterijen bereikt!",
-		44 => "Gouden Kristal",
-		45 => "De Gouden Kristal verhoogd je maximale snelheid met 5%.",
-		46 => "Het standaard karakter kan geen gouden kristallen gebruiken!",
-		47 => "Kan niet oppakken, je hebt de maximale snelheid bereikt!",
-		48 => "Benzinekristal",
-		49 => "Het benzinekristal verhoogd je kritieke kans met 0.5%.",
-		50 => "Kan niet oppakken, je hebt de maximale kritieke kans bereikt!",
-		51 => "Geëlimineerd!",
-		52 => "Kritiek raak doet twee keer zo veel schade als normaal!",
-		53 => "Raak de paal aan!",
-		54 => "Je moet de paal aanraken voor je een kaart kan oppakken!",
-		55 => "$<%1$> doet mee met de spelen.",
-		56 => "De tijd om mee te doen is afgelopen, wacht tot de volgende ronde.",
-		57 => "Kikkers zijn gespawned."
-	];
-	
-	if (SentenceBank_Dutch.existskey(_Ident)) {
-		TranslatedMessage = SentenceBank_Dutch[_Ident];
-	} else {
-		// Message if sentence not found
-		TranslatedMessage = C_NoTranslationMsg;
-	}
-	
-	return TranslatedMessage;
-}
-
-// ---------------------------------- //
-/** Get french translation
- *
- *	@param	_Ident		Message index
- *
- *	@return		Translated message
- */
-Text Private_GetMessage_French(Integer _Ident) {
-	declare Text TranslatedMessage;
-	
-	// List of french translations
-	declare SentenceBank_French = [
-		0 => "$<%1$> gagne les Hunger Games !",
-		1 => "$<%1$> a tenté de s'échapper de l'arène.",
-		2 => "$<%1$> a trouvé la Caisse d'Armes !",
-		3 => "$<%1$> a lâché la Caisse d'Armes !",
-		4 => "$<%1$> a ramassé la Caisse d'Armes !",
-		5 => "Coup critique!",
-		6 => "Dégâts critiques",
-		7 => "Survivants restants : %1",
-		8 => "Vous ne pouvez pas réapparaître dans Hunger Games.",
-		9 => "Réapparition...",
-		10 => "Réapparition refusé",
-		11 => "Réapparu avec succès !",
-		12 => "Vous",
-		13 => "Corne d'abondance",
-		14 => "Caisse d'Armes",
-		15 => "Toads",
-		16 => "Points d'Armures",
-		17 => "Vitesse de déplacement",
-		18 => "Vitesse de rechargement des Munitions",
-		19 => "Vitesse de rechargement de la Stamina",
-		20 => "Chance critique",
-		21 => "Choisissez votre personnage",
-		22 => "Armes",
-		23 => "Description",
-		24 => "Appuyez sur %1 pour fermer la carte",
-		25 => "Courez vers le pôle pour attraper une arme !",
-		26 => "Vous avez été éliminé. Merci d'attendre la prochaine partie pour rejouer. Bonne chance pour la prochaine fois !",
-		27 => "Vous avez trouvé la Caisse d'Armes",
-		28 => "Vous avez trouvé la Caisse d'Armes ! Vous pouvez tirer jusqu'à %1 torpilles à tête chercheuse mais ne les gaspillez pas !",
-		29 => "Caisse d'Armes relâchée",
-		30 => "Vous avez relâché la Caisse d'Armes. Vous ne pouvez plus la ramasser cependant quelqu'un d'autre peut le faire !",
-		31 => "Points d'Armures entièrement rechargés",
-		32 => "Vous ne pouvez pas ramasser de points d'Armures si votre jauge est déjà pleine.",
-		33 => "Carte de Recharge",
-		34 => "Les cartes jaunes de base accroîent de 5% la vitesse de rechargement des Munitions et de 10% celle de la stamina.",
-		35 => "Carte d'Arme",
-		36 => "Les cartes violettes vous octroient aléatoirement l'une des armes choisies.",
-		37 => "Vous possédez le nombre maximum d'armes autorisé !",
-		38 => "Carte de Mini-Recharge",
-		39 => "Les cartes rouges vous retirent un point d'Armure en échange d'une amélioration équivalente à 2 cartes de Recharge (jaunes).",
-		40 => "Vous n'avez pas assez de points d'Armures pour ramasser cette carte !",
-		41 => "Carte Replie",
-		42 => "Les cartes roses vous permettent de récupérer un point d'Armure à tout moment. Appuyez sur %1 pour l'utiliser.",
-		43 => "Vous possédez le nombre maximum de Replies autorisé !",
-		44 => "Cristal d'Or",
-		45 => "Le Cristal d'Or accroît votre vitesse de déplacement de 5%.",
-		46 => "Le personnage par défaut ne peut pas utiliser les Cristaux d'Or !",
-		47 => "Vous avez atteint la vitesse maximale autorisée ! Vous ne pouvez plus en ramasser.",
-		48 => "Cristal de Carburant",
-		49 => "Le Cristal de Carburant accroît vos chances d'infliger un coup critique à votre adversaire de 0.5%.",
-		50 => "Vous avez atteint le nombre maximum de Cristaux de Carburant autorisés ! Vous ne pouvez plus en ramasser.",
-		51 => "Éliminé !",
-		52 => "Les coups critiques doublent les dégâts infligés !",
-		53 => "Touchez le pôle !",
-		54 => "Vous devez toucher le pôle avant de pouvoir ramasser des items !",
-		55 => "$<%1$> a rejoint la partie.",
-		56 => "Le délai pour rejoindre la partie est terminé. Veuillez attendre la prochaine partie.",
-		57 => "Des Toads sont apparus."
-	];
-	
-	if (SentenceBank_French.existskey(_Ident)) {
-		TranslatedMessage = SentenceBank_French[_Ident];
-	} else {
-		// Message if sentence not found
-		TranslatedMessage = C_NoTranslationMsg;
-	}
-	
-	return TranslatedMessage;
-}
-
-// ---------------------------------- //
-/** Get german translation
- *
- *	@param	_Ident      Message index
- *
- *	@return		Translated message
- */
-Text Private_GetMessage_German(Integer _Ident) {
-	declare Text TranslatedMessage;
-	
-	// List of german translations
-	declare SentenceBank_German = [
-		0 => "$<%1$> hat die Hunger Games gewonnen!", 
-		1 => "$<%1$> hat versucht, die Arena zu verlassen.", 
-		2 => "$<%1$> hat die Kiste gefunden!", 
-		3 => "$<%1$> hat die Kiste fallenlassen!", 
-		4 => "$<%1$> hat die Kiste aufgenommen!", 
-		5 => "Kritischer Treffer!", 
-		6 => "Kritischer Schaden", 
-		7 => "Verbleibende Tribute: %1", 
-		8 => "Respawn in Hunger Games nicht möglich.", 
-		9 => "Respawnen...", 
-		10 => "Respawn verweigert", 
-		11 => "Respawn erfolgreich!", 
-		12 => "Du", 
-		13 => "Füllhorn", 
-		14 => "Kiste", 
-		15 => "Frösche", 
-		16 => "Rüstungspunkte", 
-		17 => "Geschwindigkeit", 
-		18 => "Munition nachladen", 
-		19 => "Ausdauerzunahme", 
-		20 => "Kritische Trefferchance", 
-		21 => "Wähle deinen Charakter", 
-		22 => "Waffen", 
-		23 => "Beschreibung", 
-		24 => "Map schließen mit %1", 
-		25 => "Laufen Sie zum Turm um ihre Waffe zu aktivieren!", 
-		26 => "Sie wurden eliminiert. Bitte warten sie bis zur nächsten Map um erneut spielen zu können. Viel Glück beim nächsten mal!", 
-		27 => "Sie haben die Kiste gefunden!", 
-		28 => "Sie haben die Kiste gefunden! Sie können bis zu %1 Lenkraketen einsetzen, aber nicht verschwenderisch sein!", 
-		29 => "Die Kiste wurde fallengelassen", 
-		30 => "Sie haben die Kiste fallenlassen und können Sie nicht wieder aufheben!", 
-		31 => "Gesundheit voll", 
-		32 => "Sie können keine Rüstungsitems aufsammeln, wenn Ihre Gesundheit voll gefüllt ist.", 
-		33 => "Füllkarte", 
-		34 => "Die gelbe Füllkarte erhöht die Munitionsnachladezeit um 5% und die Ausdauernachladezeit um 10%.", 
-		35 => "Waffenkarte", 
-		36 => "Die violette Waffenkarte enthält einen Munitionsbalken, die dann einer zufälligen Waffe zugeordnert wird.", 
-		37 => "Sie haben die maximale Anzahl an verfügbaren Waffen und Munition erreicht!", 
-		38 => "Rote Füllkarte", 
-		39 => "Die Rote Füllkarte absorbiert einen Rüstungspunkt, hat aber den doppelten Effekt der Gelben Füllkarte.", 
-		40 => "Sie besitzen nicht genügend Rüstungspunkte, um dieses Item aufzuheben.", 
-		41 => "Repliekarte", 
-		42 => "Die Repliekarte ist ein Medi-Pack, um ihnen einen Rüstungspunkt wiederherzustellen, wann immer sie wollen. Um sie zu benutzen drücken sie %1.", 
-		43 => "Sie haben die maximale Anzahl der verfügbaren Replies erreicht!", 
-		44 => "Goldener Kristall", 
-		45 => "Der goldene Kristall verschafft Ihnen einen Geschwindigkeitsschub von 5%.", 
-		46 => "Der Standard Charakter kann den goldenen Kristall nicht einsammeln!", 
-		47 => "Sie haben den Maximalwert der erlaubten Geschwindigkeit erreicht!", 
-		48 => "Blauer Kristall", 
-		49 => "Der blaue Kristall erhöht die Wahrscheinlichkeit für kritische Treffer um 0.5%.", 
-		50 => "Aufnahme nicht möglich, Sie haben die höchste Wahrscheinlichkeit für kritische Treffer erreicht!", 
-		51 => "Eliminiert!", 
-		52 => "Kritische Treffer verursachen doppelten Schaden!", 
-		53 => "Berühre den Turm!", 
-		54 => "Sie müssen zuerst den Turm berühren, bevor Sie Items einsammeln können!", 
-		55 => "$<%1$> hat die Spiele betreten.", 
-		56 => "Die Zeit zum Beitreten ist abgelaufen. Bitte warte bis zur nächsten Map.", 
-		57 => "Frösche sind gespawnt." 
-	];
-	
-	if (SentenceBank_German.existskey(_Ident)) {
-		TranslatedMessage = SentenceBank_German[_Ident];
-	} else {
-		// Message if sentence not found
-		TranslatedMessage = C_NoTranslationMsg;
-	}
-	   
-	return TranslatedMessage;
-}
-
-// ---------------------------------- //
-/** Get polish translation
- *
- *	@param	_Ident		Message index
- *
- *	@return		Translated message
- */
-Text Private_GetMessage_Polish(Integer _Ident) {
-	declare Text TranslatedMessage;
-	
-	// List of polish translations
-	declare SentenceBank_Polish = [
-		0 => "$<%1$> wygrywa Igrzyska Śmierci!",
-		1 => "$<%1$> spróbował uciec z areny.",
-		2 => "$<%1$> odnajduje Skrzynię!",
-		3 => "$<%1$> upuszcza Skrzynię!",
-		4 => "$<%1$> podnosi Skrzynię!",
-		5 => "Strzał krytyczny!",
-		6 => "Krytyczne obrażenia",
-		7 => "Pozostali trybuci: %1",
-		8 => "Nie możesz respawnować się w Igrzyskach Śmierci!",
-		9 => "Respawn...",
-		10 => "Respawn anulowany",
-		11 => "Pomyślnie zrespawnowano!",
-		12 => "Ty",
-		13 => "Róg Obfitości",
-		14 => "Skrzynia",
-		15 => "Żabki",
-		16 => "Punkty pancerza",
-		17 => "Współczynnik szybkości",
-		18 => "Przeładowanie broni",
-		19 => "Regeneracja wytrzymałości",
-		20 => "Szansa krytyczna",
-		21 => "Wybierz swoją postać",
-		22 => "Bronie",
-		23 => "Opis",
-		24 => "Naciśnij %1 żeby zamknąć mapę",
-		25 => "Biegnij do masztu aby aktywować swoją broń!",
-		26 => "Zostałeś wyeliminowany. Aby spróbować swoich sił ponownie, zaczekaj do następnej mapy. Powodzenia!",
-		27 => "Odnajdujesz Skrzynię!",
-		28 => "Odnajdujesz skrzynię! Możesz wystrzelić %1 śledzących Torped, tylko staraj się ich nie marnować!",
-		29 => "Upuszczono Skrzynię",
-		30 => "Upuściłeś Skrzynię. Nie możesz podnieść jej spowrotem, lecz ktoś inny może to zrobić!",
-		31 => "W pełni zdrowia",
-		32 => "Nie możesz podnieść Pancerza, jeśli posiadasz pełne zdrowie.",
-		33 => "Karta Baterii",
-		34 => "Podstawowe żółte ulepszenie zwiększa przeładowanie broni o 5% i wytrzymałość o 10.",
-		35 => "Karta Broni",
-		36 => "Fioletowa karta daje amunicję do losowo wybranej broni.",
-		37 => "Posiadasz już maksymalną dostępną liczbę broni!",
-		38 => "Karta MiniBaterii",
-		39 => "Czerwona MiniBateria odbiera jeden pancerz, lecz ulepsza gracza jak dwie żółte Baterie.",
-		40 => "Nie posiadasz wystarczająco dużo pancerza, aby to podnieść!",
-		41 => "Karta Replie",
-		42 => "Możesz uleczyć punkt pancerza w dowolnej chwili przy użyciu kart Replie. Naciśnij %1 aby użyć.",
-		43 => "Posiadasz już maksymalną dostępną liczbę Replie!",
-		44 => "Złoty Kryształ",
-		45 => "Kryształ Złota sprawia, że poruszasz się o 5% szybciej.",
-		46 => "Podstawowa postać nie może używać kryształów Złota!",
-		47 => "Nie można podnieść, jesteś już maksymalnie szybki!",
-		48 => "Kryształ Paliwa",
-		49 => "Kryształ Paliwa zwiększa szansę zadania trafienia krytycznego o 0.5%.",
-		50 => "Nie można podnieść, masz już największą możliwą szansę krytyczną!",
-		51 => "Wyeliminowano Cię!",
-		52 => "Krytyczne trafienie zadaje dwa razy większe obrażenia niż zwykłe trafienie.",
-		53 => "Dotknij masztu!",
-		54 => "Musisz najpierw dotknąć masztu, aby moć podnieść jakiekolwiek przedmioty!",
-		55 => "$<%1$> dołącza do Igrzysk.",
-		56 => "Czas dołączenia do gry minął. Zby zagrać, prosimy poczekać do następnej mapy.",
-		57 => "Pojawiły się Żabki."
-	];
-	
-	if (SentenceBank_Polish.existskey(_Ident)) {
-		TranslatedMessage = SentenceBank_Polish[_Ident];
-	} else {
-		// Message if sentence not found
-		TranslatedMessage = C_NoTranslationMsg;
-	}
-	
-	return TranslatedMessage;
-}
-
-// ---------------------------------- //
-/** Get translation
- *
- *	@param	_Player		User that gets translated message
- *	@param	_Message	A message that has to be translated
- *
- *	@return		Translated message
- */
-Text Private_GetTranslation(CPlayer _Player, Text _Message) {
-	declare Text ReturnedMessage;
-	declare Integer MessageIndex;
-	
-	declare EnglishMessageOrder = [
-		"$<%1$> won the Hunger Games!" => 0,
-		"$<%1$> tried to escape arena." => 1,
-		"$<%1$> found the Case!" => 2,
-		"$<%1$> dropped Case!" => 3,
-		"$<%1$> picked up Case!" => 4,
-		"Critical hit!" => 5,
-		"Critical damage" => 6,
-		"Remaining tributes: %1" => 7,
-		"You can not respawn in Hunger Games." => 8,
-		"Respawning..." => 9,
-		"Respawn denied" => 10,
-		"Successfully respawned!" => 11,
-		"You" => 12,
-		"Horn of Plenty" => 13,
-		"Case" => 14,
-		"Toads" => 15,
-		"Armor points" => 16,
-		"Speed factor" => 17,
-		"Ammo reload" => 18,
-		"Stamina gain" => 19,
-		"Critical chance" => 20,
-		"Select your character" => 21,
-		"Weapons" => 22,
-		"Description" => 23,
-		"Press %1 to close map" => 24,
-		"Run to the pole to activate your weapon!" => 25,
-		"You have been eliminated. To play again please wait for next map. Good luck next time!" => 26,
-		"You found the Case!" => 27,
-		"You found the Case! You can fire up to %1 homing Torpedes, but don't waste them!" => 28,
-		"Case dropped" => 29,
-		"You dropped Case. You can't pick up it again, but someone else can do it!" => 30,
-		"Completely healthy" => 31,
-		"You can not pick up Armor if you have full health." => 32,
-		"Charge Card" => 33,
-		"Basic yellow upgrade increases ammo gain by 5% and stamina by 10%." => 34,
-		"Weapon Card" => 35,
-		"Purple card gives you one randomly chosen weapon." => 36,
-		"You reached the maximum amount of available weapons!" => 37,
-		"MiniCharge Card" => 38,
-		"Red MiniCharge is taking one damage point, but upgrades you as 2 regular yellow Charges." => 39,
-		"You don't have enough armor to pick up this item!" => 40,
-		"Replie Card" => 41,
-		"With pink card you can heal one armor when you want. Press %1 to use it." => 42,
-		"You reached the maximum amount of available Replies!" => 43,
-		"Gold Crystal" => 44,
-		"The Gold crystal is letting you run faster by 5%." => 45,
-		"Default character can't use Gold crystals!" => 46,
-		"Can't pick, you reached maximum allowed speed!" => 47,
-		"Fuel Crystal" => 48,
-		"The Fuel crystal increases chance of taking critical hit by 0.5%." => 49,
-		"Can't pick, you reached the highest critical hit chance!" => 50,
-		"Eliminated!" => 51,
-		"Critical hit takes twice damage as normal hit!" => 52,
-		"Touch the pole!" => 53,
-		"You have to touch the pole before you can pick any item!" => 54,
-		"$<%1$> has joined the Games." => 55,
-		"Time for join has expired. Please wait for the next map." => 56,
-		"Toads have been spawned." => 57
-	];
-	
-	if (EnglishMessageOrder.existskey(_Message)) {
-		MessageIndex = EnglishMessageOrder[_Message];
-		
-		switch (_Player.User.Language) {
-			case "de" : ReturnedMessage = Private_GetMessage_German(MessageIndex);
-			case "fr" : ReturnedMessage = Private_GetMessage_French(MessageIndex);
-			case "nl" : ReturnedMessage = Private_GetMessage_Dutch(MessageIndex);
-			case "pl" : ReturnedMessage = Private_GetMessage_Polish(MessageIndex);
-			default : ReturnedMessage = _Message;
-		}
-		
-		if (ReturnedMessage == C_NoTranslationMsg) {
-			ReturnedMessage = _Message;
-		}
-	} else {
-		// Message not found in english base
-		ReturnedMessage = _Message;
-	}
-	
-	return ReturnedMessage;
-}
-
-// ---------------------------------- //
-/** Compose values in message
- *
- *	@param	_Message	Input message
- *	@param	_Composes	Array of values to be composed
- *
- *	@return		Message with composed values
- */
-Text Private_SetComposes(Text _Message, Text[] _Composes) {
-	if (_Composes.count < 1) return _Message;
-	
-	declare Text OutputMessage;
-	
-	switch (_Composes.count) {
-		case 1 : OutputMessage = TL::Compose(_Message, _Composes[0]);
-		case 2 : OutputMessage = TL::Compose(_Message, _Composes[0], _Composes[1]);
-		case 3 : OutputMessage = TL::Compose(_Message, _Composes[0], _Composes[1], _Composes[2]);
-		case 4 : OutputMessage = TL::Compose(_Message, _Composes[0], _Composes[1], _Composes[2], _Composes[3]);
-		case 5 : OutputMessage = TL::Compose(_Message, _Composes[0], _Composes[1], _Composes[2], _Composes[3], _Composes[4]);
-	}
-	
-	return OutputMessage;
-}
 
 // ---------------------------------- //
 // Public
@@ -509,80 +45,81 @@ Text GetScriptName() {
 }
 
 // ---------------------------------- //
-/** Set colors of chat messages
+/** Translate text or return input
  *
- *	@param   _Prefix	Arrow color
- *	@param   _Suffix	Message color
+ *	@param	_Player		Player to check language
+ *	@param	_Message	Text to be translated
+ *
+ *	@return		Translated text
  */
-Void SetChatColors(Vec3 _Prefix, Vec3 _Suffix) {
-	G_LibTranslations_PrefixColor = _Prefix;
-	G_LibTranslations_MessageColor = _Suffix;
-}
-
-// ---------------------------------- //
-/** Get translation for manialink label
- *
- *	@param	_Player		User that gets translated message
- *	@param	_Message	Input message
- *	@param	_Composes	Array of values to be composed
- *
- *	@return		Label value
- */
-Text GetTranslation(CPlayer _Player, Text _Message, Text[] _Composes) {
-	declare Text TranslatedInputMessage;
-	declare Text OutputMessage;
-	
-	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
-	if (_Composes.count > 0) OutputMessage = Private_SetComposes(TranslatedInputMessage, _Composes);
-	else OutputMessage = TranslatedInputMessage;
-	
-	return OutputMessage;
-}
-
 Text GetTranslation(CPlayer _Player, Text _Message) {
-	return GetTranslation(_Player, _Message, G_LibTranslations_EmptyTextArray);
+	if (_Player == Null || _Player.User == Null) return _Message;
+	declare MessageId = SentenceBank::GetIndex(_Message);
+	
+	// Message is not available
+	if (MessageId == 0) return _Message;
+	
+	declare Text ReturnedText;
+	
+	// Browse available languages
+	switch (_Player.User.Language) {
+		case "de" : ReturnedText = SentenceBank::GetGerman(MessageId);
+		case "fr" : ReturnedText = SentenceBank::GetFrench(MessageId);
+		case "nl" : ReturnedText = SentenceBank::GetDutch(MessageId);
+		case "pl" : ReturnedText = SentenceBank::GetPolish(MessageId);
+		case "ru" : ReturnedText = SentenceBank::GetRussian(MessageId);
+		case "sk" : ReturnedText = SentenceBank::GetSlovak(MessageId);
+		default : ReturnedText = "";
+	}
+	
+	// Translation not found
+	if (ReturnedText == "") return _Message;
+	
+	// Translation found
+	return ReturnedText;
 }
 
 // ---------------------------------- //
-/** Send UI notice (ShootMania only)
+/** Translate message and attach composes
  *
- *	@param	_Player			Player that gets translated notice
- *	@param	_Message		A message that has to be translated
- *	@param	_Composes		Array of additional keys to compose
- *	@param	_NoticeSound	Play pop sound
+ *	@param	_Player		Player to check language
+ *	@param	_Com		Text and its composes to be translated
+ *	@param	_Prefix		Text to be attached before message (eg. team color, arrow)
+ *
+ *	@return		Translated message
  */
-Void SendNotice(CPlayer _Player, Text _Message, Text[] _Composes, Boolean _NoticeSound) {
-	declare UI for _Player <=> UIManager.GetUI(_Player);
-	if (UI == Null) return;
+Text GetComposedTranslation(CPlayer _Player, Text[] _Com, Text _Prefix) {
+	if (_Com.count < 1 || _Com.count > 6) return C_ErrorMessage;
+	if (_Player == Null || _Player.User == Null) return _Com[0];
 	
-	declare Text TranslatedInputMessage;
-	declare Text OutputMessage;
-	declare CUIConfig::EUISound Sound;
+	declare Text ReturnedText;
 	
-	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
-	if (_Composes.count > 0) OutputMessage = Private_SetComposes(TranslatedInputMessage, _Composes);
-	else OutputMessage = TranslatedInputMessage;
+	// Get translation of primary message
+	declare BaseMsg = _Prefix^GetTranslation(_Player, _Com[0]);
 	
-	if (_NoticeSound) Sound = CUIConfig::EUISound::Notice;
-	else Sound = CUIConfig::EUISound::Silence;
+	// Compose
+	switch (_Com.count) {
+		case 2 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1]);
+		case 3 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1], _Com[2]);
+		case 4 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1], _Com[2], _Com[3]);
+		case 5 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1], _Com[2], _Com[3], _Com[4]);
+		case 6 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1], _Com[2], _Com[3], _Com[4], _Com[5]);
+		default : ReturnedText = BaseMsg;
+	}
 	
-	UI.SendNotice(
-		OutputMessage, 
-		CUIConfig::ENoticeLevel::Default, Null, 
-		CUIConfig::EAvatarVariant::Default, Sound, 0
-	);
+	return ReturnedText;
 }
 
-Void SendNotice(CPlayer _Player, Text _Message, Boolean _NoticeSound) {
-	SendNotice(_Player, _Message, G_LibTranslations_EmptyTextArray, _NoticeSound);
-}
-
-Void SendNotice(Text _Message, Text[] _Composes, Boolean _NoticeSound) {
-	foreach (Player in AllPlayers) SendNotice(Player, _Message, _Composes, _NoticeSound);
-}
-
-Void SendNotice(Text _Message, Boolean _NoticeSound) {
-	foreach (Player in AllPlayers) SendNotice(Player, _Message, G_LibTranslations_EmptyTextArray, _NoticeSound);
+// ---------------------------------- //
+/** Translate message and attach composes
+ *
+ *	@param	_Player		Player to check language
+ *	@param	_Com		Text and its composes to be translated
+ *
+ *	@return		Translated message
+ */
+Text GetComposedTranslation(CPlayer _Player, Text[] _Com) {
+	return GetComposedTranslation(_Player, _Com, "");
 }
 
 // ---------------------------------- //
@@ -590,99 +127,366 @@ Void SendNotice(Text _Message, Boolean _NoticeSound) {
  *
  *	@param	_Player			Player that gets translated message
  *	@param	_Message		A message that has to be translated
- *	@param	_Composes		Array of additional keys to compose
  */
-Void SendChat(CPlayer _Player, Text _Message, Text[] _Composes) {
-	declare UI for _Player <=> UIManager.GetUI(_Player);
-	if (UI == Null) return;
+Void SendChat(CPlayer _Player, Text _Message) {
+	if (_Player == Null) return;
 	
-	// Use default colors if custom not specified
-	if (G_LibTranslations_PrefixColor == <0., 0., 0.> && G_LibTranslations_MessageColor == <0., 0., 0.>) {
-		SetChatColors(C_DefaultPrefixColor, C_DefaultMessageColor);
+	// SM: Bots can't receive messages
+	if (This is CSmMode) {
+		declare SmPlayer <=> (_Player as CSmPlayer);
+		if (SmPlayer == Null || SmPlayer.IsBot || SmPlayer.IsFakePlayer) return;
 	}
 	
-	declare Text TranslatedInputMessage;
-	declare Text OutputMessage;
-	
-	TranslatedInputMessage = "$"^TL::ColorToText(G_LibTranslations_PrefixColor)^"»$"^TL::ColorToText(G_LibTranslations_MessageColor)^" "^Private_GetTranslation(_Player, _Message);
-	
-	if (_Composes.count > 0) OutputMessage = Private_SetComposes(TranslatedInputMessage, _Composes);
-	else OutputMessage = TranslatedInputMessage;
-	
-	UI.SendChat(OutputMessage);
-}
-
-Void SendChat(CPlayer _Player, Text _Message) {
-	SendChat(_Player, _Message, G_LibTranslations_EmptyTextArray);
-}
-
-Void SendChat(Text _Message, Text[] _Composes) {
-	foreach(Player in AllPlayers) SendChat(Player, _Message, _Composes);
-}
-
-Void SendChat(Text _Message) {
-	foreach(Player in AllPlayers) SendChat(Player, _Message, G_LibTranslations_EmptyTextArray);
-}
-
-// ---------------------------------- //
-/** HG: Show tip window
- *
- *	@param	_Player		Player that gets translated tip
- *	@param	_Title		Message displayed on window header
- *	@param	_Message	A message that has to be translated
- *	@param	_Composes	Array of additional keys to compose
- *	@param	_Duration	How long window is displayed
- *	@param	_Icon		Square icon type at left side
- */
-Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Text[] _Composes, Integer _Duration, Text _Icon) {
 	declare UI for _Player <=> UIManager.GetUI(_Player);
 	if (UI == Null) return;
 	
-	declare Text TranslatedInputMessage;
-	declare Text OutputMessage;
-	
-	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
-	if (_Composes.count > 0) OutputMessage = Private_SetComposes(TranslatedInputMessage, _Composes);
-	else OutputMessage = TranslatedInputMessage;
-	
-	declare netwrite Text		Net_SentTipTitle	for UI;
-	declare netwrite Text		Net_SentTipMessage	for UI;
-	declare netwrite Integer	Net_SentTipDuration	for UI;
-	declare netwrite Text		Net_SentTipIcon		for UI;
-	
-	Net_SentTipTitle	= Private_GetTranslation(_Player, _Title);
-	Net_SentTipMessage	= OutputMessage;
-	Net_SentTipDuration	= _Duration;
-	Net_SentTipIcon		= _Icon;
-}
-
-Void SendTipMessage(CPlayer _Player, Text _Title, Text _Message, Integer _Duration, Text _Icon) {
-	SendTipMessage(_Player, _Title, _Message, G_LibTranslations_EmptyTextArray, _Duration, _Icon);
+	UI.SendChat(GetTranslation(_Player, _Message));
 }
 
 // ---------------------------------- //
-// Message library extension
+/** Send chat message (with composes)
+ *
+ *	@param	_Player			Player that gets translated message
+ *	@param	_Message		A message that has to be translated
+ */
+Void SendChat(CPlayer _Player, Text[] _Message) {
+	if (_Player == Null) return;
+	if (_Message.count < 1 || _Message.count > 6) return;
+	
+	// SM: Bots can't receive messages
+	if (This is CSmMode) {
+		declare SmPlayer <=> (_Player as CSmPlayer);
+		if (SmPlayer == Null || SmPlayer.IsBot || SmPlayer.IsFakePlayer) return;
+	}
+	
+	declare UI for _Player <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	UI.SendChat(GetComposedTranslation(_Player, _Message, C_DefaultChatPrefix));
+}
+
 // ---------------------------------- //
-Void SendMessage(CPlayer _Player, Text _Message, Text[] _Composes, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant, Boolean _IsBigMessage) {
-	declare Text TranslatedInputMessage;
+/** Send chat message
+ *
+ *	@param	_Message		A message that has to be translated
+ */
+Void SendChat(Text _Message) {
+	foreach (Player in AllPlayers) SendChat(Player, _Message);
+}
+
+// ---------------------------------- //
+/** Send chat message (with composes)
+ *
+ *	@param	_Message		A message that has to be translated
+ */
+Void SendChat(Text[] _Message) {
+	foreach (Player in AllPlayers) SendChat(Player, _Message);
+}
+
+// ---------------------------------- //
+/** Send UI notice (SM only)
+ *
+ *	@param	_Player			Player that gets translated notice
+ *	@param	_Message		A message that has to be translated
+ *	@param	_NoticeSound	Play pop sound
+ */
+Void SendNotice(CPlayer _Player, Text _Message, Boolean _NoticeSound) {
+	if (!(This is CSmMode)) return;
+	if (_Player == Null) return;
+	
+	// SM: Bots can't receive messages
+	if (This is CSmMode) {
+		declare SmPlayer <=> (_Player as CSmPlayer);
+		if (SmPlayer == Null || SmPlayer.IsBot || SmPlayer.IsFakePlayer) return;
+	}
+	
+	declare UI for _Player <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	// Play sound of keep notice silent
+	declare CUIConfig::EUISound Sound;
+	if (_NoticeSound) Sound = CUIConfig::EUISound::Notice;
+	else Sound = CUIConfig::EUISound::Silence;
+	
+	UI.SendNotice(
+		GetTranslation(_Player, _Message), 
+		CUIConfig::ENoticeLevel::Default, Null, 
+		CUIConfig::EAvatarVariant::Default, Sound, 0
+	);
+}
+
+// ---------------------------------- //
+/** Send UI notice (SM only, with composes)
+ *
+ *	@param	_Player			Player that gets translated notice
+ *	@param	_Message		A message that has to be translated
+ *	@param	_NoticeSound	Play pop sound
+ */
+Void SendNotice(CPlayer _Player, Text[] _Message, Boolean _NoticeSound) {
+	if (!(This is CSmMode)) return;
+	if (_Player == Null) return;
+	if (_Message.count < 1 || _Message.count > 6) return;
+	
+	// SM: Bots can't receive messages
+	if (This is CSmMode) {
+		declare SmPlayer <=> (_Player as CSmPlayer);
+		if (SmPlayer == Null || SmPlayer.IsBot || SmPlayer.IsFakePlayer) return;
+	}
+	
+	declare UI for _Player <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+	
+	// Play sound of keep notice silent
+	declare CUIConfig::EUISound Sound;
+	if (_NoticeSound) Sound = CUIConfig::EUISound::Notice;
+	else Sound = CUIConfig::EUISound::Silence;
+	
+	UI.SendNotice(
+		GetComposedTranslation(_Player, _Message), 
+		CUIConfig::ENoticeLevel::Default, Null, 
+		CUIConfig::EAvatarVariant::Default, Sound, 0
+	);
+}
+
+// ---------------------------------- //
+/** Send UI notice (SM only)
+ *
+ *	@param	_Message		A message that has to be translated
+ *	@param	_NoticeSound	Play pop sound
+ */
+Void SendNotice(Text _Message, Boolean _NoticeSound) {
+	if (!(This is CSmMode)) return;
+	foreach (Player in AllPlayers) SendNotice(Player, _Message, _NoticeSound);
+}
+
+// ---------------------------------- //
+/** Send UI notice (SM only, with composes)
+ *
+ *	@param	_Message		A message that has to be translated
+ *	@param	_NoticeSound	Play pop sound
+ */
+Void SendNotice(Text[] _Message, Boolean _NoticeSound) {
+	if (!(This is CSmMode)) return;
+	foreach (Player in AllPlayers) SendNotice(Player, _Message, _NoticeSound);
+}
+
+// ---------------------------------- //
+/** Insert library functions into manialink
+ *
+ *	@param	_Messages	Messages to be inserted
+ *
+ *	@return		Translations module
+ */
+Text InsertToManialink(Text[] _Messages) {
+	declare Text[Text] WordBanks;
+	declare Langs = ["de", "fr", "nl", "pl", "ru", "sk"];
+	foreach (Lang in Langs) WordBanks[Lang] = """0 => "" """;
+	WordBanks["en"] = """ "" => 0 """;
+	
+	for (I, 0, _Messages.count - 1) {
+		declare Index = SentenceBank::GetIndex(_Messages[I]);
+		if (Index != 0) {
+			// Add messages to banks
+			WordBanks["en"] ^= """, "{{{_Messages[I]}}}" => {{{Index}}}""";
+			WordBanks["de"] ^= """, {{{Index}}} => "{{{SentenceBank::GetGerman(Index)}}}" """;
+			WordBanks["fr"] ^= """, {{{Index}}} => "{{{SentenceBank::GetFrench(Index)}}}" """;
+			WordBanks["nl"] ^= """, {{{Index}}} => "{{{SentenceBank::GetDutch(Index)}}}" """;
+			WordBanks["pl"] ^= """, {{{Index}}} => "{{{SentenceBank::GetPolish(Index)}}}" """;
+			WordBanks["ru"] ^= """, {{{Index}}} => "{{{SentenceBank::GetRussian(Index)}}}" """;
+			WordBanks["sk"] ^= """, {{{Index}}} => "{{{SentenceBank::GetSlovak(Index)}}}" """;
+		}
+	}
+	
+	return """
+// ---------------------------------- //
+// Lib Transations Start >
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+Integer GetIndex(Text _Message) {
+	declare IndexBank = [{{{WordBanks["en"]}}}];
+	// Return index
+	if (IndexBank.existskey(_Message)) return IndexBank[_Message];
+	return 0;
+}
+
+Text GetGerman(Integer _Index) {
+	declare GermanBank = [{{{WordBanks["de"]}}}];
+	// Return translation
+	if (GermanBank.existskey(_Index)) return GermanBank[_Index];
+	return "";
+}
+
+Text GetFrench(Integer _Index) {
+	declare FrenchBank = [{{{WordBanks["fr"]}}}];
+	// Return translation
+	if (FrenchBank.existskey(_Index)) return FrenchBank[_Index];
+	return "";
+}
+
+Text GetDutch(Integer _Index) {
+	declare DutchBank = [{{{WordBanks["nl"]}}}];
+	// Return translation
+	if (DutchBank.existskey(_Index)) return DutchBank[_Index];
+	return "";
+}
+
+Text GetPolish(Integer _Index) {
+	declare PolishBank = [{{{WordBanks["pl"]}}}];
+	// Return translation
+	if (PolishBank.existskey(_Index)) return PolishBank[_Index];
+	return "";
+}
+
+Text GetRussian(Integer _Index) {
+	declare RussianBank = [{{{WordBanks["ru"]}}}];
+	// Return translation
+	if (RussianBank.existskey(_Index)) return RussianBank[_Index];
+	return "";
+}
+
+Text GetSlovak(Integer _Index) {
+	declare SlovakBank = [{{{WordBanks["sk"]}}}];
+	// Return translation
+	if (SlovakBank.existskey(_Index)) return SlovakBank[_Index];
+	return "";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+Text Translations_Get(Text _Message) {
+	if (LocalUser == Null) return _Message;
+	declare MessageId = GetIndex(_Message);
+	if (MessageId == 0) return _Message;
 	declare Text OutputMessage;
-	
-	TranslatedInputMessage = Private_GetTranslation(_Player, _Message);
-	if (_Composes.count > 0) OutputMessage = Private_SetComposes(TranslatedInputMessage, _Composes);
-	else OutputMessage = TranslatedInputMessage;
-	
-	if (_IsBigMessage) Message::SendBigMessage(_Player, OutputMessage, _Duration, _Priority, _Sound, _SoundVariant);
-	else Message::SendStatusMessage(_Player, OutputMessage, _Duration, _Priority, _Sound, _SoundVariant);
+	OutputMessage = _Message;
+	switch (LocalUser.Language) {
+		case "de" : OutputMessage = GetGerman(MessageId);
+		case "fr" : OutputMessage = GetFrench(MessageId);
+		case "nl" : OutputMessage = GetDutch(MessageId);
+		case "pl" : OutputMessage = GetPolish(MessageId);
+		case "ru" : OutputMessage = GetRussian(MessageId);
+		case "sk" : OutputMessage = GetSlovak(MessageId);
+	}
+	if (OutputMessage == "") return _Message;
+	return OutputMessage;
 }
 
-Void SendMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant, Boolean _IsBigMessage) {
-	SendMessage(_Player, _Message, G_LibTranslations_EmptyTextArray, _Duration, _Priority, _Sound, _SoundVariant, _IsBigMessage);
+Text Translations_GetComposed(Text[] _Composes) {
+	if (LocalUser == Null) return "{{{C_ErrorMessage}}}";
+	if (_Composes.count < 1 || _Composes.count > 6) return "{{{C_ErrorMessage}}}";
+	declare BaseMessage = Translations_Get(_Composes[0]);
+	declare Text OutputMessage;
+	switch (_Composes.count) {
+		case 2 : OutputMessage = TL::Compose(BaseMessage, _Composes[1]);
+		case 3 : OutputMessage = TL::Compose(BaseMessage, _Composes[1], _Composes[2]);
+		case 4 : OutputMessage = TL::Compose(BaseMessage, _Composes[1], _Composes[2], _Composes[3]);
+		case 5 : OutputMessage = TL::Compose(BaseMessage, _Composes[1], _Composes[2], _Composes[3], _Composes[4]);
+		case 6 : OutputMessage = TL::Compose(BaseMessage, _Composes[1], _Composes[2], _Composes[3], _Composes[4], _Composes[5]);
+		default : OutputMessage = BaseMessage;
+	}
+	return OutputMessage;
 }
 
-Void SendMessage(Text _Message, Text[] _Composes, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant, Boolean _IsBigMessage) {
-	foreach (Player in AllPlayers) SendMessage(Player, _Message, _Composes, _Duration, _Priority, _Sound, _SoundVariant, _IsBigMessage);
+// ---------------------------------- //
+// Lib Transations End < >
+// ---------------------------------- //
+	""";
 }
 
-Void SendMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant, Boolean _IsBigMessage) {
-	foreach (Player in AllPlayers) SendMessage(Player, _Message, G_LibTranslations_EmptyTextArray, _Duration, _Priority, _Sound, _SoundVariant, _IsBigMessage);
+// ---------------------------------- //
+// Extend Message Library
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Big message
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Send a big message with sound to player
+Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	Message::SendBigMessage(_Player, GetTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+Void SendBigMessage(CPlayer _Player, Text[] _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	Message::SendBigMessage(_Player, GetComposedTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/// Send a big message without sound to player
+Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
+	Message::SendBigMessage(_Player, GetTranslation(_Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendBigMessage(CPlayer _Player, Text[] _Message, Integer _Duration, Integer _Priority) {
+	Message::SendBigMessage(_Player, GetComposedTranslation(_Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+// ---------------------------------- //
+/// Send a big message with sound to all players
+Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) Message::SendBigMessage(Player, GetTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+Void SendBigMessage(Text[] _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) Message::SendBigMessage(Player, GetComposedTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/// Send a big message without sound to all players
+Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority) {
+	foreach (Player in AllPlayers) Message::SendBigMessage(Player, GetTranslation(Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendBigMessage(Text[] _Message, Integer _Duration, Integer _Priority) {
+	foreach (Player in AllPlayers) Message::SendBigMessage(Player, GetComposedTranslation(Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+// ---------------------------------- //
+// Status message
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Send a status message with sound to player
+Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	Message::SendStatusMessage(_Player, GetTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+Void SendStatusMessage(CPlayer _Player, Text[] _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	Message::SendStatusMessage(_Player, GetComposedTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/// Send a status message without sound to player
+Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
+	Message::SendStatusMessage(_Player, GetTranslation(_Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendStatusMessage(CPlayer _Player, Text[] _Message, Integer _Duration, Integer _Priority) {
+	Message::SendStatusMessage(_Player, GetComposedTranslation(_Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+// ---------------------------------- //
+/// Send a status message with sound to all players
+Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) Message::SendStatusMessage(Player, GetTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+Void SendStatusMessage(Text[] _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) Message::SendStatusMessage(Player, GetComposedTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/// Send a big message without sound to all players
+Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority) {
+	foreach (Player in AllPlayers) Message::SendStatusMessage(Player, GetTranslation(Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendStatusMessage(Text[] _Message, Integer _Duration, Integer _Priority) {
+	foreach (Player in AllPlayers) Message::SendStatusMessage(Player, GetComposedTranslation(Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }

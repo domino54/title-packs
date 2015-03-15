@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  TRANSLATIONS LIB by domino54          //
-//  script version: 2015-03-08            //
+//  script version: 2015-03-15            //
 // -------------------------------------- //
 
 /**
@@ -8,7 +8,7 @@
  *	messages, if they exists in SentenceBank lib.
  */
 
-#Const Version			"2015-03-08"
+#Const Version			"2015-03-15"
 #Const ScriptName		"Translations.Script.txt"
 
 #Include "TextLib" as TextLib
@@ -67,6 +67,8 @@ Text GetTranslation(CPlayer _Player, Text _Message) {
 		case "fr" : ReturnedText = SentenceBank::GetFrench(MessageId);
 		case "nl" : ReturnedText = SentenceBank::GetDutch(MessageId);
 		case "pl" : ReturnedText = SentenceBank::GetPolish(MessageId);
+		case "pt" : ReturnedText = SentenceBank::GetPortugese(MessageId);
+		case "pt_BR" : ReturnedText = SentenceBank::GetPortugese(MessageId);
 		case "ru" : ReturnedText = SentenceBank::GetRussian(MessageId);
 		case "sk" : ReturnedText = SentenceBank::GetSlovak(MessageId);
 		default : ReturnedText = "";
@@ -279,21 +281,21 @@ Void SendNotice(Text[] _Message, Boolean _NoticeSound) {
  */
 Text InsertToManialink(Text[] _Messages) {
 	declare Text[Text] WordBanks;
-	declare Langs = ["de", "fr", "nl", "pl", "ru", "sk"];
-	foreach (Lang in Langs) WordBanks[Lang] = """0 => "" """;
-	WordBanks["en"] = """ "" => 0 """;
+	declare Langs = ["de", "fr", "nl", "pl", "pt", "ru", "sk"];
+	foreach (Lang in Langs) WordBanks[Lang] = "0 => \"\"";
+	WordBanks["en"] = "\"\" => 0";
 	
 	for (I, 0, _Messages.count - 1) {
 		declare Index = SentenceBank::GetIndex(_Messages[I]);
 		if (Index != 0) {
 			// Add messages to banks
-			WordBanks["en"] ^= """, "{{{_Messages[I]}}}" => {{{Index}}}""";
-			WordBanks["de"] ^= """, {{{Index}}} => "{{{SentenceBank::GetGerman(Index)}}}" """;
-			WordBanks["fr"] ^= """, {{{Index}}} => "{{{SentenceBank::GetFrench(Index)}}}" """;
-			WordBanks["nl"] ^= """, {{{Index}}} => "{{{SentenceBank::GetDutch(Index)}}}" """;
-			WordBanks["pl"] ^= """, {{{Index}}} => "{{{SentenceBank::GetPolish(Index)}}}" """;
-			WordBanks["ru"] ^= """, {{{Index}}} => "{{{SentenceBank::GetRussian(Index)}}}" """;
-			WordBanks["sk"] ^= """, {{{Index}}} => "{{{SentenceBank::GetSlovak(Index)}}}" """;
+			WordBanks["en"] ^= ", \""^_Messages[I]^"\" => "^Index;
+			WordBanks["de"] ^= ", "^Index^" => \""^SentenceBank::GetGerman(Index)^"\"";
+			WordBanks["fr"] ^= ", "^Index^" => \""^SentenceBank::GetFrench(Index)^"\"";
+			WordBanks["nl"] ^= ", "^Index^" => \""^SentenceBank::GetDutch(Index)^"\"";
+			WordBanks["pl"] ^= ", "^Index^" => \""^SentenceBank::GetPolish(Index)^"\"";
+			WordBanks["ru"] ^= ", "^Index^" => \""^SentenceBank::GetRussian(Index)^"\"";
+			WordBanks["sk"] ^= ", "^Index^" => \""^SentenceBank::GetSlovak(Index)^"\"";
 		}
 	}
 	
@@ -341,6 +343,13 @@ Text GetPolish(Integer _Index) {
 	return "";
 }
 
+Text GetPortugese(Integer _Index) {
+	declare PortugeseBank = [{{{WordBanks["pt"]}}}];
+	// Return translation
+	if (PortugeseBank.existskey(_Index)) return PortugeseBank[_Index];
+	return "";
+}
+
 Text GetRussian(Integer _Index) {
 	declare RussianBank = [{{{WordBanks["ru"]}}}];
 	// Return translation
@@ -370,6 +379,8 @@ Text Translations_Get(Text _Message) {
 		case "fr" : OutputMessage = GetFrench(MessageId);
 		case "nl" : OutputMessage = GetDutch(MessageId);
 		case "pl" : OutputMessage = GetPolish(MessageId);
+		case "pt" : OutputMessage = GetPortugese(MessageId);
+		case "pt_BR" : OutputMessage = GetPortugese(MessageId);
 		case "ru" : OutputMessage = GetRussian(MessageId);
 		case "sk" : OutputMessage = GetSlovak(MessageId);
 	}
@@ -377,20 +388,30 @@ Text Translations_Get(Text _Message) {
 	return OutputMessage;
 }
 
-Text Translations_GetComposed(Text[] _Composes) {
-	if (LocalUser == Null) return "{{{C_ErrorMessage}}}";
-	if (_Composes.count < 1 || _Composes.count > 6) return "{{{C_ErrorMessage}}}";
-	declare BaseMessage = Translations_Get(_Composes[0]);
-	declare Text OutputMessage;
-	switch (_Composes.count) {
-		case 2 : OutputMessage = TL::Compose(BaseMessage, _Composes[1]);
-		case 3 : OutputMessage = TL::Compose(BaseMessage, _Composes[1], _Composes[2]);
-		case 4 : OutputMessage = TL::Compose(BaseMessage, _Composes[1], _Composes[2], _Composes[3]);
-		case 5 : OutputMessage = TL::Compose(BaseMessage, _Composes[1], _Composes[2], _Composes[3], _Composes[4]);
-		case 6 : OutputMessage = TL::Compose(BaseMessage, _Composes[1], _Composes[2], _Composes[3], _Composes[4], _Composes[5]);
-		default : OutputMessage = BaseMessage;
+Text Translations_GetComposed(Text[] _Com, Text _Prefix) {
+	if (_Com.count < 1 || _Com.count > 6) return "{{{C_ErrorMessage}}}";
+	if (LocalUser == Null) return _Com[0];
+	
+	declare Text ReturnedText;
+	
+	// Get translation of primary message
+	declare BaseMsg = _Prefix^Translations_Get(_Com[0]);
+	
+	// Compose
+	switch (_Com.count) {
+		case 2 : ReturnedText = TL::Compose(BaseMsg, _Com[1]);
+		case 3 : ReturnedText = TL::Compose(BaseMsg, _Com[1], _Com[2]);
+		case 4 : ReturnedText = TL::Compose(BaseMsg, _Com[1], _Com[2], _Com[3]);
+		case 5 : ReturnedText = TL::Compose(BaseMsg, _Com[1], _Com[2], _Com[3], _Com[4]);
+		case 6 : ReturnedText = TL::Compose(BaseMsg, _Com[1], _Com[2], _Com[3], _Com[4], _Com[5]);
+		default : ReturnedText = BaseMsg;
 	}
-	return OutputMessage;
+	
+	return ReturnedText;
+}
+
+Text Translations_GetComposed(Text[] _Com) {
+	return Translations_GetComposed(_Com, "");
 }
 
 // ---------------------------------- //

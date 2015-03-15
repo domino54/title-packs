@@ -8,6 +8,10 @@ Instructions
 
 Specified modes and all libraries documentation available soon.
 
+Libraries:
+* [Translations](https://github.com/domino54/title-packs/blob/master/Documentation/Translations.md)
+* [SentenceBank](https://github.com/domino54/title-packs/blob/master/Documentation/SentenceBank.md)
+
 Download title packs
 --------------------
 

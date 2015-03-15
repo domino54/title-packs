@@ -5,48 +5,48 @@ This library contains all sentences translated by third-party users in their nat
 
 ### Functions
 
-#### GetScriptVersion
-* Returns `Text` containing actual script version (`"YYYY-MM-DD"`)
+##### GetScriptVersion
+* Returns `Text` containing actual script version (`"YYYY-MM-DD"`).
 
-#### GetScriptName
-* Returns `Text` containing actual script name (`"SentenceBank.Script.txt"`)
+##### GetScriptName
+* Returns `Text` containing actual script name (`"SentenceBank.Script.txt"`).
 
-#### GetIndex
+##### GetIndex
 * Returns `Integer` ID of specified input english message, if exists. If not, returns `0`.
 * Parameters:
 	* `Text _Message`: look for ID of this message
 
-#### GetGerman
+##### GetGerman
 * Returns `Text` german (de) sentence from specified ID, if exists. If not, returns `""`.
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 
-#### GetFrench
+##### GetFrench
 * Returns `Text` french (fr) sentence from specified ID, if exists. If not, returns `""`.
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 
-#### GetDutch
+##### GetDutch
 * Returns `Text` dutch (nl) sentence from specified ID, if exists. If not, returns `""`.
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 
-#### GetPolish
+##### GetPolish
 * Returns `Text` polish (pl) sentence from specified ID, if exists. If not, returns `""`.
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 
-#### GetPortugese
+##### GetPortugese
 * Returns `Text` portugese (pt, pt_BR) translation from specified ID, if exists. If not, returns `""`.
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 
-#### GetRussian
+##### GetRussian
 * Reurns `Text` russian (ru) translation from specified ID, if exists. If not, returns `""`.
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 
-#### GetSlovak
+##### GetSlovak
 * Returns `Text` slovak (sk) translation from specified ID, if exists. If not, returns `""`.
 * Parameters:
 	* `Integer _Index`: look for message with this ID

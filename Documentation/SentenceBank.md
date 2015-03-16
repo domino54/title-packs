@@ -36,8 +36,8 @@ This library contains all sentences translated by third-party users in their nat
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 
-##### GetPortugese
-* Returns `Text` portugese (pt, pt_BR) translation from specified ID, if exists. If not, returns `""`.
+##### GetPortuguese
+* Returns `Text` portuguese (pt, pt_BR) translation from specified ID, if exists. If not, returns `""`.
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 

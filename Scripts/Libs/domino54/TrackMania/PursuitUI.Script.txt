@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  PURSUIT UI LIB by domino54            //
-//  script version: 2015-03-15            //
+//  script version: 2015-03-16            //
 // -------------------------------------- //
 
 /**
@@ -13,9 +13,12 @@
  *	- CountdownAndRank		Create custom timer on top screen and rank at bottom right
  *	- RespawnAndBonus		Show the respawn time gauge and points increasion yellow message
  *	- RequestPolice			Info, chance to be tossed and list of players requesting police
+ *
+ *	UI supports Oculus Rift: elements that are outside
+ *	the normal display are hidden in VR mode.
  */
 
-#Const Version			"2015-03-15"
+#Const Version			"2015-03-16"
 #Const ScriptName		"PursuitUI.Script.txt"
 
 #Include "TextLib" as TextLib
@@ -23,6 +26,9 @@
 #Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
 #Const C_LibPursuitUI_AvailableModules [
 	"ThiefCounter", "SpeedAndDist", "CountdownAndRank", "RespawnAndBonus", "RequestPolice"
 ]
@@ -32,7 +38,26 @@
 #Const C_LibPursuitUI_RequestWindowId		"RequestWindow"
 
 #Const C_LibPursuitUI_DefaultRankPos		<158., -75.>
-#Const C_LibPursuitUI_DefaultRankScale	.75
+#Const C_LibPursuitUI_DefaultRankScale		.75
+
+// ---------------------------------- //
+// Oculus Rift support (cut the UI corners)
+// ---------------------------------- //
+#Const C_LibPursuitUI_OculusFrameStart		"<frame id=\"Frame_OculusCutOff\" hidden=\"1\">"
+#Const C_LibPursuitUI_OculusFrameEnd		"</frame>"
+#Const C_LibPursuitUI_OculusScriptLabel		"+++OculusCutOff+++"
+#Const C_LibPursuitUI_OculusScriptModule	"""
+***OculusCutOff***
+***
+// ---------------------------------- //
+// Compatible with Oculus Rift HMD
+// ---------------------------------- //
+declare Frame_OculusCutOff <=> (Page.GetFirstChild("Frame_OculusCutOff") as CMlFrame);
+Frame_OculusCutOff.ClipWindowActive = True;
+Frame_OculusCutOff.ClipWindowSize = <320., 180.>;
+Frame_OculusCutOff.Show();
+***
+"""
 
 declare Text[]	G_LibPursuitUI_LoadedModules;	///< Loaded UI modules
 declare Text	G_LibPursuitUI_RequestWindow;	///< Manialink of request police window
@@ -54,6 +79,7 @@ Text Private_CreateLayerThiefCounter() {
 	<style id="Label_CounterMessage" style="TextButtonNav" textsize="1"/>
 	<style id="Label_PolicemenCount" style="TextButtonNav" textsize="1"/>
 </stylesheet>
+{{{C_LibPursuitUI_OculusFrameStart}}}
 <frame id="Frame_ThiefCounter" posn="0 -90">
 	<label posn="0 2 1" halign="center" valign="bottom" id="Label_ThiefCount"/>
 	<label posn="0 1.75 1" sizen="32 4" halign="center" valign="center2" id="Label_CounterMessage"/>
@@ -65,6 +91,7 @@ Text Private_CreateLayerThiefCounter() {
 	<quad posn="-18 -3 1" sizen="30 8" rot="180" halign="left" style="EnergyBar" substyle="HeaderGaugeLeft" id="Quad_PoliceLightsLeft" hidden="1"/>
 	<quad posn="18 -3 1" sizen="33 8" rot="180" halign="right" style="EnergyBar" substyle="HeaderGaugeRight" id="Quad_PoliceLightsRight" hidden="1"/>
 </frame>
+{{{C_LibPursuitUI_OculusFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Thief counter & bottom colors
@@ -203,6 +230,8 @@ if (CurrentClan == 1) {
 }
 ***
 
+{{{C_LibPursuitUI_OculusScriptModule}}}
+
 {{{Manialink::Animations(["EaseInOutSine", "EaseInOutCirc"])}}}
 {{{Translations::InsertToManialink(["Thieves left", "Policemen: %1"])}}}
 
@@ -212,6 +241,7 @@ if (CurrentClan == 1) {
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
+	{{{C_LibPursuitUI_OculusScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -238,11 +268,13 @@ Text Private_CreateLayerSpeedAndDist() {
 <stylesheet>
 	<style class="align" halign="right" valign="center2"/>
 </stylesheet>
-<frame id="Frame_SpeedAndDist" posn="158 -85" hidden="0">
+{{{C_LibPursuitUI_OculusFrameStart}}}
+<frame id="Frame_SpeedAndDist" posn="158 -85" hidden="1">
 	<label posn="0 0" class="align" style="TextRaceChrono" text="0" id="Label_Speed"/>
 	<label posn="-6 7" class="align" style="TextRaceChrono" textsize="2" text="0" id="Label_Dist"/>
 	<label posn="0 7" class="align" style="TextRaceStaticSmall" text="m"/>
 </frame>
+{{{C_LibPursuitUI_OculusFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Speed and Distance
@@ -283,12 +315,15 @@ if (GUIPlayer != Null && GUIPlayer.IsSpawned) {
 }
 ***
 
+{{{C_LibPursuitUI_OculusScriptModule}}}
+
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
+	{{{C_LibPursuitUI_OculusScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -315,6 +350,7 @@ Text Private_CreateLayerCountdownAndRank(Vec2 _Position, Real _Scale) {
 	UIManager.UIAll.OverlayHidePosition = True;
 	return """
 <manialink version="2" name="Pursuit:CountdownAndRank">
+{{{C_LibPursuitUI_OculusFrameStart}}}
 <frame id="Frame_Countdown" posn="0 80" hidden="1">
 	<label halign="center" valign="center2" style="TextRaceChrono" textcolor="FB0" textsize="6" text="0:00" id="Label_Countdown"/>
 	<label posn="0 -8 1" scale=".75" halign="center" valign="center2" style="TextValueSmallSm" id="Label_EventName"/>
@@ -323,6 +359,7 @@ Text Private_CreateLayerCountdownAndRank(Vec2 _Position, Real _Scale) {
 	<label posn="0 1" halign="left" valign="bottom" style="TextRaceMessage" id="Label_PosTotal"/>
 	<label posn="0 0" halign="right" valign="bottom" style="TextRaceChrono" textcolor="FFF" id="Label_PosCurrent"/>
 </frame>
+{{{C_LibPursuitUI_OculusFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Countdown and Rank
@@ -448,6 +485,8 @@ Text TimeToText(Integer _Time) {
 	return Time;
 }
 
+{{{C_LibPursuitUI_OculusScriptModule}}}
+
 {{{Manialink::Animations(["EaseInOutCirc"])}}}
 
 // ---------------------------------- //
@@ -456,6 +495,7 @@ Text TimeToText(Integer _Time) {
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
+	{{{C_LibPursuitUI_OculusScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -486,6 +526,7 @@ Text Private_CreateLayerRespawnAndBonus() {
 	<style id="Label_CampWarning" style="TextValueSmallSm" textsize="1"/>
 	<style id="Label_CampDistance" style="TextValueSmallSm" textsize="4"/>
 </stylesheet>
+{{{C_LibPursuitUI_OculusFrameStart}}}
 <frame id="Frame_RespawnTimer" posn="0 -70" scale="0">
 	<quad halign="center" valign="center" id="Quad_RespawnForeground"/>
 	<quad posn="-46 1.75 -1" sizen="92 6" valign="center" bgcolor="F00" opacity=".75" id="Quad_RespawnGauge"/>
@@ -501,6 +542,7 @@ Text Private_CreateLayerRespawnAndBonus() {
 	<label posn=".5" halign="center" valign="bottom" id="Label_AddedPointsAmount" opacity="0"/>
 	<label posn="-.5" halign="center" valign="top" id="Label_PointsDescription" opacity="0"/>
 </frame>
+{{{C_LibPursuitUI_OculusFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Respawn and Bonus
@@ -653,6 +695,8 @@ if (Now >= PointsVisibilityEndTime && PointsVisible) {
 }
 ***
 
+{{{C_LibPursuitUI_OculusScriptModule}}}
+
 {{{Manialink::Animations(["EaseInCirc", "EaseOutCirc", "EaseInBack", "EaseOutBack"])}}}
 {{{Translations::InsertToManialink(["Respawning...", "For beeing the first policeman", "For surviving other catch",	"For catching a Thief", "For surviving to the end", "Camper! Move %1 meters away to cancel!"])}}}
 
@@ -662,6 +706,7 @@ if (Now >= PointsVisibilityEndTime && PointsVisible) {
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
+	{{{C_LibPursuitUI_OculusScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -690,6 +735,7 @@ Text Private_CreateLayerRequestPolice() {
 	<style class="desc" style="TextValueSmallSm" textsize="1"/>
 	<style class="chance" style="TextValueSmallSm" textsize="4"/>
 </stylesheet>
+{{{C_LibPursuitUI_OculusFrameStart}}}
 <frame id="Frame_RequestedPolicemen" posn="{{{-159.-70}}} 0">
 	<frame posn="0 {{{C_LibPursuitUI_RequestWindowSize.Y/2}}}">
 		{{{G_LibPursuitUI_RequestWindow}}}
@@ -700,6 +746,7 @@ Text Private_CreateLayerRequestPolice() {
 		<label posn="4 -34.5" class="chance" textsize="3" textcolor="6BF" id="Label_RequestsCount"/>
 	</frame>
 </frame>
+{{{C_LibPursuitUI_OculusFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Request police
@@ -736,7 +783,7 @@ Quad_{{{C_LibPursuitUI_RequestWindowId}}}TitleBg.Colorize = <1., 0., 0.>;
 Label_{{{C_LibPursuitUI_RequestWindowId}}}TitleText.SetText(
 	"$t"^Translations_Get("Become a policeman"));
 Label_PoliceInstructions.SetText(
-	Translations_Get("Do you want to be the first policeman? Press $t$6BFRespawn$t$g to get the chance to be tossed!"));
+	Translations_Get("Do you want to be the first policeman? Press $6BFDELETE$g to get the chance to be tossed!"));
 Label_TossDesc.SetText(
 	"$t"^Translations_Get("Your chance to be tossed:"));
 Label_RequestsAmountDesc.SetText(
@@ -798,8 +845,10 @@ if (RequestedPolicemansVisible && InputPlayer != Null) {
 }
 ***
 
+{{{C_LibPursuitUI_OculusScriptModule}}}
+
 {{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
-{{{Translations::InsertToManialink(["Become a policeman", "Do you want to be the first policeman? Press $t$6BFRespawn$t$g to get the chance to be tossed!", "Your chance to be tossed:", "Amount of players that want be the first policeman:", "Camper! Move %1 meters away to cancel!"])}}}
+{{{Translations::InsertToManialink(["Become a policeman", "Do you want to be the first policeman? Press $6BFDELETE$g to get the chance to be tossed!", "Your chance to be tossed:", "Amount of players that want be the first policeman:", "Camper! Move %1 meters away to cancel!"])}}}
 
 // ---------------------------------- //
 // Main
@@ -807,6 +856,7 @@ if (RequestedPolicemansVisible && InputPlayer != Null) {
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
+	{{{C_LibPursuitUI_OculusScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;

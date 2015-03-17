@@ -43,7 +43,7 @@
 // ---------------------------------- //
 // Oculus Rift support (cut the UI corners)
 // ---------------------------------- //
-#Const C_LibPursuitUI_OculusFrameStart		"<frame id=\"Frame_OculusCutOff\" hidden=\"1\">"
+#Const C_LibPursuitUI_OculusFrameStart		"<frame id=\"Frame_OculusCutOff\">"
 #Const C_LibPursuitUI_OculusFrameEnd		"</frame>"
 #Const C_LibPursuitUI_OculusScriptLabel		"+++OculusCutOff+++"
 #Const C_LibPursuitUI_OculusScriptModule	"""
@@ -55,7 +55,6 @@
 declare Frame_OculusCutOff <=> (Page.GetFirstChild("Frame_OculusCutOff") as CMlFrame);
 Frame_OculusCutOff.ClipWindowActive = True;
 Frame_OculusCutOff.ClipWindowSize = <320., 180.>;
-Frame_OculusCutOff.Show();
 ***
 """
 
@@ -525,22 +524,26 @@ Text Private_CreateLayerRespawnAndBonus() {
 	<style id="Label_PointsDescription" style="TextValueSmallSm" textsize="1" textcolor="FF0"/>
 	<style id="Label_CampWarning" style="TextValueSmallSm" textsize="1"/>
 	<style id="Label_CampDistance" style="TextValueSmallSm" textsize="4"/>
+	<style id="Quad_PadLock" halign="center" valign="center" sizen="10 10" style="Icons128x128_1" substyle="Padlock"/>
 </stylesheet>
 {{{C_LibPursuitUI_OculusFrameStart}}}
-<frame id="Frame_RespawnTimer" posn="0 -70" scale="0">
+<frame id="Frame_RespawnTimer" posn="0 -70 -1" scale="0">
 	<quad halign="center" valign="center" id="Quad_RespawnForeground"/>
 	<quad posn="-46 1.75 -1" sizen="92 6" valign="center" bgcolor="F00" opacity=".75" id="Quad_RespawnGauge"/>
 	<quad posn="-46 1.75 -2" sizen="92.5 6" valign="center" style="Bgs1" substyle="BgDialogBlur"/>
 	<label posn="0 -2.8 1" sizen="34 4" halign="center" valign="center2" id="Label_RespawnMessage"/>
 	<label posn="0 1.75 1" halign="center" valign="center2" style="TextValueSmallSm" id="Label_RespawnTimer"/>
 	<frame posn="0 7.5" id="Frame_CampWarning">
-		<label sizen="80 4" halign="center" valign="center2" id="Label_CampWarning"/>
+		<label sizen="100 4" halign="center" valign="center2" id="Label_CampWarning"/>
 		<label posn="0 1" halign="center" valign="bottom" id="Label_CampDistance"/>
 	</frame>
 </frame>
 <frame id="Frame_PointsBonus" posn="80 -80" scale=".75">
 	<label posn=".5" halign="center" valign="bottom" id="Label_AddedPointsAmount" opacity="0"/>
 	<label posn="-.5" halign="center" valign="top" id="Label_PointsDescription" opacity="0"/>
+</frame>
+<frame posn="155.5 -60" id="Frame_PadLock">
+	<quad id="Quad_PadLock" hidden="1"/>
 </frame>
 {{{C_LibPursuitUI_OculusFrameEnd}}}
 <script><!--
@@ -577,6 +580,8 @@ declare Frame_CampWarning	<=> (Page.GetFirstChild("Frame_CampWarning") as CMlFra
 declare Label_CampWarning 	<=> (Page.GetFirstChild("Label_CampWarning") as CMlLabel);
 declare Label_CampDistance	<=> (Page.GetFirstChild("Label_CampDistance") as CMlLabel);
 
+declare Quad_PadLock <=> (Page.GetFirstChild("Quad_PadLock") as CMlQuad);
+
 // ---------------------------------- //
 // Netcode
 declare netread Boolean Net_RespawnRequested for UI;
@@ -586,6 +591,8 @@ declare netread Integer Net_RespawnRequestTime for UI;
 declare netread Integer Net_PointsChange_Time for UI;
 declare netread Integer Net_PointsChange_Amount for UI;
 declare netread Text	Net_PointsChange_Desc for UI;
+
+declare netread Integer[Text] Net_PlayerImmuneTime for Teams[0];
 
 Label_RespawnMessage.SetText("$t"^Translations_Get("Respawning..."));
 Label_CampWarning.SetText(Translations_GetComposed(["Camper! Move %1 meters away to cancel!", "200"], "$t"));
@@ -612,7 +619,11 @@ declare Boolean Last_RespawnVisible = False;
 ***
 // ---------------------------------- //
 // Respawn visibility
-RespawnVisible = (InputPlayer != Null && InputPlayer.IsSpawned && Net_RespawnRequested && ClanScores[2] > 0);
+RespawnVisible = (
+	InputPlayer != Null && InputPlayer.IsSpawned && GameTime >= InputPlayer.RaceStartTime &&
+	Net_RespawnRequested && ClanScores[2] > 0
+);
+
 Frame_PointsBonus.Visible = (InputPlayer != Null && !InputPlayer.RequestsSpectate);
 Frame_CampWarning.Visible = Net_RespawnForced;
 
@@ -642,9 +653,16 @@ if (Last_RespawnVisible != RespawnVisible) {
 // ---------------------------------- //
 // Anim gauge bar
 if (Net_RespawnRequested) {
-	Quad_RespawnGauge.Size.X = 92. - (Net_RespawnRequestTime - GameTime) / {{{30 * 1000}}}. * 92.;
-	Label_RespawnTimer.Value = TL::ToText(1 + (Net_RespawnRequestTime - GameTime) / 1000);
-	Label_CampDistance.Value = ML::NearestInteger(ML::Distance(InputPlayer.Position, Net_RespawnAnchorPoint))^"m";
+	// Timer and gauge
+	declare RequestCountdown = Net_RespawnRequestTime - GameTime;
+	if (RequestCountdown <= 30000) {
+		Quad_RespawnGauge.Size.X = 92. - RequestCountdown/30000. * 92.;
+		Label_RespawnTimer.Value = TL::ToText(1 + RequestCountdown / 1000);
+	}
+	
+	// Camping warning
+	declare Distance = ML::NearestInteger(ML::Distance(InputPlayer.Position, Net_RespawnAnchorPoint));
+	if (Distance <= 200) Label_CampDistance.Value = Distance^"m";
 }
 
 // ---------------------------------- //
@@ -693,6 +711,14 @@ if (Last_PointsChangeTime != Net_PointsChange_Time) {
 if (Now >= PointsVisibilityEndTime && PointsVisible) {
 	PointsVisible = False;
 }
+
+// ---------------------------------- //
+// Show/hide immunity padlock
+Quad_PadLock.Visible = (
+	GUIPlayer != Null && GUIPlayer.User != Null &&
+	Net_PlayerImmuneTime.existskey(GUIPlayer.User.Login) &&
+	GameTime <= Net_PlayerImmuneTime[GUIPlayer.User.Login]
+);
 ***
 
 {{{C_LibPursuitUI_OculusScriptModule}}}
@@ -1085,4 +1111,23 @@ Void DisplayPointsIncreasion(CTmPlayer _Player, Integer _Points, Text _ForWhat) 
 	Net_PointsChange_Time = Now;
 	Net_PointsChange_Amount = _Points;
 	Net_PointsChange_Desc = _ForWhat;
+}
+
+// ---------------------------------- //
+/** Set immunity status for player
+ *
+ *	@param	_ImmuneTime		Start of immune time (Now)
+ */
+Void UpdateImmuneTime(CTmPlayer _Player, Integer _ImmuneTime) {
+	if (_Player == Null || _Player.User == Null) return;
+	
+	declare netwrite Integer[Text] Net_PlayerImmuneTime for Teams[0];
+	Net_PlayerImmuneTime[_Player.User.Login] = _ImmuneTime;
+}
+
+// ---------------------------------- //
+/// Reset immune time array to save ressources
+Void ResetImmuneTimeArray() {
+	declare netwrite Integer[Text] Net_PlayerImmuneTime for Teams[0];
+	Net_PlayerImmuneTime.clear();
 }

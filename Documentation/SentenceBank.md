@@ -26,6 +26,11 @@ This library contains all sentences translated by third-party users in their nat
 * Parameters:
 	* `Integer _Index`: look for message with this ID
 
+##### GetCroatian
+* Returns `Text` croatian (hr) sentence from specified ID, if exists. If not, returns `""`.
+* Parameters:
+	* `Integer _Index`: look for message with this ID
+
 ##### GetDutch
 * Returns `Text` dutch (nl) sentence from specified ID, if exists. If not, returns `""`.
 * Parameters:

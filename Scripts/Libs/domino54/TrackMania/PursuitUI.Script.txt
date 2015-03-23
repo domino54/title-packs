@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  PURSUIT UI LIB by domino54            //
-//  script version: 2015-03-16            //
+//  script version: 2015-03-23            //
 // -------------------------------------- //
 
 /**
@@ -13,12 +13,14 @@
  *	- CountdownAndRank		Create custom timer on top screen and rank at bottom right
  *	- RespawnAndBonus		Show the respawn time gauge and points increasion yellow message
  *	- RequestPolice			Info, chance to be tossed and list of players requesting police
+ *	- MiniMap				Create switchable minimap in top left screen corner
+ *	- Custom				Create layer customizable by the server admins
  *
- *	UI supports Oculus Rift: elements that are outside
+ *	UI supports HMD: elements that are outside
  *	the normal display are hidden in VR mode.
  */
 
-#Const Version			"2015-03-16"
+#Const Version			"2015-03-23"
 #Const ScriptName		"PursuitUI.Script.txt"
 
 #Include "TextLib" as TextLib
@@ -30,36 +32,49 @@
 // Constants
 // ---------------------------------- //
 #Const C_LibPursuitUI_AvailableModules [
-	"ThiefCounter", "SpeedAndDist", "CountdownAndRank", "RespawnAndBonus", "RequestPolice"
+	"ThiefCounter", "SpeedAndDist", "CountdownAndRank",
+	"RespawnAndBonus", "RequestPolice", "MiniMap", "Custom"
 ]
 
-#Const C_LibPursuitUI_WindowPath			"file://Media/Manialinks/TrackMania/Window/"
+// Media path base
+#Const C_LibPursuitUI_WindowPath		"file://Media/Manialinks/TrackMania/Window/"
+#Const C_LibPursuitUI_ImgBaseCommon		"file://Media/Manialinks/Common/"
+
+// Custom layer request settings
 #Const C_LibPursuitUI_RequestWindowSize		<60., 42.>
 #Const C_LibPursuitUI_RequestWindowId		"RequestWindow"
+#Const C_LibPursuitUI_RequestTimeout		5000	///< Timeout of custom layer request
 
+// Rank module settings
 #Const C_LibPursuitUI_DefaultRankPos		<158., -75.>
 #Const C_LibPursuitUI_DefaultRankScale		.75
 
 // ---------------------------------- //
-// Oculus Rift support (cut the UI corners)
+// Virtual reality support (cut the UI corners)
 // ---------------------------------- //
-#Const C_LibPursuitUI_OculusFrameStart		"<frame id=\"Frame_OculusCutOff\">"
-#Const C_LibPursuitUI_OculusFrameEnd		"</frame>"
-#Const C_LibPursuitUI_OculusScriptLabel		"+++OculusCutOff+++"
-#Const C_LibPursuitUI_OculusScriptModule	"""
-***OculusCutOff***
+#Const C_LibPursuitUI_HMDFrameStart		"<frame id=\"Frame_HMDCutOff\">"
+#Const C_LibPursuitUI_HMDFrameEnd		"</frame>"
+#Const C_LibPursuitUI_HMDScriptLabel	"+++HMDCutOff+++"
+#Const C_LibPursuitUI_HMDScriptModule	"""
+// ---------------------------------- //
+// Compatible with HMD
+// ---------------------------------- //
+***HMDCutOff***
 ***
-// ---------------------------------- //
-// Compatible with Oculus Rift HMD
-// ---------------------------------- //
-declare Frame_OculusCutOff <=> (Page.GetFirstChild("Frame_OculusCutOff") as CMlFrame);
-Frame_OculusCutOff.ClipWindowActive = True;
-Frame_OculusCutOff.ClipWindowSize = <320., 180.>;
+declare Frame_HMDCutOff <=> (Page.GetFirstChild("Frame_HMDCutOff") as CMlFrame);
+Frame_HMDCutOff.ClipWindowActive = True;
+Frame_HMDCutOff.ClipWindowSize = <320., 180.>;
 ***
 """
 
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
 declare Text[]	G_LibPursuitUI_LoadedModules;	///< Loaded UI modules
 declare Text	G_LibPursuitUI_RequestWindow;	///< Manialink of request police window
+// Xml load
+declare Ident	G_LibPursuitUI_RequestId;		///< Id of the request to the xml file
+declare Integer	G_LibPursuitUI_RequestEndTime;	///< Timeout for the request
 
 // ---------------------------------- //
 // Private
@@ -78,7 +93,7 @@ Text Private_CreateLayerThiefCounter() {
 	<style id="Label_CounterMessage" style="TextButtonNav" textsize="1"/>
 	<style id="Label_PolicemenCount" style="TextButtonNav" textsize="1"/>
 </stylesheet>
-{{{C_LibPursuitUI_OculusFrameStart}}}
+{{{C_LibPursuitUI_HMDFrameStart}}}
 <frame id="Frame_ThiefCounter" posn="0 -90">
 	<label posn="0 2 1" halign="center" valign="bottom" id="Label_ThiefCount"/>
 	<label posn="0 1.75 1" sizen="32 4" halign="center" valign="center2" id="Label_CounterMessage"/>
@@ -90,7 +105,7 @@ Text Private_CreateLayerThiefCounter() {
 	<quad posn="-18 -3 1" sizen="30 8" rot="180" halign="left" style="EnergyBar" substyle="HeaderGaugeLeft" id="Quad_PoliceLightsLeft" hidden="1"/>
 	<quad posn="18 -3 1" sizen="33 8" rot="180" halign="right" style="EnergyBar" substyle="HeaderGaugeRight" id="Quad_PoliceLightsRight" hidden="1"/>
 </frame>
-{{{C_LibPursuitUI_OculusFrameEnd}}}
+{{{C_LibPursuitUI_HMDFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Thief counter & bottom colors
@@ -229,7 +244,7 @@ if (CurrentClan == 1) {
 }
 ***
 
-{{{C_LibPursuitUI_OculusScriptModule}}}
+{{{C_LibPursuitUI_HMDScriptModule}}}
 
 {{{Manialink::Animations(["EaseInOutSine", "EaseInOutCirc"])}}}
 {{{Translations::InsertToManialink(["Thieves left", "Policemen: %1"])}}}
@@ -240,7 +255,7 @@ if (CurrentClan == 1) {
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
-	{{{C_LibPursuitUI_OculusScriptLabel}}}
+	{{{C_LibPursuitUI_HMDScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -261,19 +276,18 @@ main() {
  *	@return		The manialink string
  */
 Text Private_CreateLayerSpeedAndDist() {
-	UIManager.UIAll.OverlayHideSpeedAndDist = True;
 	return """
 <manialink version="2" name="Pursuit:SpeedAndDist">
 <stylesheet>
 	<style class="align" halign="right" valign="center2"/>
 </stylesheet>
-{{{C_LibPursuitUI_OculusFrameStart}}}
+{{{C_LibPursuitUI_HMDFrameStart}}}
 <frame id="Frame_SpeedAndDist" posn="158 -85" hidden="1">
 	<label posn="0 0" class="align" style="TextRaceChrono" text="0" id="Label_Speed"/>
 	<label posn="-6 7" class="align" style="TextRaceChrono" textsize="2" text="0" id="Label_Dist"/>
 	<label posn="0 7" class="align" style="TextRaceStaticSmall" text="m"/>
 </frame>
-{{{C_LibPursuitUI_OculusFrameEnd}}}
+{{{C_LibPursuitUI_HMDFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Speed and Distance
@@ -314,7 +328,7 @@ if (GUIPlayer != Null && GUIPlayer.IsSpawned) {
 }
 ***
 
-{{{C_LibPursuitUI_OculusScriptModule}}}
+{{{C_LibPursuitUI_HMDScriptModule}}}
 
 // ---------------------------------- //
 // Main
@@ -322,7 +336,7 @@ if (GUIPlayer != Null && GUIPlayer.IsSpawned) {
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
-	{{{C_LibPursuitUI_OculusScriptLabel}}}
+	{{{C_LibPursuitUI_HMDScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -345,11 +359,9 @@ main() {
  *	@return		The manialink string
  */
 Text Private_CreateLayerCountdownAndRank(Vec2 _Position, Real _Scale) {
-	UIManager.UIAll.OverlayHideCountdown = True;
-	UIManager.UIAll.OverlayHidePosition = True;
 	return """
 <manialink version="2" name="Pursuit:CountdownAndRank">
-{{{C_LibPursuitUI_OculusFrameStart}}}
+{{{C_LibPursuitUI_HMDFrameStart}}}
 <frame id="Frame_Countdown" posn="0 80" hidden="1">
 	<label halign="center" valign="center2" style="TextRaceChrono" textcolor="FB0" textsize="6" text="0:00" id="Label_Countdown"/>
 	<label posn="0 -8 1" scale=".75" halign="center" valign="center2" style="TextValueSmallSm" id="Label_EventName"/>
@@ -358,7 +370,7 @@ Text Private_CreateLayerCountdownAndRank(Vec2 _Position, Real _Scale) {
 	<label posn="0 1" halign="left" valign="bottom" style="TextRaceMessage" id="Label_PosTotal"/>
 	<label posn="0 0" halign="right" valign="bottom" style="TextRaceChrono" textcolor="FFF" id="Label_PosCurrent"/>
 </frame>
-{{{C_LibPursuitUI_OculusFrameEnd}}}
+{{{C_LibPursuitUI_HMDFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Countdown and Rank
@@ -484,7 +496,7 @@ Text TimeToText(Integer _Time) {
 	return Time;
 }
 
-{{{C_LibPursuitUI_OculusScriptModule}}}
+{{{C_LibPursuitUI_HMDScriptModule}}}
 
 {{{Manialink::Animations(["EaseInOutCirc"])}}}
 
@@ -494,7 +506,7 @@ Text TimeToText(Integer _Time) {
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
-	{{{C_LibPursuitUI_OculusScriptLabel}}}
+	{{{C_LibPursuitUI_HMDScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -526,7 +538,7 @@ Text Private_CreateLayerRespawnAndBonus() {
 	<style id="Label_CampDistance" style="TextValueSmallSm" textsize="4"/>
 	<style id="Quad_PadLock" halign="center" valign="center" sizen="10 10" style="Icons128x128_1" substyle="Padlock"/>
 </stylesheet>
-{{{C_LibPursuitUI_OculusFrameStart}}}
+{{{C_LibPursuitUI_HMDFrameStart}}}
 <frame id="Frame_RespawnTimer" posn="0 -70 -1" scale="0">
 	<quad halign="center" valign="center" id="Quad_RespawnForeground"/>
 	<quad posn="-46 1.75 -1" sizen="92 6" valign="center" bgcolor="F00" opacity=".75" id="Quad_RespawnGauge"/>
@@ -545,7 +557,7 @@ Text Private_CreateLayerRespawnAndBonus() {
 <frame posn="155.5 -60" id="Frame_PadLock">
 	<quad id="Quad_PadLock" hidden="1"/>
 </frame>
-{{{C_LibPursuitUI_OculusFrameEnd}}}
+{{{C_LibPursuitUI_HMDFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Respawn and Bonus
@@ -721,7 +733,7 @@ Quad_PadLock.Visible = (
 );
 ***
 
-{{{C_LibPursuitUI_OculusScriptModule}}}
+{{{C_LibPursuitUI_HMDScriptModule}}}
 
 {{{Manialink::Animations(["EaseInCirc", "EaseOutCirc", "EaseInBack", "EaseOutBack"])}}}
 {{{Translations::InsertToManialink(["Respawning...", "For beeing the first policeman", "For surviving other catch",	"For catching a Thief", "For surviving to the end", "Camper! Move %1 meters away to cancel!"])}}}
@@ -732,7 +744,7 @@ Quad_PadLock.Visible = (
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
-	{{{C_LibPursuitUI_OculusScriptLabel}}}
+	{{{C_LibPursuitUI_HMDScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -761,7 +773,7 @@ Text Private_CreateLayerRequestPolice() {
 	<style class="desc" style="TextValueSmallSm" textsize="1"/>
 	<style class="chance" style="TextValueSmallSm" textsize="4"/>
 </stylesheet>
-{{{C_LibPursuitUI_OculusFrameStart}}}
+{{{C_LibPursuitUI_HMDFrameStart}}}
 <frame id="Frame_RequestedPolicemen" posn="{{{-159.-70}}} 0">
 	<frame posn="0 {{{C_LibPursuitUI_RequestWindowSize.Y/2}}}">
 		{{{G_LibPursuitUI_RequestWindow}}}
@@ -772,7 +784,7 @@ Text Private_CreateLayerRequestPolice() {
 		<label posn="4 -34.5" class="chance" textsize="3" textcolor="6BF" id="Label_RequestsCount"/>
 	</frame>
 </frame>
-{{{C_LibPursuitUI_OculusFrameEnd}}}
+{{{C_LibPursuitUI_HMDFrameEnd}}}
 <script><!--
 /**
  *	PURSUIT: Request police
@@ -871,7 +883,7 @@ if (RequestedPolicemansVisible && InputPlayer != Null) {
 }
 ***
 
-{{{C_LibPursuitUI_OculusScriptModule}}}
+{{{C_LibPursuitUI_HMDScriptModule}}}
 
 {{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
 {{{Translations::InsertToManialink(["Become a policeman", "Do you want to be the first policeman? Press $6BFDELETE$g to get the chance to be tossed!", "Your chance to be tossed:", "Amount of players that want be the first policeman:", "Camper! Move %1 meters away to cancel!"])}}}
@@ -882,7 +894,7 @@ if (RequestedPolicemansVisible && InputPlayer != Null) {
 main() {
 	wait (LocalUser != Null);
 	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
-	{{{C_LibPursuitUI_OculusScriptLabel}}}
+	{{{C_LibPursuitUI_HMDScriptLabel}}}
 	+++StartManialink+++
 	while (True) {
 		yield;
@@ -895,6 +907,199 @@ main() {
 --></script>
 </manialink>
 """;
+}
+
+// ---------------------------------- //
+/** EXP: Generate MiniMap layer
+ *
+ *	@return		MiniMap layer text
+ */
+Text Private_CreateLayerMiniMap() {
+	return """
+<manialink version="2" name="Pursuit:MiniMap">
+{{{C_LibPursuitUI_HMDFrameStart}}}
+<frame id="Frame_Minimap" posn="{{{-137-50}}} 67">
+	<quad sizen="45 45" halign="center" valign="center" image="{{{C_LibPursuitUI_ImgBaseCommon}}}Minimap/MinimapOverlay2.dds"/>
+	<minimap posn="0 0 -2" sizen="40 40" halign="center" valign="center" id="Minimap"/>
+	<quad posn="0 0 -.1" sizen="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="ClipPlay" id="Quad_GUIPlayer"/>
+	<quad posn="19.5 0 1" sizen="4 6" valign="center" class="focus1" image="{{{C_LibPursuitUI_ImgBaseCommon}}}Lobbies/button-hide.png" imagefocus="{{{C_LibPursuitUI_ImgBaseCommon}}}Lobbies/button-hide-on.png" ScriptEvents="1" id="Quad_ToggleVisiblityButton"/>
+</frame>
+{{{C_LibPursuitUI_HMDFrameEnd}}}
+<script><!--
+/**
+ *	PURSUIT: MiniMap
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_ModuleId "MiniMap"
+
+#Const C_AnimDuration	500		///< Duration of animation
+
+// ---------------------------------- //
+// Start manialink
+// ---------------------------------- //
+***StartManialink***
+***
+declare Frame_Minimap	<=> (Page.GetFirstChild("Frame_Minimap")	as CMlFrame);
+declare Minimap			<=> (Page.GetFirstChild("Minimap")			as CMlMinimap);
+declare Quad_GUIPlayer	<=> (Page.GetFirstChild("Quad_GUIPlayer")	as CMlQuad);
+
+declare persistent Boolean LibPursuitUI_ShowMinimap for LocalUser;
+declare Boolean Last_MiniMapVisible = False;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Animate window switching visibility
+if (Last_MiniMapVisible != LibPursuitUI_ShowMinimap) {
+	Last_MiniMapVisible = LibPursuitUI_ShowMinimap;
+	
+	if (LibPursuitUI_ShowMinimap) {
+		LibManialink_Anim("<frame posn=\"-137 67\" id=\"Frame_Minimap\" />", C_AnimDuration, "EaseOutBack");
+	} else {
+		LibManialink_Anim("<frame posn=\"{{{-137-47}}} 67\" id=\"Frame_Minimap\" />", C_AnimDuration, "EaseInBack");
+	}
+}
+
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Keyboard button press
+	if (Event.Type == CMlEvent::Type::KeyPress) {	
+		if (Event.KeyName == "F6") LibPursuitUI_ShowMinimap = !LibPursuitUI_ShowMinimap;
+	}
+	// ---------------------------------- //
+	// UI element clicked
+	else if (Event.Type == CMlEvent::Type::MouseClick) {
+		if (Event.ControlId == "Quad_ToggleVisiblityButton") {
+			LibPursuitUI_ShowMinimap = !LibPursuitUI_ShowMinimap;
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Valid, 1, 1.);
+		}
+	}
+	// ---------------------------------- //
+	// Hover on UI element
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		if (Event.Control.HasClass("focus1")) {
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, 1, 1.);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Setup minimap
+if (LibPursuitUI_ShowMinimap) {
+	if (GUIPlayer != Null && GUIPlayer.IsSpawned) {
+		// Set position
+		Minimap.WorldPosition = GUIPlayer.Position;
+		Minimap.MapPosition = <.5, .5>;
+		Quad_GUIPlayer.RelativeRotation = GUIPlayer.AimYaw / ML::PI() * -180. - 90.;
+		Minimap.ZoomFactor = 5.;
+		
+		// Set color
+		if (!Quad_GUIPlayer.Visible) Quad_GUIPlayer.Show();
+		if (GUIPlayer.CurrentClan != 0) Quad_GUIPlayer.Colorize = Teams[GUIPlayer.CurrentClan-1].ColorPrimary;
+		else Quad_GUIPlayer.Colorize = <1., 1., 1.>;
+	} else {
+		Minimap.WorldPosition = <0., 0., 1.>;
+		Minimap.MapPosition = <1., 0.>;
+		Minimap.ZoomFactor = 1.;
+		if (Quad_GUIPlayer.Visible) Quad_GUIPlayer.Hide();
+	}
+}
+***
+
+{{{C_LibPursuitUI_HMDScriptModule}}}
+
+{{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	wait (LocalUser != Null);
+	declare persistent Boolean[Text] Pursuit_ModuleExecuting for LocalUser;
+	{{{C_LibPursuitUI_HMDScriptLabel}}}
+	+++StartManialink+++
+	while (True) {
+		yield;
+		Pursuit_ModuleExecuting[C_ModuleId] = False;
+		LibManialink_AnimLoop();
+		+++Yield+++
+		Pursuit_ModuleExecuting[C_ModuleId] = True;
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/**	Create a request for the XML style file
+ *
+ *	@param	_Style		The path to the XML file to use
+ *
+ *	@return				True if the request was created, false otherwise
+ */
+Boolean Private_RequestLayerFromXml(Text _XmlPath) {
+	// Destroy an ongoing request
+	if (G_LibPursuitUI_RequestId != NullId && Http.Requests.existskey(G_LibPursuitUI_RequestId)) Http.Destroy(Http.Requests[G_LibPursuitUI_RequestId]);
+	G_LibPursuitUI_RequestId = NullId;
+	G_LibPursuitUI_RequestEndTime = -1;
+	if (!Http.IsValidUrl(_XmlPath)) {
+		return False;
+	}
+	declare Req <=> Http.CreateGet(_XmlPath);
+	if (Req == Null) {
+		return False;
+	}
+	G_LibPursuitUI_RequestId = Req.Id;
+	G_LibPursuitUI_RequestEndTime = Now + C_LibPursuitUI_RequestTimeout;
+	return True;
+}
+
+// ---------------------------------- //
+/**	Wait for a response to the request
+ *
+ *	@return				True if the request is not completed, false otherwise
+ */
+Boolean Private_WaitLayerFromXml() {
+	if (Now >= G_LibPursuitUI_RequestEndTime) return False;
+	if (G_LibPursuitUI_RequestId == NullId) return False;
+	if (!Http.Requests.existskey(G_LibPursuitUI_RequestId)) return False;
+	if (Http.Requests[G_LibPursuitUI_RequestId].IsCompleted) return False;
+	return True;
+}
+
+// ---------------------------------- //
+/**	Read the XML file and create layer from it
+ *
+ *	@return				True if the layer was applied, false otherwise
+ */
+Boolean Private_SetLayerFromXml() {
+	if (!Http.Requests.existskey(G_LibPursuitUI_RequestId)) {
+		return False;
+	}
+	
+	declare Req <=> Http.Requests[G_LibPursuitUI_RequestId];
+	
+	if (!Req.IsCompleted || Req.StatusCode != 200) {
+		return False;
+	}
+	
+	Layers::Update("Custom", Req.Result);
+	
+	Http.Destroy(Req);
+	G_LibPursuitUI_RequestId = NullId;
+	G_LibPursuitUI_RequestEndTime = -1;
+	
+	return True;
 }
 
 // ---------------------------------- //
@@ -1015,6 +1220,7 @@ Void LoadModules(Text[] _ModuleIds) {
 	// ---------------------------------- //
 	// Thief Counter and Bottom Colors
 	if (_ModuleIds.exists("ThiefCounter")) {
+		UIManager.UIAll.OverlayHideChrono = True;
 		Layers::Create("ThiefCounter", Private_CreateLayerThiefCounter());
 		Layers::Attach("ThiefCounter");
 	}
@@ -1022,6 +1228,7 @@ Void LoadModules(Text[] _ModuleIds) {
 	// ---------------------------------- //
 	// Speed and Distance
 	if (_ModuleIds.exists("SpeedAndDist")) {
+		UIManager.UIAll.OverlayHideSpeedAndDist = True;
 		Layers::Create("SpeedAndDist", Private_CreateLayerSpeedAndDist());
 		Layers::Attach("SpeedAndDist");
 	}
@@ -1029,6 +1236,8 @@ Void LoadModules(Text[] _ModuleIds) {
 	// ---------------------------------- //
 	// Countdown and Rank
 	if (_ModuleIds.exists("CountdownAndRank")) {
+		UIManager.UIAll.OverlayHideCountdown = True;
+		UIManager.UIAll.OverlayHidePosition = True;
 		Layers::Create("CountdownAndRank", Private_CreateLayerCountdownAndRank(
 			C_LibPursuitUI_DefaultRankPos, C_LibPursuitUI_DefaultRankScale));
 		Layers::Attach("CountdownAndRank");
@@ -1047,6 +1256,20 @@ Void LoadModules(Text[] _ModuleIds) {
 		G_LibPursuitUI_RequestWindow = CreateWindow(C_LibPursuitUI_RequestWindowSize, <0., 0., 0.>, 12.5, C_LibPursuitUI_RequestWindowId, True);
 		Layers::Create("RequestPolice", Private_CreateLayerRequestPolice());
 		Layers::Attach("RequestPolice");
+	}
+	
+	// ---------------------------------- //
+	// MiniMap
+	if (_ModuleIds.exists("MiniMap")) {
+		Layers::Create("MiniMap", Private_CreateLayerMiniMap());
+		Layers::Attach("MiniMap");
+	}
+	
+	// ---------------------------------- //
+	// Custom
+	if (_ModuleIds.exists("Custom")) {
+		Layers::Create("Custom");
+		Layers::Attach("Custom");
 	}
 }
 
@@ -1130,4 +1353,36 @@ Void UpdateImmuneTime(CTmPlayer _Player, Integer _ImmuneTime) {
 Void ResetImmuneTimeArray() {
 	declare netwrite Integer[Text] Net_PlayerImmuneTime for Teams[0];
 	Net_PlayerImmuneTime.clear();
+}
+
+// ---------------------------------- //
+/** Set labels visibility
+ *
+ *	@param	_Mode	Labels visibility mode
+ *	[True => Always visible, False => Only when visible]
+ */
+Void UpdateLabelsVisiblity(Boolean _Mode) {
+	if (_Mode) {
+		UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::Always;
+		UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::Always;
+	} else {
+		UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+		UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+	}
+}
+
+// ---------------------------------- //
+/** Load a custom layer from an XML file
+ *
+ *	@param	_Path		Path to the XML file
+ */
+Void SetCustomLayerFromXml(Text _Path) {
+	if (_Path == "") return;
+	declare Loaded = Private_RequestLayerFromXml(_Path);
+	if (Loaded) {
+		while (Private_WaitLayerFromXml()) {
+			yield;
+		}
+		Loaded = Private_SetLayerFromXml();
+	}
 }

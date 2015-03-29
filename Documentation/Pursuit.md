@@ -5,7 +5,7 @@
 ### What is Pursuit?
 Pursuit is simple gamemode about interacing with other players. Players are split into **Thieves**, that escape the **Police**, which must catch them all.
 
-At the beginning of each round random first Policeman is tossed after some seconds. This allows Thieves to move away. You can also vote yourself as Policeman by pressing **"Give up"** key (Delete). During the round, Police is chasing Theives. The Thief is caught if any Policeman **drives through** him. Caught Thieves become the Police. Round ends if **all Thieves are caught** or **time reaches the limit**. If time reached the limit and only one Thief remains, he is the **round winner**.
+At the beginning of each round random first Policeman is tossed after some seconds. This allows Thieves to move away. You can also vote yourself as Policeman by pressing **"Give up"** key (Delete). During the round, Police is chasing Theives. The Thief is caught if any Policeman **drives through** him. Caught Thieves respawn and become the Police. Round ends if **all Thieves are caught** or **time reaches the limit**. If time reached the limit and only one Thief remains, he is the **round winner**.
 
 While the Police can respawn freely, Thieves have to **wait 30 seconds** before they got respawn. Thief can respawn instantly only before first Policeman is toss.
 
@@ -108,6 +108,9 @@ https://forum.maniaplanet.com/viewtopic.php?f=465&t=30696
 ![interface-screenshot](http://dominolink.aq.pl/common/pursuit-playerhitbox.jpg)
 #### Hitbox
 In Pursuit thing called hitbox doesn't really exist. The catch is realized if Cop is **3 meters** close to a Thief. With this we can imagine that player hitbox is 3m sphere with center at car middle.
+
+#### Teams management
+Pursuit uses two script settings: `UseClans` and `UseForcedClans`. These options are disabled when Podium sequence is going on due a "no cars" bug. Players are forced to Red team at beginning and every catch is switch to Blue, that requires player to be despawned to make it work.
 
 #### Display delay
 As you probably know TrackMania has a little visual delay. I managed to reduce it to minimum with changing two script variables (`UiRounds` and `UiLaps`) to `True`. With this, the lag almost doesn't exists. Anyway keep in mind that not everything you see as catch can be received by the server.

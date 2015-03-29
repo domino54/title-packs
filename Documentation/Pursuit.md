@@ -2,6 +2,8 @@
 
 ---
 
+![pursuit-header](http://dominolink.aq.pl/common/pursuit.jpg)
+
 ### What is Pursuit?
 Pursuit is simple gamemode about interacing with other players. Players are split into **Thieves**, that escape the **Police**, which must catch them all.
 
@@ -9,11 +11,14 @@ At the beginning of each round random first Policeman is tossed after some secon
 
 While the Police can respawn freely, Thieves have to **wait 30 seconds** before they got respawn. Thief can respawn instantly only before first Policeman is toss.
 
+If someone joins the game before first Policeman is tossed, he can be a Thief. If he joins too late he becomes a Policeman.
+
 **Pro tips**
 * Color at bottom of screen tells you in which team you are.
 * Turn opponents visible :) (change visibility by pressing **O**).
 * Activate nicknames to realize who is who (show/hide with **~**).
 * Bind freelook (rear camera) to see your opponents from behind.
+* You can quickly remind basic rules in Pause > Help menu.
 
 ---
 
@@ -51,9 +56,11 @@ As seen above Policemen labels are marked **blue** and Thieves labels are marked
 To build a map, keep these instructions:
 * Just build complicated race track with hidden/hard to reach finish.
 * Use multilap start instead, if you want. Players wont respawn when finishing then.
-* Border your map with something tall.
+* Border your map with something tall (eg. mountains) to prevent players going outside.
 * Fill or avoid areas, where players can glitch under/out of block/map.
+* Don't place turbos in two way roads - players won't get slower driving from opposite direction.
 * Don't make hard to reach spots. Better create many easy ones and wide spaces.
+* 64x64 Stadium base is way too big for Hide and Seek maps.
 
 ---
 
@@ -71,6 +78,9 @@ Every catch time limit changes in specific way. Basically, when someone is caugh
 
 #### Safe time
 Every time you spawn you have 3 seconds safe time (after "321Go") disabling interaction with others. This allows Thieves to respawn without pression, that AFK Policemen can catch him. This affects Policemen too.
+
+#### Going outside of the map
+If any Thief goes out of editor construction aera, he is respawned automatically. If anyone (even the Police) falls under the map by a glitch, he is respawned too. Respawned players are warned with UI big message.
 
 #### Anti-camping plugin
 `S_AntiCampPlugin True`
@@ -110,10 +120,16 @@ https://forum.maniaplanet.com/viewtopic.php?f=465&t=30696
 In Pursuit thing called hitbox doesn't really exist. The catch is realized if Cop is **3 meters** close to a Thief. With this we can imagine that player hitbox is 3m sphere with center at car middle.
 
 #### Teams management
-Pursuit uses two script settings: `UseClans` and `UseForcedClans`. These options are disabled when Podium sequence is going on due a "no cars" bug. Players are forced to Red team at beginning and every catch is switch to Blue, that requires player to be despawned to make it work.
+Pursuit uses two script settings: `UseClans` and `UseForcedClans`. These options are disabled when Podium sequence is going on due a "no cars" bug. Players are forced to Red team at beginning and every catch is switch to Blue, that requires player to be despawned to make it work. If there is less than 2 players mode waits and one player can explore the map.
 
 #### Display delay
 As you probably know TrackMania has a little visual delay. I managed to reduce it to minimum with changing two script variables (`UiRounds` and `UiLaps`) to `True`. With this, the lag almost doesn't exists. Anyway keep in mind that not everything you see as catch can be received by the server.
 
+#### Finish and map dimensions
+Map dimensions used by auto-respawn fit perfectly to the map construction aera. If someone passes all checkpoints and drives throuh finish he is respawned. I can't avoid it any way. Instead, you can put multilap start on the map, which disables the ability to finish a track.
+
 #### HMD support
 Interface of the whole mode supports virtual reality devices. It does mean, that elements that normally are outside of the screen are cut at the borders, what allows HMDs to have them hidden from UI. Noticeable bug is minimap but I can't fix this, only hiding map may solve the problem (TODO).
+
+#### Idea for the OffZone
+Like in ShootMania, there is ability to do an "OffZone". Since finish respawns you, we can so a small trick. To do this, your map MUST have exactly one start (not multilap) and no checkpoints. Then we can do half-tanspaent non-collideable finish in full block size, we can place in other blocks and snap to the editor grid in places players shouldn't reach.

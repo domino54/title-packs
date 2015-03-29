@@ -10,6 +10,7 @@ At the beginning of each round random first Policeman is tossed after some secon
 While the Police can respawn freely, Thieves have to **wait 30 seconds** before they got respawn. Thief can respawn instantly only before first Policeman is toss.
 
 **Pro tips**
+* Color at bottom of screen tells you in which team you are.
 * Turn opponents visible :) (change visibility by pressing **O**).
 * Activate nicknames to realize who is who (show/hide with **~**).
 * Bind freelook (rear camera) to see your opponents from behind.
@@ -18,12 +19,12 @@ While the Police can respawn freely, Thieves have to **wait 30 seconds** before 
 
 ### Scores
 
-* **+1** for surviving other catch.
-* **+2** for catching a Thief.
+* **+1** for surviving other catch. **+1** round survival in scores table.
+* **+2** for catching a Thief. **+1** in round captures in scores table.
 * **+5** for beeing uncaught at the round end.
 * **+Thieves count/4 + 1** for beeing the first Policeman.
 
-Survival and capture stats in scores table are reset each round begin.
+In scores table "Sv" means survival and "Ch" captures. Survival and capture stats in scores table are reset each round begin.
 
 ---
 
@@ -45,7 +46,23 @@ As seen above Policemen labels are marked **blue** and Thieves labels are marked
 
 ---
 
+### Build a map
+
+To build a map, keep these instructions:
+* Just build complicated race track with hidden/hard to reach finish.
+* Use multilap start instead, if you want. Players wont respawn when finishing then.
+* Border your map with something tall.
+* Fill or avoid areas, where players can glitch under/out of block/map.
+* Don't make hard to reach spots. Better create many easy ones and wide spaces.
+
+---
+
 ### Functions
+
+#### Rounds
+`S_RoundsPerMap 3`
+
+Map is divided into 3 rounds by default. This amount can be changed in settings.
 
 #### Dynamic time limit
 `S_TimePerThief 60`

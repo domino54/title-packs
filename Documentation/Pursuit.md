@@ -2,6 +2,20 @@
 
 ---
 
+### What is Pursuit?
+Pursuit is simple gamemode about interacing with other players. Players are split into **Thieves**, that escape the **Police**, which must catch them all.
+
+At the beginning of each round random first Policeman is tossed after some seconds. This allows Thieves to move away. You can also vote yourself as Policeman by pressing **"Give up"** key (Delete). During the round, Police is chasing Theives. The Thief is caught if any Policemen **drives through** him. Caught Thieves become the Police. Round ends if **all Thieves are caught** or **time reaches the limit**.
+
+While the Police can respawn freely, Thieves have to **wait 30 seconds** before they got respawn. Thief can respawn instantly only before first Policeman is toss.
+
+**Pro tips**
+* Turn opponents visible :) (change visibility by pressing **O**).
+* Activate nicknames to realize who is who (show/hide with **~**).
+* Bind freelook (rear camera) to see your opponents from behind.
+
+---
+
 ### Interface
 ![interface-screenshot](http://dominolink.aq.pl/common/instruction.jpg)
 * 1. Thieves counter

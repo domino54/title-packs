@@ -19,6 +19,9 @@ If someone joins the game before first Policeman is tossed, he can be a Thief. I
 * Activate nicknames to realize who is who (show/hide with **~**).
 * Bind freelook (rear camera) to see your opponents from behind.
 * You can quickly remind basic rules in Pause > Help menu.
+* 
+Mode is created by domino54 from Poland. Contact me on forum: (in english or polish only)
+https://forum.maniaplanet.com/ucp.php?i=pm&mode=compose&u=5031
 
 ---
 

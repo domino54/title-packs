@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  TRANSLATIONS LIB by domino54          //
-//  script version: 2015-03-16            //
+//  script version: 2015-04-25            //
 // -------------------------------------- //
 
 /**
@@ -8,7 +8,7 @@
  *	messages, if they exists in SentenceBank lib.
  */
 
-#Const Version			"2015-03-15"
+#Const Version			"2015-04-25"
 #Const ScriptName		"Translations.Script.txt"
 
 #Include "TextLib" as TextLib
@@ -63,6 +63,7 @@ Text GetTranslation(CPlayer _Player, Text _Message) {
 	
 	// Browse available languages
 	switch (_Player.User.Language) {
+		case "cz" : ReturnedText = SentenceBank::GetCzech(MessageId);
 		case "de" : ReturnedText = SentenceBank::GetGerman(MessageId);
 		case "fr" : ReturnedText = SentenceBank::GetFrench(MessageId);
 		case "hr" : ReturnedText = SentenceBank::GetCroatian(MessageId);
@@ -282,7 +283,7 @@ Void SendNotice(Text[] _Message, Boolean _NoticeSound) {
  */
 Text InsertToManialink(Text[] _Messages) {
 	declare Text[Text] WordBanks;
-	declare Langs = ["de", "fr", "hr", "nl", "pl", "pt", "ru", "sk"];
+	declare Langs = ["cz", "de", "fr", "hr", "nl", "pl", "pt", "ru", "sk"];
 	foreach (Lang in Langs) WordBanks[Lang] = "0 => \"\"";
 	WordBanks["en"] = "\"\" => 0";
 	
@@ -291,6 +292,7 @@ Text InsertToManialink(Text[] _Messages) {
 		if (Index != 0) {
 			// Add messages to banks
 			WordBanks["en"] ^= ", \""^_Messages[I]^"\" => "^Index;
+			WordBanks["cz"] ^= ", "^Index^" => \""^SentenceBank::GetCzech(Index)^"\"";
 			WordBanks["de"] ^= ", "^Index^" => \""^SentenceBank::GetGerman(Index)^"\"";
 			WordBanks["fr"] ^= ", "^Index^" => \""^SentenceBank::GetFrench(Index)^"\"";
 			WordBanks["hr"] ^= ", "^Index^" => \""^SentenceBank::GetCroatian(Index)^"\"";
@@ -316,6 +318,13 @@ Integer GetIndex(Text _Message) {
 	// Return index
 	if (IndexBank.existskey(_Message)) return IndexBank[_Message];
 	return 0;
+}
+
+Text GetCzech(Integer _Index) {
+	declare CzechBank = [{{{WordBanks["cz"]}}}];
+	// Return translation
+	if (CzechBank.existskey(_Index)) return CzechBank[_Index];
+	return "";
 }
 
 Text GetGerman(Integer _Index) {
@@ -385,6 +394,7 @@ Text Translations_Get(Text _Message) {
 	declare Text OutputMessage;
 	OutputMessage = _Message;
 	switch (LocalUser.Language) {
+		case "cz" : OutputMessage = GetCzech(MessageId);
 		case "de" : OutputMessage = GetGerman(MessageId);
 		case "fr" : OutputMessage = GetFrench(MessageId);
 		case "hr" : OutputMessage = GetCroatian(MessageId);

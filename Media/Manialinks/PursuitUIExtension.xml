@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<manialink version="2" name="PursuitUIExtension" background="0">
+<stylesheet>
+	<style class="bgbutton" sizen="8 8" style="Bgs1InRace" substyle="BgTitleShadow"/>
+	<style class="tooltip" posn="7 -4" valign="center2" style="TextButtonNav" textsize="1" textcolor="FFF" opacity="0"/>
+</stylesheet>
+
+<frame posn="-160 80">
+	<quad class="bgbutton" id="Help" ScriptEvents="1"/>
+	<label posn="4 -4" halign="center" valign="center2" style="TextButtonNav" textsize="5" textcolor="BF6" text="$s$i?"/>
+	<label class="tooltip" text="$sHow to play" id="Label_TooltipHelp"/>
+</frame>
+<frame posn="-160 72">
+	<quad class="bgbutton" id="Forum" ScriptEvents="1"/>
+	<quad posn="1 -1" sizen="6 6" style="Icons64x64_1" substyle="ButtonLeagues"/>
+	<label class="tooltip" text="$sTopic at Official ManiaPlanet Forum" id="Label_TooltipForum"/>
+</frame>
+<frame posn="-160 64">
+	<quad class="bgbutton" id="Translate" ScriptEvents="1"/>
+	<label posn="4 -4" halign="center" valign="center2" style="TextButtonNav" textsize="3" textcolor="FFF" text="$s校"/>
+	<label class="tooltip" text="$sHelp us translate the mode!" id="Label_TooltipTranslate"/>
+</frame>
+
+<script><!--
+// -------------------------------------- //
+//  PURSUIT UI EXTENSION by domino54      //
+//  script version: 2015-04-25            //
+// -------------------------------------- //
+
+#Include "AnimLib" as AL
+#Include "MathLib" as ML
+
+#Const C_TooltipIds		["Help", "Forum", "Translate"]
+#Const C_AnimDuration	250
+
+// ---------------------------------- //
+// Start Manialink
+// ---------------------------------- //
+***StartManialink***
+***
+// ---------------------------------- //
+// Preload tooltips
+declare CMlLabel[Text] Label_Tooltip;
+declare Boolean[Text] TooltipStatus;
+declare Boolean[Text] PrevTooltipStatus;
+declare Integer[Text] TooltipAnimStartTime;
+
+foreach (Tooltip in C_TooltipIds) {
+	Label_Tooltip[Tooltip] <=> (Page.GetFirstChild("Label_Tooltip"^Tooltip) as CMlLabel);
+	TooltipStatus[Tooltip] = False;
+	PrevTooltipStatus[Tooltip] = False;
+	TooltipAnimStartTime[Tooltip] = 0;
+}
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		switch (Event.ControlId) {
+			case "Help" :			ShowModeHelp();
+			case "Forum" :			OpenLink("https://forum.maniaplanet.com/viewtopic.php?f=9&t=30435", CMlScript::LinkType::ExternalBrowser);
+			case "Translate" :		OpenLink("https://forum.maniaplanet.com/viewtopic.php?f=465&t=30696", CMlScript::LinkType::ExternalBrowser);
+		}
+	}
+	// ---------------------------------- //
+	// Mouse over/out
+	else if (Event.Type == CMlEvent::Type::MouseOver || Event.Type == CMlEvent::Type::MouseOut) {
+		if (TooltipStatus.existskey(Event.ControlId)) TooltipStatus[Event.ControlId] = !TooltipStatus[Event.ControlId];
+	}
+}
+
+// ---------------------------------- //
+// Tooltips management
+foreach (Tooltip in C_TooltipIds) {
+	if (PrevTooltipStatus.existskey(Tooltip) && TooltipStatus.existskey(Tooltip) &&
+		Label_Tooltip.existskey(Tooltip) && TooltipAnimStartTime.existskey(Tooltip)
+	) {
+		// ---------------------------------- //
+		// Update animation status
+		if (PrevTooltipStatus[Tooltip] != TooltipStatus[Tooltip]) {
+			PrevTooltipStatus[Tooltip] = TooltipStatus[Tooltip];
+			TooltipAnimStartTime[Tooltip] = Now;
+		}
+		
+		// ---------------------------------- //
+		// Animate tooltip
+		if (Now <= TooltipAnimStartTime[Tooltip] + C_AnimDuration) {
+			declare Text AnimEasing;
+			declare Real AnimBase;
+			declare Real AnimChange;
+			
+			if (TooltipStatus[Tooltip]) {
+				AnimEasing = "EaseOutCirc";
+				AnimBase = 1.;
+				AnimChange = -1.;
+			} else {
+				AnimEasing = "EaseInCirc";
+					AnimBase = 0.;
+				AnimChange = 1.;
+			}
+			
+			declare Real AnimFactor = AL::Ease(AnimEasing, ML::ToReal(Now - TooltipAnimStartTime[Tooltip]), AnimBase, AnimChange, ML::ToReal(C_AnimDuration));
+			
+			Label_Tooltip[Tooltip].Opacity = 1. - AnimFactor;
+			Label_Tooltip[Tooltip].RelativePosition.X = 9 - (AnimFactor * 2.);
+		}
+		// ---------------------------------- //
+		// End animation
+		else if (
+			Label_Tooltip[Tooltip].Opacity != BooleanToInteger(TooltipStatus[Tooltip]) ||
+			Label_Tooltip[Tooltip].RelativePosition.X != 7. + (BooleanToInteger(TooltipStatus[Tooltip]) * 2.)
+		) {
+			Label_Tooltip[Tooltip].Opacity = ML::ToReal(BooleanToInteger(TooltipStatus[Tooltip]));
+			Label_Tooltip[Tooltip].RelativePosition.X = 7. + (BooleanToInteger(TooltipStatus[Tooltip]) * 2.);
+		}
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Convert boolean to integer
+ *
+ *	@param	_Player		A boolean to convert
+ *
+ *	@return		Converted boolean to integer
+ */
+Integer BooleanToInteger(Boolean _Boolean) {
+	if (_Boolean) return 1;
+	return 0;
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++StartManialink+++
+	while (True) {
+		yield;
+		+++Yield+++
+	}
+}
+--></script>
+</manialink>

@@ -1,0 +1,170 @@
+// -------------------------------------- //
+//  CYLINDER HITBOX LIB by domino54       //
+//  script version: 2015-04-29            //
+// -------------------------------------- //
+
+/**
+ *	This library allows to create virtual cylinder hitbox for
+ *	the cars, adjust cylinder diameter and height from player
+ *	rotation and car model size. Allows to check if hitboxes
+ *	of two players touch.
+ */
+
+#Const Version			"2015-04-28"
+#Const ScriptName		"CylinderHitbox.Script.txt"
+
+#Include "AnimLib" as AnimLib
+#Include "MathLib" as MathLib
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_DetectionDistance		8.		///< Computes only if distance is smaller than this value
+#Const C_VerticalSizeSub		.25		///< Short cylinder diameter to make it more accurate at car longer side
+
+/// Sizes of visible player car models
+#Const C_CarModelSizes [
+	"CanyonCar" => <4.5, 1.25, 2.>,
+	"StadiumCar" => <4., 1., 1.75>,
+	"ValleyCar" => <4.25, 1.5, 2.25>
+]
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Convert pitch in radians to degress
+ *
+ *	@param	_Pitch		The pitch to convert
+ *
+ *	@return		Pitch converted to degress
+ */
+Real Private_GetPitch(Real _Pitch) {
+	return MathLib::Abs(_Pitch * 2 / MathLib::PI());
+}
+
+// ---------------------------------- //
+/** Get cylinder diameter
+ *
+ *	@param	_Pitch		Pitch used to compute diameter
+ *
+ *	@return		Diameter of cylinder
+ */
+Real Private_GetCyliDiameter(Real _Pitch) {
+	return AnimLib::Ease("EaseInCirc", _Pitch, 1., -1., 1.);
+}
+
+// ---------------------------------- //
+/** Get cylinder height
+ *
+ *	@param	_Pitch		Pitch used to compute height
+ *
+ *	@return		Height of cylinder
+ */
+Real Private_GetCyliHeight(Real _Pitch) {
+	return AnimLib::Ease("EaseOutCirc", _Pitch, 0., 1., 1.);
+}
+
+// ---------------------------------- //
+/** Distance between two points in one dimension
+ *
+ *	@param	_Pos1		Pirst point position
+ *	@param	_Pos2		Second point position
+ *
+ *	@return		Distance between points
+ */
+Real Private_Distance1D(Real _Pos1, Real _Pos2) {
+	return MathLib::Sqrt(MathLib::Pow(_Pos2 - _Pos1, 2.));
+}
+
+// ---------------------------------- //
+/** Distance between two points in two dimensions
+ *
+ *	@param	_Pos1		Pirst point position
+ *	@param	_Pos2		Second point position
+ *
+ *	@return		Distance between points
+ */
+Real Private_Distance2D(Vec3 _Pos1, Vec3 _Pos2) {
+	return MathLib::Sqrt(MathLib::Pow(_Pos2.X - _Pos1.X, 2.) + MathLib::Pow(_Pos2.Z - _Pos1.Z, 2.));
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Check if hitboxes of two players touch
+ *
+ *	@param	_Player1	Pirst point position
+ *	@param	_Player2	Second point position
+ *
+ *	@return		True if cylinders touch
+ */
+Boolean AreTouching(CTmPlayer _Player1, CTmPlayer _Player2) {
+	if (_Player1 == Null || _Player2 == Null) return False;
+	
+	// Check if cars are close enough
+	if (MathLib::Distance(_Player1.Position, _Player2.Position) > C_DetectionDistance) return False;
+	
+	// Set hitbox model properties
+	declare Vec3 FixedPos1 = _Player1.Position;
+	declare Vec3 FixedPos2 = _Player2.Position;
+	
+	FixedPos1.Y += C_CarModelSizes[MapPlayerModelName].Y / 2;
+	FixedPos2.Y += C_CarModelSizes[MapPlayerModelName].Y / 2;
+	
+	// Convert rad to deg pitch
+	declare Real Player1Pitch = Private_GetPitch(_Player1.AimPitch);
+	declare Real Player2Pitch = Private_GetPitch(_Player2.AimPitch);
+	
+	// Cylinder diameter depends on player rotation
+	declare Real Player1Diameter;
+	Player1Diameter = (C_CarModelSizes[MapPlayerModelName].X - C_VerticalSizeSub) * Private_GetCyliDiameter(Player1Pitch);
+	declare Real Player2Diameter;
+	Player2Diameter = (C_CarModelSizes[MapPlayerModelName].X - C_VerticalSizeSub) * Private_GetCyliDiameter(Player2Pitch);
+	
+	// Diameter can't be shorter than vehicle width
+	if (Player1Diameter < C_CarModelSizes[MapPlayerModelName].Z) Player1Diameter = C_CarModelSizes[MapPlayerModelName].Z;
+	if (Player2Diameter < C_CarModelSizes[MapPlayerModelName].Z) Player2Diameter = C_CarModelSizes[MapPlayerModelName].Z;
+	
+	// Check if cylinders touch in X and Z axis
+	if (Private_Distance2D(FixedPos1, FixedPos2) > (Player1Diameter + Player2Diameter) / 2) return False;
+	
+	// Cylinder height depends on player rotation
+	declare Real Player1Height = C_CarModelSizes[MapPlayerModelName].X * Private_GetCyliHeight(Player1Pitch);
+	declare Real Player2Height = C_CarModelSizes[MapPlayerModelName].X * Private_GetCyliHeight(Player2Pitch);
+	
+	// Height can't be lower then vehicle height
+	if (Player1Height < C_CarModelSizes[MapPlayerModelName].Y) Player1Height = C_CarModelSizes[MapPlayerModelName].Y;
+	if (Player2Height < C_CarModelSizes[MapPlayerModelName].Y) Player2Height = C_CarModelSizes[MapPlayerModelName].Y;
+	
+	// Check if cylinders touch in Y axis
+	if (Private_Distance1D(FixedPos1.Y, FixedPos2.Y) - (C_VerticalSizeSub * 2) > (Player1Height + Player2Height) / 2) return False;
+	
+	// Players touch
+	return True;
+}

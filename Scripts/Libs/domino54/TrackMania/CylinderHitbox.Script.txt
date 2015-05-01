@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  CYLINDER HITBOX LIB by domino54       //
-//  script version: 2015-04-29            //
+//  script version: 2015-05-01            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	of two players touch.
  */
 
-#Const Version			"2015-04-28"
+#Const Version			"2015-05-01"
 #Const ScriptName		"CylinderHitbox.Script.txt"
 
 #Include "AnimLib" as AnimLib
@@ -127,9 +127,11 @@ Text GetScriptName() {
 Boolean AreTouching(CTmPlayer _Player1, CTmPlayer _Player2) {
 	if (_Player1 == Null || _Player2 == Null) return False;
 	
+	// ---------------------------------- //
 	// Check if cars are close enough
 	if (MathLib::Distance(_Player1.Position, _Player2.Position) > C_DetectionDistance) return False;
 	
+	// ---------------------------------- //
 	// Set hitbox model properties
 	declare Vec3 FixedPos1 = _Player1.Position;
 	declare Vec3 FixedPos2 = _Player2.Position;
@@ -137,34 +139,42 @@ Boolean AreTouching(CTmPlayer _Player1, CTmPlayer _Player2) {
 	FixedPos1.Y += C_CarModelSizes[MapPlayerModelName].Y / 2;
 	FixedPos2.Y += C_CarModelSizes[MapPlayerModelName].Y / 2;
 	
+	// ---------------------------------- //
 	// Convert rad to deg pitch
 	declare Real Player1Pitch = Private_GetPitch(_Player1.AimPitch);
 	declare Real Player2Pitch = Private_GetPitch(_Player2.AimPitch);
 	
+	// ---------------------------------- //
 	// Cylinder diameter depends on player rotation
 	declare Real Player1Diameter;
 	Player1Diameter = (C_CarModelSizes[MapPlayerModelName].X - C_VerticalSizeSub) * Private_GetCyliDiameter(Player1Pitch);
 	declare Real Player2Diameter;
 	Player2Diameter = (C_CarModelSizes[MapPlayerModelName].X - C_VerticalSizeSub) * Private_GetCyliDiameter(Player2Pitch);
 	
+	// ---------------------------------- //
 	// Diameter can't be shorter than vehicle width
 	if (Player1Diameter < C_CarModelSizes[MapPlayerModelName].Z) Player1Diameter = C_CarModelSizes[MapPlayerModelName].Z;
 	if (Player2Diameter < C_CarModelSizes[MapPlayerModelName].Z) Player2Diameter = C_CarModelSizes[MapPlayerModelName].Z;
 	
+	// ---------------------------------- //
 	// Check if cylinders touch in X and Z axis
 	if (Private_Distance2D(FixedPos1, FixedPos2) > (Player1Diameter + Player2Diameter) / 2) return False;
 	
+	// ---------------------------------- //
 	// Cylinder height depends on player rotation
 	declare Real Player1Height = C_CarModelSizes[MapPlayerModelName].X * Private_GetCyliHeight(Player1Pitch);
 	declare Real Player2Height = C_CarModelSizes[MapPlayerModelName].X * Private_GetCyliHeight(Player2Pitch);
 	
+	// ---------------------------------- //
 	// Height can't be lower then vehicle height
 	if (Player1Height < C_CarModelSizes[MapPlayerModelName].Y) Player1Height = C_CarModelSizes[MapPlayerModelName].Y;
 	if (Player2Height < C_CarModelSizes[MapPlayerModelName].Y) Player2Height = C_CarModelSizes[MapPlayerModelName].Y;
 	
+	// ---------------------------------- //
 	// Check if cylinders touch in Y axis
 	if (Private_Distance1D(FixedPos1.Y, FixedPos2.Y) - (C_VerticalSizeSub * 2) > (Player1Height + Player2Height) / 2) return False;
 	
+	// ---------------------------------- //
 	// Players touch
 	return True;
 }

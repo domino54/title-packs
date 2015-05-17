@@ -13,13 +13,13 @@ ActionList_End();
 ```
 If your action is in subfolder, use double backslash `\\` to access a subfolder. Now if you want to bind a weapon for player:
 * Load it to a slot: ```ActionLoad(Player, CSmMode::EActionSlot::Slot_A, G_Actions["Torpede"]);```
-* Bind to input: ```ActionBind(Player, CSmMode::EActionSlot::Slot_A, CSmMode::EActionInput:::Weapon);```
+* Bind to input: ```ActionBind(Player, CSmMode::EActionSlot::Slot_A, CSmMode::EActionInput::Weapon);```
 
 There are 8 available slots, from `Slot_A` to `Slot_H`. You can modify slots when player is unspawned to give him more than 8 weapons. Possible inputs for actions are:
-* Weapon: `CSmMode::EActionInput:::Weapon`
-* Stamina replacement: `CSmMode::EActionInput:::Movement` (player can't jump!)
-* Alphanumeric keys, from 1 to 4: `CSmMode::EActionInput:::Activable1`
-* Consumable keys (Q and E): `CSmMode::EActionInput:::Consumable1` (1 = Q, 2 = E)
+* Weapon: `CSmMode::EActionInput::Weapon`
+* Stamina replacement: `CSmMode::EActionInput::Movement` (player can't jump!)
+* Alphanumeric keys, from 1 to 4: `CSmMode::EActionInput::Activable1`
+* Consumable keys (Q and E): `CSmMode::EActionInput::Consumable1` (1 = Q, 2 = E)
 
 ### Small interface tip
 
@@ -29,7 +29,7 @@ declare UI for Player <=> UIManager.GetUI(Player);
 UI.OverlayHideConsumables = True;
 ```
 
-And your action is available to use now!
+And your action is now ready to use!
 
 ## Weapon hit event
 The weapon is useless if it doesn't deal any damage. This is small help about handling hit of custom weapon in maniascript. To do it correctly, paste following code in `PendingEvents` foreach loop:
@@ -37,7 +37,7 @@ The weapon is useless if it doesn't deal any damage. This is small help about ha
   // ---------------------------------- //
   // On custom weapon hit
   else if (Event.Type == CSmModeEvent::EType::OnActionCustomEvent) {
-    if (Event.Shooter == Null && Event.Victim == Null && Event.Shooter != Event.Victim) {
+    if (Event.Shooter != Null && Event.Victim != Null && Event.Shooter != Event.Victim) {
       declare Damage = TextLib::ToInteger(Event.Param2[0]);
       declare Points = Damage / 100;
       

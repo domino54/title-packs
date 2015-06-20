@@ -1,13 +1,14 @@
 // -------------------------------------- //
-//  MX KNOCKOUT by domino54               //
-//  script version: 1.0.0                 //
+//  KNOCKOUT by domino54                  //
+//  script version: 1.1.0                 //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/RoundsBase.Script.txt"
 
-#Const CompatibleMapType	"Race"
-#Const Versio		"2015-06-19"
+#Const Version		"2015-06-20"
 #Const ScriptName	"Knockout.Script.txt"
+
+#Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
 // Settings
@@ -15,23 +16,40 @@
 #Setting S_RoundsPerMap		0		as _("Number of rounds per map (0 = infinite)")
 #Setting S_AdminHoldStart	False	as "<hidden>"
 #Setting S_AdminSetPause	False	as "<hidden>"
-
 // Change default values
 #Setting S_ForceLapsNb		0
+#Setting S_FinishTimeout	20
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_RequiredPlayersNb	2
-#Const C_PlayerCardAlive	<.75, .75, .75>	///< Color of player card when alive
-#Const C_PlayerCardDead		<0., 0., 0.>	///< Color of player card when dead
-#Const C_PlayerCardPassed	<0., 1., 0.>	///< Color of player card when passed
-#Const C_PlayerCardKnocked	<1., 0., 0.>	///< Color of player card when knocked
+#Const C_RequiredPlayersNb	2	///< Minimum players amount to start the game
+
+#Const Description _("""$FFFIn $<$F00Knockout$> mode, slowest players are knock out.
+
+In $<$F00Rounds$> mode, each round the slowest player or all players that not finished are $<$F00knock out$>.
+In $<$F00Laps$> mode, every time first player begins next lap, the player with least passed checkpoints is $<$F00knock out$>.
+In both modes, if someone $<$F00give up$> all players that finished in Rounds or everyone in Laps mode are safe.
+
+The $<$F00winner$> is the last player not knocked out.""")
+
+#Const C_ModeStatusMessage _("""TYPE: Free for all
+OBJECTIVE: Each round or lap slowest player is knock out.
+STATUS: %1 players racing, %2 spectators
+""")
+
+/// Colors of player slots in scores table
+#Const C_CardColors [
+	"Alive" => <.5, .5, .5>,	///< Players still racing
+	"Dead" => <0., 0., 0.>,		///< Spectators and players not racing
+	"Safe" => <0., 1., 0.>,		///< Round end: player survived
+	"Knock" => <1., 0., 0.>		///< Round end: player eliminated
+]
 
 // ---------------------------------- //
 // Globals
 // ---------------------------------- //
-declare Text[] G_PlayersAlive;		///< Logins of alive players
+declare Text[] G_PlayersRacing;	///< Logins of racing players
 
 // ---------------------------------- //
 // Extend
@@ -42,59 +60,47 @@ MB_LogVersion(ScriptName, Version);
 ***
 
 // ---------------------------------- //
-// Settings
+// Start server
 // ---------------------------------- //
 ***StartServer***
 ***
-// ---------------------------------- //
-// Scores Table
-+++ScoresTable+++
-
-// ---------------------------------- //
 // Variables
-declare Integer LapsGiveUpCount;		///< Number of players that gave up in current round/lap
-declare Integer LapsPreviousMax;		///< Previous maximum reached laps count
-declare Integer[] PlayerFinishTimes;	///< Players finish times order
+declare Integer[] RoundFinishTimes;		///< Players finish times order
+declare Integer RoundGiveUpsAmount;		///< Number of players that gave up in current round/lap
+declare Integer RoundTimeLeader;
+declare Integer PrevMostLapsNb;			///< Previous maximum reached laps count
 declare Integer PrevPlayersCount;		///< Previous players count
-***
+
+// ---------------------------------- //
+// XmlRpc
+XmlRpc::RegisterCallback("KOPlayerAdded", """
+* Data : An array with the login of the player added to the match
+* Example : ["Login"]
+* Note : This callback is sent when Knockout begins.
+""");
+
+XmlRpc::RegisterCallback("KOPlayerRemoved", """
+* Data : An array with the login of the player removed from the match
+* Example : ["Login"]
+* Note : This callback is sent when a player is knock out.
+""");
+
+XmlRpc::RegisterCallback("KOSendWinner", """
+* Data : An array with the login of the match winner
+* Example : ["Login"]
+* Note : This callback is sent when match is over.
+""");
+
+// Interface
+UI::UnloadModule("PrevBestTime");
+UIManager.UIAll.OverlayHidePersonnalBestAndRank = True;
 
 // ---------------------------------- //
 // Scores Table
-// ---------------------------------- //
-***ScoresTable***
-***
-// ---------------------------------- //
-// Global settings
 ST2::SetStyle("LibST_TMBaseSolo");
-ST2::SetPos(<0., 39.2, 20.>);
-ST2::SetSize(<68., 10.5>, <176., 58.5>, <176., 15.5>);
-ST2::SetFormat(2, 7);
-ST2::SetTextScale(.875);
-ST2::SetModeIcon("Icons128x32_1|RT_Rounds");
-ST2::SetBackgroundProperties(<0., 5.>, <218., 98.>);
-
-// ---------------------------------- //
-// Columns
-ST2::SetColWidth("LibST_Avatar", 2.5);
-ST2::SetColWidth("LibST_Tags", 0.);
-ST2::SetColWidth("LibST_ManiaStars", 2.5);
-ST2::SetColWidth("LibST_Tools", 1.5);
-
-// Custom
-ST2::CreateCol("LibST_KOCheckpoints", "CP", "", 3., 60.);
-ST2::CreateCol("LibST_KOTime", "Time", "---", 7., 70.);
-
-// ---------------------------------- //
-// Score points (SM-like)
-ST2::CreateCol("LibST_TMPoints", _("Score"), "0", 4., 110.);
-ST2::SetColTextAlign("LibST_TMPoints", CMlControl::AlignHorizontal::Right);
-ST2::SetColTextStyle("LibST_TMPoints", "TextValueSmallSm");
-ST2::SetColTextSize("LibST_TMPoints", 3.);
-ST2::SetColScript("LibST_TMPoints", """
-declare Score <=> (_Score as CTmScore);
-Label_Col.Value = TL::ToText(Score.Points);""");
-
-// Build
+SetScoresTableLayout();
+ST2::CreateCol("LibST_KOCheckpoints", "CP", "", 3., 80.);
+ST2::CreateCol("LibST_KOTime", _("Time"), "", 7., 90.);
 MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
 ST2::Build("TM");
 ***
@@ -108,32 +114,26 @@ Message::Loop();
 ***
 
 // ---------------------------------- //
+// Init map
+// ---------------------------------- //
+***InitMap***
+***
+if (GetRacingPlayersAmount() <= 1) {
+	Scores_Clear();
+	G_PlayersRacing.clear();
+}
+
+UIManager.UIAll.OverlayHideMultilapInfos = (S_ForceLapsNb <= 0);
+ST2::ClearScores();
+foreach (Score in Scores) Score.BestRace = Null;
+***
+
+// ---------------------------------- //
 // Start map
 // ---------------------------------- //
 ***StartMap***
 ***
-Users_SetNbFakeUsers(0, 0);
-// ---------------------------------- //
-// Initialize map
-if (G_PlayersAlive.count <= 1) Scores_Clear();
-ST2::ClearScores();
-
-// ---------------------------------- //
-// Clear colors
-ResetColors();
-
-// ---------------------------------- //
-// Clear best times
-foreach (Score in Scores) {
-	Score.BestRace = Null;
-}
-
-// ---------------------------------- //
-// Laps
-UIManager.UIAll.OverlayHideMultilapInfos = (S_ForceLapsNb <= 0);
-
-if (S_ForceLapsNb <= 0) NbLaps = 200;
-else NbLaps = S_ForceLapsNb;
+UpdatePlayerColors();
 
 // ---------------------------------- //
 // Wait for enough players
@@ -147,14 +147,15 @@ if (S_UseAlternateRules) {
 	WarmUpTimeLimit = (GetFinishTimeout() - Now) / 1000;
 }
 MB_WarmUp(WarmUpTimeLimit);
+UpdatePlayerColors();
 
 // ---------------------------------- //
 // Start next knockout
-if (G_PlayersAlive.count <= 1) {
-	FillAlivePlayersArray();
-	Message::SendBigMessage(_("Starting new match"), 3000, 0);
+if (GetRacingPlayersAmount() <= 1) {
+	StartNewKnockout();
+	Message::SendBigMessage(_("New match"), 3000, 0);
 }
-MB_Sleep(3000);
+if (!ServerShutdownRequested && !MatchEndRequested) MB_Sleep(3000);
 ***
 
 // ---------------------------------- //
@@ -162,46 +163,56 @@ MB_Sleep(3000);
 // ---------------------------------- //
 ***StartRound***
 ***
-// Clear all
 RemoveDisconnected();
-PlayerFinishTimes.clear();
-LapsGiveUpCount = 0;
-LapsPreviousMax = 0;
-PrevPlayersCount = -1;
-
-// Scores Table
-ST2::ClearScores();
 UpdateScoresTableFooter();
+ST2::ClearScores();
 Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
+UpdatePlayerColors();
+
+// Clear variables
+RoundFinishTimes.clear();
+RoundGiveUpsAmount	= 0;
+PrevMostLapsNb		= 0;
+PrevPlayersCount	= -1;
 
 // ---------------------------------- //
-// Pause
-Pause();
-
-// ---------------------------------- //
-// Clear colors
-ResetColors();
-
-// ---------------------------------- //
-// Starts race only for not ko players
-foreach (Player in Players) {
-	TM2::WaitRace(Player);
-	declare Boolean HasFinishedTrack for Player;
-	HasFinishedTrack = False;
-	
-	foreach (Alive in G_PlayersAlive) {
-		if (Player.Login == Alive) TM2::StartRace(Player);
-	}
+// Clear scores
+foreach (Score in Scores) {
+	Score.PrevRace = Null;
+	Score.BestRace = Null;
 }
 
 // ---------------------------------- //
+// Pause
+if (S_AdminSetPause) DoPause();
+
+// ---------------------------------- //
+// Starts race only for racing players
+TM2::WaitRaceAll();
+foreach (Player in Players) {
+	declare Boolean HasFinishedTrack for Player;
+	HasFinishedTrack = False;
+	declare Integer PrevCheckpointTime for Player;
+	PrevCheckpointTime = 0;
+	
+	// Spawn them
+	if (IsRacing(Player.User)) TM2::StartRace(Player);
+}
+
+// Set laps amount
+UIManager.UIAll.OverlayHideMultilapInfos = (S_ForceLapsNb <= 0);
+if (S_ForceLapsNb <= 0) NbLaps = 255;
+else NbLaps = S_ForceLapsNb;
+
+// ---------------------------------- //
 // Message
-declare RoundsNb = G_PlayersAlive.count - 1;
-if (S_RoundsPerMap > 0) RoundsNb = S_RoundsPerMap;
-else if (MapIsLapRace) RoundsNb = 1;
-declare RoundsText = MB_SectionRoundNb^" / "^RoundsNb;
-if (S_RoundsPerMap <= 0 || MapIsLapRace) RoundsText = TL::ToText(MB_SectionRoundNb);
-Message::SendBigMessage(TL::Compose(_("Round %1"), RoundsText), 3000, 0);
+declare TotalRoundsNb = S_RoundsPerMap;
+if (MapIsLapRace || S_RoundsPerMap <= 0) TotalRoundsNb = 1;
+
+declare RoundsMessage = MB_SectionRoundNb^" / "^TotalRoundsNb;
+if (S_RoundsPerMap <= 0 || MapIsLapRace) RoundsMessage = TL::ToText(MB_SectionRoundNb);
+
+Message::SendBigMessage(TL::Compose(_("Round %1"), RoundsMessage), 3000, 0);
 
 // Sequence
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
@@ -222,68 +233,6 @@ foreach (Event in PendingEvents) {
 	// Waypoint
 	if (Event.Type == CTmModeEvent::EType::WayPoint) {
 		// ---------------------------------- //
-		// Race finish
-		if (Event.IsEndRace) {
-			if (Event.Player.Score != Null) {
-				Event.Player.Score.BestRace = Event.Player.CurRace;
-				ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.Score.BestRace.Time));
-			}
-			Event.Player.Score.PrevRace = Event.Player.CurRace;
-			TM2::EndRace(Event.Player);
-			
-			// ---------------------------------- //
-			// KO conditions
-			declare Boolean HasFinishedTrack for Event.Player;
-			HasFinishedTrack = True;
-			
-			// ---------------------------------- //
-			// Round winner message
-			if (PlayerFinishTimes.count == 0) Message::SendStatusMessage(TL::Compose(_("$<%1$> wins the round!"), Event.Player.User.Name), 4000, 0);
-			
-			// ---------------------------------- //
-			// Finish order
-			PlayerFinishTimes.add(Event.Player.CurRace.Time);
-			
-			// ---------------------------------- //
-			// Start the countdown if it's the first player to finish
-			if (CutOffTimeLimit <= 0) {
-				CutOffTimeLimit = GetFinishTimeout();
-			}
-		}
-		
-		// ---------------------------------- //
-		// Multilap next lap
-		if (Event.IsEndLap && MapIsLapRace && !MB_StopRound) {
-			if (Event.Player.Score != Null) {
-				if (Event.Player.Score.BestLap.Compare(Event.Player.CurLap, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
-					Event.Player.Score.BestLap = Event.Player.CurLap;
-				}
-				
-				if (Event.Player.CurrentNbLaps > LapsPreviousMax) {
-					LapsPreviousMax = Event.Player.CurrentNbLaps;
-					
-					Message::SendStatusMessage(TL::Compose(_("$<%1$> has finished lap %2!"), Event.Player.User.Name, TL::ToText(Event.Player.CurrentNbLaps)), 4000, 0);
-					
-					// ---------------------------------- //
-					// Knock all give ups
-					if (LapsGiveUpCount > 0) {
-						UIManager.UIAll.SendChat(TL::Compose(_("Anybody got knock out: %1 player(s) gave up!"), TL::ToText(LapsGiveUpCount)));
-						LapsGiveUpCount = 0;
-					}
-					
-					// ---------------------------------- //
-					// Knock lap worst player
-					else {
-						---MultilapKnock---
-					}
-					
-					// Stop round
-					if (G_PlayersAlive.count <= 1) MB_StopRound = True;
-				}
-			}
-		}
-		
-		// ---------------------------------- //
 		// Scores table
 		if (Event.Player.Score != Null) {
 			// ---------------------------------- //
@@ -293,33 +242,91 @@ foreach (Event in PendingEvents) {
 			Scores_Sort(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
 			
 			// ---------------------------------- //
-			// Current time in laps mode
-			if (MapIsLapRace) ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.CurRace.Time));
+			// Checkpoint time for knock
+			declare Integer PrevCheckpointTime for Event.Player;
+			PrevCheckpointTime = Event.Player.CurRace.Time;
+			
+			if (MapIsLapRace) {
+				// ---------------------------------- //
+				// Current leader time
+				if (MultilapIsPlayerFirst(Event.Player)) {
+					RoundTimeLeader = Event.Player.CurRace.Time;
+					ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.CurRace.Time));
+				}
+				
+				// ---------------------------------- //
+				// Difference from the leader in Laps mode
+				foreach (Player in Players) {
+					if (IsRacing(Player.User) && !MultilapIsPlayerFirst(Event.Player) && !RoundFinishTimes.exists(Player.Score.BestRace.Time))
+						ST2::SetColValue("LibST_KOTime", Event.Player.Score, "+"^TimeToText(Event.Player.CurRace.Time - RoundTimeLeader));
+				}
+			}
+		}
+		
+		// ---------------------------------- //
+		// Race finish
+		if (Event.IsEndRace) {
+			ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.CurRace.Time));
+			TM2::EndRace(Event.Player);
+			RoundFinishTimes.add(Event.Player.CurRace.Time);
+			
+			// Rounds: Player finished, don't knock him
+			declare Boolean HasFinishedTrack for Event.Player;
+			HasFinishedTrack = True;
+			
+			// ---------------------------------- //
+			// Start the countdown if it's the first player to finish
+			if (CutOffTimeLimit <= 0) {
+				Message::SendStatusMessage(TL::Compose(_("$<%1$> wins the round!"), Event.Player.User.Name), 4000, 0);
+				CutOffTimeLimit = GetFinishTimeout();
+			}
+		}
+		
+		// ---------------------------------- //
+		// First player begins next lap
+		if (MapIsLapRace && Event.IsEndLap && GetRacingPlayersAmount() > 1 && Event.Player.CurrentNbLaps > PrevMostLapsNb) {
+			PrevMostLapsNb = Event.Player.CurrentNbLaps;
+			Translations::SendStatusMessage(["$<%1$> has finished lap %2!", Event.Player.User.Name, TL::ToText(Event.Player.CurrentNbLaps)], 4000, 0);
+			
+			// Somebody gave up
+			if (RoundGiveUpsAmount > 0) {
+				Translations::SendChat(["Anybody knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
+				RoundGiveUpsAmount = 0;
+			}
+			
+			// Knock lap worst player
+			else {
+				---MultilapKnock---
+			}
+			
+			// Stop round
+			if (GetRacingPlayersAmount() <= 1) MB_StopRound = True;
 		}
 	}
 	// ---------------------------------- //
 	// GiveUp
 	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
-		if (G_PlayersAlive.exists(Event.Player.User.Login)) {
+		if (IsRacing(Event.Player.User)) {
 			TM2::WaitRace(Event.Player);
 			KnockPlayer(Event.Player);
-			Message::SendStatusMessage(TL::Compose(_("$<%1$> gave up!"), Event.Player.User.Name), 4000, 0);
-			LapsGiveUpCount += 1;
+			Translations::SendStatusMessage(["$<%1$> gives up!", Event.Player.User.Name], 4000, 0);
+			ST2::SetColValue("LibST_KOTime", Event.Player.Score, "Give up");
+			RoundGiveUpsAmount += 1;
 		}
 	}
 }
 
 // ---------------------------------- //
-// Unspawn joined
+// Unspawn players joining the game
 foreach (Player in Players) {
-	if (Player.IsSpawned && !G_PlayersAlive.exists(Player.Login)) {
+	if (!IsRacing(Player.User) && Player.IsSpawned) {
 		TM2::WaitRace(Player);
 		Player.IsSpawned = False;
 	}
 }
 
 // ---------------------------------- //
-// Update players array
+// Remove disconnected players
 if (PrevPlayersCount != Players.count) {
 	PrevPlayersCount = Players.count;
 	RemoveDisconnected();
@@ -327,7 +334,7 @@ if (PrevPlayersCount != Players.count) {
 }
 
 // Stop round
-if (G_PlayersAlive.count <= 1) MB_StopRound = True;
+if (RoundFinishTimes.count == GetRacingPlayersAmount() || GetRacingPlayersAmount() <= 1) MB_StopRound = True;
 ***
 
 // ---------------------------------- //
@@ -338,10 +345,10 @@ if (G_PlayersAlive.count <= 1) MB_StopRound = True;
 // ---------------------------------- //
 // Get lowest passed checkpoints amount
 declare Integer LowestCheckpointsNb;
-LowestCheckpointsNb = 10000;
+LowestCheckpointsNb = 100000;
 
 foreach (Player in Players) {
-	if (G_PlayersAlive.exists(Player.User.Login) && Player.CurRace.Checkpoints.count < LowestCheckpointsNb) {
+	if (IsRacing(Player.User) && Player.CurRace.Checkpoints.count < LowestCheckpointsNb) {
 		LowestCheckpointsNb = Player.CurRace.Checkpoints.count;
 	}
 }
@@ -352,7 +359,7 @@ declare CTmPlayer[] PlayersToCheck;
 PlayersToCheck.clear();
 						
 foreach (Player in Players) {
-	if (G_PlayersAlive.exists(Player.User.Login) && Player.CurRace.Checkpoints.count == LowestCheckpointsNb) {
+	if (IsRacing(Player.User) && Player.CurRace.Checkpoints.count == LowestCheckpointsNb) {
 		PlayersToCheck.add(Player);
 	}
 }
@@ -369,17 +376,53 @@ else {
 	
 	// Set players time and slowest time
 	foreach (Player in PlayersToCheck) {
-		declare Integer PassRaceTime for Player;
-		PassRaceTime = Player.CurRace.Time;
-		if (PassRaceTime > SlowestTime) SlowestTime = Player.CurRace.Time;
+		declare Integer PrevCheckpointTime for Player;
+		// Update slowest time
+		if (PrevCheckpointTime >= SlowestTime) SlowestTime = PrevCheckpointTime;
 	}
 	
 	// Knock slowest player
-	foreach (Player in Players) {
-		declare Integer PassRaceTime for Player;
-		if (PassRaceTime == SlowestTime) KnockPlayer(Player);
+	foreach (Player in PlayersToCheck) {
+		declare Integer PrevCheckpointTime for Player;
+		if (PrevCheckpointTime >= SlowestTime) KnockPlayer(Player);
 	}
 }
+
+PlayersToCheck.clear();
+***
+
+// ---------------------------------- //
+// Time Attack minigame
+// ---------------------------------- //
+***TimeAttack***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	PassOn(Event);
+	
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) {
+			if (Event.Player.Score != Null && Event.Player.Score.BestRace.Compare(Event.Player.CurRace, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
+				Event.Player.Score.BestRace = Event.Player.CurRace;
+				ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.Score.BestRace.Time));
+				Scores_Sort(CTmMode::ETmScoreSortOrder::BestRace_Time);
+			}
+			TM2::WaitRace(Event.Player);
+		}
+	}
+	// ---------------------------------- //
+	// GiveUp
+	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
+		TM2::WaitRace(Event.Player);
+	}
+}
+
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) if (TM2::IsWaiting(Player)) TM2::StartRace(Player);
 ***
 
 // ---------------------------------- //
@@ -390,59 +433,53 @@ else {
 TM2::WaitRaceAll();
 CutOffTimeLimit = -1;
 RemoveDisconnected();
+UpdateScoresTableFooter();
 
 // ---------------------------------- //
-// Knock if not multilap race
-if (!MapIsLapRace && LapsGiveUpCount == 0) {
-	// ---------------------------------- //
-	// Knock all DNF
+// Knock only in Rounds mode
+if (!MapIsLapRace) {
+	RoundFinishTimes = RoundFinishTimes.sort();
 	declare Integer KnockedCount;
 	KnockedCount = 0;
 	
+	// ---------------------------------- //
+	// Knock all DNF
 	foreach (Player in Players) {
 		declare Boolean HasFinishedTrack for Player;
-		if (G_PlayersAlive.count > 1 && !HasFinishedTrack && G_PlayersAlive.exists(Player.User.Login)) {
+		if (GetRacingPlayersAmount() > 1 && !HasFinishedTrack && IsRacing(Player.User)) {
 			KnockedCount += 1;
 			ST2::SetColValue("LibST_KOTime", Player.Score, "DNF");
 			KnockPlayer(Player);
 		}
 	}
 	
-	// ---------------------------------- //
-	// Knock latest player if all finished track
-	PlayerFinishTimes = PlayerFinishTimes.sort();
-	
-	if (G_PlayersAlive.count > 1 && KnockedCount == 0 && PlayerFinishTimes.count > 0) {
-		foreach (Player in Players) if (Player.CurRace.Time == PlayerFinishTimes[PlayerFinishTimes.count - 1]) KnockPlayer(Player);
+	if (KnockedCount == 0) {
+		// ---------------------------------- //
+		// Everyone finished, but someone gave up
+		if (RoundGiveUpsAmount > 0) {
+			Translations::SendChat(["Anybody knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
+		}
+		// ---------------------------------- //
+		// Knock latest player if all finished and noone gave up
+		else if (GetRacingPlayersAmount() > 1 && RoundFinishTimes.count > 0) {
+			foreach (Player in Players) if (Player.CurRace.Time == RoundFinishTimes[RoundFinishTimes.count - 1]) KnockPlayer(Player);
+		}
 	}
 }
 
 // ---------------------------------- //
-// All finished
-else if (!MapIsLapRace) {
-	UIManager.UIAll.SendChat(TL::Compose(_("Anybody gets knock out: %1 player(s) gave up!"), TL::ToText(LapsGiveUpCount)));
-}
-
-// ---------------------------------- //
 // Passed players color
-foreach (Score in Scores) {
-	if (G_PlayersAlive.exists(Score.User.Login)) ST2::SetPlayerColor(Score, C_PlayerCardPassed);
-}
+foreach (Score in Scores) if (IsRacing(Score.User)) ST2::SetPlayerColor(Score, C_CardColors["Safe"]);
 
-// ---------------------------------- //
-// Skip map
-if (G_PlayersAlive.count <= 1 || (S_RoundsPerMap > 0 && MB_SectionRoundNb >= S_RoundsPerMap) || MapIsLapRace) {
-	MB_StopMap = True;
-}
+// Stop map
+if (GetRacingPlayersAmount() <= 1 || (S_RoundsPerMap > 0 && MB_SectionRoundNb >= S_RoundsPerMap) || MapIsLapRace) MB_StopMap = True;
 
-// Scores Table
-UpdateScoresTableFooter();
-
-// Get the last round points
+// End sequence
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
-MB_Sleep(6000);
+if (!ServerShutdownRequested && !MatchEndRequested) MB_Sleep(5000);
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
 ***
 
 // ---------------------------------- //
@@ -450,41 +487,45 @@ UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 // ---------------------------------- //
 ***EndMap***
 ***
-// Scores Table
+Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
 ST2::ClearScores();
-
-// ---------------------------------- //
-// Clear colors
-ResetColors();
+XmlRpc::SendPlayersScores();
+UpdatePlayerColors();
+RemoveDisconnected();
 
 // ---------------------------------- //
 // Knockout going on...
-if (G_PlayersAlive.count > 1) {
-	MB_VictoryMessage = _("Switching to the next map...");
+if (GetRacingPlayersAmount() > 1) {
+	MB_VictoryMessage = _("Going to next map");
 }
-
+// ---------------------------------- //
+// Close ladder
 else {
+	Ladder_ComputeRank(CTmMode::ETmScoreSortOrder::TotalPoints);
+	MB_Ladder_CloseMatch();
+	
 	// ---------------------------------- //
 	// Last player
-	if (G_PlayersAlive.count == 1) {
-		declare CTmPlayer Winner = TM2::GetPlayer(G_PlayersAlive[0]);
-		if (Winner != Null)
-			MB_VictoryMessage = TL::Compose(_("$<%1$> wins the match!"), Winner.User.Name);
-		else
-			MB_VictoryMessage = _("Winner ragequit!");
+	if (GetRacingPlayersAmount() == 1) {
+		declare CTmPlayer Winner = TM2::GetPlayer(G_PlayersRacing[0]);
+		if (Winner != Null) MB_VictoryMessage = TL::Compose(_("$<%1$> wins the match!"), Winner.User.Name);
+		else MB_VictoryMessage = _("Winner ragequit!");
+		XmlRpc_KOSendWinner(Winner);
 	}
 	
 	// No players?!
-	else {
-		MB_VictoryMessage = _("Draw!");
-	}
-	
-	// ---------------------------------- //
-	// Close ladder
-	Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
-	Ladder_ComputeRank(CTmMode::ETmScoreSortOrder::TotalPoints);
-	MB_Ladder_CloseMatch();
+	else MB_VictoryMessage = _("Draw!");
 }
+***
+
+// ---------------------------------- //
+// End server
+// ---------------------------------- //
+***EndServer***
+***
+XmlRpc::UnregisterCallback("KOPlayerAdded");
+XmlRpc::UnregisterCallback("KOPlayerRemoved");
+XmlRpc::UnregisterCallback("KOSendWinner");
 ***
 
 // ---------------------------------- //
@@ -492,65 +533,142 @@ else {
 // ---------------------------------- //
 
 // ---------------------------------- //
-/// Update the scores table footer text
-Void UpdateScoresTableFooter() {
-	declare TotalRoundsNb = S_RoundsPerMap;
-	if (MapIsLapRace) TotalRoundsNb = 1;
-	ST2::SetFooterText(TL::Compose(_("Round %1 / %2	Players remain: %3"), TL::ToText(MB_SectionRoundNb), TL::ToText(TotalRoundsNb), TL::ToText(G_PlayersAlive.count)));
+/** Callback sent when a player is added to match
+ *	Data:
+ *	[Player login]
+ */
+Void XmlRpc_KOPlayerAdded(CTmPlayer _Player) {
+	if (!XmlRpc::CallbackIsAllowed("KOPlayerAdded")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin];
+	XmlRpc::SendCallbackArray("KOPlayerAdded", Data);
 }
 
 // ---------------------------------- //
-/** Knock player from the game
+/** Callback sent when a player is removed from match
+ *	Data:
+ *	[Player login]
+ */
+Void XmlRpc_KOPlayerRemoved(CTmPlayer _Player) {
+	if (!XmlRpc::CallbackIsAllowed("KOPlayerRemoved")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin];
+	XmlRpc::SendCallbackArray("KOPlayerRemoved", Data);
+}
+
+// ---------------------------------- //
+/** Callback sent when a player is removed from match
+ *	Data:
+ *	[Player login]
+ */
+Void XmlRpc_KOSendWinner(CTmPlayer _Player) {
+	if (!XmlRpc::CallbackIsAllowed("KOSendWinner")) return;
+	
+	declare PlayerLogin = "Null";
+	if (_Player != Null) PlayerLogin = _Player.User.Login;
+	declare Data = [PlayerLogin];
+	XmlRpc::SendCallbackArray("KOSendWinner", Data);
+}
+
+// ---------------------------------- //
+/// Start new Knockout (add players)
+Void StartNewKnockout() {
+	G_PlayersRacing.clear();
+	foreach (Player in Players) {
+	 	G_PlayersRacing.add(Player.User.Login);
+	 	XmlRpc_KOPlayerAdded(Player);
+	}
+}
+
+// ---------------------------------- //
+/** Check if player is still racing
  *
- *	@param	_Player		The player to knock
+ *	@param	_User		Player to check status
+ *
+ *	@return		True if player isn't knocked
+ */
+Boolean IsRacing(CUser _User) { return (_User != Null && G_PlayersRacing.exists(_User.Login)); }
+
+// ---------------------------------- //
+/** Get amount of racing players
+ *
+ *	@return		Amount of players still racing
+ */
+Integer GetRacingPlayersAmount() { return G_PlayersRacing.count; }
+
+// ---------------------------------- //
+/// Update the scores table footer text
+Void UpdateScoresTableFooter() {
+	// Update rounds count
+	declare TotalRoundsNb = S_RoundsPerMap;
+	if (MapIsLapRace || S_RoundsPerMap <= 0) TotalRoundsNb = 1;
+	
+	// Get rounds message
+	declare RoundsMessage = MB_SectionRoundNb^" / "^TotalRoundsNb;
+	if (TotalRoundsNb <= 1) RoundsMessage = TL::ToText(MB_SectionRoundNb);
+	
+	// Compose footer message
+	ST2::SetFooterText(TL::Compose("%1 %2	%3"^GetRacingPlayersAmount(), _("Round"), RoundsMessage, _("Remaining players: ")));
+	
+	// Update mode status message
+	declare SpectatorsAmount = Spectators.count + Players.count - GetRacingPlayersAmount();
+	ModeStatusMessage = TL::Compose(C_ModeStatusMessage, TL::ToText(GetRacingPlayersAmount()), TL::ToText(SpectatorsAmount));
+}
+
+// ---------------------------------- //
+/** Knock player out from the game
+ *
+ *	@param	_Player		The player to knock out
  */
 Void KnockPlayer(CTmPlayer _Player) {
-	if (_Player != Null && G_PlayersAlive.exists(_Player.Login)) {
-		declare Removed = G_PlayersAlive.remove(_Player.Login);
+	if (_Player != Null && IsRacing(_Player.User)) {
+		declare Removed = G_PlayersRacing.remove(_Player.User.Login);
 		
-		UIManager.UIAll.SendChat(TL::Compose(_("Knocked $<%1$> out!"), _Player.User.Name));
-		ST2::SetPlayerColor(_Player.Score, C_PlayerCardKnocked);
-		
-		// Sort by checkpoints
-		_Player.Score.BestRace = Null;
+		// Scores table
+		ST2::SetPlayerColor(_Player.Score, C_CardColors["Knock"]);
 		Scores_Sort(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
+		UpdateScoresTableFooter();
+		if (MapIsLapRace) ST2::SetColValue("LibST_KOTime", _Player.Score, "");
+		
+		XmlRpc_KOPlayerRemoved(_Player);
+		Translations::SendChat(["Knocked $<%1$> out!", _Player.User.Name]);
 		
 		// +1 for other players
-		foreach (Score in Scores) {
-			if (G_PlayersAlive.exists(Score.User.Login)) Score.Points += 1;
-		}
+		foreach (Score in Scores) if (G_PlayersRacing.exists(Score.User.Login)) Score.Points += 1;
 	}
 	else return;
 }
 
 // ---------------------------------- //
-/// Add all players to array
-Void FillAlivePlayersArray() {
-	G_PlayersAlive.clear();
-	foreach (Player in Players) G_PlayersAlive.add(Player.Login);
-}
-
-// ---------------------------------- //
 /// Remove all disconnected players from array
 Void RemoveDisconnected() {
-	declare Text[] PlayerLogins;
-	foreach (Player in Players) PlayerLogins.add(Player.User.Login);
+	// Get logins of all connected players
+	declare Text[] ConnectedLogins;
+	ConnectedLogins.clear();
+	foreach (Player in Players) ConnectedLogins.add(Player.User.Login);
 	
+	// Copy alive players logins
 	declare Text[] AliveLogins;
-	foreach (Login in G_PlayersAlive) AliveLogins.add(Login);
+	AliveLogins.clear();
+	foreach (Login in G_PlayersRacing) AliveLogins.add(Login);
 	
+	// Remove login if doesn't exists in connected array
 	foreach (Login in AliveLogins)
-		if (!PlayerLogins.exists(Login)) {
-			declare Removed = G_PlayersAlive.remove(Login);
+		if (!ConnectedLogins.exists(Login)) {
+			declare Removed = G_PlayersRacing.remove(Login);
 		}
 }
 
 // ---------------------------------- //
-/// Reset scores table players colors
-Void ResetColors() {
+/// Update player colors
+Void UpdatePlayerColors() {
 	foreach (Score in Scores) {
-		if (G_PlayersAlive.exists(Score.User.Login)) ST2::SetPlayerColor(Score, C_PlayerCardAlive);
-		else ST2::SetPlayerColor(Score, C_PlayerCardDead);
+		if (IsRacing(Score.User)) ST2::SetPlayerColor(Score, C_CardColors["Alive"]);
+		else ST2::SetPlayerColor(Score, C_CardColors["Dead"]);
 	}
 }
 
@@ -566,16 +684,42 @@ Text TimeToText(Integer _Time) {
 }
 
 // ---------------------------------- //
+/** Check if player is first
+ *
+ *	@param	_Player		Player to check if he's leader
+ *
+ *	@return		True if player is leader
+ */
+Boolean MultilapIsPlayerFirst(CTmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	// Check what is highest reached checkpoints count
+	declare MostCps = 0;
+	foreach (Player in Players) if (Player.CurRace.Checkpoints.count > MostCps) MostCps = Player.CurRace.Checkpoints.count;
+	if (MostCps == 0 || _Player.CurRace.Checkpoints.count < MostCps) return False;
+	
+	// Check how many player reached highest checkpoints count
+	declare PlayersMostCps = CTmPlayer[];
+	foreach (Player in Players) if (Player.CurRace.Checkpoints.count == MostCps) PlayersMostCps.add(Player);
+	if (!PlayersMostCps.exists(_Player)) return False;
+	
+	// Check who was faster
+	declare FastestTime = 0;
+	foreach (Player in PlayersMostCps) {
+		if (FastestTime == 0) FastestTime = Player.CurRace.Time;
+		else if (Player.CurRace.Time < FastestTime) FastestTime = Player.CurRace.Time;
+	}
+	return (_Player.CurRace.Time == FastestTime);
+}
+
+// ---------------------------------- //
 /** Wait for enough players to launch a round
  *
  *	@param	_MinimumNbPlayers	Minimum players required to start
  */
 Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
-	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::PhaseChange;
-	UIManager.UIAll.BigMessageSoundVariant = 0;
 	UIManager.UIAll.BigMessage = _("Waiting for players...");
-	
 	declare HasWaited = False;
 	declare WasHold = False;
 	
@@ -585,61 +729,23 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 		UIManager.UIAll.StatusMessage = _("Waiting for start confirmation by admin");
 	}
 	
+	// Time Attack minigame
 	while (!ServerShutdownRequested && !MatchEndRequested && (Players.count < _MinimumNbPlayers || S_AdminHoldStart)) {
 		MB_Yield();
 		HasWaited = True;
 		WasHold = S_AdminHoldStart;
-		
-		// ---------------------------------- //
-		// Spawn players
-		foreach (Player in Players) {
-			if (G_PlayersAlive.exists(Player.User.Login)) {
-				if (TM2::IsWaiting(Player)) TM2::StartRace(Player);
-			}
-			else if (Player.IsSpawned) Player.IsSpawned = False;
-		}
-		
-		// ---------------------------------- //
-		// Manage events
-		foreach (Event in PendingEvents) {
-			// ---------------------------------- //
-			// Waypoint
-			if (Event.Type == CTmModeEvent::EType::WayPoint) {
-				if (Event.IsEndRace) TM2::WaitRace(Event.Player);
-				Discard(Event);
-			}
-			// ---------------------------------- //
-			// Respawn
-			else if (Event.Type == CTmModeEvent::EType::Respawn) {
-				TM2::WaitRace(Event.Player);
-				PassOn(Event);
-			}
-			// ---------------------------------- //
-			// GiveUp
-			else if (Event.Type == CTmModeEvent::EType::GiveUp) {
-				TM2::WaitRace(Event.Player);
-				PassOn(Event);
-			}
-			// ---------------------------------- //
-			// Other
-			else {
-				PassOn(Event);
-			}
-		}
+		---TimeAttack---
 	}
 	
-	// Start resumed
-	if (WasHold) {
-		UIManager.UIAll.StatusMessage = _("Competition is starting!");
-	}
-	
-	// Normal waiting
-	else if (HasWaited) {
+	if (HasWaited) {
 		TM2::WaitRaceAll();
 		UIManager.UIAll.BigMessage = _("A new player joins the game.");
 		// Ignore waiting if map is skipped
 		if (!ServerShutdownRequested && !MatchEndRequested) MB_Sleep(5000);
 	}
+	
+	// Resumed by admin
+	if (WasHold) UIManager.UIAll.BigMessage = _("Competition is starting!");
 	
 	UIManager.UIAll.StatusMessage = "";
 	UIManager.UIAll.BigMessage = "";
@@ -647,61 +753,19 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 
 // ---------------------------------- //
 /// Set mode pause (FFA Time Attack minigame)
-Void Pause() {
+Void DoPause() {
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
-	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::PhaseChange;
-	UIManager.UIAll.BigMessageSoundVariant = 0;
-	UIManager.UIAll.BigMessage = _("$FA0Pause");
-	UIManager.UIAll.StatusMessage = _("$FA0Administration paused competition for a while");
+	UIManager.UIAll.BigMessage = TL::Compose("$f90%1", _("Pause"));
+	UIManager.UIAll.StatusMessage = _("Competition has been paused for a while");
+	UpdatePlayerColors();
 	
 	declare HasWaited = False;
 	
+	// Time Attack minigame
 	while (!ServerShutdownRequested && !MatchEndRequested && S_AdminSetPause) {
 		MB_Yield();
 		HasWaited = True;
-		
-		// ---------------------------------- //
-		// Spawn players
-		foreach (Player in Players) {
-			if (TM2::IsWaiting(Player)) {
-				TM2::StartRace(Player);
-			}
-		}
-		
-		// ---------------------------------- //
-		// Manage events
-		foreach (Event in PendingEvents) {
-			// ---------------------------------- //
-			// Waypoint
-			if (Event.Type == CTmModeEvent::EType::WayPoint) {
-				if (Event.IsEndRace) {
-					if (Event.Player.Score != Null && Event.Player.Score.BestRace.Compare(Event.Player.CurRace, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
-						Event.Player.Score.BestRace = Event.Player.CurRace;
-						ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.Score.BestRace.Time));
-						Scores_Sort(CTmMode::ETmScoreSortOrder::BestRace_Time);
-					}
-					TM2::WaitRace(Event.Player);
-				}
-				PassOn(Event);
-			}
-			// ---------------------------------- //
-			// Respawn
-			else if (Event.Type == CTmModeEvent::EType::Respawn) {
-				TM2::WaitRace(Event.Player);
-				PassOn(Event);
-			}
-			// ---------------------------------- //
-			// GiveUp
-			else if (Event.Type == CTmModeEvent::EType::GiveUp) {
-				TM2::WaitRace(Event.Player);
-				PassOn(Event);
-			}
-			// ---------------------------------- //
-			// Other
-			else {
-				PassOn(Event);
-			}
-		}
+		---TimeAttack---
 	}
 	
 	if (HasWaited) {
@@ -713,6 +777,7 @@ Void Pause() {
 		ST2::ClearScores();
 	}
 	
+	UpdatePlayerColors();
 	Scores_Sort(CTmMode::ETmScoreSortOrder::TotalPoints);
 	UIManager.UIAll.BigMessage = "";
 	UIManager.UIAll.StatusMessage = "";
@@ -749,4 +814,31 @@ Integer GetFinishTimeout() {
 	
 	// Default value from TMO, TMS (not used)
 	return Now + 15000;
+}
+
+// ---------------------------------- //
+/// Setup scores table default style
+Void SetScoresTableLayout() {
+	// Global settings
+	ST2::SetPos(<0., 39.2, 20.>);
+	ST2::SetSize(<68., 10.5>, <176., 58.5>, <176., 15.5>);
+	ST2::SetFormat(2, 8);
+	ST2::SetTextScale(7/8.);
+	ST2::SetModeIcon("Icons128x32_1|RT_Rounds");
+	ST2::SetBackgroundProperties(<0., 5.>, <218., 98.>);
+	
+	// Columns width
+	ST2::SetColWidth("LibST_Avatar", 2.5);
+	ST2::SetColWidth("LibST_Tags", 0.);
+	ST2::SetColWidth("LibST_ManiaStars", 2.5);
+	ST2::SetColWidth("LibST_Tools", 1.5);
+	
+	// Score points (SM-like)
+	ST2::CreateCol("LibST_TMPoints", _("Score"), "0", 4., 110.);
+	ST2::SetColTextAlign("LibST_TMPoints", CMlControl::AlignHorizontal::Right);
+	ST2::SetColTextStyle("LibST_TMPoints", "TextValueSmallSm");
+	ST2::SetColTextSize("LibST_TMPoints", 3.);
+	ST2::SetColScript("LibST_TMPoints", """
+	declare Score <=> (_Score as CTmScore);
+	Label_Col.Value = TL::ToText(Score.Points);""");
 }

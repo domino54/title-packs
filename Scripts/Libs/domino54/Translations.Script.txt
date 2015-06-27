@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  TRANSLATIONS LIB by domino54          //
-//  script version: 2015-04-25            //
+//  script version: 2015-06-27            //
 // -------------------------------------- //
 
 /**
@@ -8,15 +8,23 @@
  *	messages, if they exists in SentenceBank lib.
  */
 
-#Const Version			"2015-04-25"
+#Const Version			"2015-06-27"
 #Const ScriptName		"Translations.Script.txt"
 
 #Include "TextLib" as TextLib
 #Include "Libs/Nadeo/Message.Script.txt" as Message
 #Include "Libs/domino54/SentenceBank.Script.txt" as SentenceBank
 
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
 #Const C_ErrorMessage		"$F00Translation error!"	///< Something went wrong while translating
-#Const C_DefaultChatPrefix	"$777» $FFF"				///< Default chat message prefix
+#Const C_DefaultChatPrefix	"$FFF» "					///< Default chat message prefix
+
+// ---------------------------------- //
+// Globals
+// ---------------------------------- //
+declare Text G_LibTranslations_ChatPrefix;		///< Custom chat message prefix
 
 // ---------------------------------- //
 // Functions
@@ -126,6 +134,14 @@ Text GetComposedTranslation(CPlayer _Player, Text[] _Com) {
 	return GetComposedTranslation(_Player, _Com, "");
 }
 
+
+// ---------------------------------- //
+/** Set custom chat prefix
+ *
+ *	@param	_Prefix		Text to attach before translations
+ */
+Void SetChatPrefix(Text _Prefix) { G_LibTranslations_ChatPrefix = _Prefix; }
+
 // ---------------------------------- //
 /** Send chat message
  *
@@ -144,7 +160,8 @@ Void SendChat(CPlayer _Player, Text _Message) {
 	declare UI for _Player <=> UIManager.GetUI(_Player);
 	if (UI == Null) return;
 	
-	UI.SendChat(GetTranslation(_Player, _Message));
+	if (G_LibTranslations_ChatPrefix == "") G_LibTranslations_ChatPrefix = C_DefaultChatPrefix;
+	UI.SendChat(GetTranslation(_Player, G_LibTranslations_ChatPrefix^_Message));
 }
 
 // ---------------------------------- //
@@ -166,7 +183,8 @@ Void SendChat(CPlayer _Player, Text[] _Message) {
 	declare UI for _Player <=> UIManager.GetUI(_Player);
 	if (UI == Null) return;
 	
-	UI.SendChat(GetComposedTranslation(_Player, _Message, C_DefaultChatPrefix));
+	if (G_LibTranslations_ChatPrefix == "") G_LibTranslations_ChatPrefix = C_DefaultChatPrefix;
+	UI.SendChat(GetComposedTranslation(_Player, _Message, G_LibTranslations_ChatPrefix));
 }
 
 // ---------------------------------- //

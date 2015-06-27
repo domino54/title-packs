@@ -1,14 +1,17 @@
 // -------------------------------------- //
 //  KNOCKOUT by domino54                  //
-//  script version: 1.2.0                 //
+//  script version: 1.3.0                 //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/RoundsBase.Script.txt"
 
-#Const Version		"2015-06-21"
+#Const Version		"2015-06-27"
 #Const ScriptName	"Knockout.Script.txt"
 
+// Custom libs
+#Include "Libs/domino54/SentenceBank.Script.txt" as SentenceBank
 #Include "Libs/domino54/Translations.Script.txt" as Translations
+#Include "Libs/domino54/UpdateChecker.Script.txt" as UpdateChecker
 
 // ---------------------------------- //
 // Settings
@@ -69,6 +72,19 @@ MB_LogVersion(ScriptName, Version);
 ***
 
 // ---------------------------------- //
+// Update Checker
+// ---------------------------------- //
+***UpdateChecker***
+***
+UpdateChecker::SetAndLogScriptVersions([
+	ScriptName => Version,
+	SentenceBank::GetScriptName() => SentenceBank::GetScriptVersion(),
+	Translations::GetScriptName() => Translations::GetScriptVersion(),
+	UpdateChecker::GetScriptName() => UpdateChecker::GetScriptVersion()
+]);
+***
+
+// ---------------------------------- //
 // Start server
 // ---------------------------------- //
 ***StartServer***
@@ -76,7 +92,7 @@ MB_LogVersion(ScriptName, Version);
 // Variables
 declare Integer[] RoundFinishTimes;		///< Players finish times order
 declare Integer RoundGiveUpsAmount;		///< Number of players that gave up in current round/lap
-declare Integer RoundTimeLeader;
+declare Integer[] LapPlayersNbDoubled;	///< Amount of players doubled in a lap
 declare Integer PrevMostLapsNb;			///< Previous maximum reached laps count
 declare Integer PrevPlayersCount;		///< Previous players count
 
@@ -91,7 +107,7 @@ XmlRpc::RegisterCallback("KOPlayerAdded", """
 XmlRpc::RegisterCallback("KOPlayerRemoved", """
 * Data : An array with the login of the player removed from the match
 * Example : ["Login"]
-* Note : This callback is sent when a player is knock out.
+* Note : This callback is sent when a player is knocked out.
 """);
 
 XmlRpc::RegisterCallback("KOSendWinner", """
@@ -113,10 +129,14 @@ SetCustomLayerFromXml(S_CustomLayerPath);
 // Scores Table
 ST2::SetStyle("LibST_TMBaseSolo");
 SetScoresTableLayout();
-ST2::CreateCol("LibST_KOCheckpoints", "CP", "", 3., 80.);
-ST2::CreateCol("LibST_KOTime", _("Time"), "", 7., 90.);
+ST2::CreateCol("KO_Checkpoints", "CP", "", 3., 80.);
+ST2::CreateCol("KO_Time", _("Time"), "", 7., 90.);
 MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
 ST2::Build("TM");
+
+// Check available updates
+UpdateChecker::Load();
++++UpdateChecker+++
 ***
 
 // ---------------------------------- //
@@ -149,6 +169,7 @@ foreach (Score in Scores) Score.BestRace = Null;
 ***StartMap***
 ***
 UpdatePlayerColors();
+UpdateChecker::CheckUpdate();
 
 // ---------------------------------- //
 // Wait for enough players
@@ -165,9 +186,9 @@ MB_WarmUp(WarmUpTimeLimit);
 UpdatePlayerColors();
 
 // ---------------------------------- //
-// Start next knockout
+// Start new Knockout
 if (GetRacingPlayersAmount() <= 1) {
-	StartNewKnockout();
+	StartKnockout();
 	Message::SendBigMessage(_("New match"), 3000, 0);
 }
 if (!ServerShutdownRequested && !MatchEndRequested) MB_Sleep(3000);
@@ -187,6 +208,7 @@ UpdatePlayerColors();
 // Clear variables
 RoundFinishTimes.clear();
 RoundGiveUpsAmount	= 0;
+LapPlayersNbDoubled.clear();
 PrevMostLapsNb		= 0;
 PrevPlayersCount	= -1;
 
@@ -203,22 +225,19 @@ if (S_AdminSetPause) DoPause();
 
 // ---------------------------------- //
 // Starts race only for racing players
-TM2::WaitRaceAll();
 foreach (Player in Players) {
 	declare Boolean HasFinishedTrack for Player;
 	HasFinishedTrack = False;
-	declare Integer PrevCheckpointTime for Player;
-	PrevCheckpointTime = 0;
-	
 	// Spawn them
 	if (IsRacing(Player.User)) TM2::StartRace(Player);
+	else TM2::WaitRace(Player);
 }
 
 // Set laps amount
 UIManager.UIAll.OverlayHideMultilapInfos = (S_ShowMultilapInfo && S_ForceLapsNb <= 0);
 if (!MapIsLapRace) NbLaps = 1;
-else if (S_ForceLapsNb <= 0) NbLaps = 255;
-else NbLaps = S_ForceLapsNb;
+else if (S_ForceLapsNb > 0) NbLaps = S_ForceLapsNb;
+else NbLaps = 1000;
 
 // ---------------------------------- //
 // Message
@@ -252,76 +271,50 @@ foreach (Event in PendingEvents) {
 		// Scores table
 		if (Event.Player.Score != Null) {
 			// ---------------------------------- //
-			// Passed checkpoints amount
-			ST2::SetColValue("LibST_KOCheckpoints", Event.Player.Score, TL::ToText(Event.Player.CurRace.Checkpoints.count));
+			// Sort scores by crossed checkpoints amount
+			ST2::SetColValue("KO_Checkpoints", Event.Player.Score, TL::ToText(Event.Player.CurRace.Checkpoints.count));
 			Event.Player.Score.BestRace = Event.Player.CurRace;
 			Scores_Sort(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
 			
 			// ---------------------------------- //
-			// Checkpoint time for knock
-			declare Integer PrevCheckpointTime for Event.Player;
-			PrevCheckpointTime = Event.Player.CurRace.Time;
-			
-			if (MapIsLapRace) {
-				// ---------------------------------- //
-				// Current leader time
-				if (MultilapIsPlayerFirst(Event.Player)) {
-					RoundTimeLeader = Event.Player.CurRace.Time;
-					ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.CurRace.Time));
-				}
-				
-				// ---------------------------------- //
-				// Difference from the leader in Laps mode
-				foreach (Player in Players) {
-					if (IsRacing(Player.User) && !MultilapIsPlayerFirst(Event.Player)) {
-						declare TextDiff = TimeToTextDiff(Event.Player.CurRace.Time - RoundTimeLeader);
-						ST2::SetColValue("LibST_KOTime", Event.Player.Score, TextDiff);
-					}
-				}
-			}
+			// Laps mode
+			if (MapIsLapRace) ST2::SetColValue("KO_Time", Event.Player.Score, TimeToText(Event.Player.CurRace.Time));
 		}
 		
 		// ---------------------------------- //
 		// Race finish
 		if (Event.IsEndRace) {
-			ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.CurRace.Time));
+			ST2::SetColValue("KO_Time", Event.Player.Score, TimeToText(Event.Player.CurRace.Time));
 			TM2::EndRace(Event.Player);
 			RoundFinishTimes.add(Event.Player.CurRace.Time);
 			
-			// Rounds: Player finished, don't knock him
+			// Rounds: Player finished track
 			declare Boolean HasFinishedTrack for Event.Player;
 			HasFinishedTrack = True;
 			
 			// ---------------------------------- //
 			// Start the countdown if it's the first player to finish
 			if (CutOffTimeLimit <= 0) {
-				Message::SendStatusMessage(TL::Compose(_("$<%1$> wins the round!"), Event.Player.User.Name), 4000, 0);
+				Message::SendStatusMessage(TL::Compose(_("$<%1$> wins the round!"), Event.Player.User.Name), 4000, 2);
 				CutOffTimeLimit = GetFinishTimeout();
 			}
 		}
 		
 		// ---------------------------------- //
-		// First player begins next lap
-		if (MapIsLapRace && Event.IsEndLap && GetRacingPlayersAmount() > 1 && Event.Player.CurrentNbLaps > PrevMostLapsNb) {
-			PrevMostLapsNb = Event.Player.CurrentNbLaps;
-			Translations::SendStatusMessage(["$<%1$> has finished lap %2!", Event.Player.User.Name, TL::ToText(Event.Player.CurrentNbLaps)], 4000, 0);
-			
-			// Somebody gave up
-			if (RoundGiveUpsAmount > 0) {
-				Translations::SendChat(["Anybody knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
-				RoundGiveUpsAmount = 0;
+		// Laps mode
+		if (MapIsLapRace && Event.IsEndLap && !MB_StopRound) {
+			// ---------------------------------- //
+			// New lap message
+			if (Event.Player.CurrentNbLaps > PrevMostLapsNb) {
+				PrevMostLapsNb = Event.Player.CurrentNbLaps;
+				Translations::SendStatusMessage(["$<%1$> has finished lap %2!", Event.Player.User.Name, TL::ToText(Event.Player.CurrentNbLaps)], 4000, 1);
 			}
 			
-			// Knock lap worst player
-			else {
-				declare Multiplier = 1;
-				if (S_DoubleKnockUntil >= 3 && GetRacingPlayersAmount() > S_DoubleKnockUntil) Multiplier = 2;
-				for (I, 1, Multiplier) {
-					---MultilapKnock---
-				}
-			}
+			// ---------------------------------- //
+			// Do the Laps Knockout function
+			---Laps---
 			
-			// Stop round
+			// Stop the round when last player remains
 			if (GetRacingPlayersAmount() <= 1) MB_StopRound = True;
 		}
 	}
@@ -329,19 +322,25 @@ foreach (Event in PendingEvents) {
 	// GiveUp
 	else if (Event.Type == CTmModeEvent::EType::GiveUp) {
 		if (Event.Player.IsSpawned && IsRacing(Event.Player.User) && Event.Player.CurrentNbLaps < NbLaps) {
+			// Knockout and unspawn
 			TM2::WaitRace(Event.Player);
-			KnockPlayer(Event.Player);
-			Translations::SendStatusMessage(["$<%1$> gives up!", Event.Player.User.Name], 4000, 0);
-			ST2::SetColValue("LibST_KOTime", Event.Player.Score, _("Give up"));
+			KnockoutPlayer(Event.Player, False);
 			RoundGiveUpsAmount += 1;
-		} else Event.Player.IsSpawned = False;
+			
+			// Send messages
+			Translations::SendStatusMessage(["$<%1$> gives up!", Event.Player.User.Name], 4000, 0);
+			Translations::SendChat(["$<%1$> gives up and is knocked out!", Event.Player.User.Name]);
+			ST2::SetColValue("KO_Time", Event.Player.Score, _("Give up"));
+		}
+		// Avoid players giving up after finish
+		else Event.Player.IsSpawned = False;
 	}
 }
 
 // ---------------------------------- //
 // Unspawn players joining the game
 foreach (Player in Players) {
-	if (!IsRacing(Player.User) && Player.IsSpawned) {
+	if (Player.IsSpawned && !IsRacing(Player.User)) {
 		TM2::WaitRace(Player);
 		Player.IsSpawned = False;
 	}
@@ -356,61 +355,78 @@ if (PrevPlayersCount != Players.count) {
 }
 
 // Stop round
-if (RoundFinishTimes.count == GetRacingPlayersAmount() || GetRacingPlayersAmount() <= 1) MB_StopRound = True;
+if (GetRacingPlayersAmount() <= 1 || RoundFinishTimes.count == GetRacingPlayersAmount()) MB_StopRound = True;
 ***
 
 // ---------------------------------- //
-// Knock lap slowest player
+// Laps: when player cross finish line
 // ---------------------------------- //
-***MultilapKnock***
+***Laps***
 ***
 // ---------------------------------- //
-// Get lowest passed checkpoints amount
-declare Integer LowestCheckpointsNb;
-LowestCheckpointsNb = 100000;
+// Get highest and lowest amount of laps finished by players
+declare Integer HighestLapsNb;
+declare Integer LowestLapsNb;
+HighestLapsNb = 0;
+LowestLapsNb = 1000;
 
 foreach (Player in Players) {
-	if (IsRacing(Player.User) && Player.CurRace.Checkpoints.count < LowestCheckpointsNb) {
-		LowestCheckpointsNb = Player.CurRace.Checkpoints.count;
+	if (IsRacing(Player.User)) {
+		if (Player.CurrentNbLaps < LowestLapsNb) LowestLapsNb = Player.CurrentNbLaps;
+		if (Player.CurrentNbLaps > HighestLapsNb) HighestLapsNb = Player.CurrentNbLaps;
 	}
 }
 
 // ---------------------------------- //
-// Get amount of players with less checkpoints passed
-declare CTmPlayer[] PlayersToCheck;
-PlayersToCheck.clear();
-						
-foreach (Player in Players) {
-	if (IsRacing(Player.User) && Player.CurRace.Checkpoints.count == LowestCheckpointsNb) {
-		PlayersToCheck.add(Player);
+// Get amount of doubled players
+declare Integer PlayersNbDoubled;
+PlayersNbDoubled = 0;
+
+if (HighestLapsNb - LowestLapsNb >= 2) {
+	foreach (Player in Players) {
+		// Knock doubled player
+		if (Player.CurrentNbLaps == LowestLapsNb && IsRacing(Player.User)) {
+			KnockoutPlayer(Player, False);
+			Translations::SendChat(["$<%1$> knocked out, doubled by $<%2$>!", Player.User.Name, Event.Player.User.Name]);
+			PlayersNbDoubled += 1;
+		}
 	}
 }
+if (LapPlayersNbDoubled.count < Event.Player.CurrentNbLaps) LapPlayersNbDoubled.add(PlayersNbDoubled);
 
 // ---------------------------------- //
-// Kick one player
-if (PlayersToCheck.count == 1) KnockPlayer(PlayersToCheck[0]);
-
-// ---------------------------------- //
-// Check slowest player
-else {
-	declare Integer SlowestTime;
-	SlowestTime = 0;
-	
-	// Set players time and slowest time
-	foreach (Player in PlayersToCheck) {
-		declare Integer PrevCheckpointTime for Player;
-		// Update slowest time
-		if (PrevCheckpointTime >= SlowestTime) SlowestTime = PrevCheckpointTime;
+// Knock last player if nobody was doubled
+if (LapPlayersNbDoubled[Event.Player.CurrentNbLaps-1] == 0) {
+	// ---------------------------------- //
+	// Don't knock last player, if someone gave up
+	if (RoundGiveUpsAmount > 0) {
+		Translations::SendChat(["Noone is knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
+		RoundGiveUpsAmount = 0;
 	}
-	
-	// Knock slowest player
-	foreach (Player in PlayersToCheck) {
-		declare Integer PrevCheckpointTime for Player;
-		if (PrevCheckpointTime >= SlowestTime) KnockPlayer(Player);
+	// ---------------------------------- //
+	// Knockout the slowest player when someone cross finish before him
+	else {
+		declare CTmPlayer[] PlayersToCheck;
+		PlayersToCheck.clear();
+		foreach (Player in Players) {
+			if (IsRacing(Player.User) && Player.CurrentNbLaps == LowestLapsNb) PlayersToCheck.add(Player);
+		}
+		
+		declare Boolean IsDoubleKO;
+		IsDoubleKO = (S_DoubleKnockUntil > 0 && GetRacingPlayersAmount() > S_DoubleKnockUntil && GetRacingPlayersAmount() >= 3);
+		
+		// DoubleKO
+		if (IsDoubleKO && PlayersToCheck.count == 2) {
+			for (I, 0, 1) {
+				KnockoutPlayer(PlayersToCheck[0], True);
+				declare Removed = PlayersToCheck.removekey(0);
+			}
+		}
+		
+		// Normal mode
+		else if (PlayersToCheck.count == 1) KnockoutPlayer(PlayersToCheck[0], True);
 	}
 }
-
-PlayersToCheck.clear();
 ***
 
 // ---------------------------------- //
@@ -430,7 +446,7 @@ foreach (Event in PendingEvents) {
 		if (Event.IsEndRace) {
 			if (Event.Player.Score != Null && Event.Player.Score.BestRace.Compare(Event.Player.CurRace, CTmResult::ETmRaceResultCriteria::Time) <= 0) {
 				Event.Player.Score.BestRace = Event.Player.CurRace;
-				ST2::SetColValue("LibST_KOTime", Event.Player.Score, TimeToText(Event.Player.Score.BestRace.Time));
+				ST2::SetColValue("KO_Time", Event.Player.Score, TimeToText(Event.Player.Score.BestRace.Time));
 				Scores_Sort(CTmMode::ETmScoreSortOrder::BestRace_Time);
 			}
 			TM2::WaitRace(Event.Player);
@@ -460,8 +476,7 @@ UpdateScoresTableFooter();
 
 // ---------------------------------- //
 // Knock only in Rounds mode
-if (!MapIsLapRace) {
-	RoundFinishTimes = RoundFinishTimes.sort();
+if (!MapIsLapRace && !ServerShutdownRequested && !MatchEndRequested) {
 	declare Integer KnockedCount;
 	KnockedCount = 0;
 	
@@ -471,8 +486,8 @@ if (!MapIsLapRace) {
 		declare Boolean HasFinishedTrack for Player;
 		if (GetRacingPlayersAmount() > 1 && !HasFinishedTrack && IsRacing(Player.User)) {
 			KnockedCount += 1;
-			ST2::SetColValue("LibST_KOTime", Player.Score, "DNF");
-			KnockPlayer(Player);
+			ST2::SetColValue("KO_Time", Player.Score, "DNF");
+			KnockoutPlayer(Player, True);
 		}
 	}
 	
@@ -480,16 +495,22 @@ if (!MapIsLapRace) {
 		// ---------------------------------- //
 		// Everyone finished, but someone gave up
 		if (RoundGiveUpsAmount > 0) {
-			Translations::SendChat(["Anybody knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
+			Translations::SendChat(["Noone is knocked out: %1 player(s) gave up!", TL::ToText(RoundGiveUpsAmount)]);
 		}
 		// ---------------------------------- //
 		// Knock latest player if all finished and noone gave up
 		else if (GetRacingPlayersAmount() > 1 && RoundFinishTimes.count > 0) {
-			declare Multiplier = 1;
-			if (S_DoubleKnockUntil >= 3 && GetRacingPlayersAmount() > S_DoubleKnockUntil) Multiplier = 2;
-			for (I, 1, Multiplier) foreach (Player in Players) if (Player.CurRace.Time == RoundFinishTimes[RoundFinishTimes.count - 1]) {
-				KnockPlayer(Player);
-				declare Removed = RoundFinishTimes.remove(Player.CurRace.Time);
+			declare Integer Multiplier;
+			Multiplier = 1;
+			if (S_DoubleKnockUntil > 0 && GetRacingPlayersAmount() > S_DoubleKnockUntil && GetRacingPlayersAmount() >= 3) Multiplier = 2;
+			
+			foreach (Player in Players) {
+				for (I, 0, Multiplier-1) {
+					if (Player.CurRace.Time == RoundFinishTimes[RoundFinishTimes.count - 1]) {
+						KnockoutPlayer(Player, True);
+						declare Removed = RoundFinishTimes.remove(Player.CurRace.Time);
+					}
+				}
 			}
 		}
 	}
@@ -551,8 +572,10 @@ else {
 // ---------------------------------- //
 ***EndServer***
 ***
+UpdateChecker::Unload();
 Layers::Detach("Custom");
 Layers::Destroy("Custom");
+
 XmlRpc::UnregisterCallback("KOPlayerAdded");
 XmlRpc::UnregisterCallback("KOPlayerRemoved");
 XmlRpc::UnregisterCallback("KOSendWinner");
@@ -614,7 +637,7 @@ Void XmlRpc_KOSendWinner(CTmPlayer _Player) {
 
 // ---------------------------------- //
 /// Start new Knockout (add players)
-Void StartNewKnockout() {
+Void StartKnockout() {
 	G_PlayersRacing.clear();
 	foreach (Player in Players) {
 	 	G_PlayersRacing.add(Player.User.Login);
@@ -667,7 +690,7 @@ Void UpdateScoresTableFooter() {
  *
  *	@param	_Player		The player to knock out
  */
-Void KnockPlayer(CTmPlayer _Player) {
+Void KnockoutPlayer(CTmPlayer _Player, Boolean _UseMessage) {
 	if (_Player != Null && IsRacing(_Player.User)) {
 		declare Removed = G_PlayersRacing.remove(_Player.User.Login);
 		
@@ -675,10 +698,10 @@ Void KnockPlayer(CTmPlayer _Player) {
 		ST2::SetPlayerColor(_Player.Score, C_CardColors["Knock"]);
 		Scores_Sort(CTmMode::ETmScoreSortOrder::BestRace_CheckpointsProgress);
 		UpdateScoresTableFooter();
-		if (MapIsLapRace) ST2::SetColValue("LibST_KOTime", _Player.Score, _("Kick"));
+		if (MapIsLapRace) ST2::SetColValue("KO_Time", _Player.Score, _("Kick"));
 		
 		XmlRpc_KOPlayerRemoved(_Player);
-		Translations::SendChat(["Knocked $<%1$> out!", _Player.User.Name]);
+		if (_UseMessage) Translations::SendChat(["<%1$> knocked out!", _Player.User.Name]);
 		
 		// +1 for other players
 		foreach (Score in Scores) if (G_PlayersRacing.exists(Score.User.Login)) Score.Points += 1;
@@ -728,62 +751,6 @@ Text TimeToText(Integer _Time) {
 	declare Time = TL::TimeToText(_Time, True);
 	if (_Time >= 0) Time ^= _Time%10;
 	return Time;
-}
-
-// ---------------------------------- //
-/** Convert time difference integer to text
- *
- *	@param	_Time	Time to convert
- */
-Text TimeToTextDiff(Integer _Time) {
-	// Always positive :)
-	declare InputTime = _Time;
-	if (InputTime < 0) InputTime *= -1;
-	
-	// Split number
-	declare Seconds = (InputTime / 1000) % 60;
-	declare Minutes = (InputTime / 60000) % 60;
-	declare Hours = (InputTime / 3600000);
-	
-	// To text
-	declare Time = "";
-	if (Hours > 0) Time = Hours^":"^TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2);
-	else if (Minutes > 0) Time = Minutes^":"^TL::FormatInteger(Seconds, 2);
-	else Time = TL::ToText(Seconds);
-	Time ^= "."^TL::FormatInteger(InputTime % 1000, 3);
-	
-	if (_Time > 0) return "$F63+"^Time;
-	else if (_Time < 0) return "$69F-"^Time;
-	return "0.000";
-}
-
-// ---------------------------------- //
-/** Check if player is first
- *
- *	@param	_Player		Player to check if he's leader
- *
- *	@return		True if player is leader
- */
-Boolean MultilapIsPlayerFirst(CTmPlayer _Player) {
-	if (_Player == Null) return False;
-	
-	// Check what is highest reached checkpoints count
-	declare MostCps = 0;
-	foreach (Player in Players) if (Player.CurRace.Checkpoints.count > MostCps) MostCps = Player.CurRace.Checkpoints.count;
-	if (MostCps == 0 || _Player.CurRace.Checkpoints.count < MostCps) return False;
-	
-	// Check how many player reached highest checkpoints count
-	declare PlayersMostCps = CTmPlayer[];
-	foreach (Player in Players) if (Player.CurRace.Checkpoints.count == MostCps) PlayersMostCps.add(Player);
-	if (!PlayersMostCps.exists(_Player)) return False;
-	
-	// Check who was faster
-	declare FastestTime = 0;
-	foreach (Player in PlayersMostCps) {
-		if (FastestTime == 0) FastestTime = Player.CurRace.Time;
-		else if (Player.CurRace.Time < FastestTime) FastestTime = Player.CurRace.Time;
-	}
-	return (_Player.CurRace.Time == FastestTime);
 }
 
 // ---------------------------------- //

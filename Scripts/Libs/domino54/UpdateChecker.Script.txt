@@ -1,0 +1,408 @@
+// -------------------------------------- //
+//  UPDATE CHECKER by domino54            //
+//  script version: 2015-06-27            //
+// -------------------------------------- //
+
+/*
+ *	This library creates an interface layer with button
+ *	and information about available updates for the mode
+ *	scripts. Can specify which scripts are used and
+ *	change default update XML feed or download link URL.
+ *	
+ *	Use SetAndLogScriptVersions() function instead MB_LogVersion()
+ *	inside ***StartServer*** label.
+ *
+ *	Correct custom feed format:
+ *	<scripts>
+ *		<script name="SuchGamemode.Script.txt" version="2015-06-27"/>
+ *		<script name="MyLibrary.Script.txt" version="2015-05-17"/>
+ *	</scripts>
+ */
+
+#Const Version		"2015-06-27"
+#Const ScriptName	"UpdateChecker.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+// Custom libs
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibUpdateChecker_RequestTimeout	5000	///< Request timeout
+
+/// Default feed file path for domino54 scripts
+#Const C_LibUpdateChecker_DefaultFeedURL "https://raw.githubusercontent.com/domino54/title-packs/master/update-feed.xml"
+
+/// Default developer download page
+#Const C_LibUpdateChecker_DefaultDownloadURL "https://github.com/domino54/title-packs/tree/master/Scripts"
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident	G_LibUpdateChecker_RequestId;		///< Id of the request to the xml file
+declare Integer	G_LibUpdateChecker_RequestEndTime;	///< Timeout for the request
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the update checker manialink text
+ *
+ *	@return		Update checker manialink text
+ */
+Text Private_GetLayerLibUpdateChecker() {
+	return """
+<manialink version="2" name="LibUpdateChecker">
+<stylesheet>
+	<style class="defaultFont" textsize="1" textcolor="FFF" textemboss="1"/>
+	<style class="scriptList" style="StyleTextScriptEditor" textsize="1"/>
+</stylesheet>
+
+<frame id="Frame_UpdateIcon" posn="155 0 1" hidden="1">
+	<quad posn="0 0 -1" sizen="15 15" halign="center" valign="center" style="Bgs1InRace" substyle="BgShadow"/>
+	<quad sizen="13 13" halign="center" valign="center" style="UIConstruction_Buttons" substyle="Down" id="Quad_UpdateButton" ScriptEvents="1"/>
+	<label posn="0 0 1" halign="center" valign="center2" style="TextButtonNav" textcolor="000" id="Label_UpdatesAmount"/>
+</frame>
+
+<frame id="Frame_NotificationClip" posn="57"><frame id="Frame_UpdateNotification" posn="97">
+	<quad posn="-3.5 2.5 -1" sizen="97" style="EnergyBar" substyle="EnergyBar" opacity=".8" id="Quad_WindowBackground"/>
+	<label posn="0 -1" valign="center2" style="TextValueSmallSm" textsize="1" id="Label_WindowTitle"/>
+	<label posn="0 -4" sizen="90 4" valign="center2" class="defaultFont" id="Label_WindowSubtitle"/>
+	<label posn="0 -8" valign="center2" class="scriptList" textcolor="AAA" id="Label_ScriptNames"/>
+	<label posn="70 -8" halign="right" valign="center2" class="scriptList" textcolor="F00" id="Label_ScriptVersionsLocal"/>
+	<label posn="90 -8" halign="right" valign="center2" class="scriptList" textcolor="0F0" id="Label_ScriptVersionsOnline"/>
+	<label posn="0 -15" sizen="90 4" valign="center2" class="defaultFont" id="Label_Instructions"/>
+</frame></frame>
+
+<script><!--
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+{{{Manialink::Animations(["EaseInCirc", "EaseOutCirc"])}}}
+{{{Translations::InsertToManialink(["Server update", "Server scripts can be replaced with the versions below:", "Download the latest scripts versions from the gamemode developer site."])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load elements
+	declare Frame_UpdateNotification	<=> (Page.GetFirstChild("Frame_UpdateNotification")		as CMlFrame);
+	declare Quad_WindowBackground		<=> (Page.GetFirstChild("Quad_WindowBackground")		as CMlQuad);
+	declare Label_WindowTitle			<=> (Page.GetFirstChild("Label_WindowTitle")			as CMlLabel);
+	declare Label_WindowSubtitle		<=> (Page.GetFirstChild("Label_WindowSubtitle")			as CMlLabel);
+	declare Label_ScriptNames			<=> (Page.GetFirstChild("Label_ScriptNames")			as CMlLabel);
+	declare Label_ScriptVersionsLocal	<=> (Page.GetFirstChild("Label_ScriptVersionsLocal")	as CMlLabel);
+	declare Label_ScriptVersionsOnline	<=> (Page.GetFirstChild("Label_ScriptVersionsOnline")	as CMlLabel);
+	declare Label_Instructions			<=> (Page.GetFirstChild("Label_Instructions")			as CMlLabel);
+	// Icon
+	declare Frame_UpdateIcon	<=> (Page.GetFirstChild("Frame_UpdateIcon")		as CMlFrame);
+	declare Label_UpdatesAmount	<=> (Page.GetFirstChild("Label_UpdatesAmount")	as CMlLabel);
+	
+	// ---------------------------------- //
+	// Cut the frame
+	declare Frame_NotificationClip <=> (Page.GetFirstChild("Frame_NotificationClip") as CMlFrame);
+	Frame_NotificationClip.ClipWindowActive = True;
+	Frame_NotificationClip.ClipWindowSize = <97., 50.>;
+	Frame_NotificationClip.ClipWindowRelativePosition = <44., 0.>;
+	
+	// Translations
+	Label_WindowTitle.SetText("$t"^Translations_Get("Server update"));
+	Label_WindowSubtitle.SetText(Translations_Get("Server scripts can be replaced with the versions below:"));
+	Label_Instructions.SetText(Translations_Get("Download the latest scripts versions from the gamemode developer site."));
+	
+	// ---------------------------------- //
+	// Net data
+	declare netread Text[Text] Net_LibUpdateChecker_Local for Teams[0];
+	declare netread Text[Text] Net_LibUpdateChecker_Online for Teams[0];
+	declare netread Text Net_LibUpdateChecker_DownloadURL for Teams[0];
+	
+	// ---------------------------------- //
+	// Variables
+	declare Integer NbUpdatesAvailable;		///< Aumber of current available updates
+	declare Boolean ShowNotification;		///< Show notification frame
+	declare Boolean PrevShowNotification;
+	declare Integer PrevOnlineScriptCount;	///< Previous amount of online script versions
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		LibManialink_AnimLoop();
+		
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			if (Event.ControlId == "Quad_UpdateButton") {
+				switch (Event.Type) {
+					case CMlEvent::Type::MouseOver : ShowNotification = True;
+					case CMlEvent::Type::MouseOut : ShowNotification = False;
+					case CMlEvent::Type::MouseClick : {
+						if (Http.IsValidUrl(Net_LibUpdateChecker_DownloadURL)) {
+							OpenLink(Net_LibUpdateChecker_DownloadURL, ::LinkType::ExternalBrowser);
+						}
+					}
+				}
+			}
+		}
+		
+		// ---------------------------------- //
+		// New update available
+		if (PrevOnlineScriptCount != Net_LibUpdateChecker_Online.count) {
+			PrevOnlineScriptCount = Net_LibUpdateChecker_Online.count;
+			NbUpdatesAvailable = 0;
+			
+			// Clear labels
+			Label_ScriptNames.SetText(Text);
+			Label_ScriptVersionsLocal.SetText(Text);
+			Label_ScriptVersionsOnline.SetText(Text);
+			
+			// ---------------------------------- //
+			// Compare versions
+			foreach (ScriptName => ScriptVersion in Net_LibUpdateChecker_Local) {
+				if (Net_LibUpdateChecker_Online.existskey(ScriptName) && Net_LibUpdateChecker_Online[ScriptName] != ScriptVersion) {
+					NbUpdatesAvailable += 1;
+					
+					// Go to the next line
+					if (Label_ScriptNames.Value != "") {
+						Label_ScriptNames.Value ^= "\n";
+						Label_ScriptVersionsLocal.Value ^= "\n";
+						Label_ScriptVersionsOnline.Value ^= "\n";
+					}
+					
+					// Set labels value
+					Label_ScriptNames.Value ^= ScriptName;
+					Label_ScriptVersionsLocal.Value ^= ScriptVersion;
+					Label_ScriptVersionsOnline.Value ^= Net_LibUpdateChecker_Online[ScriptName];
+				}
+			}
+			
+			// Modify notification size
+			Quad_WindowBackground.Size.Y = 15. + NbUpdatesAvailable * 3;
+			Frame_UpdateNotification.RelativePosition.Y = Quad_WindowBackground.Size.Y / 2 - 2.5;
+			Label_Instructions.RelativePosition.Y = -9. - NbUpdatesAvailable * 3;
+			
+			// Show icon
+			Frame_UpdateIcon.Visible = (NbUpdatesAvailable > 0);
+			Label_UpdatesAmount.SetText(TL::ToText(NbUpdatesAvailable));
+		}
+		
+		// ---------------------------------- //
+		// Show notification window
+		if (PrevShowNotification != ShowNotification && NbUpdatesAvailable > 0) {
+			PrevShowNotification = ShowNotification;
+			
+			declare Real TargetOffset;
+			TargetOffset = 0.;
+			if (!ShowNotification) TargetOffset = 97.;
+			
+			declare Text TargetEasing;
+			TargetEasing = "EaseOutCirc";
+			if (!ShowNotification) TargetEasing = "EaseInCirc";
+			
+			LibManialink_Anim("<frame id=\"Frame_UpdateNotification\" posn=\""^TargetOffset^" "^Frame_UpdateNotification.RelativePosition.Y^"\"/>", 250, TargetEasing);
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/**	Read the XML file and set the script versions
+ *
+ *	@param	_Xml	The XML file
+ */
+Void Private_ReadXML(CXmlDocument _XML) {
+	if (_XML == Null) return;
+	if (_XML.Root == Null) return;
+	if (_XML.Root.Name != "scripts") return;
+	
+	// Save last XML file
+	declare LibUpdateChecker_XMLBackUp for This = "";
+	LibUpdateChecker_XMLBackUp = _XML.TextContents;
+	
+	// Send to the interface
+	declare netwrite Text[Text] Net_LibUpdateChecker_Online for Teams[0];
+	Net_LibUpdateChecker_Online.clear();
+	
+	// Scripts
+	foreach (NodeScript in _XML.Root.Children) {
+		if (NodeScript.Name == "script") {
+			declare ScriptName		= NodeScript.GetAttributeText("name", Text);
+			declare ScriptVersion	= NodeScript.GetAttributeText("version", Text);
+			Net_LibUpdateChecker_Online[ScriptName] = ScriptVersion;
+		}
+	}
+}
+
+// ---------------------------------- //
+/**	Create a request for the XML versions file
+ *
+ *	@param	_XmlPath	The path to the XML file to use
+ *
+ *	@return		True if the request was created, false otherwise
+ */
+Boolean Private_StartRequest(Text _XmlPath) {
+	// Destroy an ongoing request
+	if (G_LibUpdateChecker_RequestId != NullId && Http.Requests.existskey(G_LibUpdateChecker_RequestId)) Http.Destroy(Http.Requests[G_LibUpdateChecker_RequestId]);
+	G_LibUpdateChecker_RequestId = NullId;
+	G_LibUpdateChecker_RequestEndTime = -1;
+	if (!Http.IsValidUrl(_XmlPath)) {
+		log(Now^"> LibUpdateChecker > Failed: URL is not valid.");
+		return False;
+	}
+	declare Req <=> Http.CreateGet(_XmlPath, False);
+	if (Req == Null) {
+		log(Now^"> LibUpdateChecker > Failed: Can't create a request.");
+		return False;
+	}
+	G_LibUpdateChecker_RequestId = Req.Id;
+	G_LibUpdateChecker_RequestEndTime = Now + C_LibUpdateChecker_RequestTimeout;
+	return True;
+}
+
+// ---------------------------------- //
+/**	Wait for a response to the request
+ *
+ *	@return		True if the request is not completed, false otherwise
+ */
+Boolean Private_WaitRequest() {
+	if (Now >= G_LibUpdateChecker_RequestEndTime) return False;
+	if (G_LibUpdateChecker_RequestId == NullId) return False;
+	if (!Http.Requests.existskey(G_LibUpdateChecker_RequestId)) return False;
+	if (Http.Requests[G_LibUpdateChecker_RequestId].IsCompleted) return False;
+	return True;
+}
+
+// ---------------------------------- //
+/**	Read the XML file
+ *
+ *	@return		True if the versions are loaded, false otherwise
+ */
+Boolean Private_ReadOnlineVersions() {
+	if (!Http.Requests.existskey(G_LibUpdateChecker_RequestId)) {
+		log(Now^"> LibUpdateChecker > Failed: Can't find the request!");
+		return False;
+	}
+	declare Req <=> Http.Requests[G_LibUpdateChecker_RequestId];
+	if (!Req.IsCompleted || Req.StatusCode != 200) {
+		log(Now^"> LibUpdateChecker > Failed: Request failed to complete with error code "^Req.StatusCode^".");
+		return False;
+	}
+	
+	declare VersionsXML <=> Xml.Create(Req.Result);
+	Http.Destroy(Req);
+	G_LibUpdateChecker_RequestId = NullId;
+	G_LibUpdateChecker_RequestEndTime = -1;
+	if (VersionsXML == Null) {
+		log(Now^"> LibUpdateChecker > Failed: the file is not a valid XML file.");
+		return False;
+	}
+	Private_ReadXML(VersionsXML);
+	Xml.Destroy(VersionsXML);
+	VersionsXML <=> Null;
+	return True;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload library
+Void Unload() {
+	// Reset network data
+	declare netwrite Text[Text] Net_LibUpdateChecker_Local for Teams[0];
+	declare netwrite Text[Text] Net_LibUpdateChecker_Online for Teams[0];
+	declare netwrite Text Net_LibUpdateChecker_DownloadURL for Teams[0];
+	
+	Net_LibUpdateChecker_Local.clear();
+	Net_LibUpdateChecker_Online.clear();
+	Net_LibUpdateChecker_DownloadURL = C_LibUpdateChecker_DefaultDownloadURL;
+	
+	// Destroy interface layer
+	Layers::Detach("LibUpdateChecker");
+	Layers::Destroy("LibUpdateChecker");
+}
+
+// ---------------------------------- //
+/// Load library
+Void Load() {
+	Unload();
+	
+	// Create manialink layer
+	Layers::Create("LibUpdateChecker", Private_GetLayerLibUpdateChecker());
+	Layers::Attach("LibUpdateChecker");
+}
+
+// ---------------------------------- //
+/** Set and log scripts used by the mode
+ *
+ *	@param _UsingScripts	Scripts used in the mode [Name => Version]
+ */
+Void SetAndLogScriptVersions(Text[Text] _UsingScripts) {
+	// Send to the interface
+	declare netwrite Text[Text] Net_LibUpdateChecker_Local for Teams[0];
+	Net_LibUpdateChecker_Local.clear();
+	
+	foreach (ScriptName => ScriptVersion in _UsingScripts) {
+		// Load script name and version
+		Net_LibUpdateChecker_Local[ScriptName] = ScriptVersion;
+		// Log them
+		log(Now^"> LibUpdateChecker > Script: "^ScriptName^" | Version: "^ScriptVersion);
+	}
+}
+
+// ---------------------------------- //
+/** Set custom download link
+ *
+ *	@param _DownloadLink	Scripts custom download link
+ */
+Void SetCustomDownloadLink(Text _DownloadLink) {
+	if (!Http.IsValidUrl(_DownloadLink)) return;
+	declare netwrite Text Net_LibUpdateChecker_DownloadURL for Teams[0];
+	Net_LibUpdateChecker_DownloadURL = _DownloadLink;
+}
+
+// ---------------------------------- //
+/** Update script versions from custom XML file
+ *
+ *	@param _FeedPath	Path to the XML file
+ */
+Void CheckUpdate(Text _FeedPath) {
+	if (_FeedPath == "") return;
+	declare Loaded = Private_StartRequest(_FeedPath);
+	if (Loaded) {
+		while (Private_WaitRequest()) yield;
+		Loaded = Private_ReadOnlineVersions();
+	}
+}
+
+// ---------------------------------- //
+/// Update script versions from default XML file
+Void CheckUpdate() { CheckUpdate(C_LibUpdateChecker_DefaultFeedURL); }

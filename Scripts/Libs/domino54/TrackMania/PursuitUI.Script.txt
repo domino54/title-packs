@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  PURSUIT UI LIB by domino54            //
-//  script version: 2015-04-25            //
+//  script version: 2015-06-27            //
 // -------------------------------------- //
 
 /**
@@ -20,7 +20,7 @@
  *	the normal display are hidden in VR mode.
  */
 
-#Const Version			"2015-04-25"
+#Const Version			"2015-06-27"
 #Const ScriptName		"PursuitUI.Script.txt"
 
 #Include "TextLib" as TextLib
@@ -39,7 +39,7 @@
 
 // Media path base
 #Const C_LibPursuitUI_WindowPath		"file://Media/Manialinks/TrackMania/Window/"
-#Const C_LibPursuitUI_ST2Path			"file://Media/Manialinks/TrackMania/ScoresTable/"
+#Const C_LibPursuitUI_ST3Path			"file://Media/Manialinks/TrackMania/ScoresTable/"
 #Const C_LibPursuitUI_ImgBaseCommon		"file://Media/Manialinks/Common/"
 
 // Custom layer request settings
@@ -48,13 +48,13 @@
 #Const C_LibPursuitUI_RequestTimeout		5000	///< Timeout of custom layer request
 
 // Rank module settings
-#Const C_LibPursuitUI_DefaultRankPos		<158., -75.>
+#Const C_LibPursuitUI_DefaultRankPos		<158., -76.>
 #Const C_LibPursuitUI_DefaultRankScale		.75
 
 // ---------------------------------- //
 // Virtual reality support (cut the UI corners)
 // ---------------------------------- //
-#Const C_LibPursuitUI_HMDFrameStart		"<frame id=\"Frame_HMDCutOff\" scale=\"1\">"
+#Const C_LibPursuitUI_HMDFrameStart		"<frame id=\"Frame_HMDCutOff\">"
 #Const C_LibPursuitUI_HMDFrameEnd		"</frame>"
 #Const C_LibPursuitUI_HMDScriptLabel	"+++HMDCutOff+++"
 #Const C_LibPursuitUI_HMDScriptModule	"""
@@ -103,7 +103,7 @@ Text Private_CreateLayerThiefCounter() {
 	<label posn="80 1.75" sizen="32 4" halign="center" valign="center2" id="Label_PolicemenCount"/>
 </frame>
 <frame id="Frame_ClanColorEffects" posn="0 -90 -64" hidden="1">
-	<quad sizen="346 24" rot="180" halign="center" style="BgRaceScore2" substyle="CartoucheLine" id="Quad_ClanBottomGlow"/>
+	<quad posn="0 -1" sizen="346 20" rot="180" halign="center" style="BgRaceScore2" substyle="CartoucheLine" id="Quad_ClanBottomGlow"/>
 	<quad posn="-18 -3 1" sizen="30 8" rot="180" halign="left" style="EnergyBar" substyle="HeaderGaugeLeft" id="Quad_PoliceLightsLeft" opacity="0"/>
 	<quad posn="18 -3 1" sizen="33 8" rot="180" halign="right" style="EnergyBar" substyle="HeaderGaugeRight" id="Quad_PoliceLightsRight" opacity="0"/>
 </frame>
@@ -182,10 +182,7 @@ if (Last_ClanScores[1] != Net_ClansNbPlayers[1]) {
 }
 
 // ---------------------------------- //
-/** Update thieves count
- *
- *	ClanScores[2] is thieves count. Used to share variable without lag.
- */
+// Update thieves count
 if (Last_ClanScores[2] != Net_ClansNbPlayers[2]) {
 	Label_ThiefCount.SetText(TL::ToText(Net_ClansNbPlayers[2]));
 	
@@ -207,7 +204,7 @@ if (Last_ClanScores[2] != Net_ClansNbPlayers[2]) {
 // Sound when player is captured
 if (InputPlayer != Null) {
 	if (Last_GUIClan != InputPlayer.CurrentClan) {
-		if (InputPlayer.CurrentClan == 1 && Last_GUIClan != 0) {
+		if (InputPlayer.CurrentClan == 1 && Last_GUIClan == 2) {
 			Audio.PlaySoundEvent(CAudioManager::ELibSound::Checkpoint, 0, -2.5);
 		}
 		Last_GUIClan = InputPlayer.CurrentClan;
@@ -383,9 +380,9 @@ Text Private_CreateLayerCountdownAndRank(Vec2 _Position, Real _Scale) {
 	return """
 <manialink version="2" name="Pursuit:CountdownAndRank">
 {{{C_LibPursuitUI_HMDFrameStart}}}
-<frame id="Frame_Countdown" posn="0 80" hidden="1">
+<frame id="Frame_Countdown" posn="0 82.5" hidden="1">
 	<label halign="center" valign="center2" style="TextRaceChrono" textcolor="FB0" textsize="6" text="0:00" id="Label_Countdown"/>
-	<label posn="0 -8 1" scale=".75" halign="center" valign="center2" style="TextValueSmallSm" id="Label_EventName"/>
+	<label posn="0 -5.5 1" sizen="220 4" halign="center" valign="center2" style="TextValueSmallSm" textsize="2" id="Label_EventName"/>
 </frame>
 <frame posn="{{{_Position.X}}} {{{_Position.Y}}}" scale="{{{_Scale}}}" id="Frame_Position">
 	<label posn="0 1" halign="left" valign="bottom" style="TextRaceMessage" id="Label_PosTotal"/>
@@ -414,6 +411,7 @@ Text Private_CreateLayerCountdownAndRank(Vec2 _Position, Real _Scale) {
 // Load UI elements
 declare Frame_Countdown <=> (Page.GetFirstChild("Frame_Countdown") as CMlFrame);
 declare Label_Countdown <=> (Page.GetFirstChild("Label_Countdown") as CMlLabel);
+declare Label_EventName <=> (Page.GetFirstChild("Label_EventName") as CMlLabel);
 
 declare Frame_Position		<=> (Page.GetFirstChild("Frame_Position")	as CMlFrame);
 declare Label_PosTotal		<=> (Page.GetFirstChild("Label_PosTotal")	as CMlLabel);
@@ -421,14 +419,17 @@ declare Label_PosCurrent	<=> (Page.GetFirstChild("Label_PosCurrent")	as CMlLabel
 
 // ---------------------------------- //
 // Netcode
-declare netread Integer Net_CutOffTimeLimit for Teams[0];
+declare netread Integer Net_EndTime for Teams[0];
+declare netread Text Net_EventName for Teams[0];
 
 // ---------------------------------- //
 // Values
-declare CutOffTimeLimit = -1;
+declare EndTime = -1;
+declare PrevEndTime = -1;
 declare CurrentPosition = 0;
 declare PrevPosition = -1;
 declare PrevScoresCount = -1;
+declare Text PrevEventName = "!";
 ***
 
 // ---------------------------------- //
@@ -436,11 +437,11 @@ declare PrevScoresCount = -1;
 // ---------------------------------- //
 ***Yield***
 ***
-CutOffTimeLimit = Net_CutOffTimeLimit;
+EndTime = Net_EndTime;
 
 // ---------------------------------- //
 // Update visibility
-if (CutOffTimeLimit > 0) {
+if (EndTime > 0) {
 	if (!Frame_Countdown.Visible) Frame_Countdown.Visible = True;
 } else if (Frame_Countdown.Visible) {
 	Frame_Countdown.Visible = False;
@@ -448,7 +449,7 @@ if (CutOffTimeLimit > 0) {
 
 // ---------------------------------- //
 // Set countdown label value
-if (CutOffTimeLimit >= GameTime) Label_Countdown.Value = TimeToText(CutOffTimeLimit - GameTime + 1);
+if (EndTime >= GameTime) Label_Countdown.Value = TimeToText(EndTime-GameTime+1);
 else Label_Countdown.Value = TimeToText(0);
 
 // ---------------------------------- //
@@ -492,6 +493,13 @@ if (GUIPlayer != Null
 	}
 	
 	PrevPosition = CurrentPosition;
+}
+
+// ---------------------------------- //
+// Update name of the event
+if (PrevEventName != Net_EventName) {
+	PrevEventName = Net_EventName;
+	Label_EventName.SetText(Net_EventName);
 }
 ***
 
@@ -575,8 +583,15 @@ Text Private_CreateLayerRespawnAndBonus() {
 	<label posn=".5" halign="center" valign="bottom" id="Label_AddedPointsAmount" opacity="0"/>
 	<label posn="-.5" halign="center" valign="top" id="Label_PointsDescription" opacity="0"/>
 </frame>
-<frame posn="155.25 -60" id="Frame_PadLock">
+<frame posn="155.25 -63.5" id="Frame_PadLock">
 	<quad posn="6" id="Quad_PadLock"/>
+</frame>
+<frame id="Frame_SpectatorInfos" posn="0 -70">
+	<quad posn="0 -.15" sizen="80 8" halign="center" valign="center" style="UiSMSpectatorScoreBig" substyle="PlayerSlotCenter" colorize="F00" id="Quad_SpecCardBg" ScriptEvents="!"/>
+	<label posn="0 0 1" sizen="60 6" halign="center" valign="center2" scale=".9" textemboss="1" textcolor="FFF" id="Label_SpecSlotName"/>
+	<quad posn="-34 0 1" sizen="5 5" halign="center" valign="center" id="Quad_SpecSlotAvatar"/>
+	<label posn="36.5 0 1" sizen="60 6" halign="right" valign="center2" style="TextValueSmallSm" textsize="2" id="Label_SpecSlotPosn"/>
+	<quad posn="-39.5 .1 1" sizen="2.2 6.5" halign="right" valign="center" style="Hud3dEchelons" id="Quad_SpecSlotEchelon" hidden="1"/>
 </frame>
 {{{C_LibPursuitUI_HMDFrameEnd}}}
 <script><!--
@@ -601,6 +616,7 @@ Text Private_CreateLayerRespawnAndBonus() {
 ***
 // ---------------------------------- //
 // Load UI elements
+declare Frame_RespawnTimer		<=> (Page.GetFirstChild("Frame_RespawnTimer") as CMlFrame);
 declare Quad_RespawnGauge		<=> (Page.GetFirstChild("Quad_RespawnGauge") as CMlQuad);
 declare Label_RespawnTimer		<=> (Page.GetFirstChild("Label_RespawnTimer") as CMlLabel);
 declare Label_RespawnMessage	<=> (Page.GetFirstChild("Label_RespawnMessage") as CMlLabel);
@@ -618,6 +634,13 @@ declare Frame_PadLock	<=> (Page.GetFirstChild("Frame_PadLock") as CMlFrame);
 Frame_PadLock.ClipWindowActive = True;
 Frame_PadLock.ClipWindowRelativePosition = <-1.5, -1.5>;
 Frame_PadLock.ClipWindowSize = <5., 9.>;
+
+declare Frame_SpectatorInfos	<=> (Page.GetFirstChild("Frame_SpectatorInfos") as CMlFrame);
+declare Quad_SpecCardBg			<=> (Page.GetFirstChild("Quad_SpecCardBg") as CMlQuad);
+declare Label_SpecSlotName		<=> (Page.GetFirstChild("Label_SpecSlotName") as CMlLabel);
+declare Quad_SpecSlotAvatar		<=> (Page.GetFirstChild("Quad_SpecSlotAvatar") as CMlQuad);
+declare Label_SpecSlotPosn		<=> (Page.GetFirstChild("Label_SpecSlotPosn") as CMlLabel);
+declare Quad_SpecSlotEchelon	<=> (Page.GetFirstChild("Quad_SpecSlotEchelon") as CMlQuad);
 
 // ---------------------------------- //
 // Netcode
@@ -671,6 +694,7 @@ Frame_CampWarning.Visible = Net_RespawnForced;
 
 // ---------------------------------- //
 // Show/Hide Respawn timer
+Frame_RespawnTimer.Visible = !IsSpectatorMode;
 if (Last_RespawnVisible != RespawnVisible) {
 	Last_RespawnVisible = RespawnVisible;
 	
@@ -774,6 +798,46 @@ if (Last_PadLockVisible != PadLockVisible) {
 	}
 	LibManialink_Anim("<quad posn=\""^AnimPosX^" 0\" id=\"Quad_PadLock\"/>", C_AnimDuration, AnimEasing);
 }
+
+// ---------------------------------- //
+// Spectator infos
+Frame_SpectatorInfos.Visible = (IsSpectatorMode && GUIPlayer != Null && GUIPlayer.User != Null &&
+	LocalUser != Null && GUIPlayer.User != LocalUser);
+
+if (GUIPlayer != Null && GUIPlayer.User != Null) {
+	// Colorize the card
+	if (GUIPlayer.CurrentClan != 0)
+		Quad_SpecCardBg.Colorize = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+	else
+		Quad_SpecCardBg.Colorize = GUIPlayer.User.Color;
+	
+	// Display player name
+	if (Label_SpecSlotName.Value != GUIPlayer.User.Name)
+		Label_SpecSlotName.SetText(GUIPlayer.User.Name);
+	
+	// Set avatar icon
+	Quad_SpecSlotAvatar.ImageUrl = "file://Avatars/"^GUIPlayer.User.Login^"/default";
+	
+	// Update player position
+	if (GUIPlayer.Score != Null && Scores.existskey(GUIPlayer.Score))
+		Label_SpecSlotPosn.Value = "#"^Scores.keyof(GUIPlayer.Score)+1;
+	
+	// Set echelon image
+	if (GUIPlayer.User.Echelon == CUser::EEchelon::None) {
+		if (Quad_SpecSlotEchelon.Visible) Quad_SpecSlotEchelon.Hide();
+	} else {
+		if (!Quad_SpecSlotEchelon.Visible) Quad_SpecSlotEchelon.Show();
+		declare EchelonName = TL::Split("::", ""^GUIPlayer.User.Echelon);
+		if (Quad_SpecSlotEchelon.Substyle != "Echelon"^EchelonName[2])
+			Quad_SpecSlotEchelon.Substyle = "Echelon"^EchelonName[2];
+	}
+	
+	// Click on the bar to display profile
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CMlEvent::Type::MouseClick && Event.ControlId == "Quad_SpecCardBg")
+			ShowProfile(GUIPlayer.User.Login);
+	}
+}
 ***
 
 {{{C_LibPursuitUI_HMDScriptModule}}}
@@ -817,7 +881,7 @@ Text Private_CreateLayerRequestPolice() {
 	<style class="chance" style="TextValueSmallSm" textsize="4"/>
 </stylesheet>
 {{{C_LibPursuitUI_HMDFrameStart}}}
-<frame id="Frame_RequestedPolicemen" posn="{{{-159.-61}}} 0">
+<frame id="Frame_RequestedPolicemen" posn="{{{-159.-31}}} 0" scale=".5">
 	<frame posn="0 {{{C_LibPursuitUI_RequestWindowSize.Y/2}}}">
 		{{{G_LibPursuitUI_RequestWindow}}}
 		<label posn="4 -8" sizen="{{{C_LibPursuitUI_RequestWindowSize.X-8}}} 12" autonewline="1" maxline="3" class="test-style" id="Label_PoliceInstructions"/>
@@ -828,6 +892,8 @@ Text Private_CreateLayerRequestPolice() {
 	</frame>
 </frame>
 {{{C_LibPursuitUI_HMDFrameEnd}}}
+<label id="Label_DebugChance" scale="0"/>
+
 <script><!--
 /**
  *	PURSUIT: Request police
@@ -838,7 +904,7 @@ Text Private_CreateLayerRequestPolice() {
 
 #Const C_ModuleId "RequestPolice"
 
-#Const C_AnimDuration		625		///< Duration of animation
+#Const C_AnimDuration	625	///< Duration of animation
 
 // ---------------------------------- //
 // Start manialink
@@ -847,15 +913,16 @@ Text Private_CreateLayerRequestPolice() {
 ***
 // ---------------------------------- //
 // Load UI elements
-declare Frame_RequestedPolicemen		<=> (Page.GetFirstChild("Frame_RequestedPolicemen") as CMlFrame);
-declare Label_{{{C_LibPursuitUI_RequestWindowId}}}TitleText	<=> (Page.GetFirstChild("Label_{{{C_LibPursuitUI_RequestWindowId}}}TitleText") as CMlLabel);
-declare Quad_{{{C_LibPursuitUI_RequestWindowId}}}TitleBg		<=> (Page.GetFirstChild("Quad_{{{C_LibPursuitUI_RequestWindowId}}}TitleBg") as CMlQuad);
+declare Frame_RequestedPolicemen <=> (Page.GetFirstChild("Frame_RequestedPolicemen") as CMlFrame);
+declare Label_{{{C_LibPursuitUI_RequestWindowId}}}TitleText <=> (Page.GetFirstChild("Label_{{{C_LibPursuitUI_RequestWindowId}}}TitleText") as CMlLabel);
+declare Quad_{{{C_LibPursuitUI_RequestWindowId}}}TitleBg <=> (Page.GetFirstChild("Quad_{{{C_LibPursuitUI_RequestWindowId}}}TitleBg") as CMlQuad);
 
 declare Label_PoliceInstructions	<=> (Page.GetFirstChild("Label_PoliceInstructions") as CMlLabel);
 declare Label_TossDesc				<=> (Page.GetFirstChild("Label_TossDesc") as CMlLabel);
 declare Label_TossChance			<=> (Page.GetFirstChild("Label_TossChance") as CMlLabel);
 declare Label_RequestsAmountDesc	<=> (Page.GetFirstChild("Label_RequestsAmountDesc") as CMlLabel);
 declare Label_RequestsCount			<=> (Page.GetFirstChild("Label_RequestsCount") as CMlLabel);
+declare Label_DebugChance			<=> (Page.GetFirstChild("Label_DebugChance") as CMlLabel);
 
 // ---------------------------------- //
 // Setup basics
@@ -880,6 +947,8 @@ declare netread Integer[Integer] Net_ClansNbPlayers for Teams[0];
 declare Boolean RequestedPolicemansVisible;
 declare Integer PoliceIndex;
 declare Boolean Last_RequestedPolicemansVisible;
+declare Real TossChance;
+declare Real PrevTossChance;
 
 wait(Net_ClansNbPlayers.count == 3);
 ***
@@ -901,11 +970,10 @@ RequestedPolicemansVisible = (
 if (Last_RequestedPolicemansVisible != RequestedPolicemansVisible) {
 	Last_RequestedPolicemansVisible = RequestedPolicemansVisible;
 	
-	if (RequestedPolicemansVisible) {
-		LibManialink_Anim("<frame posn=\"-159. 0\" id=\"Frame_RequestedPolicemen\" />", C_AnimDuration, "EaseOutBack");
-	} else {
-		LibManialink_Anim("<frame posn=\"{{{-159.-61}}} 0\" id=\"Frame_RequestedPolicemen\" />", C_AnimDuration, "EaseInBack");
-	}
+	if (RequestedPolicemansVisible)
+		LibManialink_Anim("<frame posn=\"-159. 0\" scale=\"1\" id=\"Frame_RequestedPolicemen\" />", C_AnimDuration, "EaseOutBack");
+	else
+		LibManialink_Anim("<frame posn=\"{{{-159.-31}}} 0\" scale=\".5\" id=\"Frame_RequestedPolicemen\" />", C_AnimDuration, "EaseInBack");
 }
 
 // ---------------------------------- //
@@ -921,20 +989,31 @@ if (RequestedPolicemansVisible) {
 }
 
 // ---------------------------------- //
-// Show player toss chance
+// Change player toss chance
 if (RequestedPolicemansVisible && InputPlayer != Null) {
 	if (Net_RequestedPolicemans.exists(InputPlayer.Login)) {
-		Label_TossChance.SetText(TL::Compose("%1%%", TL::ToText(100/PoliceIndex)));
+		TossChance = 1. / PoliceIndex;
 	} else {
-		if (PoliceIndex > 0) Label_TossChance.Value = "0%";
-		else if (Net_ClansNbPlayers[2] > 0) Label_TossChance.SetText(TL::Compose("%1%%", TL::ToText(100/Net_ClansNbPlayers[2])));
+		if (PoliceIndex > 0) TossChance = 0.;
+		else if (Net_ClansNbPlayers[2] > 0) TossChance = 1. / Net_ClansNbPlayers[2];
 	}
+}
+
+if (PrevTossChance != TossChance) {
+	PrevTossChance = TossChance;
+	LibManialink_Anim("<label scale=\""^TossChance^"\" id=\"Label_DebugChance\"/>", 333, "EaseInOutSine");
+}
+
+if (Net_ClansNbPlayers[1] <= 0 && Net_ClansNbPlayers[2] > 0) {
+	Label_TossChance.SetText(ML::NearestInteger(Label_DebugChance.RelativeScale*100)^"%");
+	declare Sine = .5 + ML::Sin((Now/200.)) * .5;
+	Quad_{{{C_LibPursuitUI_RequestWindowId}}}TitleBg.Colorize = <Sine/4 + .75, 0., 0.>;
 }
 ***
 
 {{{C_LibPursuitUI_HMDScriptModule}}}
 
-{{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
+{{{Manialink::Animations(["EaseInBack", "EaseOutBack", "EaseInOutSine"])}}}
 {{{Translations::InsertToManialink(["Become a policeman", "Do you want to be the first policeman? Press $6BFDELETE$g to get the chance to be tossed!", "Your chance to be tossed:", "Amount of players that want be the first policeman:", "Camper! Move %1 meters away to cancel!"])}}}
 
 // ---------------------------------- //
@@ -1160,6 +1239,24 @@ Boolean Private_SetLayerFromXml() {
 // ---------------------------------- //
 
 // ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
 /** Create the window from style images
  *
  *	@param	_Size		The size of the window
@@ -1371,8 +1468,8 @@ Void UnloadAllModules() {
 Void Loop() {
 	// ---------------------------------- //
 	// Update current time limit
-	declare netwrite Integer Net_CutOffTimeLimit for Teams[0];
-	Net_CutOffTimeLimit = CutOffTimeLimit;
+	declare netwrite Integer Net_EndTime for Teams[0];
+	Net_EndTime = CutOffTimeLimit;
 	
 	// ---------------------------------- //
 	// Current clan players nb
@@ -1459,6 +1556,16 @@ Void SetCustomLayerFromXml(Text _Path) {
 }
 
 // ---------------------------------- //
+/** Change value of the label under the timer
+ *
+ *	@param	_Name		Name of the event
+ */
+Void UpdateEventName(Text _Name) {
+	declare netwrite Text Net_EventName for Teams[0];
+	Net_EventName = _Name;
+}
+
+// ---------------------------------- //
 /** Setup compact scorestable
  *
  *	@param	_TeamsMode	Use clans
@@ -1469,12 +1576,12 @@ Void SetupCompactST2(Boolean _TeamsMode) {
 	// ---------------------------------- //
 	// Global settings
 	ST2::SetPos(<0., 39.2, 20.>);
-	ST2::SetSize(<68., 10.5>, <176., 58.5>, <176., 15.5>);
-	ST2::SetFormat(2, 7);
+	ST2::SetSize(<62., 10.5>, <161., 60.5>, <160., 15.>);
+	ST2::SetFormat(2, 8);
 	ST2::SetTextScale(.875);
 	ST2::SetModeIcon("Icons64x64_1|Opponents");
 	ST2::SetPlayerDarkening(True);
-	ST2::SetBackgroundProperties(<0., 5.>, <218., 98.>);
+	ST2:SetBackgroundProperties(<0., 5.>, <200., 100.>);
 	
 	// ---------------------------------- //
 	// Columns
@@ -1485,7 +1592,7 @@ Void SetupCompactST2(Boolean _TeamsMode) {
 	// Custom
 	ST2::CreateCol("Survival", "$F00"^"Sv", "", 2., 70.);
 	ST2::CreateCol("Capture", "$6BF"^"Cp", "", 2., 80.);
-	ST2::CreateCol("Clan", _("Task"), "", 6., 90.);
+	ST2::CreateCol("Clan", _("Task"), "", 5.5, 90.);
 	
 	// ---------------------------------- //
 	// Score points (SM-like)
@@ -1499,9 +1606,9 @@ Void SetupCompactST2(Boolean _TeamsMode) {
 	// ---------------------------------- //
 	// Teams mode
 	if (_TeamsMode) {
-		ST2::SetSize(<179., -1.>, <-1., -1.>, <-1., -1.>);
-		ST2::SetTeamImage(1, C_LibPursuitUI_ST2Path^"teamversus-left.dds", <0., 3.2>, <109., 24.4>);
-		ST2::SetTeamImage(2, C_LibPursuitUI_ST2Path^"teamversus-right.dds", <0., 3.2>, <109., 24.4>);
-		ST2::SetTeamsMode(True);
+		ST3::SetSize(<179., -1.>, <-1., -1.>, <-1., -1.>);
+		ST3::SetTeamImage(1, C_LibPursuitUI_ST3Path^"teamversus-left.dds", <0., 3.2>, <109., 24.4>);
+		ST3::SetTeamImage(2, C_LibPursuitUI_ST3Path^"teamversus-right.dds", <0., 3.2>, <109., 24.4>);
+		ST3::SetTeamsMode(True);
 	}
 }

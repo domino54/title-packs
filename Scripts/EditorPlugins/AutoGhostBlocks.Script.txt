@@ -1,0 +1,165 @@
+// -------------------------------------- //
+//  AUTO GHOST BLOCKS by domino54         //
+//  script version: 2015-07-08            //
+// -------------------------------------- //
+
+#RequireContext CEditorPlugin
+
+#Const	Version		"2015-07-08"
+#Const	ScriptName	"AutoGhostBlocks.Script.txt"
+
+// ---------------------------------- //
+/** Get layer Ghost Blocks button
+ *
+ *	@return		Manialink page with Ghost Blocks button
+ */
+Text GetLayerGhostBlocksButton() {
+	return """
+<manialink version="2" name="Plugin:AutoGhostBlocks">
+<frame posn="-105 -84">
+	<quad
+		sizen="8 8" halign="center" valign="center" ScriptEvents="1"
+		style="UIConstruction_Buttons2" substyle="GhostBlocks" id="Quad_BtnSwitchGhostBlocks"
+	/>
+	<quad
+		posn="2 -2 1" sizen="4 4" halign="center" valign="center"
+		style="Icons64x64_1" substyle="Check" id="Quad_CheckBlocksActive"
+	/>
+</frame>
+
+<label
+	posn="90 -88" halign="center" valign="bottom" style="TrackerText"
+	text="{{{"Enable Ghost Blocks\nand Air Mapping [G]"}}}" translate="1" id="Label_MouseHoverTooltip" hidden="1"
+/>
+
+<script><!--
+/**
+ *	OffZone Placing by domino54
+ */
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load interface elements
+	declare Quad_CheckBlocksActive	<=> (Page.GetFirstChild("Quad_CheckBlocksActive")	as CMlQuad);
+	declare Label_MouseHoverTooltip	<=> (Page.GetFirstChild("Label_MouseHoverTooltip")	as CMlLabel);
+	
+	// ---------------------------------- //
+	// Persistent settings
+	declare persistent Boolean Persistent_GhostBlocks_EnableMixMapping for LocalUser = True;
+	
+	// ---------------------------------- //
+	// Variables
+	declare Boolean NextPlacingMode for Page = False;
+	declare Boolean SyncMouseWheel = False;
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// Mouse click
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Quad_BtnSwitchGhostBlocks") {
+					Persistent_GhostBlocks_EnableMixMapping = !Persistent_GhostBlocks_EnableMixMapping;
+				}
+			}
+			// ---------------------------------- //
+			// Key press
+			else if (Event.Type == CMlEvent::Type::KeyPress) {
+				if (Event.KeyName == "G") {
+					Persistent_GhostBlocks_EnableMixMapping = !Persistent_GhostBlocks_EnableMixMapping;
+				}
+			}
+			// ---------------------------------- //
+			// Mouse over
+			else if (Event.Type == CMlEvent::Type::MouseOver) {
+				if (Event.ControlId == "Quad_BtnSwitchGhostBlocks") Label_MouseHoverTooltip.Show();
+			}
+			// ---------------------------------- //
+			// Mouse out
+			else if (Event.Type == CMlEvent::Type::MouseOut) {
+				if (Event.ControlId == "Quad_BtnSwitchGhostBlocks") Label_MouseHoverTooltip.Hide();
+			}
+		}
+		
+		// ---------------------------------- //
+		// Switch between ghost mode on mouse wheel button
+		if (MouseMiddleButton) {
+			if (!SyncMouseWheel) {
+				SyncMouseWheel = True;
+				NextPlacingMode = True;
+			}
+		} else {
+			SyncMouseWheel = False;
+		}
+		
+		// ---------------------------------- //
+		// Change checker icon when ghost blocks are active
+		Quad_CheckBlocksActive.StyleSelected = Persistent_GhostBlocks_EnableMixMapping;
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Create manialink layer
+	ManialinkText = GetLayerGhostBlocksButton();
+	
+	// ---------------------------------- //
+	// Persistent settings
+	declare persistent Boolean Persistent_GhostBlocks_EnableMixMapping for LocalUser = True;
+	
+	// ---------------------------------- //
+	// Communicate with manialink layer
+	declare Boolean NextPlacingMode for ManialinkPage = False;
+	
+	// ---------------------------------- //
+	// Variables
+	declare PrevPlaceMode = ::PlaceMode::Block;
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Enable air mapping and ghost blocks through a setting
+		EnableAirMapping = Persistent_GhostBlocks_EnableMixMapping;
+		EnableMixMapping = Persistent_GhostBlocks_EnableMixMapping;
+		
+		// ---------------------------------- //
+		// Normal block mode, if user disabled ghost blocks and is still in this mode
+		if (!Persistent_GhostBlocks_EnableMixMapping && PlaceMode == ::PlaceMode::GhostBlock)
+			PlaceMode = ::PlaceMode::Block;
+		
+		// ---------------------------------- //
+		// Switch ghost blocks mode on mouse wheel button
+		if (NextPlacingMode) {
+			NextPlacingMode = False;
+			
+			// Ghost mode on
+			if (PlaceMode != ::PlaceMode::GhostBlock) {
+				PrevPlaceMode = PlaceMode;
+				PlaceMode = ::PlaceMode::GhostBlock;
+			}
+			// Ghost mode off
+			else {
+				PlaceMode = PrevPlaceMode;
+			}
+		}
+	}
+}

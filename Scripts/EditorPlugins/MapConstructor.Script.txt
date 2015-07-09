@@ -1,0 +1,858 @@
+// -------------------------------------- //
+//  MAP CONSTRUCTOR by domino54           //
+//  script version: 2015-07-08            //
+// -------------------------------------- //
+
+/**
+ *	This plugin GENERATES RANDOM MAP MADAFAKAS!!!
+ */
+
+#RequireContext CEditorPlugin
+
+#Include "MathLib" as ML
+
+#Const	Version		"2015-07-09"
+#Const	ScriptName	"MapConstructor.Script.txt"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ModeSleepDuration	1	///< Mode sleep duration for each block placed
+
+// ---------------------------------- //
+// Generator
+// ---------------------------------- //
+#Const C_CheckpointFrequency 	6		///< Default checkpoint apperance frequency
+#Const C_CurveMaxFrequency 		1		///< Default curve apperance frequency
+#Const C_PropsMaxFrequency 		2		///< Default props apperance frequency
+#Const C_DecoChanceSide			1.		///< Default chance of spawning side decoration
+#Const C_DecoChancePillar		1.		///< Default chance of spawning pillar decoration
+#Const C_DecoExtraAmount		150		///< Default amount of extra decoration blocks
+
+// ---------------------------------- //
+// Blocks
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Spawn blocks
+#Const C_BlockModels_Spawn [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumRoadMainStartLine"
+]
+
+// ---------------------------------- //
+// Checkpoint blocks
+#Const C_BlockModels_Checkpoint [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumRoadMainCheckpoint"		=> [<-1, 0, 0>, <0, 0, 0>],
+	"StadiumRoadMainCheckpointUp"	=> [<-1, 0, 0>, <0, 1, 0>],
+	"StadiumRoadMainCheckpointDown"	=> [<-1, -1, 0>, <0, 0, 0>]
+]
+
+// ---------------------------------- //
+// Finish blocks
+#Const C_BlockModels_Finish [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumRoadMainFinishLine"
+]
+
+// ---------------------------------- //
+/** Road curve blocks
+ *
+ *	"CurveBlockName" => [<StartClipPosition>, <EndClipPosition>]
+ */
+#Const C_BlockModels_Curve [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumRoadMainSlopeBase"				=> [<-1, 0, 0>, <0, 1, 0>],
+	"StadiumRoadMainSlopeStraight"			=> [<-1, 0, 0>, <0, 1, 0>],
+	"StadiumRoadMainGTDiag2x2"				=> [<-2, 0, 0>, <0, 0, 1>],
+	"StadiumRoadMainGTDiag2x2Mirror"		=> [<-2, 0, -1>, <0, 0, 0>]
+]
+
+// ---------------------------------- //
+/** Road props blocks
+ *
+ *	"PropBlockName" => [<StartClipPosition>, <EndClipPosition>]
+ */
+#Const C_BlockModels_Prop [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumHolePillar"				=> [<-1, 0, 0>, <0, 0, 0>],
+	"StadiumHolePillar2Front"		=> [<-1, 0, 0>, <0, 0, 0>],
+	"StadiumHolePillar2Line"		=> [<-1, 0, 0>, <0, 0, 0>],
+	"StadiumHolePillar3"			=> [<-1, 0, 0>, <0, 0, 0>],
+	"StadiumHole"					=> [<-1, 0, 0>, <0, 0, 0>],
+	"StadiumRoadStretch"			=> [<-1, 0, 0>, <0, 0, 0>],
+	"StadiumHolePillarSlope"		=> [<-1, 0, 0>, <0, 1, 0>],
+	"StadiumHoleHoleSlope"			=> [<-1, 0, 0>, <0, 1, 0>],
+	"StadiumBump1Slope"				=> [<-1, -1, 0>, <0, 0, 0>],
+	"StadiumTrenchXRoadMain"		=> [<-1, -1, 0>, <0, 1, 0>]
+]
+
+// ---------------------------------- //
+// Global decoration blocks
+#Const C_BlockModels_Deco [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumRoadMain",
+	"StadiumPlatformGridStraight",
+	"StadiumPlatformSlope2Straight",
+	"StadiumCircuitPillar5",
+	"StadiumRoadDirt",
+	"StadiumRoadDirtHigh",
+	"StadiumSculptBridgePillar",
+	"StadiumSculptBridgePillarMirror",
+	"StadiumSculptBridgeSlopeStart",
+	"StadiumSculptBridgeSlopeStartMirror",
+	"StadiumTubeRoadDown",
+	"StadiumInflatableCastle",
+	"StadiumInflatableCastleDoor",
+	"StadiumInflatableCastleBig",
+	"StadiumInflatableCactus",
+	"StadiumInflatableSnowTree",
+	"StadiumInflatablePalmTree",
+	"StadiumControlRoadGlass",
+	"StadiumControlRoadPub",
+	"StadiumControlRoadCamera",
+	"StadiumControlLightBase",
+	"StadiumTubeRoadLightSystem",
+	"StadiumTubeRoadSoundSystem",
+	"StadiumSculptA",
+	"StadiumSculptB",
+	"StadiumSculptC"
+]
+
+// ---------------------------------- //
+// Global tube block
+#Const C_BlockModels_Tube [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumTube"
+]
+
+// ---------------------------------- //
+/** Sideaway decoration trigger blocks
+ *
+ *	"RoadBlockName" => [<DecoBlocksPositions>]
+ */
+#Const C_DecoTriggers_Side [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumRoadMainStartLine"			=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumRoadMainCheckpoint"			=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumRoadMainCheckpointUp"		=> [<0, 1, 1>, <0, 1, -1>],
+	"StadiumRoadMainCheckpointDown"		=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumRoadMainFinishLine"			=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumRoadMainGTDiag2x2"			=> [<1, 0, 1>, <0, 0, -2>],
+	"StadiumRoadMainGTDiag2x2Mirror"	=> [<0, 0, 2>, <1, 0, -1>],
+	"StadiumHolePillar"					=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumHolePillar2Front"			=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumHolePillar2Line"			=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumHolePillar3"				=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumHole"						=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumRoadStretch"				=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumRoadMainSlopeBase"			=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumRoadMainSlopeStraight"		=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumHolePillarSlope"			=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumHoleHoleSlope"				=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumBump1Slope"					=> [<0, 0, 1>, <0, 0, -1>],
+	"StadiumTrenchXRoadMain"			=> [<0, 0, 1>, <0, 0, -1>]
+]
+
+// ---------------------------------- //
+/** Pillar decoration trigger blocks
+ *
+ *	"RoadBlockName" => ["DecorationBlocksNames"]
+ */
+#Const C_DecoTriggers_Pillar [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumHolePillar" => [
+		"StadiumTubeRoadLightSystem",
+		"StadiumTubeRoadSoundSystem"
+	],
+	"StadiumHolePillar2Front" => [
+		"StadiumControlRoadGlass",
+		"StadiumControlLightBase",
+		"StadiumControlRoadCamera"
+	],
+	"StadiumHolePillar2Line" => [
+		"StadiumControlRoadGlass",
+		"StadiumControlLightBase",
+		"StadiumControlRoadCamera"
+	],
+	"StadiumHolePillar3" => [
+		"StadiumControlRoadGlass",
+		"StadiumControlLightBase",
+		"StadiumControlRoadCamera"
+	]
+]
+
+// ---------------------------------- //
+// Decoration blocks in air
+#Const C_DecoBlocks_Air [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumRoadMain",
+	"StadiumPlatformGridStraight",
+	"StadiumPlatformSlope2Straight",
+	"StadiumCircuitPillar5",
+	"StadiumSculptBridgePillar",
+	"StadiumSculptBridgePillarMirror",
+	"StadiumTubeRoadDown",
+	"StadiumControlRoadGlass",
+	"StadiumControlRoadPub",
+	"StadiumControlRoadCamera",
+	"StadiumControlLightBase",
+	"StadiumTubeRoadLightSystem",
+	"StadiumTubeRoadSoundSystem"
+]
+
+// ---------------------------------- //
+// Extra decoration blocks
+#Const C_DecoBlocks_Extra [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumRoadMain",
+	"StadiumCircuitPillar5",
+	"StadiumRoadDirt",
+	"StadiumRoadDirtHigh",
+	"StadiumSculptBridgeSlopeStart",
+	"StadiumSculptBridgeSlopeStartMirror",
+	"StadiumTubePillarCap",
+	"StadiumTubeRoadDown",
+	"StadiumInflatableCastle",
+	"StadiumInflatableCastleBig",
+	"StadiumInflatableCactus",
+	"StadiumInflatableSnowTree",
+	"StadiumInflatablePalmTree"
+]
+
+// ---------------------------------- //
+// These blocks require special rotation
+#Const C_BlockSpecialRotation [
+	// ---------------------------------- //
+	// Stadium
+	"StadiumTrenchXRoadMain" => ::CardinalDirections::North,
+	"StadiumBump1Slope" => ::CardinalDirections::West
+]
+
+// ---------------------------------- //
+/** Get layer Map Constructor button
+ *
+ *	@return		Manialink page with Map Constructor interface
+ */
+Text GetLayerMapConstructor() {
+	return """
+<manialink version="2" name="Plugin:AutoGhostBlocks">
+<stylesheet>
+	<style class="lblName" posn="-32.5" valign="center2" textsize="2" scale=".9" textcolor="000"/>
+	<style class="entryValue" posn="27.5" sizen="10 4" halign="right" valign="center2" textsize="2" textemboss="1" textcolor="FFF"/>
+	<style class="btnReset" posn="32.5" sizen="5 5" halign="right" valign="center" style="Icons128x32_1" substyle="RT_Laps"/>
+	<style class="txtWarning" sizen="70 10" scale=".9" halign="center" textsize="2" textcolor="000" autonewline="1"/>
+</stylesheet>
+
+<quad
+	posn="-154 72" sizen="12 12" halign="center" valign="center" ScriptEvents="1"
+	style="UIConstructionBullet_Buttons" substyle="NewRandomBullet" id="Quad_BtnOpenMenu"
+/>
+
+<label
+	posn="90 -88" halign="center" valign="bottom" style="TrackerText"
+	text="{{{"Open Map Constructor menu"}}}" translate="1" id="Label_MouseHoverTooltip" hidden="1"
+/>
+
+<frame id="Frame_GeneratorWindow" posn="0 0 14" hidden="1">
+	<frame posn="-124 78 1">
+		<quad posn="0 0" halign="center" sizen="74 15" style="Bgs1InRace" substyle="BgTitle3_4"/>
+		<label posn="0 -7.5 1" halign="center" valign="center2" style="TextTitle3" text="Map Constructor"/>
+		
+		<!-- Properties window -->
+		<frame posn="0 -14">
+			<quad halign="center" sizen="70 28" style="Bgs1" substyle="BgTitlePage"/>
+			<label posn="0 -4 1" halign="center" valign="center2" style="TextTitle3" textcolor="000" text="Properties"/>
+			
+			<frame posn=".5 -9 1">
+				<label class="lblName" text="Checkpoint frequency"/>
+				<entry class="entryValue" id="Entry_FrequencyCheckpoint" default="{{{C_CheckpointFrequency}}}"/>
+				<quad class="btnReset" ScriptEvents="1" id="Quad_BtnResetCheckpoint"/>
+			</frame>
+			<frame posn=".5 -14 1">
+				<label class="lblName" text="Max curve frequency"/>
+				<entry class="entryValue" id="Entry_FrequencyCurve" default="{{{C_CurveMaxFrequency}}}"/>
+				<quad class="btnReset" ScriptEvents="1" id="Quad_BtnResetCurve"/>
+			</frame>
+			<frame posn=".5 -19 1">
+				<label class="lblName" text="Max props frequency"/>
+				<entry class="entryValue" id="Entry_FrequencyProps" default="{{{C_PropsMaxFrequency}}}"/>
+				<quad class="btnReset" ScriptEvents="1" id="Quad_BtnResetProps"/>
+			</frame>
+			<frame posn=".5 -24 1">
+				<label class="lblName" text="Extra decoration blocks"/>
+				<entry class="entryValue" id="Entry_NbExtraDecoration" default="{{{C_DecoExtraAmount}}}"/>
+				<quad class="btnReset" ScriptEvents="1" id="Quad_BtnResetDeco"/>
+			</frame>
+		</frame>
+		
+		<!-- Warning message and generate buttons -->
+		<frame posn="0 -43">
+			<quad halign="center" sizen="70 22" style="Bgs1" substyle="BgTitlePage"/>
+			<label posn="0 -3" class="txtWarning" text="WARNING: Generating a new map will remove all your current edition progress."/>
+			<label posn="-16 -12" halign="center" style="CardButtonMediumS" text="Generate" ScriptEvents="1" id="Label_BtnGenerate"/>
+			<label posn="16 -12" halign="center" style="CardButtonMediumS" text="Cancel" ScriptEvents="1" id="Label_BtnCancel"/>
+		</frame>
+	</frame>
+</frame>
+
+<script><!--
+/**
+ *	Map Constructor by domino54
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load interface elements
+	declare Frame_GeneratorWindow	<=> (Page.GetFirstChild("Frame_GeneratorWindow")	as CMlFrame);
+	declare Quad_BtnOpenMenu		<=> (Page.GetFirstChild("Quad_BtnOpenMenu")			as CMlQuad);
+	declare Label_MouseHoverTooltip	<=> (Page.GetFirstChild("Label_MouseHoverTooltip")	as CMlLabel);
+	
+	declare Entry_FrequencyCheckpoint	<=> (Page.GetFirstChild("Entry_FrequencyCheckpoint")	as CMlEntry);
+	declare Entry_FrequencyCurve		<=> (Page.GetFirstChild("Entry_FrequencyCurve")			as CMlEntry);
+	declare Entry_FrequencyProps		<=> (Page.GetFirstChild("Entry_FrequencyProps")			as CMlEntry);
+	declare Entry_NbExtraDecoration		<=> (Page.GetFirstChild("Entry_NbExtraDecoration")		as CMlEntry);
+	
+	// ---------------------------------- //
+	// Variables
+	declare IsMapGenerated for Page = True;
+	declare Generator_CheckpointFrequency	for Page = {{{C_CheckpointFrequency}}};
+	declare Generator_CurveFrequency		for Page = {{{C_CurveMaxFrequency}}};
+	declare Generator_PropsFrequency		for Page = {{{C_PropsMaxFrequency}}};
+	declare Generator_ExtraDecoAmount		for Page = {{{C_DecoExtraAmount}}};
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// Mouse click
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Quad_BtnOpenMenu") {
+					Frame_GeneratorWindow.Show();
+					Audio.PlaySoundEvent(CAudioManager::ELibSound::ShowDialog, 0, 0.);
+					Label_MouseHoverTooltip.Hide();
+				}
+				else if (Event.ControlId == "Label_BtnCancel") {
+					Frame_GeneratorWindow.Hide();
+					Audio.PlaySoundEvent(CAudioManager::ELibSound::HideDialog, 0, 0.);
+				}
+				else if (Event.ControlId == "Label_BtnGenerate") {
+					Frame_GeneratorWindow.Hide();
+					Audio.PlaySoundEvent(CAudioManager::ELibSound::HideDialog, 0, 0.);
+					IsMapGenerated = False;
+				}
+				else if (Event.ControlId == "Quad_BtnResetCheckpoint") {
+					Entry_FrequencyCheckpoint.Value = "{{{C_CheckpointFrequency}}}";
+				}
+				else if (Event.ControlId == "Quad_BtnResetCurve") {
+					Entry_FrequencyCurve.Value = "{{{C_CurveMaxFrequency}}}";
+				}
+				else if (Event.ControlId == "Quad_BtnResetProps") {
+					Entry_FrequencyProps.Value = "{{{C_PropsMaxFrequency}}}";
+				}
+				else if (Event.ControlId == "Quad_BtnResetDeco") {
+					Entry_NbExtraDecoration.Value = "{{{C_DecoExtraAmount}}}";
+				}
+			}
+			// ---------------------------------- //
+			// Mouse over
+			else if (Event.Type == CMlEvent::Type::MouseOver) {
+				if (Event.ControlId == "Quad_BtnOpenMenu") Label_MouseHoverTooltip.Show();
+			}
+			// ---------------------------------- //
+			// Mouse out
+			else if (Event.Type == CMlEvent::Type::MouseOut) {
+				if (Event.ControlId == "Quad_BtnOpenMenu") Label_MouseHoverTooltip.Hide();
+			}
+		}
+		
+		// ---------------------------------- //
+		// Read values
+		if (TL::ToInteger(Entry_FrequencyCheckpoint.Value) < 0) Entry_FrequencyCheckpoint.Value = "0";
+		if (TL::ToInteger(Entry_FrequencyCheckpoint.Value) > 100) Entry_FrequencyCheckpoint.Value = "100";
+		
+		if (TL::ToInteger(Entry_FrequencyCurve.Value) < 1) Entry_FrequencyCurve.Value = "1";
+		if (TL::ToInteger(Entry_FrequencyCurve.Value) > 100) Entry_FrequencyCurve.Value = "100";
+		
+		if (TL::ToInteger(Entry_FrequencyProps.Value) < 1) Entry_FrequencyProps.Value = "1";
+		if (TL::ToInteger(Entry_FrequencyProps.Value) > 100) Entry_FrequencyProps.Value = "100";
+		
+		if (TL::ToInteger(Entry_NbExtraDecoration.Value) < 0) Entry_NbExtraDecoration.Value = "0";
+		if (TL::ToInteger(Entry_NbExtraDecoration.Value) > 1000) Entry_NbExtraDecoration.Value = "1000";
+		
+		// ---------------------------------- //
+		// Apply settings
+		Generator_CheckpointFrequency	= TL::ToInteger(Entry_FrequencyCheckpoint.Value);
+		Generator_CurveFrequency		= TL::ToInteger(Entry_FrequencyCurve.Value);
+		Generator_PropsFrequency		= TL::ToInteger(Entry_FrequencyProps.Value);
+		Generator_ExtraDecoAmount		= TL::ToInteger(Entry_NbExtraDecoration.Value);
+		
+		// ---------------------------------- //
+		// Others
+		Quad_BtnOpenMenu.Visible = (!Frame_GeneratorWindow.Visible && IsMapGenerated);
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Get random cardinal direction
+::CardinalDirections RandomDirection() {
+	declare Directions = [
+		::CardinalDirections::North,
+		::CardinalDirections::East,
+		::CardinalDirections::South,
+		::CardinalDirections::West
+	];
+	return Directions[ML::Rand(0, Directions.count - 1)];
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	ManialinkText = GetLayerMapConstructor();
+	
+	// ---------------------------------- //
+	// Generation steps
+	declare IsMapGenerated for ManialinkPage	= True;		///< Map has been generated
+	declare MapInitialized						= False;	///< Map initialized (remove all and place spawn)
+	declare AreRoadsFinished					= False;	///< Roads have been placed
+	declare AreDetailsFinished					= False;	///< All details have been placed
+	
+	declare Generator_CheckpointFrequency	for ManialinkPage = C_CheckpointFrequency;
+	declare Generator_CurveFrequency		for ManialinkPage = C_CurveMaxFrequency;
+	declare Generator_PropsFrequency		for ManialinkPage = C_PropsMaxFrequency;
+	declare Generator_ExtraDecoAmount		for ManialinkPage = C_DecoExtraAmount;
+	
+	// ---------------------------------- //
+	// Decoration positions
+	declare Text[][Int3] DetailsPosn_Side;		///< Positions of normal decoration blocks
+	declare Text[][Int3] DetailsPosn_Pillar;	///< Positions of pillar blocks decorations
+	
+	// ---------------------------------- //
+	// Variables
+	declare Int3 PrevBlockPosition;		///< Coords of previous used block
+	declare Integer NbBlocksToNextCp;	///< Nb blocks until next checkpoint
+	
+	declare NbTries_Curve = 0;
+	declare NbTries_Props = 0;
+	declare NbTries_CP = 0;
+	
+	// ---------------------------------- //
+	// Available waypoint blocks
+	declare CBlockModel BlockModelSpawn;		///< Current environment start block
+	declare CBlockModel BlockModelFinish;		///< Current environment finish block
+	declare CBlockModel BlockModelTube;			///< Current environment tube block
+	
+	// ---------------------------------- //
+	// Available building blocks
+	declare CBlockModel[] AvailableBlocks_Curves;	///< Current environment curve blocks
+	declare CBlockModel[] AvailableBlocks_Props;	///< Current environment props blocks
+	declare CBlockModel[] AvailableBlocks_Deco;		///< Current environment decorative blocks
+	declare CBlockModel[] AvailableBlocks_CP;		///< Current environment checkpoint block
+	
+	// ---------------------------------- //
+	// Load environment block models
+	foreach (BlockModel in BlockModels) {
+		// Start point
+		if (C_BlockModels_Spawn.exists(BlockModel.Name))
+			BlockModelSpawn = BlockModel;
+		
+		// Road curves
+		if (C_BlockModels_Curve.existskey(BlockModel.Name))
+			AvailableBlocks_Curves.add(BlockModel);
+		
+		// Road props
+		if (C_BlockModels_Prop.existskey(BlockModel.Name))
+			AvailableBlocks_Props.add(BlockModel);
+			
+		// Checkpoint
+		if (C_BlockModels_Checkpoint.existskey(BlockModel.Name))
+			AvailableBlocks_CP.add(BlockModel);
+			
+		// Finish line
+		if (C_BlockModels_Finish.exists(BlockModel.Name))
+			BlockModelFinish = BlockModel;
+		
+		// Side decoration
+		if (C_BlockModels_Deco.exists(BlockModel.Name))
+			AvailableBlocks_Deco.add(BlockModel);
+		
+		// Tube
+		if (C_BlockModels_Tube.exists(BlockModel.Name))
+			BlockModelTube = BlockModel;
+	}
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Map generation
+		// ---------------------------------- //
+		while (!IsMapGenerated) {
+			yield;
+			
+			// ---------------------------------- //
+			// Variables
+			declare CBlockModel CurBlock;	///< Current block model to place
+			declare Int3 BeginClipOffSet;	///< OffSet of current block start
+			declare Int3 EndClipOffSet;		///< OffSet of current block end
+			
+			// ---------------------------------- //
+			// Initialize map - place spawn block
+			// ---------------------------------- //
+			if (!MapInitialized) {
+				MapInitialized = True;
+				RemoveAll();
+				
+				DetailsPosn_Side.clear();
+				DetailsPosn_Pillar.clear();
+				PlaceMode = ::PlaceMode::Block;
+				
+				AreRoadsFinished = False;
+				AreDetailsFinished = False;
+				
+				NbTries_Curve = 0;
+				NbTries_Props = 0;
+				NbTries_CP = 0;
+				
+				// Start block init position
+				PrevBlockPosition = <
+					ML::FloorInteger(CollectionSquareSize - 1),
+					CollectionGroundY,
+					ML::FloorInteger(CollectionSquareSize - 1) / 2
+				>;
+				
+				// Checkpoints
+				NbBlocksToNextCp = Generator_CheckpointFrequency;
+				
+				// Place spawn
+				PlaceBlock(BlockModelSpawn, PrevBlockPosition, ::CardinalDirections::East);
+				
+				// Add decoration
+				if (C_DecoTriggers_Side.existskey(BlockModelSpawn.Name)) {
+					declare AvailableDeco = C_BlockModels_Deco;
+					declare DecoPosn = C_DecoTriggers_Side[BlockModelSpawn.Name];
+					foreach (Pos in DecoPosn) DetailsPosn_Side[PrevBlockPosition + Pos] = AvailableDeco;
+				}
+			}
+			
+			// ---------------------------------- //
+			// Place race road segments
+			// ---------------------------------- //
+			else if (!AreRoadsFinished) {
+				// ---------------------------------- //
+				// Place the road curves
+				// ---------------------------------- //
+				declare PlacedBlock_Curve = False;
+				if (NbBlocksToNextCp > 0 && NbTries_Curve < AvailableBlocks_Curves.count)
+				for (I, 1, ML::Rand(1, Generator_CurveFrequency)) {
+					// Get current curve properties
+					CurBlock = AvailableBlocks_Curves[ML::Rand(0, AvailableBlocks_Curves.count - 1)];
+					BeginClipOffSet = C_BlockModels_Curve[CurBlock.Name][0];
+					EndClipOffSet = C_BlockModels_Curve[CurBlock.Name][1];
+					
+					// Place the curve
+					PlacedBlock_Curve = PlaceBlock(CurBlock, PrevBlockPosition + BeginClipOffSet, ::CardinalDirections::East);
+					
+					if (!PlacedBlock_Curve) NbTries_Curve += 1;
+					else NbTries_Curve = 0;
+					
+					// Curve was placed correctly
+					if (PlacedBlock_Curve) {
+						NbBlocksToNextCp -= 1;
+						PrevBlockPosition += BeginClipOffSet + EndClipOffSet;
+						
+						if (C_DecoTriggers_Side.existskey(CurBlock.Name)) {
+							// Add side decoration
+							if (PrevBlockPosition.Y <= CollectionGroundY) {
+								declare AvailableDeco = C_BlockModels_Deco;
+								declare DecoPosn = C_DecoTriggers_Side[CurBlock.Name];
+								foreach (Pos in DecoPosn) DetailsPosn_Side[PrevBlockPosition + Pos] = AvailableDeco;
+							}
+							// Place air decoration
+							else {
+								declare AvailableDeco = C_DecoBlocks_Air;
+								declare DecoPosn = C_DecoTriggers_Side[CurBlock.Name];
+								foreach (Pos in DecoPosn) DetailsPosn_Side[PrevBlockPosition + Pos] = AvailableDeco;
+							}
+						}
+						
+						// Sleep mode
+						if (C_ModeSleepDuration > 0) sleep(C_ModeSleepDuration);
+					}
+				}
+					
+				// ---------------------------------- //
+				// Place the road props
+				// ---------------------------------- //
+				declare PlacedBlock_Prop = False;
+				if (NbBlocksToNextCp > 0 && NbTries_Props < AvailableBlocks_Props.count)
+				for (I, 1, ML::Rand(1, Generator_PropsFrequency)) {
+					// Get current prop properties
+					CurBlock = AvailableBlocks_Props[ML::Rand(0, AvailableBlocks_Props.count - 1)];
+					BeginClipOffSet = C_BlockModels_Prop[CurBlock.Name][0];
+					EndClipOffSet = C_BlockModels_Prop[CurBlock.Name][1];
+					
+					// Get block target rotation
+					declare TargetDirection = ::CardinalDirections::East;
+					if (C_BlockSpecialRotation.existskey(CurBlock.Name)) TargetDirection = C_BlockSpecialRotation[CurBlock.Name];						
+					
+					// Place the props
+					PlacedBlock_Prop = PlaceBlock(CurBlock, PrevBlockPosition + BeginClipOffSet, TargetDirection);
+					
+					if (!PlacedBlock_Prop) NbTries_Props += 1;
+					else NbTries_Props = 0;
+					
+					// Prop was placed correctly
+					if (PlacedBlock_Prop) {
+						NbBlocksToNextCp -= 1;
+						PrevBlockPosition += BeginClipOffSet + EndClipOffSet;
+						
+						if (C_DecoTriggers_Side.existskey(CurBlock.Name)) {
+							// Add side decoration
+							if (PrevBlockPosition.Y <= CollectionGroundY) {
+								declare AvailableDeco = C_BlockModels_Deco;
+								declare DecoPosn = C_DecoTriggers_Side[CurBlock.Name];
+								foreach (Pos in DecoPosn) DetailsPosn_Side[PrevBlockPosition + Pos] = AvailableDeco;
+							}
+							// Place air decoration
+							else {
+								declare AvailableDeco = C_DecoBlocks_Air;
+								declare DecoPosn = C_DecoTriggers_Side[CurBlock.Name];
+								foreach (Pos in DecoPosn) DetailsPosn_Side[PrevBlockPosition + Pos + <0, 1, 0>] = AvailableDeco;
+							}
+						}
+						
+						// Add pillar decoration
+						if (C_DecoTriggers_Pillar.existskey(CurBlock.Name)) {
+							declare AvailableDeco = C_DecoTriggers_Pillar[CurBlock.Name];
+							DetailsPosn_Pillar[PrevBlockPosition + <0, 1, 0>] = AvailableDeco;
+						}
+						
+						// Add tube
+						if (PrevBlockPosition.Y > CollectionGroundY && BlockModelTube != Null) {
+							PlaceBlock(BlockModelTube, PrevBlockPosition - <0, 1, 0>, RandomDirection());
+						}
+						
+						// Sleep mode
+						if (C_ModeSleepDuration > 0) sleep(C_ModeSleepDuration);
+					}
+				}
+				
+				// ---------------------------------- //
+				// Place checkpoints
+				// ---------------------------------- //
+				declare PlacedBlock_Checkpoint = False;
+				if (NbBlocksToNextCp <= 0 || (NbTries_Curve > 0 && NbTries_Props > 0)) {
+					declare CurBlock = AvailableBlocks_CP[ML::Rand(0, AvailableBlocks_CP.count - 1)];
+					BeginClipOffSet = C_BlockModels_Checkpoint[CurBlock.Name][0];
+					EndClipOffSet = C_BlockModels_Checkpoint[CurBlock.Name][1];
+					
+					// Place checkpoint
+					PlacedBlock_Checkpoint = PlaceBlock(CurBlock, PrevBlockPosition + BeginClipOffSet, ::CardinalDirections::East);
+					
+					if (!PlacedBlock_Checkpoint) NbTries_CP += 1;
+					else NbTries_CP = 0;
+					
+					if (NbTries_CP >= AvailableBlocks_CP.count) NbBlocksToNextCp = Generator_CheckpointFrequency;
+					
+					// Checkpoint was placed correctly
+					if (PlacedBlock_Checkpoint) {
+						PrevBlockPosition += BeginClipOffSet + EndClipOffSet;
+						NbBlocksToNextCp = Generator_CheckpointFrequency;
+						
+						// Place air decoration
+						if (C_DecoTriggers_Side.existskey(CurBlock.Name)) {
+							declare AvailableDeco = C_DecoBlocks_Air;
+							declare DecoPosn = C_DecoTriggers_Side[CurBlock.Name];
+							foreach (Pos in DecoPosn) DetailsPosn_Side[PrevBlockPosition + Pos + <0, 1, 0>] = AvailableDeco;
+						}
+						
+						// Add tube
+						if (PrevBlockPosition.Y > CollectionGroundY && BlockModelTube != Null) {
+							PlaceBlock(BlockModelTube, PrevBlockPosition - <0, 1, 0>, RandomDirection());
+						}
+						
+						// Sleep mode
+						if (C_ModeSleepDuration > 0) sleep(C_ModeSleepDuration);
+					}
+				}
+				
+				// ---------------------------------- //
+				// Place finish
+				// ---------------------------------- //
+				if (
+					NbTries_Curve >= AvailableBlocks_Curves.count &&
+					NbTries_Props >= AvailableBlocks_Props.count &&
+					NbTries_CP >= AvailableBlocks_CP.count
+				) {
+					AreRoadsFinished = True;
+					
+					// Place finish
+					PlaceBlock(BlockModelFinish, PrevBlockPosition + <-1, 0, 0>, ::CardinalDirections::East);
+					PrevBlockPosition += <-1, 0, 0>;
+					
+					// Add tube
+					if (PrevBlockPosition.Y > CollectionGroundY && BlockModelTube != Null) {
+						PlaceBlock(BlockModelTube, PrevBlockPosition - <0, 1, 0>, RandomDirection());
+					}
+					
+					if (C_DecoTriggers_Side.existskey(BlockModelFinish.Name)) {
+						// Add side decoration
+						if (PrevBlockPosition.Y <= CollectionGroundY) {
+							declare AvailableDeco = C_BlockModels_Deco;
+							declare DecoPosn = C_DecoTriggers_Side[BlockModelFinish.Name];
+							foreach (Pos in DecoPosn) DetailsPosn_Side[PrevBlockPosition + Pos] = AvailableDeco;
+						}
+						// Place air decoration
+						else {
+							declare AvailableDeco = C_DecoBlocks_Air;
+							declare DecoPosn = C_DecoTriggers_Side[BlockModelFinish.Name];
+							foreach (Pos in DecoPosn) DetailsPosn_Side[PrevBlockPosition + Pos] = AvailableDeco;
+						}
+					}
+					
+					// Sleep mode
+					if (C_ModeSleepDuration > 0) sleep(C_ModeSleepDuration);
+				}
+			}
+			
+			// ---------------------------------- //
+			// Place decoration segments
+			// ---------------------------------- //
+			else if (!AreDetailsFinished) {
+				// ---------------------------------- //
+				// Decoration at the side of the road
+				// ---------------------------------- //
+				declare NbDecoPlaced_Side = 0;
+				foreach (Position => BlockNames in DetailsPosn_Side) {
+					NbDecoPlaced_Side += 1;
+					
+					// Get list of blocks that can be placed in this position
+					declare PossibleBlocks = CBlockModel[];
+					foreach (Block in AvailableBlocks_Deco) {
+						if (BlockNames.exists(Block.Name)) PossibleBlocks.add(Block);
+					}
+					
+					// Chance deco will be placed
+					declare PlaceChance = ML::Rand(0., 1.);
+					
+					// Place decoration
+					if (PossibleBlocks.count > 0 && PlaceChance <= C_DecoChanceSide) {
+						CurBlock = PossibleBlocks[ML::Rand(0, PossibleBlocks.count - 1)];
+						declare PlacedDeco = PlaceBlock(CurBlock, Position, RandomDirection());
+						
+						// Add tube
+						if (PrevBlockPosition.Y > CollectionGroundY && BlockModelTube != Null && PlacedDeco) {
+							PlaceBlock(BlockModelTube, Position + <0, -1, 0>, ::CardinalDirections::East);
+						}
+						
+						// Sleep mode
+						if (C_ModeSleepDuration > 0) sleep(C_ModeSleepDuration);
+					}
+				}
+				
+				// ---------------------------------- //
+				// Decoration on road props pillars
+				// ---------------------------------- //
+				declare NbDecoPlaced_Pillar = 0;
+				foreach (Position => BlockNames in DetailsPosn_Pillar) {
+					NbDecoPlaced_Pillar += 1;
+					
+					// Get list of blocks that can be placed in this position
+					declare PossibleBlocks = CBlockModel[];
+					foreach (Block in AvailableBlocks_Deco) {
+						if (BlockNames.exists(Block.Name)) PossibleBlocks.add(Block);
+					}
+					
+					// Chance deco will be placed
+					declare PlaceChance = ML::Rand(0., 1.);
+					
+					// Place decoration
+					if (PossibleBlocks.count > 0 && PlaceChance <= C_DecoChancePillar) {
+						CurBlock = PossibleBlocks[ML::Rand(0, PossibleBlocks.count - 1)];
+						declare PlacedDeco = PlaceBlock(CurBlock, Position, RandomDirection());
+						
+						// Sleep mode
+						if (C_ModeSleepDuration > 0) sleep(C_ModeSleepDuration);
+					}
+				}
+				
+				// ---------------------------------- //
+				// Extra random decoration
+				// ---------------------------------- //
+				declare NbDecoPlaced_Extra = 0;
+				for (I, 1, Generator_ExtraDecoAmount) {
+					NbDecoPlaced_Extra += 1;
+					
+					// Get list of blocks that can be placed in this position
+					declare PossibleBlocks = CBlockModel[];
+					foreach (Block in AvailableBlocks_Deco) {
+						if (C_DecoBlocks_Extra.exists(Block.Name)) PossibleBlocks.add(Block);
+					}
+					
+					// Position
+					declare Position = <
+						ML::Rand(0, ML::FloorInteger(CollectionSquareSize - 1)),
+						CollectionGroundY,
+						ML::Rand(0, ML::FloorInteger(CollectionSquareSize - 1))
+					>;
+					
+					// Place decoration
+					if (PossibleBlocks.count > 0) {
+						CurBlock = PossibleBlocks[ML::Rand(0, PossibleBlocks.count - 1)];
+						declare PlacedDeco = PlaceBlock_NoDestruction(CurBlock, Position, RandomDirection());
+						
+						// Sleep mode
+						if (C_ModeSleepDuration > 0) sleep(C_ModeSleepDuration);
+					}
+				}
+				
+				// ---------------------------------- //
+				// All deco segments placed
+				if (NbDecoPlaced_Side >= DetailsPosn_Side.count &&
+					NbDecoPlaced_Pillar >= DetailsPosn_Pillar.count &&
+					NbDecoPlaced_Extra >= Generator_ExtraDecoAmount)
+					AreDetailsFinished = True;
+			}
+			
+			// ---------------------------------- //
+			// Map is generated
+			// ---------------------------------- //
+			else {
+				IsMapGenerated = True;
+				MapInitialized = False;
+				Validate();
+			}
+		}
+	}
+}

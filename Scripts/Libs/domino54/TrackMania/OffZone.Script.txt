@@ -1,0 +1,164 @@
+// -------------------------------------- //
+//  OFFZONE LIB by domino54               //
+//  script version: 2015-07-23            //
+//  - in development -                    //
+// -------------------------------------- //
+
+/**
+ *	This library allows mode to read custom OffZone locations
+ *	stored in map metadata to use it as zones respawning
+ *	players if they drive into them.
+ *
+ *	To define custom OffZone areas in your maps, use the
+ *	OffZonePlacement editor plugin, available to download
+ *	for free from domino54's GitHub repository.
+ */
+
+#Const Version		"2015-07-23"
+#Const ScriptName	"OffZone.Script.txt"
+
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/TrackMania/TM2.Script.txt" as TM2
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+
+/// Size of the block in each environment
+#Const C_LibOffZone_ColBlockDimensions [
+	"Canyon" => <64., 16., 64.>,
+	"Stadium" => <32., 8., 32.>,
+	"Valley" => <32., 8., 32.>
+]
+
+/// Y index of the block in position 0 in each environment
+#Const C_LibOffZone_ColGroundCoordY [
+	"Canyon" => 11,
+	"Stadium" => 9,
+	"Valley" => 9
+]
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Boolean G_LibOffZone_IsLoaded;				///< True, if environment dimensions loaded correctly
+declare Vec3[] G_LibOffZone_ColBlockDimensions;	///< Size of current environment blocks in meters
+declare Integer G_LibOffZone_ColGroundCoordY;		///< Y index of block in position <0., 0., 0.>
+declare Int3[] G_LibOffZone_OffZoneLocations;		///< Positions of the blocks containing OffZone triggers
+
+/// Functions settings
+declare Boolean G_LibOffZone_DisableOffZone; ///< Disable event when Player touch OffZone block
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get coordinates of the block Player is standing in
+ *
+ *	@param _Position	World position of the Player
+ *
+ *	@return		Coordinates of the block
+ */
+Int3 Private_GetPlayerBlockCoords(Vec3 _Position) {
+	if (!G_LibOffZone_IsLoaded) return Int3;
+	
+	declare Int3 BlockCoords;
+	for (I, 0, 2) BlockCoords[I] = ML::FloorInteger(_Position[I] / G_LibOffZone_ColBlockDimensions[I]);
+	BlockCoords.Y += G_LibOffZone_ColGroundCoordY;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload map OffZone locations
+Void EndMap() {
+	G_LibOffZone_IsLoaded = False;
+	G_LibOffZone_ColBlockDimensions = Vec3;
+	G_LibOffZone_ColGroundCoordY = -1;
+	G_LibOffZone_OffZoneLocations.clear();
+}
+
+// ---------------------------------- //
+/// Load map OffZone locations
+Void StartMap() {
+	if (Map == Null) return;
+	EndMap();
+	
+	// ---------------------------------- //
+	// Get current collection block size
+	if (C_LibOffZone_ColBlockDimensions.existskey(Map.CollectionName))
+		G_LibOffZone_ColBlockDimensions = C_LibOffZone_ColBlockDimensions[Map.CollectionName];
+	else return;
+	
+	// ---------------------------------- //
+	// Cet current collection ground Y
+	if (G_LibOffZone_ColGroundCoordY.existskey(Map.CollectionName))
+		G_LibOffZone_ColGroundCoordY = G_LibOffZone_ColGroundCoordY[Map.CollectionName];
+	else return;
+	
+	// Environment loaded correctly
+	G_LibOffZone_IsLoaded = True;
+	
+	// ---------------------------------- //
+	// Restore metadata from the map file
+	declare metadata Int3[] TMOffZoneLocations for Map;
+	if (TMOffZoneLocations.count == 0) return;
+	G_LibOffZone_OffZoneLocations = TMOffZoneLocations;
+}
+
+// ---------------------------------- //
+/** Check if Player is in OffZone
+ *
+ *	@param _Position	Player to check status
+ *
+ *	@return		True if Player is in OffZone, False otherwise
+ */
+Boolean IsInOffZone(CTmPlayer _Player) {
+	if (G_LibOffZone_DisableOffZone || _Player == Null) return False;
+	if (!G_LibOffZone_IsLoaded || G_LibOffZone_OffZoneLocations.count == 0) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || _Now >= Player.RaceStartTime) return False;
+	
+	return G_LibOffZone_OffZoneLocations.exists(Private_GetPlayerBlockCoords(_Player.Position));
+}
+
+// ---------------------------------- //
+/// Handle necessary events automatically
+Void Loop() {
+	// ---------------------------------- //
+	// Events management
+	foreach (Player in Players) {
+		// ---------------------------------- //
+		// Unspawn players in OffZone
+		if (IsInOffZone(Player)) TM2::WaitRace(Player);
+	}
+}
+
+// ---------------------------------- //
+/** Change OffZone activity setting
+ *
+ *	@param _UseOffZone	True if OffZone has to be active
+ */
+Void SetUseOffZone(Boolean _UseOffZone) {
+	G_LibOffZone_DisableOffZone = !_UseOffZone;
+}

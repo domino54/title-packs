@@ -48,6 +48,7 @@ declare Int3[] G_LibOffZone_OffZoneLocations;		///< Positions of the blocks cont
 
 /// Functions settings
 declare Boolean G_LibOffZone_DisableOffZone; ///< Disable event when Player touch OffZone block
+declare Boolean G_LibOffZone_DisableFalling; ///< Disable event when Player falls under construction area
 
 // ---------------------------------- //
 // Functions
@@ -130,16 +131,30 @@ Void StartMap() {
 // ---------------------------------- //
 /** Check if Player is in OffZone
  *
- *	@param _Position	Player to check status
+ *	@param _Player	Player to check status
  *
  *	@return		True if Player is in OffZone, False otherwise
  */
 Boolean IsInOffZone(CTmPlayer _Player) {
 	if (G_LibOffZone_DisableOffZone || _Player == Null) return False;
 	if (!G_LibOffZone_IsLoaded || G_LibOffZone_OffZoneLocations.count == 0) return False;
-	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || _Now >= Player.RaceStartTime) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || _Now < Player.RaceStartTime) return False;
 	
 	return G_LibOffZone_OffZoneLocations.exists(Private_GetPlayerBlockCoords(_Player.Position));
+}
+
+// ---------------------------------- //
+/** Check if Player is below map construction zone
+ *
+ *	@param _Polayet	Player to check status
+ *
+ *	@return		True if Player is below construction area, False otherwise
+ */
+Boolean IsBelowMapBottom(CTmPlayer _Player) {
+	if (!G_LibOffZone_IsLoaded || G_LibOffZone_DisableFalling || _Player == Null) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || _Now < Player.RaceStartTime) return False;
+	
+	return (_Player.Position.Y <= G_LibOffZone_ColBlockDimensions * -G_LibOffZone_ColGroundCoordY);
 }
 
 // ---------------------------------- //
@@ -150,7 +165,11 @@ Void Loop() {
 	foreach (Player in Players) {
 		// ---------------------------------- //
 		// Unspawn players in OffZone
-		if (IsInOffZone(Player)) TM2::WaitRace(Player);
+		if (!G_LibOffZone_DisableOffZone && IsInOffZone(Player)) TM2::WaitRace(Player);
+		
+		// ---------------------------------- //
+		// Unspawn players falling under map
+		if (!G_LibOffZone_DisableFalling && IsBelowMapBottom(Player)) TM2::WaitRace(Player);
 	}
 }
 
@@ -161,4 +180,13 @@ Void Loop() {
  */
 Void SetUseOffZone(Boolean _UseOffZone) {
 	G_LibOffZone_DisableOffZone = !_UseOffZone;
+}
+
+// ---------------------------------- //
+/** Change falling protection setting
+ *
+ *	@param _UseFallProtect	True if Players below map have to be unspawned
+ */
+Void SetUseFallProtection(Boolean _UseFallProtect) {
+	G_LibOffZone_DisableFalling = !_UseFallProtect;
 }

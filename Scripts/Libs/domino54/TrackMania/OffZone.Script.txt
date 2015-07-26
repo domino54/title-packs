@@ -46,9 +46,10 @@ declare Vec3[] G_LibOffZone_ColBlockDimensions;	///< Size of current environment
 declare Integer G_LibOffZone_ColGroundCoordY;		///< Y index of block in position <0., 0., 0.>
 declare Int3[] G_LibOffZone_OffZoneLocations;		///< Positions of the blocks containing OffZone triggers
 
-/// Functions settings
+/// Functions activity settings
 declare Boolean G_LibOffZone_DisableOffZone; ///< Disable event when Player touch OffZone block
 declare Boolean G_LibOffZone_DisableFalling; ///< Disable event when Player falls under construction area
+declare Boolean G_LibOffZone_DisableBorders; ///< Disable event when Player drives beyond map edge
 
 // ---------------------------------- //
 // Functions
@@ -146,7 +147,7 @@ Boolean IsInOffZone(CTmPlayer _Player) {
 // ---------------------------------- //
 /** Check if Player is below map construction zone
  *
- *	@param _Polayet	Player to check status
+ *	@param _Player	Player to check status
  *
  *	@return		True if Player is below construction area, False otherwise
  */
@@ -158,8 +159,28 @@ Boolean IsBelowMapBottom(CTmPlayer _Player) {
 }
 
 // ---------------------------------- //
+/** Check if Player is beyond map border
+ *
+ *	@param _Player	Player to check status
+ *
+ *	@return		True if Player is beyond map border, False otherwise
+ */
+Boolean IsBeyondMapEdge(CTmPlayer _Player) {
+	if (!G_LibOffZone_IsLoaded || G_LibOffZone_DisableBorders || _Player == Null) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || _Now < Player.RaceStartTime) return False;
+	
+	return (
+		_Player.Position.X < 0 || _Player.Position.Z < 0 ||
+		_Player.Position.X > G_LibOffZone_ColBlockDimensions * Map.Size.X
+		_Player.Position.Z > G_LibOffZone_ColBlockDimensions * Map.Size.Z
+	);
+}
+
+// ---------------------------------- //
 /// Handle necessary events automatically
 Void Loop() {
+	if (!G_LibOffZone_IsLoaded) return;
+	
 	// ---------------------------------- //
 	// Events management
 	foreach (Player in Players) {
@@ -170,6 +191,10 @@ Void Loop() {
 		// ---------------------------------- //
 		// Unspawn players falling under map
 		if (!G_LibOffZone_DisableFalling && IsBelowMapBottom(Player)) TM2::WaitRace(Player);
+
+		// ---------------------------------- //
+		// Unspawn players beyond map edges
+		if (!G_LibOffZone_DisableBorders && IsBeyondMapEdge(Player)) TM2::WaitRace(Player);
 	}
 }
 
@@ -189,4 +214,13 @@ Void SetUseOffZone(Boolean _UseOffZone) {
  */
 Void SetUseFallProtection(Boolean _UseFallProtect) {
 	G_LibOffZone_DisableFalling = !_UseFallProtect;
+}
+
+// ---------------------------------- //
+/** Change map edge crossing setting
+ *
+ *	@param _UseMapEdges	True if Players beyond map edges have to be unspawned
+ */
+Void SetUseFallProtection(Boolean _UseMapEdges) {
+	G_LibOffZone_DisableBorders = !_UseMapEdges;
 }

@@ -10,9 +10,11 @@ Specified modes and all libraries documentation (instructions) available soon.
 
 Gamemodes:
 * [Pursuit](https://github.com/domino54/title-packs/blob/master/Documentation/Pursuit.md)
+
 Libraries:
 * [Translations](https://github.com/domino54/title-packs/blob/master/Documentation/Translations.md)
 * [Sentence Bank](https://github.com/domino54/title-packs/blob/master/Documentation/SentenceBank.md)
+
 Extra:
 * [Custom Weapons Tutorial](https://github.com/domino54/title-packs/blob/master/Documentation/CustomWeapons.md)
 

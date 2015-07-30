@@ -1,0 +1,189 @@
+// -------------------------------------- //
+//  OFFZONE PLACING by domino54           //
+//  script version: 2015-07-30            //
+// -------------------------------------- //
+
+/**
+ *  Editor plugin used to determine OffZone locations used by
+ *  the modes supporting OffZone library for TrackMania.
+ *  OffZone is respawning players driving into it.
+ */
+
+#RequireContext CEditorPlugin
+
+#Const	Version		"2015-07-30"
+#Const	ScriptName	"OffZonePlacing.Script.txt"
+
+// ---------------------------------- //
+/** Get layer OffZone button
+ *
+ *	@return		Manialink page with OffZone button
+ */
+Text GetLayerOffZoneButton() {
+	return """
+<manialink version="2" name="EditorPlugin:OffZonePlacing">
+<quad posn="50 -84 3" sizen="8 8" halign="center" valign="center2" style="UIConstruction_Buttons" substyle="OffZone" id="Quad_BtnSetOffZoneMode" ScriptEvents="1"/>
+<label posn="90 -88 3" halign="center" valign="bottom" style="TrackerText" id="Label_MouseHoverTooltip" hidden="1"/>
+
+<frame id="Frame_OffZoneToolbar" posn="50 -72">
+	<quad sizen="18 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="BgTools"/>
+	<quad posn="-4 0 1" sizen="8 8" halign="center" valign="center" style="Icons64x64_1" substyle="Close" id="Quad_ClearOffZone" ScriptEvents="1"/>
+	<quad posn="4 0 1" sizen="8 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="CopyPaste" id="Quad_AlwaysDisplay" ScriptEvents="1"/>
+</frame>
+
+<script><!--
+/**
+ *	OffZone Placing by domino54
+ */
+
+/// Tooltip messages for specified classes
+#Const C_Tooltips [
+	"Quad_BtnSetOffZoneMode" => _("Edit Offzone [O]"),
+	"Quad_ClearOffZone" => _("Clear OffZone"),
+	"Quad_AlwaysDisplay" => _("Always display OffZone selection")
+]
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	wait (LocalUser != Null);
+	
+	// ---------------------------------- //
+	// Load interface elements
+	declare Frame_OffZoneToolbar	<=> (Page.GetFirstChild("Frame_OffZoneToolbar")		as CMlFrame);
+	declare Quad_BtnSetOffZoneMode	<=> (Page.GetFirstChild("Quad_BtnSetOffZoneMode")	as CMlQuad);
+	declare Quad_AlwaysDisplay		<=> (Page.GetFirstChild("Quad_AlwaysDisplay")		as CMlQuad);
+	declare Label_MouseHoverTooltip	<=> (Page.GetFirstChild("Label_MouseHoverTooltip")	as CMlLabel);
+	
+	// ---------------------------------- //
+	// Persistent settings
+	declare persistent Boolean Persistent_OffZonePlacing_AlwaysShow for LocalUser = False;
+	
+	// ---------------------------------- //
+	// Variables
+	declare IsOffZonePlaceMode	for Page = False;
+	declare UserSetOffZoneMode	for Page = False;
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// Mouse click
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Quad_BtnSetOffZoneMode") {
+					UserSetOffZoneMode = True;
+				} else if (Event.ControlId == "Quad_AlwaysDisplay") {
+					Persistent_OffZonePlacing_AlwaysShow = !Persistent_OffZonePlacing_AlwaysShow;
+				}
+			}
+			// ---------------------------------- //
+			// Key press
+			else if (Event.Type == CMlEvent::Type::KeyPress) {
+				if (Event.KeyName == "O") UserSetOffZoneMode = True;
+			}
+			// ---------------------------------- //
+			// Mouse over
+			else if (Event.Type == CMlEvent::Type::MouseOver) {
+				if (C_Tooltips.existskey(Event.ControlId)) {
+					Label_MouseHoverTooltip.SetText(C_Tooltips[Event.ControlId]);
+					Label_MouseHoverTooltip.Show();
+				}
+			}
+			// ---------------------------------- //
+			// Mouse out
+			else if (Event.Type == CMlEvent::Type::MouseOut) {
+				Label_MouseHoverTooltip.Hide();
+			}
+		}
+		
+		// ---------------------------------- //
+		// Others
+		Quad_BtnSetOffZoneMode.StyleSelected = IsOffZonePlaceMode;
+		Frame_OffZoneToolbar.Visible = IsOffZonePlaceMode;
+		Quad_AlwaysDisplay.StyleSelected = Persistent_OffZonePlacing_AlwaysShow;
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Create manialink layer
+	ManialinkText = GetLayerOffZoneButton();
+	
+	// ---------------------------------- //
+	// Persistent settings
+	declare persistent Boolean Persistent_OffZonePlacing_AlwaysShow for LocalUser = False;
+	
+	// ---------------------------------- //
+	// Variables
+	declare PrevPlaceMode = ::PlaceMode::Unknown;
+	declare PrevOffZoneCount = -1;
+	
+	// ---------------------------------- //
+	// Communicate with manialink layer
+	declare IsOffZonePlaceMode	for ManialinkPage = False;
+	declare UserSetOffZoneMode	for ManialinkPage = False;
+	
+	// ---------------------------------- //
+	// Prepare selection
+	if (!Persistent_OffZonePlacing_AlwaysShow) HideCustomSelection();
+	CustomSelectionCoords.clear();
+	CustomSelectionRGB = <.125, 0., .25>;
+	
+	// ---------------------------------- //
+	// Restore saved coords
+	declare metadata Int3[] TMOffZoneLocations for Map;
+	foreach (Position in TMOffZoneLocations) {
+		if (!CustomSelectionCoords.exists(Position)) CustomSelectionCoords.add(Position);
+	}
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// User enter OffZone placing mode
+		if (UserSetOffZoneMode) {
+			UserSetOffZoneMode = False;
+			PlaceMode = ::PlaceMode::CustomSelection;
+		}
+		
+		// ---------------------------------- //
+		// Send information to manialink layer
+		IsOffZonePlaceMode = (PlaceMode == ::PlaceMode::CustomSelection);
+		
+		// ---------------------------------- //
+		// Show or hide selection
+		if (PrevPlaceMode != PlaceMode) {
+			PrevPlaceMode = PlaceMode;
+			
+			if (IsOffZonePlaceMode) ShowCustomSelection();
+			else if (!Persistent_OffZonePlacing_AlwaysShow) HideCustomSelection();
+		}
+		
+		// ---------------------------------- //
+		// Update OffZone locations
+		if (PrevOffZoneCount != CustomSelectionCoords.count) {
+			PrevOffZoneCount = CustomSelectionCoords.count;
+			TMOffZoneLocations.clear();
+			
+			foreach (Position in CustomSelectionCoords) {
+				if (!TMOffZoneLocations.exists(Position)) TMOffZoneLocations.add(Position);
+			}
+		}
+	}
+}

@@ -56,6 +56,6 @@ To uninstall the plugin, just remove or rename `Chat.Script.txt` file.
 | **pmr** [message] | - | Reply to the latest received private message. |
 | **me** [message] | - | Describe what are you currently doing. |
 | **core** | - | Display server controller current name, version and release date. |
-| **hi** {login} | - | Send formatted message to everyone. Available messages are: hi bb re wb afk gtg brb flo gg gga n1 ns nt ty lol lool gl hf glhf wp ggwp 54 gu. |
+| **hi** {login} | - | Send formatted message to everyone. Available messages are: hi bb re wb afk gtg brb flo gg gga n1 ns nt ty lol lool gl hf glhf wp ggwp 54 gu grt gr8 w8. |
 | **rq ragequit** | - | Fuck everyone and everything and leave the server. :P |
 | **bm bootme** | - | Kick yourself from the server. |

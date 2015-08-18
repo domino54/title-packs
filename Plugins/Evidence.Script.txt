@@ -1,0 +1,2931 @@
+// -------------------------------------- //
+//  EVIDENCE by domino54                  //
+//  script version: 1.0 @2015-08-18       //
+// -------------------------------------- //
+
+#RequireContext CManiaplanetPlugin
+
+#Const CoreName		"Evidence"
+#Const CoreVersion	"1.0"
+#Const CoreDate		"2015-08-18"
+
+/**
+ *	EVIDENCE - Simple: core and controller for the group chat server. 
+ *	Allows user to transform his/her ManiaPlanet chat into a group conversation
+ *	server. Easy connection for your buddies via sending you commands /join and
+ *	/leave, directly in their normal chat. Type /help to see list of all
+ *	available commands, or use /help <command> to see how selected command works.
+ *
+ *	Evidence - The Real Evidence of ManiaScript Insane Abilities
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ImgBase "file://Media/Manialinks/Common/"
+
+#Const C_UsersListNbSlots		10		///< Number of player cards in buddies list
+#Const C_OfflineRemovalDelay	3000	///< Delay after offline buddies are removed from the group on game start
+
+/// Special messages format
+#Const C_FormatSuccess	"$0F0"			///< Messages of user connection and administrative operations
+#Const C_FormatMessage	"$FF0"			///< Default messages format
+#Const C_FormatPrivate	"$F70"			///< Private messages name format
+#Const C_FormatLocal	"$FFF"			///< Private messages from buddies
+#Const C_FormatSpecial	"$6BF"			///< Messages returned by various commands
+#Const C_FormatError 	"$F70Error: "	///< Exception messages
+
+/// Boolean text values
+#Const C_BooleanTextFalse	["0", "false", "f", "no", "n", "off"]
+#Const C_BooleanTextTrue	["1", "true", "t", "yes", "y", "on"]
+
+// ---------------------------------- //
+/** Commands help description
+ *	[required parameter] <optional parameter>
+ */
+#Const C_CommandHelp [
+	"help"		=> "Rly?",
+	"join"		=> "/join - Joins the group chat server.",
+	"leave"		=> "/leave - Leaves the group chat server.",
+	"list"		=> "/list <op|mute|ban|nf> - Returns list with logins of specified users on the server.",
+	"kick"		=> "/kick [login] - Disconnects user from the server.",
+	"mute"		=> "/mute [login] - Mutes user. Messages of muted players aren't shown.",
+	"unmute"	=> "/unmute [login] - Removes mute penalty from the user.",
+	"ban"		=> "/ban [login] - Bans user from the server.",
+	"unban"		=> "/unmute [login] - Removes ban penalty from the user.",
+	"addop"		=> "/addop [login] - Gives the user operator rights.",
+	"removeop"	=> "/removeop [login] - Removes operator rights from the user.",
+	"noformat"	=> "/noformat [0|1] - Disables nickname formatting to avoid split messages.",
+	"pm"		=> "/pm [login] [message] - Send private message to a specified user.",
+	"pmr"		=> "/pmr [message] - Reply to the latest received private message.",
+	"me"		=> "/me [message] - Describe what are you now doing.",
+	"core"		=> "/core - Returns name and version of the server controller script file.",
+	"chatmsg"	=> "/hi <login> - Shortcut displaying formatted message in chat.",
+	"rqcmd"		=> "/rq - Leaves the server with style."
+]
+
+/// Required levels to perform specified command
+#Const C_CommandsPermissionLevels [
+	"help" => 0, "join" => 0, "leave" => 0, "list" => 0,
+	"kick" => 1, "mute" => 1, "unmute" => 1, "ban" => 1, "unban" => 1, "addop" => 2, "removeop" => 2,
+	"noformat" => 0, "pm" => 0, "pmr" => 0, "me" => 0, "core" => 0,
+	"hi" => 0, "bb" => 0, "re" => 0, "wb" => 0, "afk" => 0, "gtg" => 0, "brb" => 0,
+	"gg" => 0, "gga" => 0, "gj" => 0, "n1" => 0, "ns" => 0, "nt" => 0, "ty" => 0, "lol" => 0, "lool" => 0,
+	"gl" => 0, "hf" => 0, "glhf" => 0, "wp" => 0, "ggwp" => 0, "54" => 0, "gu" => 0, "grt" => 0,
+	"gr8" => 0, "w8" => 0, "rq" => 0, "bm" => 0, "ragequit" => 0, "bootme" => 0
+]
+
+// ---------------------------------- //
+// Chat message commands
+#Const C_ChatMessageCommands ["hi", "bb", "re", "wb", "afk", "gtg", "brb", "flo", "gg", "gga", "gj", "n1", "ns", "nt", "ty", "lol", "lool", "gl", "hf", "glhf", "wp", "ggwp", "54", "gu", "grt", "gr8", "w8"]
+
+/// Messages, which can use player logins
+#Const C_ChatMessageUsingLogins ["hi", "bb", "wb", "flo", "gg", "gj", "n1", "ns", "nt", "ty", "lol", "lool", "gl", "hf", "glhf", "wp", "ggwp", "gu", "gr8", "w8"]
+
+/// Chat messages suffix
+#Const C_ChatMessageSuffix "!"
+
+/// Format for chat messages
+#Const C_ChatMessageBase [
+	"hi" => "Hello",
+	"bb" => "Bye",
+	"re" => "Returned",
+	"wb" => "Welcome back",
+	"afk" => "Away from keyboard",
+	"gtg" => "Got to go",
+	"brb" => "Be right back",
+	"flo" => "Florenziusted",
+	"gg" => "Good game",
+	"gga" => "Good game all",
+	"gj" => "Good job",
+	"n1" => "Nice one",
+	"ns" => "Nice shoot",
+	"nt" => "Nice time",
+	"ty" => "Thank you",
+	"lol" => "Loo0ool",
+	"lool" => "Looo00oool",
+	"gl" => "Good luck",
+	"hf" => "Have fun",
+	"glhf" => "Goold luck and have fun",
+	"wp" => "Well played",
+	"ggwp" => "Good game, well played",
+	"54" => "I <3 Domino",
+	"gu" => "Guerried",
+	"grt" => "Guerritos",
+	"gr8" => "Great",
+	"w8" => "Wait"
+]
+
+// ---------------------------------- //
+// Ragequit commands
+#Const C_RagequitCommands ["rq", "bm", "ragequit", "bootme"]
+
+/// Format for ragequit messages
+#Const C_RagequitCommandsFormat [
+	"rq"		=> "$i$F70said !@#$$% and ragequitted.",
+	"ragequit"	=> "$i$F70said !@#$$% and ragequitted.",
+	"bm"		=> "$i$6BFchooses to boot back to the real world!",
+	"bootme"	=> "$i$6BFchooses to boot back to the real world!"
+]
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare CBuddy::EPresenceShow[Text] G_PrevBuddyPresence;
+
+// ---------------------------------- //
+// Start plugin
+// ---------------------------------- //
+***StartPlugin***
+***
+// ---------------------------------- //
+// Connect to the ManiaPlanet Chat server
+BuddiesManager.DesiredConnectionStatus = CBuddiesManager::EDesiredConnectionStatus::Online;
+wait(BuddiesManager.CurrentConnectionStatus == CBuddiesManager::EConnectionStatus::Online);
+log("Connected to the ManiaPlanet Chat masterserver!");
+
+// ---------------------------------- //
+// Server persistent data
+declare persistent Text[] Persistent_GroupChat_GroupUsers;	///< All users connected to the group
+declare persistent Text[] Persistent_GroupChat_MutedUsers;	///< Users with mute penalty
+declare persistent Text[] Persistent_GroupChat_BannedUsers;	///< Users with ban penalty
+declare persistent Text[] Persistent_GroupChat_Operators;	///< List of all specified operators
+
+// Users settings
+declare persistent Text[] Persistent_GroupChat_PlayersNoFormat;	///< Buddies using noformat option
+declare persistent Text[Text] Persistent_GroupChat_LatestPM;	///< Latest buddies PM conversation login
+
+// ---------------------------------- //
+// Create widget layer
+declare LayerWidget <=> UILayerCreate();
+LayerWidget.ManialinkPage = CreateMLWidget();
+LayerWidget.Type = CUILayer::EUILayerType::ManiaplanetPlugin;
+declare WidgetPage <=> LayerWidget.LocalPage;
+
+// ---------------------------------- //
+// Create layer for the Group Chat plugin
+declare LayerChat <=> UILayerCreate();
+LayerChat.ManialinkPage = CreateMLGroupChat();
+LayerChat.Type = CUILayer::EUILayerType::Normal;
+declare ChatPage <=> LayerChat.LocalPage;
+
+// ---------------------------------- //
+// Create dialog box layer
+declare LayerDialog <=> UILayerCreate();
+LayerDialog.ManialinkPage = CreateMLDialogBox();
+LayerDialog.Type = CUILayer::EUILayerType::Normal;
+declare DialogPage <=> LayerDialog.LocalPage;
+
+// ---------------------------------- //
+// Manialink shared system variables
+declare DisplayMessage			for ChatPage = Text[][];	///< List of messages to save in history
+declare ActiveBuddiesMode		for ChatPage = "Online";	///< Current active buddies list mode
+declare IsChatOpen				for ChatPage = False;	///< True when buddies list is open
+declare FlashTaskbar			for ChatPage = False;	///< Forces taskbar to flash
+declare DesiredMessageReceiver	for ChatPage = "";	///< Selected conversation buddy
+declare MLNbUnreadMessages		for ChatPage = 0;	///< Unread messages amount
+
+// ---------------------------------- //
+// Share buddies info with manialink
+declare Text[] BuddiesLogins_InGroup		for ChatPage;	///<  Buddies connected to the group
+declare Text[] BuddiesLogins_Online			for ChatPage;	///< Online buddies 
+declare Text[] BuddiesLogins_Offline		for ChatPage;	///< Offline buddies 
+declare Text[] BuddiesLogins_RequestFrom	for ChatPage;	///< Buddies inviting user to their list
+declare Text[] BuddiesLogins_RequestTo		for ChatPage;	///< Buddies invited by the user
+
+declare Text[Text]		BuddiesName			for ChatPage;	///< Names of the buddies
+declare Integer[Text]	BuddiesPresence		for ChatPage;	///< Presences of the buddies
+declare Text[Text]		BuddiesStatus		for ChatPage;	///< Statuses of the buddies
+declare Text[Text]		BuddiesServLogin	for ChatPage;	///< Name of the server buddy is playing on
+declare Text[Text]		BuddiesJoinLink		for ChatPage;	///< Buddies servers join links
+declare Boolean[Text]	BuddiesIsMuted		for ChatPage;	///< Buddies mute status
+
+/// Update variables
+declare PrevBuddiesCountInGroup		= 0;
+declare PrevBuddiesCountOnline		= 0;
+declare PrevBuddiesCountOffline		= 0;
+declare PrevBuddiesCountRequestFrom	= 0;
+declare PrevBuddiesCountRequestTo	= 0;
+
+// ---------------------------------- //
+// Share servers info with manialink
+declare Text[Text]		ServersName			for ChatPage;	///< Names of the servers
+declare Text[Text]		ServersGamemode		for ChatPage;	///< Gamemodes of the servers
+declare Integer[Text]	ServersNbPlayers	for ChatPage;	///< Current players amout on servers
+declare Integer[Text]	ServersNbSlots		for ChatPage;	///< Number of slots on servers
+
+/// Update variables
+declare PrevCurServerLogin		= "";
+declare PrevCurServerName		= "";
+declare PrevCurServerGamemode	= "";
+declare PrevCurServerNbPlayers	= 0;
+declare PrevCurServerNbSlots	= 0;
+
+// ---------------------------------- //
+// Buddy removal dialog
+declare DialogVisible		for DialogPage = False;	///< Visibility of the dialog box
+declare DialogBuddyLogin	for DialogPage = "";	///< Login of the buddy to remove
+declare DialogBuddyName		for DialogPage = "";	///< Name of the buddy to remove
+
+// ---------------------------------- //
+// Widget manialink
+declare WidgetNbUnreadMessages	for WidgetPage = 0;		///< Amount of unread messages
+declare WidgetTriggerVisibility	for WidgetPage = False;	///< Triggers chat window visibility
+
+// ---------------------------------- //
+// Variables
+declare Integer StartTime = Now;	///< Plugin start time
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Activate menu bar
+ToolBarForceShow = IsChatOpen;
+
+// ---------------------------------- //
+// Buddies manager events management
+foreach (Event in BuddiesManager.PendingEvents) {
+	// ---------------------------------- //
+	// Server receives a message
+	if (Event.Type == CBuddiesEvent::EType::Message) {
+		declare IsCommand = (TL::SubString(Event.MessageBody, 0, 1) == "/");
+		if (!IsCommand) {
+			// ---------------------------------- //
+			// Push message to the group
+			if (Persistent_GroupChat_GroupUsers.exists(Event.Sender.Login)) {
+				if (!Persistent_GroupChat_MutedUsers.exists(Event.Sender.Login)) {
+					declare ComposedMessage = C_FormatMessage^"[$<"^Event.Sender.Name^"$>] "^Event.MessageBody;
+					
+					DisplayMessage.add(["", Event.Sender.Login, Event.MessageBody]);
+					
+					foreach (Buddy in BuddiesManager.OnlineBuddies)
+						if (Persistent_GroupChat_GroupUsers.exists(Buddy.Login) && Buddy != Event.Sender) {
+							declare BuddyNoFormat = GetNoFormatPreference(Buddy.Login);
+							BuddiesManager.SendMessage(Buddy, "", StripNamesFormat(BuddyNoFormat, ComposedMessage, BuddiesName));
+						}
+					foreach (Buddy in BuddiesManager.IncomingBuddyRequests)
+						if (Persistent_GroupChat_GroupUsers.exists(Buddy.Login)) {
+							declare BuddyNoFormat = GetNoFormatPreference(Buddy.Login);
+							BuddiesManager.SendMessage(Buddy, "", StripNamesFormat(BuddyNoFormat, ComposedMessage, BuddiesName));
+						}
+				} else {
+					BuddiesManager.SendMessage(Event.Sender, "", C_FormatError^"You're muted on this server!");
+				}
+			}
+			// ---------------------------------- //
+			// Private message
+			else {
+				declare ComposedMessage = C_FormatLocal^"[From $<"^Event.Sender.Name^"$>] "^Event.MessageBody;
+				DisplayMessage.add([Event.Sender.Login, Event.Sender.Login, Event.MessageBody]);
+			}
+		}
+		// ---------------------------------- //
+		// Commands
+		else if (TL::Length(Event.MessageBody) > 1) {
+			declare EventPerformer = Event.Sender.Login;
+			declare Message = Event.MessageBody;
+			+++ProcessCommand+++
+		}
+	}
+	// ---------------------------------- //
+	// Buddy changed his presence
+	else if (Event.Type == CBuddiesEvent::EType::PresenceChange) {
+		// Presence update
+		BuddiesPresence[Event.Buddy.Login] = GetPresenceIndex(Event.Buddy.PresenceShow);
+		
+		// Status update
+		declare TargetStatus = Event.Buddy.PresenceStatus;
+		if (TargetStatus == "") TargetStatus = GetPresenceDefaultStatus(Event.Buddy.PresenceShow);
+		BuddiesStatus[Event.Buddy.Login] = TargetStatus;
+		
+		// Server login update
+		BuddiesServLogin[Event.Buddy.Login] = Event.Buddy.CurrentServerLogin;
+		
+		// Update join link
+		if (Event.Buddy.CurrentServerJoinLink != "") BuddiesJoinLink[Event.Buddy.Login] = TL::Replace(Event.Buddy.CurrentServerJoinLink, "maniaplanet://", "");
+		
+		// ---------------------------------- //
+		// Update servers
+		if (Event.Buddy.CurrentServerLogin != "") {
+			ServersName			[Event.Buddy.CurrentServerLogin] = Event.Buddy.CurrentServerName;
+			ServersGamemode		[Event.Buddy.CurrentServerLogin] = Event.Buddy.CurrentServerModeName;
+			ServersNbPlayers	[Event.Buddy.CurrentServerLogin] = Event.Buddy.CurrentServerPlayerCount;
+			ServersNbSlots		[Event.Buddy.CurrentServerLogin] = Event.Buddy.CurrentServerPlayerCountMax;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Manialink layer custom event
+	if (Event.Type == CManiaplanetPluginEvent::EType::LayerCustomEvent) {
+		// ---------------------------------- //
+		// Send a message to "connected" players
+		if (Event.CustomEventType == "SendMessage") {
+			declare Message = Event.CustomEventData[0];
+			if (Message != "" && Message != "$") {
+				declare IsCommand = (TL::SubString(Message, 0, 1) == "/");
+				// ---------------------------------- //
+				// Send message to the group
+				if (ActiveBuddiesMode == "Group") {
+					// ---------------------------------- //
+					// Group message
+					if (!IsCommand) {
+						declare ComposedMessage = C_FormatMessage^"[$<"^LocalUser.Name^"$>] "^Message;
+						DisplayMessage.add(["", LocalUser.Login, Message]);
+						+++MessageToEveryone+++
+					}
+					// ---------------------------------- //
+					// Group command
+					else if (TL::Length(Message) > 1) {
+						declare EventPerformer = LocalUser.Login;
+						+++ProcessCommand+++
+					}
+				}
+				// ---------------------------------- //
+				// Send message to desired player
+				else if (ActiveBuddiesMode == "Online") {
+					if (DesiredMessageReceiver != "") {
+						declare Receiver = BuddiesManager.GetBuddyFromLogin(DesiredMessageReceiver);
+						if (Receiver != Null) {
+							BuddiesManager.SendMessage(Receiver, "", Message);
+							declare ComposedMessage = C_FormatLocal^"[To $<"^Receiver.Name^"$>] "^Message;
+							DisplayMessage.add([DesiredMessageReceiver, LocalUser.Login, Message]);
+						}
+					}
+				}
+			}
+		}
+		// ---------------------------------- //
+		// Update local user presence
+		else if (Event.CustomEventType == "UpdatePresence" && Event.CustomEventData.count >= 2) {
+			declare PresenceId = TL::ToInteger(Event.CustomEventData[0]);
+			declare NewPresence = GetPresenceFromIndex(PresenceId);
+			declare NewStatus = Event.CustomEventData[1];
+			
+			if (NewStatus == "") NewStatus = GetPresenceDefaultStatus2(NewPresence);
+			BuddiesManager.ChangePresence(NewPresence, NewStatus);
+		}
+		// ---------------------------------- //
+		// Accept buddy request
+		else if (Event.CustomEventType == "BuddyAccept") {
+			declare Login = Event.CustomEventData[0];
+			if (Login != "") BuddiesManager.AcceptBuddy(BuddiesManager.GetBuddyFromLogin(Login));
+		}
+		// ---------------------------------- //
+		// Deny / cancel buddy request
+		else if (Event.CustomEventType == "BuddyDeny") {
+			declare Login = Event.CustomEventData[0];
+			if (Login != "") BuddiesManager.RemoveBuddy(BuddiesManager.GetBuddyFromLogin(Login));
+		}
+		// ---------------------------------- //
+		// Copy message to clipboard
+		else if (Event.CustomEventType == "SetClipboard") {
+			declare Message = Event.CustomEventData[0];
+			if (Message != "") ClipboardSet(Message);
+		}
+		// ---------------------------------- //
+		// Remove player from buddies
+		else if (Event.CustomEventType == "RemoveBuddy") {
+			if (Event.CustomEventData.existskey(0) && Event.CustomEventData[0] != "") {
+				DialogVisible = True;
+				DialogBuddyLogin = Event.CustomEventData[0];
+				DialogBuddyName = DialogBuddyLogin;
+				if (BuddiesName.existskey(DialogBuddyLogin)) DialogBuddyName = BuddiesName[DialogBuddyLogin];
+			}
+		}
+		// ---------------------------------- //
+		// Dialog box closed
+		else if (Event.CustomEventType == "CloseDialog") {
+			if (Event.CustomEventData.existskey(0) && Event.CustomEventData[0] != "") {
+				declare Login = Event.CustomEventData[0];
+				declare EventBuddy = BuddiesManager.GetBuddyFromLogin(Login);
+				if (EventBuddy != Null) BuddiesManager.RemoveBuddy(EventBuddy);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Flash taskbar
+if (FlashTaskbar) {
+	FlashTaskbar = False;
+	FlashWindow();
+}
+
+// ---------------------------------- //
+// Open/Hide chat through widget and set unread messages amount
+if (WidgetTriggerVisibility) {
+	WidgetTriggerVisibility = False;
+	IsChatOpen = !IsChatOpen;
+}
+if (WidgetNbUnreadMessages != MLNbUnreadMessages)
+	WidgetNbUnreadMessages = MLNbUnreadMessages;
+
+// ---------------------------------- //
+// Update online buddies
+if (PrevBuddiesCountOnline != BuddiesManager.OnlineBuddies.count) {
+	PrevBuddiesCountOnline = BuddiesManager.OnlineBuddies.count;
+	BuddiesLogins_Online.clear();
+	foreach (Buddy in BuddiesManager.OnlineBuddies) {
+		BuddiesLogins_Online.add(Buddy.Login);
+		BuddiesName[Buddy.Login] = Buddy.Name;
+		BuddiesIsMuted[Buddy.Login] = Persistent_GroupChat_MutedUsers.exists(Buddy.Login);
+	}
+}
+
+// ---------------------------------- //
+// Update offline buddies
+if (PrevBuddiesCountOffline != BuddiesManager.OfflineBuddies.count) {
+	PrevBuddiesCountOffline = BuddiesManager.OfflineBuddies.count;
+	BuddiesLogins_Offline.clear();
+	foreach (Buddy in BuddiesManager.OfflineBuddies) {
+		BuddiesLogins_Offline.add(Buddy.Login);
+		BuddiesName[Buddy.Login] = Buddy.Name;
+		BuddiesIsMuted[Buddy.Login] = Persistent_GroupChat_MutedUsers.exists(Buddy.Login);
+	}
+}
+
+// ---------------------------------- //
+// Remove timed out buddies
+foreach (Buddy in BuddiesManager.OfflineBuddies) {
+	if (Now > StartTime + C_OfflineRemovalDelay && Persistent_GroupChat_GroupUsers.exists(Buddy.Login)) {
+		declare PlayerLevelName = PermissionLevelName(GetPlayerPermissionLevel(Buddy.Login));
+		declare ComposedMessage = C_FormatSuccess^PlayerLevelName^" $<"^Buddy.Name^"$> left the group!";
+		DisplayMessage.add(["", "", ComposedMessage]);
+		+++MessageToEveryone+++
+		declare Removed = Persistent_GroupChat_GroupUsers.remove(Buddy.Login);
+	}
+}
+
+// ---------------------------------- //
+// Update incoming requests
+if (PrevBuddiesCountRequestFrom != BuddiesManager.IncomingBuddyRequests.count) {
+	PrevBuddiesCountRequestFrom = BuddiesManager.IncomingBuddyRequests.count;
+	BuddiesLogins_RequestFrom.clear();
+	foreach (Buddy in BuddiesManager.IncomingBuddyRequests) {
+		BuddiesLogins_RequestFrom.add(Buddy.Login);
+		BuddiesName[Buddy.Login] = Buddy.Name;
+		BuddiesIsMuted[Buddy.Login] = Persistent_GroupChat_MutedUsers.exists(Buddy.Login);
+	}
+}
+
+// ---------------------------------- //
+// Update outgoing requests
+if (PrevBuddiesCountRequestTo != BuddiesManager.OutgoingBuddyRequests.count) {
+	PrevBuddiesCountRequestTo = BuddiesManager.OutgoingBuddyRequests.count;
+	BuddiesLogins_RequestTo.clear();
+	foreach (Buddy in BuddiesManager.OutgoingBuddyRequests) {
+		BuddiesLogins_RequestTo.add(Buddy.Login);
+		BuddiesName[Buddy.Login] = Buddy.Name;
+		BuddiesIsMuted[Buddy.Login] = Persistent_GroupChat_MutedUsers.exists(Buddy.Login);
+	}
+}
+
+// ---------------------------------- //
+// Update group users list
+if (PrevBuddiesCountInGroup != Persistent_GroupChat_GroupUsers.count) {
+	PrevBuddiesCountInGroup = Persistent_GroupChat_GroupUsers.count;
+	BuddiesLogins_InGroup.clear();
+	foreach (Login in Persistent_GroupChat_GroupUsers) BuddiesLogins_InGroup.add(Login);
+}
+
+// ---------------------------------- //
+// Update local user server login
+if (PrevCurServerLogin != CurrentServerLogin) {
+	PrevCurServerLogin = CurrentServerLogin;
+	BuddiesServLogin[LocalUser.Login] = CurrentServerLogin;
+	if (CurrentServerJoinLink != "") BuddiesJoinLink[LocalUser.Login] = TL::Replace(CurrentServerJoinLink, "maniaplanet://", "");
+}
+
+// ---------------------------------- //
+// Update local user server name
+if (PrevCurServerName != CurrentServerName) {
+	PrevCurServerName = CurrentServerName;
+	ServersName[LocalUser.Login] = CurrentServerName;
+}
+
+// ---------------------------------- //
+// Update local user server gamemode
+if (PrevCurServerGamemode != CurrentServerModeName) {
+	PrevCurServerGamemode = CurrentServerModeName;
+	ServersGamemode[LocalUser.Login] = CurrentServerModeName;
+}
+
+// ---------------------------------- //
+// Update local user server players amount
+if (PrevCurServerNbPlayers != BuddiesManager.CurrentServerPlayerCount) {
+	PrevCurServerNbPlayers = BuddiesManager.CurrentServerPlayerCount;
+	ServersNbPlayers[LocalUser.Login] = BuddiesManager.CurrentServerPlayerCount;
+}
+
+// ---------------------------------- //
+// Update local user server player slots amount
+if (PrevCurServerNbSlots != BuddiesManager.CurrentServerPlayerCountMax) {
+	PrevCurServerNbSlots = BuddiesManager.CurrentServerPlayerCountMax;
+	ServersNbSlots[LocalUser.Login] = BuddiesManager.CurrentServerPlayerCountMax;
+}
+***
+
+// ---------------------------------- //
+// Send message to all connected players
+// ---------------------------------- //
+***MessageToEveryone***
+***
+foreach (Buddy in BuddiesManager.OnlineBuddies)
+	if (Persistent_GroupChat_GroupUsers.exists(Buddy.Login)) {
+		declare BuddyNoFormat = GetNoFormatPreference(Buddy.Login);
+		BuddiesManager.SendMessage(Buddy, "", StripNamesFormat(BuddyNoFormat, ComposedMessage, BuddiesName));
+	}
+foreach (Buddy in BuddiesManager.IncomingBuddyRequests)
+	if (Persistent_GroupChat_GroupUsers.exists(Buddy.Login)) {
+		declare BuddyNoFormat = GetNoFormatPreference(Buddy.Login);
+		BuddiesManager.SendMessage(Buddy, "", StripNamesFormat(BuddyNoFormat, ComposedMessage, BuddiesName));
+	}
+***
+
+// ---------------------------------- //
+// Command processing
+// ---------------------------------- //
+***ProcessCommand***
+***
+// ---------------------------------- //
+// Main paramaters
+declare SplitCommand = TL::Split(" ", TL::SubString(Message, 1, TL::Length(Message) - 1));
+declare Text	EventCommandType 		= TL::ToLowerCase(SplitCommand[0]);
+declare Text[]	EventCommandParameters;
+declare Integer	EventCommandLevel		= GetCommandPermissionLevel(EventCommandType);
+declare CBuddy	EventPerformerBuddy;
+declare Text	EventPerformerName;
+declare Integer	EventPerformerLevel		= GetPlayerPermissionLevel(EventPerformer);
+declare Text	EventPerformerLevelName	= PermissionLevelName(EventPerformerLevel);
+
+// Obtain data
+foreach (I => Param in SplitCommand) if (I > 0) EventCommandParameters.add(Param);
+if (EventPerformer == LocalUser.Login) EventPerformerName = LocalUser.Name;
+else {
+	EventPerformerBuddy = BuddiesManager.GetBuddyFromLogin(EventPerformer);
+	if (EventPerformerBuddy != Null) EventPerformerName = EventPerformerBuddy.Name;
+}
+
+if (EventPerformerName != "") {
+	// ---------------------------------- //
+	// Check permissions
+	if (EventPerformerLevel < EventCommandLevel) {
+		declare ExceptionMessage = C_FormatError^"You don't have enough permissions";
+		if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ExceptionMessage]);
+		else BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+	}
+	// ---------------------------------- //
+	// Select command type
+	else {
+		if (EventCommandType == "join") {
+			+++CommandJoin+++
+		}
+		// ---------------------------------- //
+		// When user is connected
+		else if (Persistent_GroupChat_GroupUsers.exists(EventPerformer) || EventPerformer == LocalUser.Login) {
+			if (C_ChatMessageCommands.exists(EventCommandType)) {
+				+++CommandChatMessage+++
+			} else if (C_RagequitCommands.exists(EventCommandType)) {
+				+++CommandRagequit+++
+			}
+			// ---------------------------------- //
+			// Other commands
+			else {
+				switch (EventCommandType) {
+					case "help"		: +++CommandHelp+++
+					case "leave"	: +++CommandLeave+++
+					case "list"		: +++CommandList+++
+					case "kick"		: +++CommandKick+++
+					case "noformat"	: +++CommandNoFormat+++
+					case "me"		: +++CommandMe+++
+					case "core"		: +++CommandCore+++
+					case "pm"		: +++CommandPM+++
+					case "pmr"		: +++CommandPMR+++
+					case "mute"	 : {
+						declare CommandIsUnMute = False;
+						+++CommandMute+++
+					}
+					case "unmute" : {
+						declare CommandIsUnMute = True;
+						+++CommandMute+++
+					}
+					case "ban" : {
+						declare CommandIsUnban = False;
+						+++CommandBan+++
+					}
+					case "unban" : {
+						declare CommandIsUnban = True;
+						+++CommandBan+++
+					}
+					case "addop" : {
+						declare CommandIsRemove = False;
+						+++CommandOperator+++
+					}
+					case "removeop" : {
+						declare CommandIsRemove = True;
+						+++CommandOperator+++
+					}
+					// Unknown command
+					default : {
+						declare ExceptionMessage = C_FormatError^"Command unknown";
+						if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ExceptionMessage]);
+						else BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage); 
+					}
+				}
+			}
+		}
+	}
+}
+***
+
+// ---------------------------------- //
+// Available commands processing
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Help messages
+// ---------------------------------- //
+***CommandHelp***
+***
+declare HelpMessage = C_FormatSpecial;
+declare HelpCommand = "";
+declare IsFirstCmd = True;
+if (EventCommandParameters.existskey(0)) HelpCommand = EventCommandParameters[0];
+if (C_ChatMessageCommands.exists(HelpCommand)) HelpCommand = "chatmsg";
+if (C_RagequitCommands.exists(HelpCommand)) HelpCommand = "rqcmd";
+
+if (HelpCommand != "" && C_CommandHelp.existskey(HelpCommand)) {
+	HelpMessage ^= C_CommandHelp[HelpCommand];
+} else {
+	HelpMessage ^= "Available commands: ";
+	foreach (Cmd => Perm in C_CommandsPermissionLevels) {
+		if (IsFirstCmd) IsFirstCmd = False;
+		else HelpMessage ^= ", ";
+		HelpMessage ^= Cmd;
+	}
+}
+if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", HelpMessage]);
+else BuddiesManager.SendMessage(EventPerformerBuddy, "", HelpMessage); 
+***
+
+// ---------------------------------- //
+// Join the server
+// ---------------------------------- //
+***CommandJoin***
+***
+if (EventPerformer != LocalUser.Login) {
+	if (!Persistent_GroupChat_BannedUsers.exists(EventPerformer)) {
+		if (!Persistent_GroupChat_GroupUsers.exists(EventPerformer)) {
+			Persistent_GroupChat_GroupUsers.add(EventPerformer);
+			declare ComposedMessage = C_FormatSuccess^EventPerformerLevelName^" $<"^EventPerformerName^"$> joined the group!";
+			DisplayMessage.add(["", "", ComposedMessage]);
+			+++MessageToEveryone+++
+			// Display connected users list
+			declare UsersList = C_FormatSpecial^Persistent_GroupChat_GroupUsers.count + 1^" online: "^LocalUser.Login;
+			foreach (Login in Persistent_GroupChat_GroupUsers)
+				UsersList ^= ", "^Login;
+			BuddiesManager.SendMessage(EventPerformerBuddy, "", UsersList);
+		} else {
+			BuddiesManager.SendMessage(EventPerformerBuddy, "", C_FormatError^"Your'e already connected!");
+		}
+	} else {
+		BuddiesManager.SendMessage(EventPerformerBuddy, "", C_FormatError^"Your'e banned on this server!");
+	}
+} else {
+	DisplayMessage.add(["", "", C_FormatError^"You're the host!"]);
+}
+***
+
+// ---------------------------------- //
+// Leave the server
+// ---------------------------------- //
+***CommandLeave***
+***
+if (EventPerformer != LocalUser.Login) {
+	if (Persistent_GroupChat_GroupUsers.exists(EventPerformer)) {
+		declare ComposedMessage = C_FormatSuccess^EventPerformerLevelName^" $<"^EventPerformerName^"$> left the group!";
+		DisplayMessage.add(["", "", ComposedMessage]);
+		+++MessageToEveryone+++
+		declare Removed = Persistent_GroupChat_GroupUsers.remove(EventPerformer);
+	}
+} else {
+	DisplayMessage.add(["", "", C_FormatError^"You're the host!"]);
+}
+***
+
+// ---------------------------------- //
+// Users list commands
+// ---------------------------------- //
+***CommandList***
+***
+declare OutputMessage = "";
+declare ListType = "";
+if (EventCommandParameters.existskey(0)) ListType = EventCommandParameters[0];
+switch (ListType) {
+	// Display operators list
+	case "op" : {
+		OutputMessage = C_FormatSpecial^Persistent_GroupChat_Operators.count + 1^" registered operators: "^LocalUser.Login;
+		foreach (Login in Persistent_GroupChat_Operators)
+			OutputMessage ^= ", "^Login;
+	}
+	// Display operators list
+	case "mute" : {
+		OutputMessage = C_FormatSpecial^Persistent_GroupChat_MutedUsers.count^" muted users: ";
+		foreach (I => Login in Persistent_GroupChat_MutedUsers) {
+			if (I > 0) OutputMessage ^= ", ";
+			OutputMessage ^= Login;
+		}
+	}
+	// Display operators list
+	case "ban" : {
+		OutputMessage = C_FormatSpecial^Persistent_GroupChat_BannedUsers.count^" banned users: ";
+		foreach (I => Login in Persistent_GroupChat_BannedUsers) {
+			if (I > 0) OutputMessage ^= ", ";
+			OutputMessage ^= Login;
+		}
+	}
+	// Display list of users using noformat option
+	case "nf" : {
+		OutputMessage = C_FormatSpecial^Persistent_GroupChat_PlayersNoFormat.count^" users using \"noformat\": ";
+		foreach (I => Login in Persistent_GroupChat_PlayersNoFormat) {
+			if (I > 0) OutputMessage ^= ", ";
+			OutputMessage ^= Login;
+		}
+	}
+	// Display connected users list
+	default : {
+		OutputMessage = C_FormatSpecial^Persistent_GroupChat_GroupUsers.count + 1^" users online: "^LocalUser.Login;
+		foreach (Login in Persistent_GroupChat_GroupUsers)
+			OutputMessage ^= ", "^Login;
+	}
+}
+if (OutputMessage != "") {
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", OutputMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", OutputMessage);
+}
+***
+
+// ---------------------------------- //
+// Formatted chat messages
+// ---------------------------------- //
+***CommandChatMessage***
+***
+// Sender is muted
+if (Persistent_GroupChat_MutedUsers.exists(EventPerformer)) {
+	declare ExceptionMessage = C_FormatError^"You're muted on this server!";
+	if (EventPerformerBuddy != Null) BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+}
+// Invalid Parameters
+else if (C_ChatMessageBase.existskey(EventCommandType)) {
+	declare ComposedMessage = "$i"^C_ChatMessageBase[EventCommandType];
+	if (EventCommandParameters.existskey(0) && C_ChatMessageUsingLogins.exists(EventCommandType)) {
+		declare DesiredUserName = GetNameFromLogin(EventCommandParameters[0], True);
+		ComposedMessage ^= " $i$<"^DesiredUserName^"$>"^"$i"^C_ChatMessageSuffix;
+	} else {
+		ComposedMessage ^= C_ChatMessageSuffix;
+	}
+	DisplayMessage.add(["", EventPerformer, ComposedMessage]);
+	ComposedMessage = C_FormatMessage^"[$<"^EventPerformerName^"$>] "^ComposedMessage;
+	+++MessageToEveryone+++
+}
+***
+
+// ---------------------------------- //
+// Ragequit
+// ---------------------------------- //
+***CommandRagequit***
+***
+if (EventPerformer != LocalUser.Login) {
+	if (C_RagequitCommandsFormat.existskey(EventCommandType)) {
+		if (Persistent_GroupChat_GroupUsers.exists(EventPerformer)) {
+			declare ComposedMessage = EventPerformerName^" "^C_RagequitCommandsFormat[EventCommandType];
+			DisplayMessage.add(["", "", ComposedMessage]);
+			+++MessageToEveryone+++
+			ComposedMessage = C_FormatSuccess^EventPerformerLevelName^" $<"^EventPerformerName^"$> left the group!";
+			DisplayMessage.add(["", "", ComposedMessage]);
+			+++MessageToEveryone+++
+			declare Removed = Persistent_GroupChat_GroupUsers.remove(EventPerformer);
+		}
+	}
+} else {
+	DisplayMessage.add(["", "", C_FormatError^"You're the host!"]);
+}
+***
+
+// ---------------------------------- //
+// No format setting
+// ---------------------------------- //
+***CommandNoFormat***
+***
+declare CmdBooleanValue = 0;
+declare ResultMessage = "";
+if (EventCommandParameters.existskey(0)) {
+	declare Param = TL::ToLowerCase(EventCommandParameters[0]);
+	if (C_BooleanTextTrue.exists(Param)) CmdBooleanValue = 2;
+	if (C_BooleanTextFalse.exists(Param)) CmdBooleanValue = 1;
+}
+switch (CmdBooleanValue) {
+	// Turn noformat on
+	case 2 : {
+		if (!GetNoFormatPreference(EventPerformer)) {
+			Persistent_GroupChat_PlayersNoFormat.add(EventPerformer);
+			ResultMessage = C_FormatSpecial^"Option \"noformat\" has been set to True!";
+		} else {
+			ResultMessage = C_FormatError^"Option \"noformat\" is already set to True!";
+		}
+	}
+	// Turn noformat off
+	case 1 : {
+		if (GetNoFormatPreference(EventPerformer)) {
+			declare Removed = Persistent_GroupChat_PlayersNoFormat.remove(EventPerformer);
+			ResultMessage = C_FormatSpecial^"Option \"noformat\" has been set to False!";
+		} else {
+			ResultMessage = C_FormatError^"Option \"noformat\" is already set to False!";
+		}
+	}
+	// Invalid arguments
+	default : {
+		ResultMessage = C_FormatError^"Usage: /noformat [0 or 1]";
+	}
+}
+if (ResultMessage != "") {
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ResultMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", ResultMessage);
+}
+***
+
+// ---------------------------------- //
+// Me command
+// ---------------------------------- //
+***CommandMe***
+***
+// Sender is muted
+if (Persistent_GroupChat_MutedUsers.exists(EventPerformer)) {
+	declare ExceptionMessage = C_FormatError^"You're muted on this server!";
+	if (EventPerformerBuddy != Null) BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+}
+// Invalid Parameters
+else if (!EventCommandParameters.existskey(0) || EventCommandParameters[0] == "") {
+	declare HelpMessage = C_FormatError^"Usage: /"^EventCommandType^" [message]";
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", HelpMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", HelpMessage); 
+} else {
+	declare ComposedMessage = EventPerformerName^"$z$i"^C_FormatSpecial;
+	foreach (Param in EventCommandParameters) ComposedMessage ^= " "^Param;
+	+++MessageToEveryone+++
+	DisplayMessage.add(["", "", ComposedMessage]);
+}
+***
+
+// ---------------------------------- //
+// Core information
+// ---------------------------------- //
+***CommandCore***
+***
+declare CoreMessage = C_FormatSpecial^CoreName^" v"^CoreVersion^" @"^CoreDate;
+if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", CoreMessage]);
+else BuddiesManager.SendMessage(EventPerformerBuddy, "", CoreMessage); 
+***
+
+// ---------------------------------- //
+// Private message
+// ---------------------------------- //
+***CommandPM***
+***
+// Sender is muted
+if (Persistent_GroupChat_MutedUsers.exists(EventPerformer)) {
+	declare ExceptionMessage = C_FormatError^"You're muted on this server!";
+	if (EventPerformerBuddy != Null) BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+}
+// Invalid Parameters
+else if (EventCommandParameters.count < 2 || EventCommandParameters[0] == "" || EventCommandParameters[1] == "") {
+	declare HelpMessage = C_FormatError^"Usage: /"^EventCommandType^" [login] [message]";
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", HelpMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", HelpMessage); 
+} else {
+	declare Text	EventLogin = EventCommandParameters[0];
+	declare CBuddy	EventBuddy = BuddiesManager.GetBuddyFromLogin(EventLogin);
+	declare Text	ExceptionMessage;
+	declare Text	EventMessage;
+	foreach (I => Param in EventCommandParameters) if (I > 0) EventMessage ^= Param^" ";
+	
+	// User not found
+	if ((EventBuddy == Null || !Persistent_GroupChat_GroupUsers.exists(EventBuddy.Login)) && EventLogin != LocalUser.Login)
+		ExceptionMessage = C_FormatError^"User not found!";
+	// Self-message
+	else if (EventLogin == EventPerformer)
+		ExceptionMessage = C_FormatError^"You can't send message to yourself!";
+	// Send message
+	else {
+		+++SendPM+++
+	}
+	if (ExceptionMessage != "") {
+		if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ExceptionMessage]);
+		else BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+	}
+}
+***
+
+// ---------------------------------- //
+// Reply to the latest private message
+// ---------------------------------- //
+***CommandPMR***
+***
+// Sender is muted
+if (Persistent_GroupChat_MutedUsers.exists(EventPerformer)) {
+	declare ExceptionMessage = C_FormatError^"You're muted on this server!";
+	if (EventPerformerBuddy != Null) BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+}
+// Invalid Parameters
+else if (EventCommandParameters.count == 0) {
+	declare HelpMessage = C_FormatError^"Usage: /"^EventCommandType^" [message]";
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", HelpMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", HelpMessage); 
+}
+else {
+	declare Text	EventLogin;
+	if (Persistent_GroupChat_LatestPM.existskey(EventPerformer)) EventLogin = Persistent_GroupChat_LatestPM[EventPerformer];
+	declare CBuddy	EventBuddy = BuddiesManager.GetBuddyFromLogin(EventLogin);
+	declare Text	ExceptionMessage;
+	declare Text	EventMessage;
+	foreach (I => Param in EventCommandParameters) EventMessage ^= Param^" ";
+	
+	// No last PM-er
+	if (EventLogin == "")
+		ExceptionMessage = C_FormatError^"Nobody sent you PM yet!";
+	// User not found
+	else if ((EventBuddy == Null || !Persistent_GroupChat_GroupUsers.exists(EventBuddy.Login)) && EventLogin != LocalUser.Login)
+		ExceptionMessage = C_FormatError^"User not found!";
+	// Send message
+	else {
+		+++SendPM+++
+	}
+	if (ExceptionMessage != "") {
+		if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ExceptionMessage]);
+		else BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+	}
+}
+***
+
+// ---------------------------------- //
+// Send a private message
+// ---------------------------------- //
+***SendPM***
+***
+// Sender
+declare Name = LocalUser.Name;
+if (EventBuddy != Null) Name = EventBuddy.Name;
+declare MessageSender = C_FormatPrivate^"[To $<"^Name^"$>] "^C_FormatMessage^EventMessage;
+if (EventPerformerBuddy == Null) DisplayMessage.add(["", LocalUser.Login, C_FormatPrivate^"[To $<"^Name^"$>] $z"^EventMessage]);
+else {
+	declare NoFormatSender = GetNoFormatPreference(EventPerformer);
+	if (NoFormatSender) MessageSender = StripNamesFormat(NoFormatSender, MessageSender, BuddiesName);
+	BuddiesManager.SendMessage(EventPerformerBuddy, "", MessageSender);
+}
+Persistent_GroupChat_LatestPM[EventPerformer] = EventLogin;
+
+// Receiver
+declare MessageReceiver = C_FormatPrivate^"[From $<"^EventPerformerName^"$>] "^C_FormatMessage^EventMessage;
+if (EventBuddy == Null) DisplayMessage.add(["", EventPerformer, C_FormatPrivate^"[To $<"^LocalUser.Name^"$>] $z"^EventMessage]);
+else {
+	declare NoFormatReceiver = GetNoFormatPreference(EventLogin);
+	if (NoFormatReceiver) MessageReceiver = StripNamesFormat(NoFormatReceiver, MessageReceiver, BuddiesName);
+	BuddiesManager.SendMessage(EventBuddy, "", MessageReceiver);
+}
+Persistent_GroupChat_LatestPM[EventLogin] = EventPerformer;
+***
+
+// ---------------------------------- //
+// Kick user from the sevrer
+// ---------------------------------- //
+***CommandKick***
+***
+// Invalid parameters
+if (!EventCommandParameters.existskey(0) || EventCommandParameters[0] == "") {
+	declare HelpMessage = C_FormatError^"Usage: /"^EventCommandType^" [login]";
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", HelpMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", HelpMessage); 
+} else {
+	declare Text	EventLogin = EventCommandParameters[0];
+	declare CBuddy	EventBuddy = BuddiesManager.GetBuddyFromLogin(EventLogin);
+	declare Text	ExceptionMessage;
+	
+	// User is host
+	if (EventLogin == LocalUser.Login)
+		ExceptionMessage = C_FormatError^"Requested user is host!";
+	// User not found
+	else if (!Persistent_GroupChat_GroupUsers.exists(EventLogin))
+		ExceptionMessage = C_FormatError^"User not found!";
+	// User is operator and performer is not host
+	else if (EventPerformerLevel <= 1 && GetPlayerPermissionLevel(EventLogin) >= 1)
+		ExceptionMessage = C_FormatError^"You cannot kick other operators!";
+	// Kick user
+	else {
+		declare BuddyName = EventLogin;
+		if (EventBuddy != Null) BuddyName = EventBuddy.Name;
+		declare ComposedMessage = C_FormatSuccess^EventPerformerLevelName^" $<"^EventPerformerName^"$> kicked $<"^BuddyName^"$>!";
+		DisplayMessage.add(["", "", ComposedMessage]);
+		+++MessageToEveryone+++
+		declare Removed = Persistent_GroupChat_GroupUsers.remove(EventLogin);
+	}
+	
+	// Don't you feel bored reading source code of this?
+	if (ExceptionMessage != "") {
+		if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ExceptionMessage]);
+		else BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+	}
+}
+***
+
+// ---------------------------------- //
+// Mute user
+// ---------------------------------- //
+***CommandMute***
+***
+// Invalid parameters
+if (!EventCommandParameters.existskey(0) || EventCommandParameters[0] == "") {
+	declare HelpMessage = C_FormatError^"Usage: /"^EventCommandType^" [login]";
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", HelpMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", HelpMessage); 
+} else {
+	declare Text EventLogin = EventCommandParameters[0];
+	declare Text ExceptionMessage;
+	
+	// User is host
+	if (EventLogin == LocalUser.Login)
+		ExceptionMessage = C_FormatError^"Requested user is host!";
+	// User is operator and performer is not host
+	else if (EventPerformerLevel <= 1 && GetPlayerPermissionLevel(EventLogin) >= 1)
+		ExceptionMessage = C_FormatError^"You cannot (un)mute other operators!";
+	// (Un)Mute user
+	else {
+		declare CommandPassed = True;
+		if (!CommandIsUnMute) {
+			if (!Persistent_GroupChat_MutedUsers.exists(EventLogin)) {
+				Persistent_GroupChat_MutedUsers.add(EventLogin);
+			} else {
+				CommandPassed = False;
+				ExceptionMessage = C_FormatError^"User already muted!";
+			}
+		} else {
+			if (Persistent_GroupChat_MutedUsers.exists(EventLogin)) {
+				declare Removed = Persistent_GroupChat_MutedUsers.remove(EventLogin);
+			} else {
+				CommandPassed = False;
+				ExceptionMessage = C_FormatError^"User is not muted!";
+			}
+		}
+		if (CommandPassed) {
+			declare EventBuddyName = EventLogin;
+			declare EventBuddy = BuddiesManager.GetBuddyFromLogin(EventLogin);
+			if (EventBuddy != Null) EventBuddyName = EventBuddy.Name;
+			
+			declare ActionType = "muted";
+			if (CommandIsUnMute) ActionType = "unmuted";
+			
+			declare ComposedMessage = C_FormatSuccess^EventPerformerLevelName^" $<"^EventPerformerName^"$> "^ActionType^" $<"^EventBuddyName^"$>!";
+			DisplayMessage.add(["", "", ComposedMessage]);
+			+++MessageToEveryone+++
+		}
+	}
+	
+	if (ExceptionMessage != "") {
+		if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ExceptionMessage]);
+		else BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+	}
+}
+***
+
+// ---------------------------------- //
+// Ban user from the server
+// ---------------------------------- //
+***CommandBan***
+***
+if (!EventCommandParameters.existskey(0) || EventCommandParameters[0] == "") {
+	declare HelpMessage = C_FormatError^"Usage: /"^EventCommandType^" [login]";
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", HelpMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", HelpMessage); 
+} else {
+	declare Text EventLogin = EventCommandParameters[0];
+	declare Text ExceptionMessage;
+	
+	// User is host
+	if (EventLogin == LocalUser.Login)
+		ExceptionMessage = C_FormatError^"Requested user is host!";
+	// User is operator and performer is not host
+	else if (EventPerformerLevel <= 1 && GetPlayerPermissionLevel(EventLogin) >= 1)
+		ExceptionMessage = C_FormatError^"You cannot (un)ban other operators!";
+	// (Un)Ban user
+	else {
+		declare CommandPassed = True;
+		if (!CommandIsUnban) {
+			if (!Persistent_GroupChat_BannedUsers.exists(EventLogin)) {
+				Persistent_GroupChat_BannedUsers.add(EventLogin);
+			} else {
+				CommandPassed = False;
+				ExceptionMessage = C_FormatError^"User already banned!";
+			}
+		} else {
+			if (Persistent_GroupChat_BannedUsers.exists(EventLogin)) {
+				declare Removed = Persistent_GroupChat_BannedUsers.remove(EventLogin);
+				declare EventBuddy = BuddiesManager.GetBuddyFromLogin(EventLogin);
+				if (EventBuddy != Null) BuddiesManager.SendMessage(EventBuddy, "", C_FormatSuccess^EventPerformerLevelName^" $<"^EventPerformerName^"$> just unbanned you!");
+			} else {
+				CommandPassed = False;
+				ExceptionMessage = C_FormatError^"User is not banned!";
+			}
+		}
+		if (CommandPassed) {
+			declare EventBuddyName = EventLogin;
+			declare EventBuddy = BuddiesManager.GetBuddyFromLogin(EventLogin);
+			if (EventBuddy != Null) EventBuddyName = EventBuddy.Name;
+			
+			declare ActionType = "banned";
+			if (CommandIsUnban) ActionType = "unbanned";
+			
+			declare ComposedMessage = C_FormatSuccess^EventPerformerLevelName^" $<"^EventPerformerName^"$> "^ActionType^" $<"^EventBuddyName^"$>!";
+			DisplayMessage.add(["", "", ComposedMessage]);
+			+++MessageToEveryone+++
+			if (Persistent_GroupChat_GroupUsers.exists(EventLogin)) {
+				declare Removed = Persistent_GroupChat_GroupUsers.remove(EventLogin);
+			}
+		}
+	}
+	
+	if (ExceptionMessage != "") {
+		if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ExceptionMessage]);
+		else BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+	}
+}
+***
+
+// ---------------------------------- //
+// Set / remove server operator
+// ---------------------------------- //
+***CommandOperator***
+***
+if (!EventCommandParameters.existskey(0) || EventCommandParameters[0] == "") {
+	declare HelpMessage = C_FormatError^"Usage: /"^EventCommandType^" [login]";
+	if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", HelpMessage]);
+	else BuddiesManager.SendMessage(EventPerformerBuddy, "", HelpMessage); 
+} else {
+	declare Text EventLogin = EventCommandParameters[0];
+	declare Text ExceptionMessage;
+	
+	// User is host
+	if (EventLogin == LocalUser.Login)
+		ExceptionMessage = C_FormatError^"Requested user is host!";
+	// User is operator and performer is not host
+	else if (EventPerformerLevel <= 1 && GetPlayerPermissionLevel(EventLogin) >= 1)
+		ExceptionMessage = C_FormatError^"You cannot add/remove other operators!";
+	// (Un)Set user as operator
+	else {
+		declare CommandPassed = True;
+		if (!CommandIsRemove) {
+			if (!Persistent_GroupChat_Operators.exists(EventLogin)) {
+				Persistent_GroupChat_Operators.add(EventLogin);
+			} else {
+				CommandPassed = False;
+				ExceptionMessage = C_FormatError^"User is already an "^PermissionLevelName(1)^"!";
+			}
+		} else {
+			if (Persistent_GroupChat_Operators.exists(EventLogin)) {
+				declare Removed = Persistent_GroupChat_Operators.remove(EventLogin);
+			} else {
+				CommandPassed = False;
+				ExceptionMessage = C_FormatError^"User is not an "^PermissionLevelName(1)^"!";
+			}
+		}
+		if (CommandPassed) {
+			declare EventBuddyName = EventLogin;
+			declare EventBuddy = BuddiesManager.GetBuddyFromLogin(EventLogin);
+			if (EventBuddy != Null) EventBuddyName = EventBuddy.Name;
+			
+			declare ActionType = "gave $<"^EventBuddyName^"$> "^PermissionLevelName(1)^" rights";
+			if (CommandIsRemove) ActionType = "revoked $<"^EventBuddyName^"$> "^PermissionLevelName(1)^" rights";
+			
+			declare ComposedMessage = C_FormatSuccess^EventPerformerLevelName^" $<"^EventPerformerName^"$> "^ActionType^"!";
+			DisplayMessage.add(["", "", ComposedMessage]);
+			+++MessageToEveryone+++
+		}
+	}
+	
+	if (ExceptionMessage != "") {
+		if (EventPerformerBuddy == Null) DisplayMessage.add(["", "", ExceptionMessage]);
+		else BuddiesManager.SendMessage(EventPerformerBuddy, "", ExceptionMessage);
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get presence index
+ *
+ *	@param	_PresenceShow		Buddy presence
+ *
+ *	@return		Index
+ */
+Integer GetPresenceIndex(CBuddy::EPresenceShow _PresenceShow) {
+	switch (_PresenceShow) {
+		case CBuddy::EPresenceShow::Available 		: return 1;
+		case CBuddy::EPresenceShow::Away 			: return 2;
+		case CBuddy::EPresenceShow::DoNotDisturb 	: return 3;
+		case CBuddy::EPresenceShow::WantToChat 		: return 4;
+		case CBuddy::EPresenceShow::ExtendedAway 	: return 5;
+	}
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get presence from index
+ *
+ *	@param	_Index		Index to find
+ *
+ *	@return		Buddy presence
+ */
+CBuddiesManager::EPresenceShow GetPresenceFromIndex(Integer _Index) {
+	switch (_Index) {
+		case 2 : return CBuddiesManager::EPresenceShow::Away;
+		case 3 : return CBuddiesManager::EPresenceShow::DoNotDisturb;
+		case 4 : return CBuddiesManager::EPresenceShow::WantToChat;
+		case 5 : return CBuddiesManager::EPresenceShow::ExtendedAway;
+	}
+	return CBuddiesManager::EPresenceShow::Available;
+}
+
+// ---------------------------------- //
+/** Get default status text
+ *
+ *	@param	_PresenceShow		Buddy presence
+ *
+ *	@return		Text presence
+ */
+Text GetPresenceDefaultStatus(CBuddy::EPresenceShow _PresenceShow) {
+	switch (_PresenceShow) {
+		case CBuddy::EPresenceShow::Available 		: return _("Available");
+		case CBuddy::EPresenceShow::WantToChat 		: return _("Wanna talk!");
+		case CBuddy::EPresenceShow::DoNotDisturb 	: return _("Busy");
+		case CBuddy::EPresenceShow::Away 			: return _("Away");
+		case CBuddy::EPresenceShow::ExtendedAway 	: return _("Snooze");
+	}
+	return _("Offline");
+}
+
+// ---------------------------------- //
+/** Get default status text
+ *
+ *	@param	_PresenceShow		Buddy presence
+ *
+ *	@return		Text presence
+ */
+Text GetPresenceDefaultStatus2(CBuddiesManager::EPresenceShow _PresenceShow) {
+	switch (_PresenceShow) {
+		case CBuddiesManager::EPresenceShow::Available 		: return _("Available");
+		case CBuddiesManager::EPresenceShow::WantToChat 	: return _("Wanna talk!");
+		case CBuddiesManager::EPresenceShow::DoNotDisturb 	: return _("Busy");
+		case CBuddiesManager::EPresenceShow::Away 			: return _("Away");
+		case CBuddiesManager::EPresenceShow::ExtendedAway 	: return _("Snooze");
+	}
+	return _("Offline");
+}
+
+// ---------------------------------- //
+/** Get player permissions level
+ *
+ *	@param	_Login		Login of player to check level
+ *
+ *	@return		Player permissions level
+ */
+Integer GetPlayerPermissionLevel(Text _Login) {
+	if (_Login == LocalUser.Login) return 2;
+	declare persistent Text[] Persistent_GroupChat_Operators;
+	if (Persistent_GroupChat_Operators.exists(_Login)) return 1;
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get command required permissions level
+ *
+ *	@param	_Command	Command ident to check level
+ *
+ *	@return		Command required permissions level
+ */
+Integer GetCommandPermissionLevel(Text _Command) {
+	if (C_CommandsPermissionLevels.existskey(_Command))
+		return C_CommandsPermissionLevels[_Command];
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get permissions level name
+ *
+ *	@param	_Level		Permissions level
+ *
+ *	@return		Text rank
+ */
+Text PermissionLevelName(Integer _Level) {
+	switch (_Level) {
+		case 1 : return "Operator";
+		case 2 : return "Host";
+	}
+	return "User";
+}
+
+// ---------------------------------- //
+/** Get user name from login
+ *
+ *	@param	_UserLogin			Find name of user with this login
+ *	@param	_UseMatchfinding	Find name if at least 4 login characters appear in correct order
+ *
+ *	@return		Name of the found player or requested login back
+ */
+Text GetNameFromLogin(Text _UserLogin, Boolean _UseMatchfinding) {
+	// Find only with whole login
+	if (_UserLogin == LocalUser.Login) return LocalUser.Name;
+	foreach (Buddy in BuddiesManager.Buddies) {
+		if (Buddy.Login == _UserLogin) return Buddy.Name;
+	}
+	// Find with matchfinding
+	if (_UseMatchfinding && TL::Length(_UserLogin) >= 4) {
+		declare MatchingBuddiesName = Text[];
+		if (TL::Find(_UserLogin, LocalUser.Login, False, False)) MatchingBuddiesName.add(LocalUser.Name);
+		foreach (Buddy in BuddiesManager.Buddies) {
+			if (TL::Find(_UserLogin, Buddy.Login, False, False)) MatchingBuddiesName.add(Buddy.Name);
+		}
+		if (MatchingBuddiesName.count == 1) return MatchingBuddiesName[0];
+	}
+	return _UserLogin;
+}
+
+// ---------------------------------- //
+/** Remove nicknames formatting from message
+ *
+ *	@param	_UseStripping		True, if nicknames have to be without format
+ *	@param	_Message			Message to replace names
+ *	@param	_BuddiesNames		Array of buddies names indexed by their logins
+ *
+ *	@return		Message with(out) format in users nicknames
+ */
+Text StripNamesFormat(Boolean _UseStripping, Text _Message, Text[Text] _BuddiesNames) {
+	if (_Message == "" || _Message == "$") return "";
+	if (!_UseStripping || _BuddiesNames.count == 0) return _Message;
+	if (TL::Length(_Message) < 5) return _Message;
+	
+	declare OutputMessage = _Message;
+	// Host name
+	if (LocalUser.Name != LocalUser.Login && TL::Find(LocalUser.Name, OutputMessage, False, False))
+		OutputMessage = TL::Replace(OutputMessage, LocalUser.Name, TL::StripFormatting(LocalUser.Name));
+	// All buddies
+	foreach (Login => Name in _BuddiesNames)
+		if (Name != Login && TL::Find(Name, _Message, False, False))
+			OutputMessage = TL::Replace(OutputMessage, Name, TL::StripFormatting(Name));
+	return OutputMessage;
+}
+
+// ---------------------------------- //
+/** Get user noformat seting value
+ *
+ *	@param	_Login		Login of the user to check
+ *
+ *	@return		Player noformat setting
+ */
+Boolean GetNoFormatPreference(Text _Login) {
+	declare persistent Text[] Persistent_GroupChat_PlayersNoFormat;
+	return Persistent_GroupChat_PlayersNoFormat.exists(_Login);
+}
+
+// ---------------------------------- //
+/** Create widget manialink
+ *
+ *	@return		The manialink
+ */
+Text CreateMLWidget() {
+	return """
+<manialink version="2" name="{{{CoreName}}}:Widget">
+<frame id="Frame_BtnOpenChat" posn="-8 90 1">
+	<quad sizen="12 6" halign="right" bgcolor="F00" opacity="1" id="Quad_BtnOpenChat" ScriptEvents="1"/>
+	<quad posn="-1 4.2 1" sizen="10 10" halign="right" image="{{{C_ImgBase}}}Chat/buddy-organize.dds" id="Quad_BtnOpenIcon"/>
+</frame>
+<script><!--
+/**
+ *	{{{CoreName}}}: Widget
+ */
+
+#Include "MathLib" as ML
+
+// ---------------------------------- //
+// Start manialink
+// ---------------------------------- //
+***StartManialink***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Quad_BtnOpenChat <=> (Page.GetFirstChild("Quad_BtnOpenChat") as CMlQuad);
+declare Quad_BtnOpenIcon <=> (Page.GetFirstChild("Quad_BtnOpenIcon") as CMlQuad);
+
+// ---------------------------------- //
+// Plugin script communication
+declare WidgetNbUnreadMessages	for Page = 0;		///< Amount of unread messages
+declare WidgetTriggerVisibility	for Page = False;	///< Triggers chat window visibility
+
+// ---------------------------------- //
+// Set color to confirm that manialink works
+Quad_BtnOpenChat.Opacity = 0.;
+Quad_BtnOpenChat.BgColor = <1., .8, 0.>;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		if (Event.ControlId == "Quad_BtnOpenChat") WidgetTriggerVisibility = True;
+	}
+	// ---------------------------------- //
+	// Mouse over
+	if (Event.Type == CMlEvent::Type::MouseOver) {
+		if (Event.ControlId == "Quad_BtnOpenChat") Quad_BtnOpenChat.Opacity = 1.;
+	}
+	// ---------------------------------- //
+	// Mouse out
+	if (Event.Type == CMlEvent::Type::MouseOut) {
+		if (Event.ControlId == "Quad_BtnOpenChat") Quad_BtnOpenChat.Opacity = 0.;
+	}
+}
+
+// ---------------------------------- //
+// Blink icon on new messages
+if (WidgetNbUnreadMessages > 0) {
+	declare Opacity = (ML::Sin(Now / 2000.) / (ML::PI() * 2)) * .5 + .5;
+	Quad_BtnOpenIcon.Opacity = Opacity;
+} else {
+	Quad_BtnOpenIcon.Opacity = 1.;
+}
+***
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++StartManialink+++
+	while (True) {
+		yield;
+		+++Yield+++
+	}
+}
+--></script>
+</manialink>""";
+}
+// ---------------------------------- //
+/** Create dialog manialink
+ *
+ *	@return		The manialink
+ */
+Text CreateMLDialogBox() {
+	return """
+<manialink version="2" name="{{{CoreName}}}:DialogBox">
+<frame id="Frame_DialogBox" posn="0 0 60" hidden="1">
+	<quad posn="0 0 -1" sizen="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" ScriptEvents="1"/>
+	<quad posn="0 17 1" sizen="126.5 8" halign="center" style="Bgs1InRace" substyle="BgGlow2"/>
+	<quad sizen="120 25" halign="center" valign="center" style="Bgs1InRace" substyle="BgWindow2"/>
+	<quad posn="0 -12 1" sizen="120 2" halign="center" style="Bgs1InRace" substyle="BgMetalBar"/>
+	
+	<label posn="0 6.25" sizen="100 4" halign="center" valign="center2" textsize="2" textcolor="FFF" autonewline="1" id="Label_DialogMessage"/>
+	<label posn="-32 -4 1" style="CardButtonMedium" valign="center" halign="center" text="Remove" translate="1" id="Label_BtnRemove" ScriptEvents="1"/>
+	<label posn="32 -4 1" style="CardButtonMedium" valign="center" halign="center" text="Cancel" translate="1" id="Label_BtnCancel" ScriptEvents="1"/>
+</frame>
+<script><!--
+/**
+ *	{{{CoreName}}}: Dialog box
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Start manialink
+// ---------------------------------- //
+***StartManialink***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_DialogBox <=> (Page.GetFirstChild("Frame_DialogBox") as CMlFrame);
+declare Label_DialogMessage <=> (Page.GetFirstChild("Label_DialogMessage") as CMlLabel);
+
+// ---------------------------------- //
+// Script communication
+declare DialogVisible		for Page = False;	///< Visibility of the dialog box
+declare DialogBuddyLogin	for Page = "";		///< Login of the buddy to remove
+declare DialogBuddyName		for Page = "";		///< Name of the buddy to remove
+
+/// Update variables
+declare PrevDialogVisible = False;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Click on the interface element
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// Button remove
+		if (Event.ControlId == "Label_BtnRemove") {
+			SendCustomEvent("CloseDialog", [DialogBuddyLogin]);
+			DialogVisible = False;
+		}
+		// ---------------------------------- //
+		// Button cancel
+		if (Event.ControlId == "Label_BtnCancel") {
+			DialogVisible = False;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update visibility
+if (PrevDialogVisible != DialogVisible) {
+	PrevDialogVisible = DialogVisible;
+	
+	// ---------------------------------- //
+	// Set visibility
+	Frame_DialogBox.Visible = DialogVisible;
+	
+	// ---------------------------------- //
+	// Play sound
+	declare TargetSound = CAudioManager::ELibSound::HideDialog;
+	if (DialogVisible) TargetSound = CAudioManager::ELibSound::ShowDialog;
+	Audio.PlaySoundEvent(TargetSound, 0, 0.);
+	
+	// ---------------------------------- //
+	// Set buddy name
+	if (DialogVisible) Label_DialogMessage.SetText(TL::Compose(_("Are you sure you want to remove $<%1$> from your buddy list?"), DialogBuddyName));
+}
+***
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++StartManialink+++
+	while (True) {
+		yield;
+		+++Yield+++
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create chat manialink
+ *
+ *	@return		The manialink
+ */
+Text CreateMLGroupChat() {
+	declare ConnectedCardsML = "";
+	for (I, 0, C_UsersListNbSlots - 1)
+		ConnectedCardsML ^= """<frameinstance posn="0 {{{-8 * I}}}" id="Frame_BuddyCard{{{I}}}" modelid="FrameModel_BuddyCard"/>""";
+	
+	declare MessagesModelsML = "";
+	for (I, 0, C_UsersListNbSlots)
+		MessagesModelsML ^= """<frameinstance posn="0 {{{8 * (I+1)}}}" id="Frame_MessageCard{{{I}}}" modelid="FrameModel_MessageCard"/>""";
+	
+	return """
+<manialink version="2" name="{{{CoreName}}}:ChatLayer">
+<stylesheet>
+	<style class="FontD" textsize="1" textemboss="1" textcolor="FFF"/>
+	<style class="ModeButton" sizen="22 5" halign="center" valign="center" image="{{{C_ImgBase}}}Demo/demo-button-blue.png" imagefocus="{{{C_ImgBase}}}Demo/demo-button-blue-focus.png"/>
+	<style class="ModeButtonText" posn="0 0 1" sizen="24 5" halign="center" valign="center2" style="TextButtonNav" textsize="1" textcolor="FFF"/>
+	
+	<style id="Label_TotalNbMsgPrivate" style="TextValueSmallSm" textsize="1" textcolor="6BF"/>
+	<style id="Quad_BuddyCardBtnJoin" image="{{{C_ImgBase}}}Chat/buddy-join.dds" imagefocus="{{{C_ImgBase}}}Chat/buddy-join-on.dds"/>
+	<style id="Quad_BuddyCardBtnKick" image="{{{C_ImgBase}}}Chat/buddy-delete-off.dds" imagefocus="{{{C_ImgBase}}}Chat/buddy-delete-focus.dds"/>
+	<style id="Quad_BuddyCardBtnMute" image="{{{C_ImgBase}}}Chat/buddy-ally-on.dds" imagefocus="{{{C_ImgBase}}}Chat/buddy-ally-on-focus.dds"/>
+	<style id="Quad_BuddyCardBtnAdd" image="{{{C_ImgBase}}}Chat/buddy-buddy-accept.dds" imagefocus="{{{C_ImgBase}}}Chat/buddy-buddy-accept-focus.dds"/>
+	<style id="Quad_MessageCardBtnCopy" image="{{{C_ImgBase}}}Chat/buddy-copy-serverlink.dds" imagefocus="{{{C_ImgBase}}}Chat/buddy-copy-serverlink-on.dds"/>
+	<style id="Quad_BuddyCardBtnDeny" image="{{{C_ImgBase}}}Chat/buddy-buddy-deny.dds" imagefocus="{{{C_ImgBase}}}Chat/buddy-buddy-deny-focus.dds"/>
+	<style id="Label_BuddyCardNbMsg" style="TextValueSmallSm" textsize="1" textcolor="6BF"/>
+	
+	<style id="Quad_CurBuddyBtnJoin" image="{{{C_ImgBase}}}Chat/buddy-join.dds" imagefocus="{{{C_ImgBase}}}Chat/buddy-join-on.dds"/>
+	<style id="Quad_CurBuddyBtnDelete" image="{{{C_ImgBase}}}Chat/buddy-delete-off.dds" imagefocus="{{{C_ImgBase}}}Chat/buddy-delete-focus.dds"/>
+	
+	<style id="Label_CurrentName" style="TextValueSmallSm" textsize="2" textemboss="1" textcolor="FFF"/>
+	<style id="Quad_CurrentPresence" style="Icons64x64_1" substyle="ClipPause" colorize="0F0" opacity=".75"/>
+	<style id="Label_CurrentStatus" textsize="1" textemboss="1" textcolor="FC0" focusareacolor1="0000" focusareacolor2="0000"/>
+	<style id="Entry_MessageSubmit" textsize="2" textemboss="1" textcolor="FFF" focusareacolor1="0000"/>
+</stylesheet>
+
+<framemodel id="FrameModel_BuddyCard">
+	<quad posn="0 -.25" sizen="44 7.5" class="focus1 valid1" bgcolor="000" opacity=".25" id="Quad_BuddyCardSlot" ScriptEvents="1"/>
+	<!-- Basic information -->
+	<quad posn="0 -.25 2" sizen="1.5 7.5" bgcolor="000" opacity="{{{2/3.}}}" id="Quad_BuddyCardPresence"/>
+	<label posn="2.5 -2.5 2" sizen="36 4" valign="center2" textsize="1" textcolor="FFF" id="Label_BuddyCardName"/>
+	<label posn="2.5 -5.75 2" sizen="46 4" scale=".75" valign="center2" textsize="1" textcolor="FFF" id="Label_BuddyCardStatus"/>
+	<quad posn="41 -2.5 2" sizen="3 3" valign="center" class="focus2 valid0" id="Quad_BuddyCardBtnJoin" ScriptEvents="1" hidden="1"/>
+	<!-- Group administration -->
+	<quad posn="41 -5.75 2" sizen="3 3" valign="center" class="focus2 valid0" id="Quad_BuddyCardBtnKick" ScriptEvents="1" hidden="1"/>
+	<quad posn="38 -5.75 2" sizen="3 3" valign="center" class="focus2 valid0" id="Quad_BuddyCardBtnMute" ScriptEvents="1" hidden="1"/>
+	<!-- Buddy requests -->
+	<quad posn="38 -2.5 2" sizen="3 3" valign="center" class="focus2 valid0" id="Quad_BuddyCardBtnAdd" ScriptEvents="1" hidden="1"/>
+	<quad posn="41 -2.5 2" sizen="3 3" valign="center" class="focus2 valid0" id="Quad_BuddyCardBtnDeny" ScriptEvents="1" hidden="1"/>
+	<!-- Messages -->
+	<quad posn="0 -.25" sizen="44 7.5" bgcolor="0AF" opacity="0" id="Quad_BuddyCardBlink"/>
+	<label posn="43.5 -5.75 2" halign="right" valign="center2" id="Label_BuddyCardNbMsg"/>
+</framemodel>
+
+<framemodel id="FrameModel_MessageCard">
+	<quad posn="0 -.25" sizen="124 7.5" bgcolor="000" opacity=".25" id="Quad_MessageCardBg"/>
+	<quad posn="1 -2.5 1" sizen="2 2" valign="center" class="focus2 valid0" id="Quad_MessageCardBtnCopy" ScriptEvents="1"/>
+	<label posn="4 -2.5 1" sizen="80 4" valign="center2" scale=".9" textsize="1" textcolor="FFF" id="Label_MessageCardName"/>
+	<label posn="123 -2.5 1" halign="right" valign="center2" scale=".9" textsize="1" textcolor="FFF" opacity=".25" id="Label_MessageCardTime"/>
+	<label posn="1 -4.25 1" sizen="122" textsize="1" textemboss="1" textcolor="FFF" autonewline="1" id="Label_MessageCardValue"/>
+</framemodel>
+
+<frame id="Frame_Evidence" posn="-24 {{{83 + 120}}}" hidden="1">
+	<quad posn="0 1 1" sizen="48 1.25" style="Bgs1InRace" substyle="BgTitle"/>
+	<quad posn="0 1 -1" sizen="48.5 109.5" image="{{{C_ImgBase}}}background2.png" ScriptEvents="1"/>
+	<quad posn="0 -107 1" sizen="48 1" style="Bgs1InRace" substyle="BgMetalBar"/>
+	
+	<label posn="35 -5" halign="center" valign="center2" id="Label_TotalNbMsgPrivate"/>
+	<frame posn="13 -9">
+		<quad class="ModeButton focus3 valid1" id="Quad_BtnModeGroup" ScriptEvents="1"/>
+		<label class="ModeButtonText" text="Group - 0" id="Label_NbPlayersConnected"/>
+	</frame>
+	<frame posn="35 -9">
+		<quad class="ModeButton focus3 valid1" id="Quad_BtnModeOnline" ScriptEvents="1"/>
+		<label class="ModeButtonText" text="Online - 0" id="Label_NbPlayersOnline"/>
+	</frame>
+	
+	<frameinstance id="Frame_LocalUserCard" posn="2 -12 1" modelid="FrameModel_BuddyCard"/>
+	<frame id="Frame_BuddiesList" posn="2 -20 1">
+		{{{ConnectedCardsML}}}
+	</frame>
+	
+	<frame id="Frame_Pager" posn="38 -103.5 1">
+		<quad posn="-6.5" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowUp" id="Quad_BtnListPrev" ScriptEvents="1"/>
+		<label posn="0" halign="center" valign="center2" style="TextValueSmallSm" class="FontD" text="0 / 0" id="Label_PagerNumber"/>
+		<quad posn="6.5" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowDown" id="Quad_BtnListNext" ScriptEvents="1"/>
+	</frame>
+	
+	<frame id="Frame_GroupChatWindow" posn="48">
+		<quad posn="0 1 1" sizen="136 1.25" style="Bgs1InRace" substyle="BgTitle"/>
+		<quad posn="-.25 1" sizen="137 109.5" image="{{{C_ImgBase}}}background3.png" ScriptEvents="1"/>
+		<quad posn="0 -107 1" sizen="136 1" style="Bgs1InRace" substyle="BgMetalBar"/>
+		
+		<frame posn="2 -1 1">
+			<label posn="0 -3 1" valign="center2" id="Label_CurrentName"/>
+			<quad posn="-1 -7.5 1" sizen="5 5" valign="center" id="Quad_CurrentPresence" ScriptEvents="1"/>
+			<label posn="4 -7.5 1" sizen="50 4" valign="center2" class="FontD" id="Label_CurrentStatus"/>
+			<entry posn="4 -7.5 2" sizen="50 4" valign="center2" class="FontD" textcolor="FC0" focusareacolor1="0000" id="Entry_ChangeStatus" ScriptEvents="1"/>
+		</frame>
+		
+		<frame id="Frame_CurBuddyInfo" posn="134 -1.75 1">
+			<quad posn="-6" sizen="6 6" image="{{{C_ImgBase}}}Chat/buddy-join-off.dds"/>
+			<quad posn="-6 0 1" sizen="6 6" class="focus2 valid0" id="Quad_CurBuddyBtnJoin" ScriptEvents="1" hidden="1"/>
+			<label posn="-7 -1.5" sizen="45 3" halign="right" valign="center2" class="FontD" id="Label_CurBuddyServerName"/>
+			<label posn="-7 -4.5" sizen="45 3" halign="right" valign="center2" class="FontD" textcolor="AAA" id="Label_CurBuddyServerDesc"/>
+			<frame id="Frame_CurBuddyActions" posn="0 -7.5" hidden="1">
+				<label posn="-7" halign="right" valign="center2" class="FontD" textcolor="AAA" id="Label_CurBuddyLogin"/>
+				<quad posn="-6" sizen="3 3" valign="center" style="Icons64x64_1" substyle="Outbox" id="Quad_CurBuddyBtnMessage" ScriptEvents="1"/>
+				<quad posn="-3" sizen="3 3" valign="center" class="focus2 valid0" id="Quad_CurBuddyBtnDelete" ScriptEvents="1"/>
+			</frame>
+		</frame>
+
+		<frame id="Frame_NewChat" posn="2 -100 1">
+			{{{MessagesModelsML}}}
+		</frame>
+		
+		<frame id="Frame_SayMessage" posn="0 -103.5 1">
+			<label posn="2" valign="center2" class="FontD" text="Say:"/>
+			<entry posn="9" sizen="111 5" valign="center2" id="Entry_MessageSubmit" ScriptEvents="1"/>
+			<quad posn="120" sizen="5 5" valign="center" style="UIConstruction_Buttons" substyle="Right" id="Quad_BtnSendMessage" ScriptEvents="1"/>
+			<quad posn="125 0 1" sizen="5 5" valign="center" style="Icons64x64_1" substyle="ArrowUp" id="Quad_BtnPageUp" ScriptEvents="1" hidden="1"/>
+			<quad posn="130 0 1" sizen="5 5" valign="center" style="Icons64x64_1" substyle="ArrowDown" id="Quad_BtnPageDown" ScriptEvents="1" hidden="1"/>
+			<quad posn="125" sizen="5 5" valign="center" style="Icons64x64_1" substyle="ArrowDisabled"/>
+			<quad posn="130" sizen="5 5" valign="center" style="Icons64x64_1" substyle="ArrowDisabled"/>
+		</frame>
+	</frame>
+</frame>
+<script><!--
+/**
+ *	{{{CoreName}}}: manialink layer
+ */
+
+#Include "AnimLib" as AL
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_HistoryMaxCharacters	250		///< Maximum number of messages stored in chat history
+#Const C_NewMsgBlinkFrequency	1000	///< Speed of buddy icon blinking on new messages
+#Const C_ChatMessageHeight		8.		///< Default Size of the message card
+#Const C_ChatMessageLine		3.		///< Size of the text line in message card
+#Const C_ChatUpdateDelay		250		///< Delay for the next message autoupdate
+#Const C_MessagesHideaway		140.	///< Position of the messages window when not visible
+#Const C_ChatHideaway			120.	///< Position of the chat when not visible
+#Const C_AnimDuration			250		///< Animations duration
+#Const C_ChatClipWindowSize <132., 88.>	///< Size of the chat clip
+
+/// Names of the presences
+#Const C_PresenceNames [
+	_("Offline"), _("Available"), _("Away"), _("Busy"), _("Wanna talk!"), _("Snooze")
+]
+
+/// Colors of displayed buddy presence
+#Const C_PresenceColors [
+	<.2, .4, .5>,	///< Offline
+	<.3, .9, .3>,	///< Available
+	<1., .9, .0>,	///< Away
+	<1., .2, .2>,	///< Busy
+	<.3, .7, .9>,	///< Wanna talk!
+	<.9, .7, .3>	///< Snooze
+]
+
+/// Active mode button opacity
+#Const C_ModeButtonOpacity [
+	True => 1.,		///< Active
+	False => .5		///< Off
+]
+
+/// Colors of buddy cards depending on their state
+#Const C_BuddyCardColors [
+	False => [					///< Normal
+		False => <0., 0., 0.>,	///< Off
+		True => <.3, .3, .3>	///< Highlighted
+	],
+	True => [					///< Selected
+		False => <.6, .6, .6>,	///< Off
+		True => <.9, .9, .9>	///< Highlighted
+	]
+]
+
+/// Mute button images
+#Const C_BtnMuteImages [
+	False => [	///< Not muted
+		False => "{{{C_ImgBase}}}Chat/buddy-ally-on.dds",
+		True => "{{{C_ImgBase}}}Chat/buddy-ally-on-focus.dds"
+	],
+	True => [	///< Muted
+		False => "{{{C_ImgBase}}}Chat/buddy-ally-off.dds",
+		True => "{{{C_ImgBase}}}Chat/buddy-ally-focus.dds"
+	]
+]
+
+// ---------------------------------- //
+// Start manialink
+// ---------------------------------- //
+***StartManialink***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_Evidence			<=> (Page.GetFirstChild("Frame_Evidence")			as CMlFrame);
+declare Frame_GroupChatWindow	<=> (Page.GetFirstChild("Frame_GroupChatWindow")	as CMlFrame);
+
+/// Buddies list
+declare Label_TotalNbMsgPrivate		<=>	(Page.GetFirstChild("Label_TotalNbMsgPrivate")	as CMlLabel);
+declare Quad_BtnModeGroup			<=> (Page.GetFirstChild("Quad_BtnModeGroup")		as CMlQuad);
+declare Quad_BtnModeOnline			<=> (Page.GetFirstChild("Quad_BtnModeOnline")		as CMlQuad);
+declare Label_NbPlayersConnected	<=> (Page.GetFirstChild("Label_NbPlayersConnected")	as CMlLabel);
+declare Label_NbPlayersOnline		<=> (Page.GetFirstChild("Label_NbPlayersOnline")	as CMlLabel);
+declare Label_PagerNumber	<=> (Page.GetFirstChild("Label_PagerNumber")	as CMlLabel);
+declare Quad_BtnListPrev	<=> (Page.GetFirstChild("Quad_BtnListPrev")		as CMlQuad);
+declare Quad_BtnListNext	<=> (Page.GetFirstChild("Quad_BtnListNext")		as CMlQuad);
+
+/// Chat window
+declare Label_CurrentStatus		<=> (Page.GetFirstChild("Label_CurrentStatus")	as CMlLabel);
+declare Label_CurrentName		<=> (Page.GetFirstChild("Label_CurrentName")	as CMlLabel);
+declare Quad_CurrentPresence	<=> (Page.GetFirstChild("Quad_CurrentPresence")	as CMlQuad);
+declare Entry_ChangeStatus		<=> (Page.GetFirstChild("Entry_ChangeStatus")	as CMlEntry);
+declare Frame_CurBuddyInfo	<=> (Page.GetFirstChild("Frame_CurBuddyInfo")	as CMlFrame);
+declare Entry_MessageSubmit	<=> (Page.GetFirstChild("Entry_MessageSubmit")	as CMlEntry);
+declare Label_ChatMessages	<=> (Page.GetFirstChild("Label_ChatMessages")	as CMlLabel);
+declare Quad_BtnPageUp		<=> (Page.GetFirstChild("Quad_BtnPageUp")	as CMlQuad);
+declare Quad_BtnPageDown	<=> (Page.GetFirstChild("Quad_BtnPageDown")	as CMlQuad);
+
+/// Local user card
+declare Frame_LocalUserCard		<=> (Page.GetFirstChild("Frame_LocalUserCard") as CMlFrame);
+declare Quad_LocalCardSlot		<=> (Frame_LocalUserCard.GetFirstChild("Quad_BuddyCardSlot")	as CMlQuad);
+declare Quad_LocalCardBlink		<=> (Frame_LocalUserCard.GetFirstChild("Quad_BuddyCardBlink")	as CMlQuad);
+declare Label_LocalCardStatus	<=> (Frame_LocalUserCard.GetFirstChild("Label_BuddyCardStatus")	as CMlLabel);
+declare Label_LocalCardNbMsg	<=> (Frame_LocalUserCard.GetFirstChild("Label_BuddyCardNbMsg")	as CMlLabel);
+
+/// Buddies cards
+declare CMlFrame[] Frame_BuddyCard;
+for (I, 0, {{{C_UsersListNbSlots - 1}}})
+	Frame_BuddyCard.add((Page.GetFirstChild("Frame_BuddyCard"^I) as CMlFrame));
+
+/// Messages cards
+declare CMlFrame[] Frame_MessageCard;
+for (I, 0, {{{C_UsersListNbSlots}}})
+	Frame_MessageCard.add((Page.GetFirstChild("Frame_MessageCard"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Clip the messages window
+declare Frame_NewChat <=> (Page.GetFirstChild("Frame_NewChat") as CMlFrame);
+Frame_NewChat.ClipWindowActive = True;
+Frame_NewChat.ClipWindowSize = C_ChatClipWindowSize;
+for (I, 0, 1) Frame_NewChat.ClipWindowRelativePosition[I] = C_ChatClipWindowSize[I] / 2;
+Frame_NewChat.ClipWindowRelativePosition.Y -= 1;
+
+// ---------------------------------- //
+// Save messages history & unread messages amount
+declare persistent Text[][][Text] Persistent_Evidence_MsgHistory for Page;
+declare persistent Integer[Text] Persistent_Evidence_NbUnreadMessages for Page;
+declare persistent Text Persistent_Evidence_ManialinkStatus for Page;
+declare persistent Integer Persistent_Evidence_ManialinkPresenceId for Page = 1;
+
+// ---------------------------------- //
+// Plugin script communication
+declare DisplayMessage			for Page = Text[][];	///< List of messages to save in history
+declare IsChatOpen				for Page = False;		///< True when buddies list is open
+declare FlashTaskbar			for Page = False;		///< Forces taskbar to flash
+declare ActiveBuddiesMode		for Page = "Online";	///< Current active buddies list mode
+declare DesiredMessageReceiver	for Page = "";	///< Selected conversation buddy
+declare ManialinkStatus			for Page = "";	///< Current status entered by the player
+declare ManialinkPresenceId 	for Page = 1;	///< Current presence id
+declare MLNbUnreadMessages		for Page = 0;	///< Unread messages amount
+
+// ---------------------------------- //
+// Reload saved tatus
+ManialinkStatus = Persistent_Evidence_ManialinkStatus;
+ManialinkPresenceId = Persistent_Evidence_ManialinkPresenceId;
+SendCustomEvent("UpdatePresence", [TL::ToText(ManialinkPresenceId), ManialinkStatus]);
+
+// ---------------------------------- //
+// Shared buddies data
+declare Text[] BuddiesLogins_InGroup		for Page;	///< Buddies connected to the group
+declare Text[] BuddiesLogins_Online			for Page;	///< Online buddies 
+declare Text[] BuddiesLogins_Offline		for Page;	///< Offline buddies 
+declare Text[] BuddiesLogins_RequestFrom	for Page;	///< Buddies inviting user to their list
+declare Text[] BuddiesLogins_RequestTo		for Page;	///< Buddies invited by the user
+declare Text[] BuddiesLogins_ToTheTop		for Page;	///< Buddies to be displayed on top of the list
+declare Text[] BuddiesLogins_SortedList		for Page;	///< Sorted list of all available buddies
+
+declare Text[Text]		BuddiesName			for Page;	///< Names of the buddies
+declare Integer[Text]	BuddiesPresence		for Page;	///< Presences of the buddies
+declare Text[Text]		BuddiesStatus		for Page;	///< Statuses of the buddies
+declare Text[Text]		BuddiesServLogin	for Page;	///< Name of the server buddy is playing on
+declare Text[Text]		BuddiesJoinLink		for Page;	///< Buddies servers join links
+declare Boolean[Text]	BuddiesIsMuted		for Page;	///< Buddies mute status
+
+/// Update variables
+declare PrevNbBuddiesInGroup	= -1;
+declare PrevNbBuddiesOnline		= -1;
+declare PrevNbRequestsIncoming	= -1;
+declare PrevNbRequestsOutgoing	= -1;
+declare Text[Text]		PrevBuddiesName;
+declare Integer[Text]	PrevBuddiesPresence;
+declare Text[Text]		PrevBuddiesStatus;
+declare Text[Text]		PrevBuddiesServLogin;
+declare Text[Text]		PrevBuddiesJoinLink;
+declare Boolean[Text]	PrevBuddiesIsMuted;
+
+// ---------------------------------- //
+// Share servers info with manialink
+declare Text[Text]		ServersName			for Page;	///< Names of the servers
+declare Text[Text]		ServersGamemode		for Page;	///< Gamemodes of the servers
+declare Integer[Text]	ServersNbPlayers	for Page;	///< Current players amout on servers
+declare Integer[Text]	ServersNbSlots		for Page;	///< Number of slots on servers
+
+/// Update variables
+declare Text[Text]		PrevServersName			for Page;
+declare Text[Text]		PrevServersGamemode		for Page;
+declare Integer[Text]	PrevServersNbPlayers	for Page;
+declare Integer[Text]	PrevServersNbSlots		for Page;
+
+// ---------------------------------- //
+// Variables
+declare ForceSortBuddies	= True;		///< Forces buddies list sorting
+declare ForceUpdateList		= True;		///< Updates all displayed buddies cards
+declare ForceUpdateBuddy	= False;	///< Updates currently selected buddy information
+declare AreMessagesOpen		= False;	///< True when messages list is open
+declare NextMessagesUpdate	= Now;		///< Time of the next messages cards autoupdate
+declare HighlightedCard		= CMlQuad;	///< Currently hovered buddy card
+declare IconBlinkStart		= Now;	///< Blink animation start time
+declare IconBlinkValue		= 0.;	///< Blink animation value
+declare CurConvLogin		= "";	///< Login of the current conversation
+declare LocalServerName		= "";	///< Name of local user server
+declare Integer[Text] ConversationOffset;	///< Messages offset in conversations
+
+/// Animations
+declare AnimStart_BuddiesList	= 0;
+declare AnimStart_Messages		= 0;
+
+/// Buddies list pages
+declare PagesGroup_Current	= 1;	///< Current page of connected buddies list
+declare PagesGroup_Count	= 1;	///< Amount of pages of connected buddies list
+declare PagesOnline_Count	= 1;	///< Current page of all buddies list
+declare PagesOnline_Current	= 1;	///< Amount of pages of all buddies list
+
+/// Update variables
+declare PrevIsChatOpen		= False;
+declare PrevAreMessagesOpen	= False;
+declare PrevConvLogin		= "";
+declare PrevLocalName		= "";
+declare PrevLocalStatus		= "";
+declare PrevLocalPresence	= -1;
+declare PrevLocalServerName	= "";
+
+Frame_Evidence.Show();
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Keyboard key is pressed
+	if (Event.Type == CMlEvent::Type::KeyPress) {
+		// ---------------------------------- //
+		// Toggle chat visibility
+		if (Event.KeyName == "F7") IsChatOpen = !IsChatOpen;
+	}
+	// ---------------------------------- //
+	// Click on the interface element
+	else if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// Play sound
+		declare ValidSoundVariant = -1;
+		if (Event.Control.HasClass("valid0")) ValidSoundVariant = 0;
+		else if (Event.Control.HasClass("valid1")) ValidSoundVariant = 1;
+		if (ValidSoundVariant >= 0) Audio.PlaySoundEvent(CAudioManager::ELibSound::Valid, ValidSoundVariant, 0.);
+		
+		// ---------------------------------- //
+		// Set Group mode
+		if (Event.ControlId == "Quad_BtnModeGroup") {
+			ActiveBuddiesMode = "Group";
+			ForceUpdateList = True;
+			NextMessagesUpdate = Now;
+			PrevAreMessagesOpen = False;
+		}
+		// ---------------------------------- //
+		// Set Online mode
+		else if (Event.ControlId == "Quad_BtnModeOnline") {
+			ActiveBuddiesMode = "Online";
+			ForceUpdateList = True;
+			NextMessagesUpdate = Now;
+			PrevAreMessagesOpen = False;
+		}
+		// ---------------------------------- //
+		// Change users list page
+		else if (Event.ControlId == "Quad_BtnListPrev") {
+			if (ActiveBuddiesMode == "Group") {
+				PagesGroup_Current -= 1;
+				if (PagesGroup_Current < 1) PagesGroup_Current = 1;
+			} else if (ActiveBuddiesMode == "Online") {
+				PagesOnline_Current -= 1;
+				if (PagesOnline_Current < 1) PagesOnline_Current = 1;
+			}
+			ForceUpdateList = True;
+		} else if (Event.ControlId == "Quad_BtnListNext") {
+			if (ActiveBuddiesMode == "Group") {
+				PagesGroup_Current += 1;
+				if (PagesGroup_Current > PagesGroup_Count) PagesGroup_Current = PagesGroup_Count;
+			} else if (ActiveBuddiesMode == "Online") {
+				PagesOnline_Current += 1;
+				if (PagesOnline_Current > PagesOnline_Count) PagesOnline_Current = PagesOnline_Count;
+			}
+			ForceUpdateList = True;
+		}
+		// ---------------------------------- //
+		// Select conversation
+		else if (Event.ControlId == "Quad_BuddyCardSlot") {
+			NextMessagesUpdate = Now;
+			declare Login = Event.Control.DataAttributeGet("login");
+			if (Login != "") {
+				declare Quad <=> (Event.Control as CMlQuad);
+				// Leave running conversation
+				if (Login == DesiredMessageReceiver) {
+					DesiredMessageReceiver = "";
+				}
+				// Enter private conversation mode
+				else {
+					DesiredMessageReceiver = Login;
+					PrevAreMessagesOpen = False;
+					if (ActiveBuddiesMode != "Online") {
+						ActiveBuddiesMode = "Online";
+						ForceUpdateList = True;
+					}
+				}
+			}
+			// Enter group conversation mode
+			else if (Event.Control == Quad_LocalCardSlot) {
+				if (ActiveBuddiesMode != "Group") {
+					ActiveBuddiesMode = "Group";
+					ForceUpdateList = True;
+					PrevAreMessagesOpen = False;
+				}
+			}
+		}
+		// ---------------------------------- //
+		// Join button
+		else if (Event.Control.DataAttributeExists("manialink")) {
+			declare ManialinkURL = Event.Control.DataAttributeGet("manialink");
+			if (ManialinkURL != "") {
+				OpenLink(ManialinkURL, ::LinkType::ManialinkBrowser);
+				IsChatOpen = False;
+			}
+		}
+		// ---------------------------------- //
+		// Kick button
+		else if (Event.ControlId == "Quad_BuddyCardBtnKick") {
+			declare Login = Event.Control.DataAttributeGet("login");
+			if (Login != "") SendCustomEvent("SendMessage", ["/kick "^Login]);
+		}
+		// ---------------------------------- //
+		// Mute user button
+		else if (Event.ControlId == "Quad_BuddyCardBtnMute") {
+			declare Login = Event.Control.DataAttributeGet("login");
+			if (Login != "") {
+				declare Action = "mute";
+				if (BuddiesIsMuted.existskey(Login) && BuddiesIsMuted[Login]) Action = "unmute";
+				SendCustomEvent("SendMessage", ["/"^Action^" "^Login]);
+			}
+		}
+		// ---------------------------------- //
+		// Accept buddy request button
+		else if (Event.ControlId == "Quad_BuddyCardBtnAdd") {
+			declare Login = Event.Control.DataAttributeGet("login");
+			if (Login != "") SendCustomEvent("BuddyAccept", [Login]);
+		}
+		// ---------------------------------- //
+		// Deny / cancel buddy request button
+		else if (Event.ControlId == "Quad_BuddyCardBtnDeny") {
+			declare Login = Event.Control.DataAttributeGet("login");
+			if (Login != "") SendCustomEvent("BuddyDeny", [Login]);
+		}
+		// ---------------------------------- //
+		// Copy message to clipboard
+		else if (Event.ControlId == "Quad_MessageCardBtnCopy") {
+			declare Message = Event.Control.DataAttributeGet("clipboard");
+			if (Message != "") SendCustomEvent("SetClipboard", [Message]);
+		}
+		// ---------------------------------- //
+		// Remove current buddy
+		else if (Event.ControlId == "Quad_CurBuddyBtnDelete") {
+			declare Login = Event.Control.DataAttributeGet("login");
+			if (Login != "") {
+				IsChatOpen = False;
+				DesiredMessageReceiver = "";
+				SendCustomEvent("RemoveBuddy", [Login]);
+			}
+		}
+		// ---------------------------------- //
+		// Change presence
+		else if (Event.ControlId == "Quad_CurrentPresence" && ActiveBuddiesMode == "Group") {
+			ManialinkPresenceId += 1;
+			if (ManialinkPresenceId > 5) ManialinkPresenceId = 1;
+			SendCustomEvent("UpdatePresence", [TL::ToText(ManialinkPresenceId), ManialinkStatus]);
+			Persistent_Evidence_ManialinkPresenceId = ManialinkPresenceId;
+			ForceUpdateBuddy = True;
+		}
+		// ---------------------------------- //
+		// Send message
+		else if (Event.ControlId == "Quad_BtnSendMessage") {
+			declare Message = Entry_MessageSubmit.Value;
+			if (Message != "" && Message != "$") SendCustomEvent("SendMessage", [Message]);
+		}
+		// ---------------------------------- //
+		// Scroll chat
+		else if (Event.ControlId == "Quad_BtnPageUp") {
+			declare ConversationLogin = "";
+			if (ActiveBuddiesMode == "Online") ConversationLogin = DesiredMessageReceiver;
+			if (!ConversationOffset.existskey(ConversationLogin)) ConversationOffset[ConversationLogin] = 0;
+			ConversationOffset[ConversationLogin] += 1;
+			NextMessagesUpdate = Now;
+		}
+		else if (Event.ControlId == "Quad_BtnPageDown") {
+			declare ConversationLogin = "";
+			if (ActiveBuddiesMode == "Online") ConversationLogin = DesiredMessageReceiver;
+			ConversationOffset[ConversationLogin] -= 1;
+			if (ConversationOffset[ConversationLogin] < 0) ConversationOffset[ConversationLogin] = 0;
+			NextMessagesUpdate = Now;
+		}
+	}
+	// ---------------------------------- //
+	// Mouse hover element
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		// ---------------------------------- //
+		// Play sound
+		declare FocusSoundVariant = -1;
+		if (Event.Control.HasClass("focus1")) FocusSoundVariant = 1;
+		else if (Event.Control.HasClass("focus2")) FocusSoundVariant = 2;
+		else if (Event.Control.HasClass("focus3")) FocusSoundVariant = 3;
+		if (FocusSoundVariant >= 0) Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, FocusSoundVariant, 0.);
+		
+		// ---------------------------------- //
+		// Highlight buddy card
+		if (Event.ControlId == "Quad_BuddyCardSlot") {
+			declare Quad <=> (Event.Control as CMlQuad);
+			if (Quad != Null) HighlightedCard = Quad;
+		}
+	}
+	// ---------------------------------- //
+	// Mouse out of element
+	else if (Event.Type == CMlEvent::Type::MouseOut) {
+		// ---------------------------------- //
+		// Remove hover effect from buddy card
+		if (Event.ControlId == "Quad_BuddyCardSlot") {
+			declare Quad <=> (Event.Control as CMlQuad);
+			if (Quad != Null && HighlightedCard == Quad) HighlightedCard = Null;
+		}
+	}
+	// ---------------------------------- //
+	// Entry submit
+	else if (Event.Type == CMlEvent::Type::EntrySubmit) {
+		// ---------------------------------- //
+		// Send a message
+		if (Event.ControlId == "Entry_MessageSubmit") {
+			declare Message = Entry_MessageSubmit.Value;
+			if (Message != "" && Message != "$") {
+				SendCustomEvent("SendMessage", [Message]);
+				Entry_MessageSubmit.Value = "";
+				NextMessagesUpdate = Now;
+			}
+			Entry_MessageSubmit.StartEdition();
+		}
+		// ---------------------------------- //
+		// Set new status
+		if (Event.ControlId == "Entry_ChangeStatus") {
+			declare Status = Entry_ChangeStatus.Value;
+			ManialinkStatus = Status;
+			SendCustomEvent("UpdatePresence", [TL::ToText(ManialinkPresenceId), ManialinkStatus]);
+			Persistent_Evidence_ManialinkStatus = ManialinkStatus;
+			ForceUpdateBuddy = True;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Save new messages in the history
+if (DisplayMessage.existskey(0)) {
+	declare Message = DisplayMessage[0];
+	if (Message.count >= 3) {
+		NextMessagesUpdate = Now;
+		declare ConversationLogin = Message[0]; ///< "" = group
+		declare SenderLogin = Message[1];
+		declare MessageBody = Message[2];
+		declare MessageTime = CurrentLocalDateText;
+		
+		if (!Persistent_Evidence_MsgHistory.existskey(ConversationLogin))
+			Persistent_Evidence_MsgHistory[ConversationLogin] = Text[][];
+		
+		// Connect with previous message
+		declare PrevMessageId = Persistent_Evidence_MsgHistory[ConversationLogin].count - 1;
+		if (Persistent_Evidence_MsgHistory[ConversationLogin].existskey(PrevMessageId) &&
+			Persistent_Evidence_MsgHistory[ConversationLogin][PrevMessageId].count >= 3 &&
+			Persistent_Evidence_MsgHistory[ConversationLogin][PrevMessageId][0] == SenderLogin
+		) {
+			Persistent_Evidence_MsgHistory[ConversationLogin][PrevMessageId][1] ^= "\n$z"^MessageBody;
+			Persistent_Evidence_MsgHistory[ConversationLogin][PrevMessageId][2] = MessageTime;
+		}
+		// Save new message in history
+		else {
+			Persistent_Evidence_MsgHistory[ConversationLogin].add([SenderLogin, MessageBody, MessageTime]);
+		}
+		
+		if (Persistent_Evidence_MsgHistory[ConversationLogin].count > C_HistoryMaxCharacters) {
+			declare Removed = Persistent_Evidence_MsgHistory[ConversationLogin].removekey(0);
+		}
+		
+		// Add message to unread messages amount
+		if (!Persistent_Evidence_NbUnreadMessages.existskey(ConversationLogin))
+			Persistent_Evidence_NbUnreadMessages[ConversationLogin] = 0;
+		Persistent_Evidence_NbUnreadMessages[ConversationLogin] += 1;
+		
+		// Move buddy to the top of the list
+		if (ConversationLogin != "" && !BuddiesLogins_ToTheTop.exists(ConversationLogin)) {
+			BuddiesLogins_ToTheTop.add(ConversationLogin);
+			if (ActiveBuddiesMode == "Online") ForceSortBuddies = True;
+		}
+		
+		// Play notification sound
+		FlashTaskbar = True;
+		declare CurrentConversationLogin = "";
+		if (ActiveBuddiesMode == "Online") CurrentConversationLogin = DesiredMessageReceiver;
+		if (!IsChatOpen || ConversationLogin != CurrentConversationLogin)
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Alert, 1, 0.);
+	}
+	// Destroy message
+	declare Removed = DisplayMessage.removekey(0);
+}
+
+// ---------------------------------- //
+// Buddies connected to the group amount change
+if (PrevNbBuddiesInGroup != BuddiesLogins_InGroup.count) {
+	PrevNbBuddiesInGroup = BuddiesLogins_InGroup.count;
+	Label_NbPlayersConnected.SetText(TL::Compose("Group - %1", TL::ToText(PrevNbBuddiesInGroup + 1)));
+	
+	// List pages amount
+	PagesGroup_Count = ML::CeilingInteger(PrevNbBuddiesInGroup / {{{C_UsersListNbSlots}}}.);
+	if (PagesGroup_Count <= 0) PagesGroup_Count = 1;
+	if (PagesGroup_Current > PagesGroup_Count) PagesGroup_Current = PagesGroup_Count;
+	ForceUpdateList = True;
+}
+
+// ---------------------------------- //
+// Total listed buddies amount change
+if (
+	PrevNbBuddiesOnline != BuddiesLogins_Online.count ||
+	PrevNbRequestsIncoming != BuddiesLogins_RequestFrom.count ||
+	PrevNbRequestsOutgoing == BuddiesLogins_RequestFrom.count
+) {
+	PrevNbBuddiesOnline = BuddiesLogins_Online.count;
+	PrevNbRequestsIncoming = BuddiesLogins_RequestFrom.count;
+	PrevNbRequestsOutgoing = BuddiesLogins_RequestTo.count;
+	
+	declare TotalCount = PrevNbBuddiesOnline + BuddiesLogins_Offline.count + BuddiesLogins_RequestFrom.count + BuddiesLogins_RequestTo.count;
+	Label_NbPlayersOnline.SetText(TL::Compose("Online - %1", TL::ToText(PrevNbBuddiesOnline)));
+	
+	PagesOnline_Count = ML::CeilingInteger(TotalCount / {{{C_UsersListNbSlots}}}.);
+	if (PagesOnline_Current <= 0) PagesOnline_Current = 1;
+	if (PagesOnline_Current > PagesOnline_Count) PagesOnline_Current = PagesOnline_Count;
+	
+	ForceUpdateList = True;
+}
+
+// ---------------------------------- //
+// Compute blinking value
+if (Now >= IconBlinkStart + C_NewMsgBlinkFrequency) IconBlinkStart = Now;
+IconBlinkValue = 1. - ML::ToReal(Now - IconBlinkStart) / C_NewMsgBlinkFrequency;
+
+// ---------------------------------- //
+// Unread messages blinking
+if (Persistent_Evidence_NbUnreadMessages.count > 0) {
+	declare PrivateUnreadMessages = 0;
+	foreach (Login => Amount in Persistent_Evidence_NbUnreadMessages)
+		if (Login!= "") PrivateUnreadMessages += Amount;
+	
+	// Private messages
+	Label_TotalNbMsgPrivate.Visible = (IsChatOpen && ActiveBuddiesMode != "Online" && PrivateUnreadMessages > 0);
+	if (Label_TotalNbMsgPrivate.Visible) {
+		Label_TotalNbMsgPrivate.Opacity = IconBlinkValue;
+		Label_TotalNbMsgPrivate.Value = PrivateUnreadMessages^" $tMessage";
+		if (PrivateUnreadMessages > 1) Label_TotalNbMsgPrivate.Value ^= "s";
+	}
+}
+
+// ---------------------------------- //
+// Update chat visibility
+if (PrevIsChatOpen != IsChatOpen) {
+	PrevIsChatOpen = IsChatOpen;
+	AnimStart_BuddiesList = Now;
+}
+
+// ---------------------------------- //
+// Animate chat window
+if (Now < AnimStart_BuddiesList + C_AnimDuration) {
+	declare TargetEasing = "EaseInCirc";
+	declare StartPosition = 83.;
+	declare TargetPosition = C_ChatHideaway;
+	if (IsChatOpen) {
+		TargetEasing = "EaseOutCirc";
+		StartPosition = 83. + C_ChatHideaway;
+		TargetPosition = -C_ChatHideaway;
+	}
+	Frame_Evidence.RelativePosition.Y = AL::Ease(TargetEasing, ML::ToReal(Now - AnimStart_BuddiesList), StartPosition, TargetPosition, ML::ToReal(C_AnimDuration));
+} else {
+	declare PositionAdd = C_ChatHideaway;
+	if (IsChatOpen) PositionAdd = 0.;
+	Frame_Evidence.RelativePosition.Y = 83. + PositionAdd;
+}
+
+// ---------------------------------- //
+// Unread messages
+MLNbUnreadMessages = 0;
+if (!IsChatOpen) foreach (Login => Amount in Persistent_Evidence_NbUnreadMessages) {
+	MLNbUnreadMessages += Amount;
+}
+
+// ---------------------------------- //
+// Set messages window visibility
+AreMessagesOpen = (ActiveBuddiesMode == "Group" || DesiredMessageReceiver != "");
+
+// ---------------------------------- //
+// Update chat visibility
+if (PrevAreMessagesOpen != AreMessagesOpen) {
+	PrevAreMessagesOpen = AreMessagesOpen;
+	AnimStart_Messages = Now;
+}
+
+// ---------------------------------- //
+// Animate chat window
+if (Now < AnimStart_Messages + C_AnimDuration) {
+	declare TargetEasing = "EaseInCirc";
+	declare StartPosition = 48.;
+	declare TargetPosition = C_MessagesHideaway;
+	if (AreMessagesOpen) {
+		TargetEasing = "EaseOutCirc";
+		StartPosition = 48. + C_MessagesHideaway;
+		TargetPosition = -C_MessagesHideaway;
+	}
+	Frame_GroupChatWindow.RelativePosition.X = AL::Ease(TargetEasing, ML::ToReal(Now - AnimStart_Messages), StartPosition, TargetPosition, ML::ToReal(C_AnimDuration));
+} else {
+	declare PositionAdd = C_MessagesHideaway;
+	if (AreMessagesOpen) PositionAdd = 0.;
+	Frame_GroupChatWindow.RelativePosition.X = 48. + PositionAdd;
+}
+
+if (!IsChatOpen) continue;
+
+// ---------------------------------- //
+// Highlight current mode button
+Quad_BtnModeGroup	.Opacity = C_ModeButtonOpacity[(ActiveBuddiesMode == "Group")];
+Quad_BtnModeOnline	.Opacity = C_ModeButtonOpacity[(ActiveBuddiesMode == "Online")];
+
+// ---------------------------------- //
+/** Update messages cards
+ *
+ *	Due a bug, messages need to be updated constantly,
+ *	because lavel lines amount integer updates only
+ *	after 0.2 second.
+ */
+if (Frame_GroupChatWindow.Visible && Now >= NextMessagesUpdate) {
+	NextMessagesUpdate = Now + C_ChatUpdateDelay;
+	declare CurCardPositionY = 0.;
+	for (I, 0, Frame_MessageCard.count - 1) {
+		declare Frame = Frame_MessageCard[I];
+		declare Quad_MessageCardBg		<=> (Frame.GetFirstChild("Quad_MessageCardBg")		as CMlQuad);
+		declare Label_MessageCardName	<=> (Frame.GetFirstChild("Label_MessageCardName")	as CMlLabel);
+		declare Label_MessageCardTime	<=> (Frame.GetFirstChild("Label_MessageCardTime")	as CMlLabel);
+		declare Label_MessageCardValue	<=> (Frame.GetFirstChild("Label_MessageCardValue")	as CMlLabel);
+		declare Quad_MessageCardBtnCopy	<=> (Frame.GetFirstChild("Quad_MessageCardBtnCopy")	as CMlQuad);
+		
+		declare ConversationLogin = "*unassigned*";
+		declare MessagesOffset = 0;
+		declare MessageData = Text[];
+		
+		CurCardPositionY += C_ChatMessageHeight;
+		Quad_MessageCardBg.Size.Y = C_ChatMessageHeight - .5;
+		Frame.RelativePosition.Y = CurCardPositionY;
+		
+		// Group messages
+		if (ActiveBuddiesMode == "Group")
+			ConversationLogin = "";
+		// Private messages
+		if (ActiveBuddiesMode == "Online" && DesiredMessageReceiver != "")
+			ConversationLogin = DesiredMessageReceiver;
+		
+		// ---------------------------------- //
+		// Conversation offset
+		if (ConversationOffset.existskey(ConversationLogin))
+			MessagesOffset = ConversationOffset[ConversationLogin];
+		
+		// ---------------------------------- //
+		// Load message from history
+		if (Persistent_Evidence_MsgHistory.existskey(ConversationLogin)) {
+			declare MessageIndex = Persistent_Evidence_MsgHistory[ConversationLogin].count - I - 1 - MessagesOffset;
+			if (Persistent_Evidence_MsgHistory[ConversationLogin].existskey(MessageIndex))
+				MessageData = Persistent_Evidence_MsgHistory[ConversationLogin][MessageIndex];
+			
+			Quad_BtnPageUp.Visible = (MessagesOffset < Persistent_Evidence_MsgHistory[ConversationLogin].count - 1);
+			Quad_BtnPageDown.Visible = (MessagesOffset > 0);
+		}
+		
+		// Reset unread messages counter
+		Persistent_Evidence_NbUnreadMessages[ConversationLogin] = 0;
+		
+		// ---------------------------------- //
+		// Setup message card
+		Frame.Visible = (MessageData.count >= 2);
+		if (Frame.Visible) {
+			declare SenderLogin = MessageData[0];
+			declare MessageBody = MessageData[1];
+			
+			// Message value
+			Label_MessageCardValue.SetText(MessageBody);
+			
+			// Move local user messages slightly right
+			declare PositionX = 0.;
+			if (SenderLogin == LocalUser.Login) PositionX = C_ChatMessageHeight;
+			Frame.RelativePosition.X = PositionX;
+			
+			// Sender nickname
+			declare CurSenderName = SenderLogin;
+			if (SenderLogin == LocalUser.Login) CurSenderName = LocalUser.Name;
+			else if (SenderLogin == "") CurSenderName = TL::ToUpperCase("$888Console");
+			else if (BuddiesName.existskey(CurSenderName)) CurSenderName = BuddiesName[CurSenderName];
+			Label_MessageCardName.SetText(CurSenderName);
+			
+			// Message time
+			declare MessageDateText = "";
+			if (MessageData.existskey(2)) MessageDateText = MessageData[2];
+			Label_MessageCardTime.SetText(MessageDateText);
+			
+			// Sender presence
+			declare CurPresenceColor = C_PresenceColors[0];
+			if (SenderLogin == LocalUser.Login || SenderLogin == "") CurPresenceColor = <0., 0., 0.>;
+			else if (BuddiesPresence.existskey(MessageData[0])) CurPresenceColor = C_PresenceColors[BuddiesPresence[SenderLogin]];
+			Quad_MessageCardBg.BgColor = CurPresenceColor;
+			
+			// Multiline support
+			declare SizeAddition = (Label_MessageCardValue.ValueLineCount - 1) * C_ChatMessageLine;
+			Quad_MessageCardBg.Size.Y += SizeAddition;
+			Frame.RelativePosition.Y += SizeAddition;
+			CurCardPositionY += SizeAddition;
+			
+			// Copy button
+			Quad_MessageCardBtnCopy.DataAttributeSet("clipboard", Label_MessageCardValue.Value);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update current conversation login
+CurConvLogin = DesiredMessageReceiver;
+if (ActiveBuddiesMode == "Group") CurConvLogin = LocalUser.Login;
+if (CurConvLogin != "" && PrevConvLogin != CurConvLogin) {
+	PrevConvLogin = CurConvLogin;
+	ForceUpdateBuddy = True;
+}
+
+// ---------------------------------- //
+// Buddy changed name
+foreach (Login => Name in BuddiesName) {
+	if (!PrevBuddiesName.existskey(Login) || PrevBuddiesName[Login] != Name) {
+		PrevBuddiesName[Login] = Name;
+		ForceUpdateList = True;
+		if (Login == CurConvLogin) ForceUpdateBuddy = True;
+	}
+}
+
+// ---------------------------------- //
+// Buddy presence change
+foreach (Login => Presence in BuddiesPresence) {
+	if (!PrevBuddiesPresence.existskey(Login) || PrevBuddiesPresence[Login] != Presence) {
+		PrevBuddiesPresence[Login] = Presence;
+		ForceSortBuddies = True;
+		ForceUpdateList = True;
+		if (Login == CurConvLogin) ForceUpdateBuddy = True;
+	}
+}
+
+// ---------------------------------- //
+// Buddy status change
+foreach (Login => Status in BuddiesStatus) {
+	if (!PrevBuddiesStatus.existskey(Login) || PrevBuddiesStatus[Login] != Status) {
+		PrevBuddiesStatus[Login] = Status;
+		ForceUpdateList = True;
+		if (Login == CurConvLogin) ForceUpdateBuddy = True;
+	}
+}
+
+// ---------------------------------- //
+// Buddy server change
+foreach (BuddyLogin => ServerLogin in BuddiesServLogin) {
+	if (!PrevBuddiesServLogin.existskey(BuddyLogin) || PrevBuddiesServLogin[BuddyLogin] != ServerLogin) {
+		PrevBuddiesServLogin[BuddyLogin] = ServerLogin;
+		ForceUpdateList = True;
+		if (BuddyLogin == CurConvLogin) ForceUpdateBuddy = True;
+	}
+}
+
+// ---------------------------------- //
+// Buddy server link update
+foreach (Login => Link in BuddiesJoinLink) {
+	if (!PrevBuddiesJoinLink.existskey(Login) || PrevBuddiesJoinLink[Login] != Link) {
+		PrevBuddiesJoinLink[Login] = Link;
+		ForceUpdateList = True;
+	}
+}
+
+// ---------------------------------- //
+// Buddy mute status update
+foreach (Login => IsMuted in BuddiesIsMuted) {
+	if (!PrevBuddiesIsMuted.existskey(Login) || PrevBuddiesIsMuted[Login] != IsMuted) {
+		PrevBuddiesIsMuted[Login] = IsMuted;
+		ForceUpdateList = True;
+	}
+}
+
+// ---------------------------------- //
+// Server name update
+foreach (Login => Name in ServersName) {
+	if (!PrevServersName.existskey(Login) || PrevServersName[Login] != Name) {
+		PrevServersName[Login] = Name;
+		ForceUpdateList = True;
+		ForceUpdateBuddy = True;
+	}
+}
+
+// ---------------------------------- //
+// Server gamemode name update
+foreach (Login => Gamemode in ServersGamemode) {
+	if (!PrevServersGamemode.existskey(Login) || PrevServersGamemode[Login] != Gamemode) {
+		PrevServersGamemode[Login] = Gamemode;
+		ForceUpdateList = True;
+		ForceUpdateBuddy = True;
+	}
+}
+
+// ---------------------------------- //
+// Server players amount name update
+foreach (Login => Amount in ServersNbPlayers) {
+	if (!PrevServersNbPlayers.existskey(Login) || PrevServersNbPlayers[Login] != Amount) {
+		PrevServersNbPlayers[Login] = Amount;
+		ForceUpdateList = True;
+		ForceUpdateBuddy = True;
+	}
+}
+
+// ---------------------------------- //
+// Server slots amount name update
+foreach (Login => Slots in ServersNbSlots) {
+	if (!PrevServersNbSlots.existskey(Login) || PrevServersNbSlots[Login] != Slots) {
+		PrevServersNbSlots[Login] = Slots;
+		ForceUpdateList = True;
+		ForceUpdateBuddy = True;
+	}
+}
+
+// ---------------------------------- //
+// Update current conversation info
+if (Frame_GroupChatWindow.Visible && ForceUpdateBuddy && CurConvLogin != "") {
+	ForceUpdateBuddy = False;
+	// ---------------------------------- //
+	// Name
+	declare CurBuddyName = CurConvLogin;
+	if (CurConvLogin == LocalUser.Login) CurBuddyName = LocalUser.Name;
+	else if (BuddiesName.existskey(CurConvLogin)) CurBuddyName = BuddiesName[CurConvLogin];
+	Label_CurrentName.SetText(CurBuddyName);
+	
+	// ---------------------------------- //
+	// Status
+	declare CurBuddyStatus = _("Offline");
+	if (CurConvLogin == LocalUser.Login) {
+		if (ManialinkStatus != "") CurBuddyStatus = ManialinkStatus;
+		else CurBuddyStatus = C_PresenceNames[ManialinkPresenceId];
+	}
+	else if (BuddiesStatus.existskey(CurConvLogin)) CurBuddyStatus = BuddiesStatus[CurConvLogin];
+	Label_CurrentStatus.SetText(CurBuddyStatus);
+	Entry_ChangeStatus.Value = CurBuddyStatus;
+	
+	Label_CurrentStatus.Visible = (CurConvLogin != LocalUser.Login);
+	Entry_ChangeStatus.Visible = !Label_CurrentStatus.Visible;
+	
+	// ---------------------------------- //
+	// Presence
+	declare CurBuddyPresence = 0;
+	if (CurConvLogin == LocalUser.Login) CurBuddyPresence = ManialinkPresenceId;
+	else if (BuddiesPresence.existskey(CurConvLogin)) CurBuddyPresence = BuddiesPresence[CurConvLogin];
+	Quad_CurrentPresence.Colorize = C_PresenceColors[CurBuddyPresence];
+	
+	// ---------------------------------- //
+	// Server name and actions buttons
+	declare Quad_CurBuddyBtnJoin <=> (Frame_CurBuddyInfo.GetFirstChild("Quad_CurBuddyBtnJoin") as CMlQuad);
+	declare Label_CurBuddyServerName <=> (Frame_CurBuddyInfo.GetFirstChild("Label_CurBuddyServerName") as CMlLabel);
+	declare Label_CurBuddyServerDesc <=> (Frame_CurBuddyInfo.GetFirstChild("Label_CurBuddyServerDesc") as CMlLabel);
+	declare Frame_CurBuddyActions <=> (Frame_CurBuddyInfo.GetFirstChild("Frame_CurBuddyActions") as CMlFrame);
+	
+	// Get current server login
+	declare CurServerLogin = "";
+	if (BuddiesServLogin.existskey(CurConvLogin)) CurServerLogin = BuddiesServLogin[CurConvLogin];
+	
+	// Setup join button
+	declare CurServerJoinLink = "";
+	if (BuddiesJoinLink.existskey(CurConvLogin)) CurServerJoinLink = BuddiesJoinLink[CurConvLogin];
+	Quad_CurBuddyBtnJoin.Visible = (CurServerJoinLink != "" && CurConvLogin != LocalUser.Login && BuddiesLogins_Online.exists(CurConvLogin));
+	if (Quad_CurBuddyBtnJoin.Visible) Quad_CurBuddyBtnJoin.DataAttributeSet("manialink", CurServerJoinLink);
+	
+	// Server name
+	declare CurServerName = CurServerLogin;
+	if (CurServerLogin == "") CurServerName = _("Not playing on a server");
+	else if (ServersName.existskey(CurServerLogin)) CurServerName = ServersName[CurServerLogin];
+	Label_CurBuddyServerName.SetText(CurServerName);
+	
+	// ---------------------------------- //
+	// Server description
+	declare CurServerDescription = "---";
+	if (CurServerLogin != "") {
+		// Players amount
+		declare CurServerPlayersAmount = "0 / 0";
+		if (ServersNbPlayers.existskey(CurServerLogin) && ServersNbSlots.existskey(CurServerLogin))
+			CurServerPlayersAmount = ServersNbPlayers[CurServerLogin]^" / "^ServersNbSlots[CurServerLogin];
+		
+		// Cur server mode name
+		declare CurServerGamemode = "Unknown mode";
+		if (ServersGamemode.existskey(CurServerLogin)) CurServerGamemode = ServersGamemode[CurServerLogin];
+		
+		CurServerDescription = CurServerPlayersAmount^", "^CurServerGamemode;
+	}
+	Label_CurBuddyServerDesc.SetText(CurServerDescription);
+	
+	// ---------------------------------- //
+	// Setup actions buttons
+	Frame_CurBuddyActions.Visible = (CurConvLogin != LocalUser.Login);
+	if (Frame_CurBuddyActions.Visible) {
+		declare Label_CurBuddyLogin <=> (Frame_CurBuddyActions.GetFirstChild("Label_CurBuddyLogin") as CMlLabel);
+		declare Quad_CurBuddyBtnMessage <=> (Frame_CurBuddyActions.GetFirstChild("Quad_CurBuddyBtnMessage") as CMlQuad);
+		declare Quad_CurBuddyBtnDelete <=> (Frame_CurBuddyActions.GetFirstChild("Quad_CurBuddyBtnDelete") as CMlQuad);
+		
+		// Login
+		Label_CurBuddyLogin.SetText(CurConvLogin);
+		
+		// Message button
+		Quad_CurBuddyBtnMessage.DataAttributeSet("manialink", "#mailto="^CurConvLogin);
+		
+		// Remove button
+		Quad_CurBuddyBtnDelete.Visible = (BuddiesLogins_Online.exists(CurConvLogin) || BuddiesLogins_Offline.exists(CurConvLogin));
+		Quad_CurBuddyBtnDelete.DataAttributeSet("login", CurConvLogin);
+	}
+}
+
+// ---------------------------------- //
+// Sort all buddies in the list
+if (ForceSortBuddies) {
+	ForceSortBuddies = False;
+	BuddiesLogins_SortedList.clear();
+	if (ActiveBuddiesMode == "Online") ForceUpdateList = True;
+	
+	// Online buddies and requests set to the top
+	foreach (Login in BuddiesLogins_ToTheTop)
+		if (!BuddiesLogins_Offline.exists(Login)) BuddiesLogins_SortedList.add(Login);
+	
+	// Other online buddies
+	foreach (Login in BuddiesLogins_Online)
+		if (!BuddiesLogins_SortedList.exists(Login)) BuddiesLogins_SortedList.add(Login);
+	
+	// Offline buddies set to the top
+	foreach (Login in BuddiesLogins_ToTheTop)
+		if (BuddiesLogins_Offline.exists(Login)) BuddiesLogins_SortedList.add(Login);
+	
+	// Other offline buddies
+	foreach (Login in BuddiesLogins_Offline)
+		if (!BuddiesLogins_SortedList.exists(Login)) BuddiesLogins_SortedList.add(Login);
+	
+	// Incoming buddy requests
+	foreach (Login in BuddiesLogins_RequestFrom)
+		if (!BuddiesLogins_SortedList.exists(Login)) BuddiesLogins_SortedList.add(Login);
+	
+	// Outgoung buddy requests
+	foreach (Login in BuddiesLogins_RequestTo)
+		if (!BuddiesLogins_SortedList.exists(Login)) BuddiesLogins_SortedList.add(Login);
+}
+
+// ---------------------------------- //
+// Update current buddies list page
+if (ForceUpdateList) {
+	ForceUpdateList = False;
+	declare CurrentPageNb = 1;
+	declare CurrentPagesCount = 1;
+	
+	// Select current pages amount
+	if (ActiveBuddiesMode == "Group") {
+		CurrentPageNb = PagesGroup_Current;
+		CurrentPagesCount = PagesGroup_Count;
+	} else if (ActiveBuddiesMode == "Online") {
+		CurrentPageNb = PagesOnline_Current;
+		CurrentPagesCount = PagesOnline_Count;
+	}
+	
+	// Update page navigation
+	Label_PagerNumber.SetText(CurrentPageNb^" / "^CurrentPagesCount);
+	Quad_BtnListPrev.Visible = (CurrentPageNb > 1);
+	Quad_BtnListNext.Visible = (CurrentPageNb < CurrentPagesCount);
+	
+	// Offset in the sorted buddies list
+	declare BuddiesIndex = (CurrentPageNb - 1) * 10;
+	
+	for (I, 0, Frame_BuddyCard.count - 1) {
+		declare Frame <=> Frame_BuddyCard[I];
+		declare CurBuddyId = BuddiesIndex + I;
+		declare CurBuddyLogin = "";
+		
+		// Buddies connected to the group list
+		if (ActiveBuddiesMode == "Group") {
+			if (BuddiesLogins_InGroup.existskey(CurBuddyId))
+				CurBuddyLogin = BuddiesLogins_InGroup[CurBuddyId];
+		}
+		// All available buddies sorted list
+		else if (ActiveBuddiesMode == "Online") {
+			if (BuddiesLogins_SortedList.existskey(CurBuddyId))
+				CurBuddyLogin = BuddiesLogins_SortedList[CurBuddyId];
+		}
+		
+		// ---------------------------------- //
+		// Setup buddy card
+		Frame.Visible = (CurBuddyLogin != "");
+		if (Frame.Visible && CurBuddyLogin != "") {
+			declare Quad_BuddyCardSlot		<=> (Frame.GetFirstChild("Quad_BuddyCardSlot")		as CMlQuad);
+			declare Label_BuddyCardName		<=> (Frame.GetFirstChild("Label_BuddyCardName")		as CMlLabel);
+			declare Quad_BuddyCardPresence	<=> (Frame.GetFirstChild("Quad_BuddyCardPresence")	as CMlQuad);
+			declare Label_BuddyCardStatus	<=> (Frame.GetFirstChild("Label_BuddyCardStatus")	as CMlLabel);
+			declare Quad_BuddyCardBtnJoin	<=> (Frame.GetFirstChild("Quad_BuddyCardBtnJoin")	as CMlQuad);
+			declare Quad_BuddyCardBtnKick	<=> (Frame.GetFirstChild("Quad_BuddyCardBtnKick")	as CMlQuad);
+			declare Quad_BuddyCardBtnMute	<=> (Frame.GetFirstChild("Quad_BuddyCardBtnMute")	as CMlQuad);
+			declare Quad_BuddyCardBtnAdd	<=> (Frame.GetFirstChild("Quad_BuddyCardBtnAdd")	as CMlQuad);
+			declare Quad_BuddyCardBtnDeny	<=> (Frame.GetFirstChild("Quad_BuddyCardBtnDeny")	as CMlQuad);
+			
+			// Name
+			declare CurBuddyName = CurBuddyLogin;
+			if (BuddiesName.existskey(CurBuddyLogin)) CurBuddyName = BuddiesName[CurBuddyLogin];
+			Quad_BuddyCardSlot.DataAttributeSet("login", CurBuddyLogin);
+			Label_BuddyCardName.SetText(CurBuddyName);
+			
+			// Presence
+			declare CurBuddyPresence = 0;
+			if (BuddiesPresence.existskey(CurBuddyLogin)) CurBuddyPresence = BuddiesPresence[CurBuddyLogin];
+			Quad_BuddyCardPresence.BgColor = C_PresenceColors[CurBuddyPresence];
+			
+			// Buddy status
+			declare CurBuddyStatus = _("Offline");
+			if (BuddiesStatus.existskey(CurBuddyLogin)) CurBuddyStatus = BuddiesStatus[CurBuddyLogin];
+			Label_BuddyCardStatus.SetText(CurBuddyStatus);
+			
+			// Buddy on server
+			if (BuddiesServLogin.existskey(CurBuddyLogin) && ServersName.existskey(BuddiesServLogin[CurBuddyLogin]))
+				Label_BuddyCardStatus.SetText(ServersName[BuddiesServLogin[CurBuddyLogin]]);
+			
+			// Join button
+			declare CurBuddyJoinLink = "";
+			if (BuddiesJoinLink.existskey(CurBuddyLogin)) CurBuddyJoinLink = BuddiesJoinLink[CurBuddyLogin];
+			Quad_BuddyCardBtnJoin.DataAttributeSet("manialink", CurBuddyJoinLink);
+			Quad_BuddyCardBtnJoin.Visible = (CurBuddyJoinLink != "" && BuddiesLogins_Online.exists(CurBuddyLogin));
+			
+			// Kick button
+			Quad_BuddyCardBtnKick.Visible = (ActiveBuddiesMode == "Group" && BuddiesLogins_InGroup.exists(CurBuddyLogin));
+			if (Quad_BuddyCardBtnKick.Visible) Quad_BuddyCardBtnKick.DataAttributeSet("login", CurBuddyLogin);
+			
+			// Mute button
+			declare CurBuddyIsMuted = False;
+			if (BuddiesIsMuted.existskey(CurBuddyLogin)) CurBuddyIsMuted = BuddiesIsMuted[CurBuddyLogin];
+			Quad_BuddyCardBtnMute.Visible = (ActiveBuddiesMode == "Group" && BuddiesLogins_InGroup.exists(CurBuddyLogin));
+			if (Quad_BuddyCardBtnMute.Visible) {
+				Quad_BuddyCardBtnMute.ImageUrl = C_BtnMuteImages[CurBuddyIsMuted][False];
+				Quad_BuddyCardBtnMute.ImageUrlFocus = C_BtnMuteImages[CurBuddyIsMuted][True];
+				Quad_BuddyCardBtnMute.DataAttributeSet("login", CurBuddyLogin);
+			}
+			
+			// Accept button
+			declare IsIncomingInvitation = BuddiesLogins_RequestFrom.exists(CurBuddyLogin);
+			Quad_BuddyCardBtnAdd.Visible = IsIncomingInvitation;
+			if (Quad_BuddyCardBtnAdd.Visible) Quad_BuddyCardBtnAdd.DataAttributeSet("login", CurBuddyLogin);
+			if (IsIncomingInvitation) Label_BuddyCardStatus.SetText(_("Incoming invitation"));
+			
+			// Refuse button
+			declare IsOutgoingInvitation = BuddiesLogins_RequestTo.exists(CurBuddyLogin);
+			Quad_BuddyCardBtnDeny.Visible = (IsIncomingInvitation || IsOutgoingInvitation);
+			if (Quad_BuddyCardBtnDeny.Visible) Quad_BuddyCardBtnDeny.DataAttributeSet("login", CurBuddyLogin);
+			if (IsOutgoingInvitation) Label_BuddyCardStatus.SetText(_("Sent invitation"));
+		}
+	}
+}
+
+foreach (Frame in Frame_BuddyCard) {
+	if (!Frame.Visible) continue;
+	// ---------------------------------- //
+	// Highlight hovered buddy card
+	declare Quad_BuddyCardSlot <=> (Frame.GetFirstChild("Quad_BuddyCardSlot") as CMlQuad);
+	declare BuddyCardLogin = Quad_BuddyCardSlot.DataAttributeGet("login");
+	declare IsHighlighted = (Quad_BuddyCardSlot == HighlightedCard);
+	declare IsSelectedBuddy = (ActiveBuddiesMode == "Online" && BuddyCardLogin == DesiredMessageReceiver);
+	
+	// Get and set the color
+	declare TargetCardColor = C_BuddyCardColors[IsSelectedBuddy][IsHighlighted];
+	if (Quad_BuddyCardSlot.BgColor != TargetCardColor) Quad_BuddyCardSlot.BgColor = TargetCardColor;
+	
+	// ---------------------------------- //
+	// Blink card on new messages
+	declare Quad_BuddyCardBlink		<=> (Frame.GetFirstChild("Quad_BuddyCardBlink")		as CMlQuad);
+	declare Label_BuddyCardNbMsg	<=> (Frame.GetFirstChild("Label_BuddyCardNbMsg")	as CMlLabel);
+	if (Quad_BuddyCardBlink != Null) {
+		if (
+			Persistent_Evidence_NbUnreadMessages.existskey(BuddyCardLogin) &&
+			Persistent_Evidence_NbUnreadMessages[BuddyCardLogin] > 0
+		) {
+			Quad_BuddyCardBlink.Opacity = IconBlinkValue / 2;
+			Label_BuddyCardNbMsg.Value = TL::ToText(Persistent_Evidence_NbUnreadMessages[BuddyCardLogin]);
+		} else {
+			Quad_BuddyCardBlink.Opacity = 0.;
+			Label_BuddyCardNbMsg.Value = "";
+		}
+	}
+}
+
+// ---------------------------------- //
+// Highlight local user card
+if (Quad_LocalCardSlot != Null && Quad_LocalCardSlot.Visible && Label_LocalCardNbMsg != Null) {
+	Quad_LocalCardSlot.BgColor = C_BuddyCardColors[False][(Quad_LocalCardSlot == HighlightedCard)];
+	Label_LocalCardNbMsg.Visible = (ActiveBuddiesMode == "Online");
+	if (
+		Persistent_Evidence_NbUnreadMessages.existskey("") &&
+		Persistent_Evidence_NbUnreadMessages[""] > 0
+	) {
+		Quad_LocalCardBlink.Opacity = IconBlinkValue / 2;
+		Label_LocalCardNbMsg.Value = TL::ToText(Persistent_Evidence_NbUnreadMessages[""]);
+	} else {
+		Quad_LocalCardBlink.Opacity = 0.;
+		Label_LocalCardNbMsg.Value = "";
+	}
+}
+
+// ---------------------------------- //
+// Update local user name
+if (PrevLocalName != LocalUser.Name) {
+	PrevLocalName = LocalUser.Name;
+	declare Label <=> (Frame_LocalUserCard.GetFirstChild("Label_BuddyCardName") as CMlLabel);
+	Label.SetText(LocalUser.Name);
+}
+
+// ---------------------------------- //
+// Update local server name
+LocalServerName = "";
+if (BuddiesServLogin.existskey(LocalUser.Login)) LocalServerName = BuddiesServLogin[LocalUser.Login];
+
+// ---------------------------------- //
+// Update status
+if (
+	PrevLocalStatus != ManialinkStatus ||
+	PrevLocalServerName != LocalServerName ||
+	PrevLocalPresence != ManialinkPresenceId
+) {
+	PrevLocalStatus = ManialinkStatus;
+	PrevLocalServerName = LocalServerName;
+	PrevLocalPresence = ManialinkPresenceId;
+	
+	declare CurStatus = _("Available");
+	if (LocalServerName != "" && ServersName.existskey(LocalServerName)) CurStatus = ServersName[LocalServerName];
+	else if (ManialinkStatus != "") CurStatus = ManialinkStatus;
+	else CurStatus = C_PresenceNames[ManialinkPresenceId];
+	
+	declare Label <=> (Frame_LocalUserCard.GetFirstChild("Label_BuddyCardStatus") as CMlLabel);
+	if (Label != Null) Label.SetText(CurStatus);
+	
+	if (ManialinkPresenceId >= 0 && ManialinkPresenceId <= C_PresenceColors.count - 1) {
+		declare Color = C_PresenceColors[ManialinkPresenceId];
+		declare Quad <=> (Frame_LocalUserCard.GetFirstChild("Quad_BuddyCardPresence") as CMlQuad);
+		if (Quad != Null) Quad.BgColor = Color;
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get current hour text
+ *
+ *	@return		Current hour
+ */
+Text GetCurrentHour() {
+	declare SplitDate = TL::Split(" ", CurrentLocalDateText);
+	if (!SplitDate.existskey(1)) return "";
+	return SplitDate[1];
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++StartManialink+++
+	while (True) {
+		yield;
+		+++Yield+++
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++StartPlugin+++
+	while (True) {
+		yield;
+		+++Yield+++
+	}
+}

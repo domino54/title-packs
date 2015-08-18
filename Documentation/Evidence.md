@@ -94,3 +94,7 @@ To uninstall the plugin, just remove or rename `Chat.Script.txt` file.
 | **hi** {login} | - | Send formatted message to everyone. Available messages are: hi bb re wb afk gtg brb gg gga gj n1 ns nt ty lol lool gl hf glhf wp ggwp 54 gu grt gr8 w8. |
 | **rq ragequit** | - | Fuck everyone and everything and leave the server. :P |
 | **bm bootme** | - | Kick yourself from the server. |
+
+# Changelog
+### 2015-08-18
+* Initial release.

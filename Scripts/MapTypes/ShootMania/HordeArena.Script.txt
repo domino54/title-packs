@@ -1,0 +1,148 @@
+#RequireContext CSmMapType
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "TextLib" as TextLib
+
+/////////////////////////////////////
+// CheckValidationStatus
+
+Void CheckValidationStatus()
+{
+	ValidationStatus = CMapType::ValidationStatus::NotValidable;	
+	Anchor::UpdateAnchorCounts(); 
+	if( !Anchor::HasAtLeastOneAnchor("Goal", 0, _("You must place a Goal")) ) return;
+	if( !Anchor::HasExactlyOneAnchor("Spawn", 0, _("You must place one Spawn")) ) return;
+	//if( !Anchor::HasAtLeastOneAnchor("BotSpawn", 2, _("You must place a BotSpawn")) ) return;	
+	ValidationStatus = CMapType::ValidationStatus::Validated;
+}
+
+
+/////////////////////////////////////
+// EditObjectives
+
+Void EditObjectives() 
+{  
+	declare metadata Integer ObjectiveAuthor 	for Map;
+	declare metadata Integer ObjectiveGold 		for Map;
+	declare metadata Integer ObjectiveSilver 	for Map;
+	declare metadata Integer ObjectiveBronze 	for Map;
+	
+	while(True) 
+	{
+		ManialinkText = 
+		"""
+		<frame posn="-60 40">
+			<quad id="ReadWriteBox" posn="0 0 -1" sizen="120 60" style="Bgs1" substyle="BgList" ScriptEvents="1"/>
+				<label id="Title" text="Map objectives" posn="60 -10" style="TextTitle3" halign="center"/>
+				<label id="AuthorLabel" text="Author" posn="20 -16"/>
+					<entry id="AuthorValue" default="{{{ObjectiveAuthor}}}" posn="62 -16" sizen="20 4"/>
+						<label text="ms" posn="84 -16"/>
+				<label id="GoldLabel" text="Gold" posn="20 -21"/>
+					<entry id="GoldValue" default="{{{ObjectiveGold}}}" posn="62 -21" sizen="20 4"/>
+						<label text="ms" posn="84 -21"/>
+				<label id="SilverLabel" text="Silver" posn="20 -26"/>
+					<entry id="SilverValue" default="{{{ObjectiveSilver}}}" posn="62 -26" sizen="20 4"/>
+						<label text="ms" posn="84 -26"/>
+				<label id="BronzeLabel" text="Bronze" posn="20 -31"/>
+					<entry id="BronzeValue" default="{{{ObjectiveBronze}}}" posn="62 -31" sizen="20 4"/>
+						<label text="ms" posn="84 -31"/>
+				
+				<quad id="ButtonOk" posn="40 -52 0" sizen="30 6" halign="center" valign="center" style="Bgs1InRace" substyle="BgCard" ScriptEvents="1"/>
+				<label text="Ok" posn="40 -52 1" halign="center" valign="center" style="TextButtonSmall" textsize="2"/>
+				
+				<quad id="ButtonCancel" posn="80 -52 0" sizen="30 6" halign="center" valign="center" style="Bgs1InRace" substyle="BgCard" ScriptEvents="1"/>
+				<label text="Cancel" posn="80 -52 1" halign="center" valign="center" style="TextButtonSmall" textsize="2"/>
+		</frame>
+		<script><!--
+			main () {
+				declare ButtonClicked for Page = "";
+				while(True) {
+					yield;
+					foreach(Event in PendingEvents) {
+						if(Event.Type == CGameManialinkScriptEvent::Type::MouseClick)	{	
+							if (ButtonClicked == "" && Event.ControlId != "ReadWriteBox") ButtonClicked = Event.ControlId;
+						}
+					}
+				}
+			}
+		--></script>
+		""";
+
+		declare ButtonClicked for ManialinkPage = "" ;
+		ButtonClicked = "";
+		wait(ButtonClicked == "ButtonOk" 
+				|| ButtonClicked == "ButtonCancel");
+		
+		if (ButtonClicked == "ButtonCancel")
+		{
+			break;
+		}
+
+		if (ButtonClicked == "ButtonOk")
+		{
+			declare Page <=> ManialinkPage;
+			declare EntryAuthorValue <=> (Page.GetFirstChild("AuthorValue") as CMlEntry);
+			declare EntryGoldValue <=> (Page.GetFirstChild("GoldValue") as CMlEntry);
+			declare EntrySilverValue <=> (Page.GetFirstChild("SilverValue") as CMlEntry);
+			declare EntryBronzeValue <=> (Page.GetFirstChild("BronzeValue") as CMlEntry);
+
+			declare NewAuthor = TextLib::ToInteger(EntryAuthorValue.Value);
+			declare NewGold = TextLib::ToInteger(EntryGoldValue.Value);
+			declare NewSilver = TextLib::ToInteger(EntrySilverValue.Value);
+			declare NewBronze = TextLib::ToInteger(EntryBronzeValue.Value);
+			
+			if (NewBronze <= NewSilver &&
+				NewSilver <= NewGold &&
+				NewGold <= NewAuthor)
+			{
+				ObjectiveAuthor = NewAuthor;
+				ObjectiveGold   = NewGold;
+				ObjectiveSilver = NewSilver;
+				ObjectiveBronze = NewBronze;
+				
+				Map.ObjectiveTextAuthor = TextLib::TimeToText(ObjectiveAuthor);
+				Map.ObjectiveTextGold 	= TextLib::TimeToText(ObjectiveGold);
+				Map.ObjectiveTextSilver = TextLib::TimeToText(ObjectiveSilver);
+				Map.ObjectiveTextBronze = TextLib::TimeToText(ObjectiveBronze);
+				break;
+			} 
+			else
+			{
+				log("invalid values.");		// TODO un e bote de dialogue
+			}
+		}
+	}
+
+	ManialinkText = "";
+}
+
+
+/////////////////////////////////////
+// Main
+
+main() 
+{
+	CheckValidationStatus();
+	
+	while (True) 
+	{	
+		yield;	
+		ManialinkText = "";		
+		
+		foreach (Event in PendingEvents) 		
+		{
+			if (Event.Type == CPluginEvent::Type::MapModified)
+			{
+				CheckValidationStatus();		
+			} 
+			else if(Event.Type == CPluginEvent::Type::EditObjectives)
+			{
+				EditObjectives();
+			}
+			else if(Event.Type == CPluginEvent::Type::StartValidation)
+			{
+				StartTestMapWithMode("Horde.Script.txt");
+ 				wait(!IsSwitchedToPlayground);
+			}
+		}
+	}	
+}

@@ -1,34 +1,107 @@
 // -------------------------------------- //
-//  TRANSLATIONS LIB by domino54          //
-//  script version: 2015-06-27            //
+//  LIBRARY TRANSLATIONS by domino54      //
+//  script version: 2015-10-31            //
 // -------------------------------------- //
 
 /**
- *	This library can be used to display translated
- *	messages, if they exists in SentenceBank lib.
+ *	This library allows to display translated messages,
+ *	if they're featured in dedicated SentenceBank library.
+ *	Instead TextLib compose function, use arrays: Text[].
+ *	Chat messages MUST be prefixed.
  */
 
-#Const Version			"2015-06-27"
-#Const ScriptName		"Translations.Script.txt"
+#Const Version		"2015-10-31"
+#Const ScriptName	"Translations.Script.txt"
 
-#Include "TextLib" as TextLib
+#Include "TextLib" as TL
 #Include "Libs/Nadeo/Message.Script.txt" as Message
-#Include "Libs/domino54/SentenceBank.Script.txt" as SentenceBank
+#Include "Libs/domino54/SentenceBank.Script.txt" as SB
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_ErrorMessage		"$F00Translation error!"	///< Something went wrong while translating
-#Const C_DefaultChatPrefix	"$FFF» "					///< Default chat message prefix
+#Const C_DefaultChatPrefix "$888» "	///< Default chat message prefix
 
 // ---------------------------------- //
-// Globals
+// Global variables
 // ---------------------------------- //
-declare Text G_LibTranslations_ChatPrefix;		///< Custom chat message prefix
+declare Text G_LibTranslations_ChatPrefix;	///< Custom chat message prefix
 
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return translation depending on selected language
+ *
+ *	@param	_Language		The language sentence will be translated to
+ *	@param	_Sentence		The sentence to translate
+ *
+ *	@return		Translated sentence
+ */
+Text Private_GetTranslation(Text _Language, Text _Sentence) {
+	if (_Sentence == "" || _Language == "" || _Language == "en" || _Language == "en_GB") return _Sentence;
+	
+	// Get sentence index
+	declare SentenceIndex = SB::GetIndex(_Sentence);
+	if (SentenceIndex == SB::UnknownIndex()) return _Sentence;
+	
+	// Translate sentence to target language
+	declare Text TranslatedSentence;
+	switch (_Language) {
+		case "cz" : TranslatedSentence = SB::GetCzech(SentenceIndex);
+		case "de" : TranslatedSentence = SB::GetGerman(SentenceIndex);
+		case "es" : TranslatedSentence = SB::GetSpanish(SentenceIndex);
+		case "fr" : TranslatedSentence = SB::GetFrench(SentenceIndex);
+		case "hr" : TranslatedSentence = SB::GetCroatian(SentenceIndex);
+		case "nl" : TranslatedSentence = SB::GetDutch(SentenceIndex);
+		case "pl" : TranslatedSentence = SB::GetPolish(SentenceIndex);
+		case "pt" : TranslatedSentence = SB::GetPortuguese(SentenceIndex);
+		case "pt_BR" : TranslatedSentence = SB::GetPortuguese(SentenceIndex);
+		case "ru" : TranslatedSentence = SB::GetRussian(SentenceIndex);
+		case "sk" : TranslatedSentence = SB::GetCzech(SentenceIndex);
+		default : return _Sentence;
+	}
+	
+	if (TranslatedSentence == SB::NotFoundString()) return _Sentence;
+	return TranslatedSentence;
+}
+
+// ---------------------------------- //
+/** Return translation using Compose function
+ *
+ *	@param	_Language		The language sentences will be translated to
+ *	@param	_Prefix			Text to attach before basic argument
+ *	@param	_Arguments		The arguments for the compose function
+ *	@param	_Suffix			Text to attach after basic argument
+ *
+ *	@return		Translated sentence
+ */
+Text Private_GetComposedTranslation(Text _Language, Text _Prefix, Text[] _Arguments, Text _Suffix) {
+	if (_Arguments.count <= 0) return _Prefix^_Suffix;
+	if (_Arguments.count == 1) return _Prefix^Private_GetTranslation(_Language, _Arguments[0])^_Suffix;
+	
+	// Translate all arguments
+	declare Text[] Args;
+	foreach (I => Argument in _Arguments) if (I <= 5) Args.add(Private_GetTranslation(_Language, Argument));
+	
+	// Attach prefix and suffix
+	Args[0] = _Prefix^Args[0]^_Suffix;
+	
+	// Compose arguments
+	switch (Args.count - 1) {
+		case 5 : return TL::Compose(Args[0], Args[1], Args[2], Args[3], Args[4], Args[5]);
+		case 4 : return TL::Compose(Args[0], Args[1], Args[2], Args[3], Args[4]);
+		case 3 : return TL::Compose(Args[0], Args[1], Args[2], Args[3]);
+		case 2 : return TL::Compose(Args[0], Args[1], Args[2]);
+		case 1 : return TL::Compose(Args[0], Args[1]);
+	}
+	return TL::Compose(Args[0]);
+}
 
 // ---------------------------------- //
 // Public
@@ -53,89 +126,6 @@ Text GetScriptName() {
 }
 
 // ---------------------------------- //
-/** Translate text or return input
- *
- *	@param	_Player		Player to check language
- *	@param	_Message	Text to be translated
- *
- *	@return		Translated text
- */
-Text GetTranslation(CPlayer _Player, Text _Message) {
-	if (_Player == Null || _Player.User == Null) return _Message;
-	declare MessageId = SentenceBank::GetIndex(_Message);
-	
-	// Message is not available
-	if (MessageId == 0) return _Message;
-	
-	declare Text ReturnedText;
-	
-	// Browse available languages
-	switch (_Player.User.Language) {
-		case "cz" : ReturnedText = SentenceBank::GetCzech(MessageId);
-		case "de" : ReturnedText = SentenceBank::GetGerman(MessageId);
-		case "fr" : ReturnedText = SentenceBank::GetFrench(MessageId);
-		case "hr" : ReturnedText = SentenceBank::GetCroatian(MessageId);
-		case "nl" : ReturnedText = SentenceBank::GetDutch(MessageId);
-		case "pl" : ReturnedText = SentenceBank::GetPolish(MessageId);
-		case "pt" : ReturnedText = SentenceBank::GetPortuguese(MessageId);
-		case "pt_BR" : ReturnedText = SentenceBank::GetPortuguese(MessageId);
-		case "ru" : ReturnedText = SentenceBank::GetRussian(MessageId);
-		case "sk" : ReturnedText = SentenceBank::GetSlovak(MessageId);
-		default : ReturnedText = "";
-	}
-	
-	// Translation not found
-	if (ReturnedText == "") return _Message;
-	
-	// Translation found
-	return ReturnedText;
-}
-
-// ---------------------------------- //
-/** Translate message and attach composes
- *
- *	@param	_Player		Player to check language
- *	@param	_Com		Text and its composes to be translated
- *	@param	_Prefix		Text to be attached before message (eg. team color, arrow)
- *
- *	@return		Translated message
- */
-Text GetComposedTranslation(CPlayer _Player, Text[] _Com, Text _Prefix) {
-	if (_Com.count < 1 || _Com.count > 6) return C_ErrorMessage;
-	if (_Player == Null || _Player.User == Null) return _Com[0];
-	
-	declare Text ReturnedText;
-	
-	// Get translation of primary message
-	declare BaseMsg = _Prefix^GetTranslation(_Player, _Com[0]);
-	
-	// Compose
-	switch (_Com.count) {
-		case 2 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1]);
-		case 3 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1], _Com[2]);
-		case 4 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1], _Com[2], _Com[3]);
-		case 5 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1], _Com[2], _Com[3], _Com[4]);
-		case 6 : ReturnedText = TextLib::Compose(BaseMsg, _Com[1], _Com[2], _Com[3], _Com[4], _Com[5]);
-		default : ReturnedText = BaseMsg;
-	}
-	
-	return ReturnedText;
-}
-
-// ---------------------------------- //
-/** Translate message and attach composes
- *
- *	@param	_Player		Player to check language
- *	@param	_Com		Text and its composes to be translated
- *
- *	@return		Translated message
- */
-Text GetComposedTranslation(CPlayer _Player, Text[] _Com) {
-	return GetComposedTranslation(_Player, _Com, "");
-}
-
-
-// ---------------------------------- //
 /** Set custom chat prefix
  *
  *	@param	_Prefix		Text to attach before translations
@@ -143,410 +133,343 @@ Text GetComposedTranslation(CPlayer _Player, Text[] _Com) {
 Void SetChatPrefix(Text _Prefix) { G_LibTranslations_ChatPrefix = _Prefix; }
 
 // ---------------------------------- //
-/** Send chat message
+/** Send chat message to specified player
  *
- *	@param	_Player			Player that gets translated message
- *	@param	_Message		A message that has to be translated
+ *	@param	_Player			Player to receive a message
+ *	@param	_Message		Message to send
  */
 Void SendChat(CPlayer _Player, Text _Message) {
-	if (_Player == Null) return;
+	if (_Message == "" || _Player == Null || _Player.User == Null || _Player.User.IsFakeUser) return;
 	
-	// SM: Bots can't receive messages
-	if (This is CSmMode) {
-		declare SmPlayer <=> (_Player as CSmPlayer);
-		if (SmPlayer == Null || SmPlayer.IsBot || SmPlayer.IsFakePlayer) return;
-	}
-	
-	declare UI for _Player <=> UIManager.GetUI(_Player);
-	if (UI == Null) return;
-	
+	// Load default chat prefix
 	if (G_LibTranslations_ChatPrefix == "") G_LibTranslations_ChatPrefix = C_DefaultChatPrefix;
-	UI.SendChat(GetTranslation(_Player, G_LibTranslations_ChatPrefix^_Message));
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) UI.SendChat(Private_GetTranslation(_Player.User.Language, _Message));
 }
 
 // ---------------------------------- //
-/** Send chat message (with composes)
+/** Send chat message to all players
  *
- *	@param	_Player			Player that gets translated message
- *	@param	_Message		A message that has to be translated
- */
-Void SendChat(CPlayer _Player, Text[] _Message) {
-	if (_Player == Null) return;
-	if (_Message.count < 1 || _Message.count > 6) return;
-	
-	// SM: Bots can't receive messages
-	if (This is CSmMode) {
-		declare SmPlayer <=> (_Player as CSmPlayer);
-		if (SmPlayer == Null || SmPlayer.IsBot || SmPlayer.IsFakePlayer) return;
-	}
-	
-	declare UI for _Player <=> UIManager.GetUI(_Player);
-	if (UI == Null) return;
-	
-	if (G_LibTranslations_ChatPrefix == "") G_LibTranslations_ChatPrefix = C_DefaultChatPrefix;
-	UI.SendChat(GetComposedTranslation(_Player, _Message, G_LibTranslations_ChatPrefix));
-}
-
-// ---------------------------------- //
-/** Send chat message
- *
- *	@param	_Message		A message that has to be translated
+ *	@param	_Message		Message be send
  */
 Void SendChat(Text _Message) {
 	foreach (Player in AllPlayers) SendChat(Player, _Message);
 }
 
 // ---------------------------------- //
-/** Send chat message (with composes)
+/** Send composed chat message to specified player
  *
- *	@param	_Message		A message that has to be translated
+ *	@param	_Player			Player to receive a message
+ *	@param	_Arguments		Arguments of the message to send
  */
-Void SendChat(Text[] _Message) {
-	foreach (Player in AllPlayers) SendChat(Player, _Message);
+Void SendChat(CPlayer _Player, Text[] _Arguments) {
+	if (_Arguments.count <= 0 || _Player == Null || _Player.User == Null || _Player.User.IsFakeUser) return;
+	
+	// Load default chat prefix
+	if (G_LibTranslations_ChatPrefix == "") G_LibTranslations_ChatPrefix = C_DefaultChatPrefix;
+	
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) UI.SendChat(Private_GetComposedTranslation(_Player.User.Language, G_LibTranslations_ChatPrefix, _Arguments, ""));
 }
 
 // ---------------------------------- //
-/** Send UI notice (SM only)
+/** Send composed chat message to all players
  *
- *	@param	_Player			Player that gets translated notice
- *	@param	_Message		A message that has to be translated
- *	@param	_NoticeSound	Play pop sound
+ *	@param	_Arguments		Arguments of the message to send
  */
-Void SendNotice(CPlayer _Player, Text _Message, Boolean _NoticeSound) {
-	if (!(This is CSmMode)) return;
-	if (_Player == Null) return;
-	
-	// SM: Bots can't receive messages
-	if (This is CSmMode) {
-		declare SmPlayer <=> (_Player as CSmPlayer);
-		if (SmPlayer == Null || SmPlayer.IsBot || SmPlayer.IsFakePlayer) return;
-	}
-	
-	declare UI for _Player <=> UIManager.GetUI(_Player);
-	if (UI == Null) return;
-	
-	// Play sound of keep notice silent
-	declare CUIConfig::EUISound Sound;
-	if (_NoticeSound) Sound = CUIConfig::EUISound::Notice;
-	else Sound = CUIConfig::EUISound::Silence;
-	
-	UI.SendNotice(
-		GetTranslation(_Player, _Message), 
-		CUIConfig::ENoticeLevel::Default, Null, 
-		CUIConfig::EAvatarVariant::Default, Sound, 0
-	);
+Void SendChat(Text[] _Arguments) {
+	foreach (Player in AllPlayers) SendChat(Player, _Arguments);
 }
 
 // ---------------------------------- //
-/** Send UI notice (SM only, with composes)
+/** Send notice to specified player (SM)
  *
- *	@param	_Player			Player that gets translated notice
- *	@param	_Message		A message that has to be translated
- *	@param	_NoticeSound	Play pop sound
+ *	@param	_Player				Player to receive a notice
+ *	@param	_Notice				Notice to send
+ *	@param	_Level				Level of the notice
+ *	@param	_Avatar				User to use avatar as icon
+ *	@param	_AvatarVariant		Variant of the user's avatar
+ *	@param	_Sound				Notice sound
+ *	@param	_SoundVariant		Variant of the notice sound
  */
-Void SendNotice(CPlayer _Player, Text[] _Message, Boolean _NoticeSound) {
-	if (!(This is CSmMode)) return;
-	if (_Player == Null) return;
-	if (_Message.count < 1 || _Message.count > 6) return;
+Void SendNotice(CPlayer _Player, Text _Notice, CUIConfig::ENoticeLevel _Level, CUser _Avatar, CUIConfig::EAvatarVariant _AvatarVariant, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	if (_Notice == "" || _Player == Null || _Player.User == Null || _Player.User.IsFakeUser) return;
 	
-	// SM: Bots can't receive messages
-	if (This is CSmMode) {
-		declare SmPlayer <=> (_Player as CSmPlayer);
-		if (SmPlayer == Null || SmPlayer.IsBot || SmPlayer.IsFakePlayer) return;
-	}
-	
-	declare UI for _Player <=> UIManager.GetUI(_Player);
-	if (UI == Null) return;
-	
-	// Play sound of keep notice silent
-	declare CUIConfig::EUISound Sound;
-	if (_NoticeSound) Sound = CUIConfig::EUISound::Notice;
-	else Sound = CUIConfig::EUISound::Silence;
-	
-	UI.SendNotice(
-		GetComposedTranslation(_Player, _Message), 
-		CUIConfig::ENoticeLevel::Default, Null, 
-		CUIConfig::EAvatarVariant::Default, Sound, 0
-	);
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) UI.SendNotice(Private_GetTranslation(_Player.User.Language, _Notice), _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
 }
 
 // ---------------------------------- //
-/** Send UI notice (SM only)
+/** Send notice to all players (SM)
  *
- *	@param	_Message		A message that has to be translated
- *	@param	_NoticeSound	Play pop sound
+ *	@param	_Notice				Notice to send
+ *	@param	_Level				Level of the notice
+ *	@param	_Avatar				User to use avatar as icon
+ *	@param	_AvatarVariant		Variant of the user's avatar
+ *	@param	_Sound				Notice sound
+ *	@param	_SoundVariant		Variant of the notice sound
  */
-Void SendNotice(Text _Message, Boolean _NoticeSound) {
-	if (!(This is CSmMode)) return;
-	foreach (Player in AllPlayers) SendNotice(Player, _Message, _NoticeSound);
+Void SendNotice(Text _Notice, CUIConfig::ENoticeLevel _Level, CUser _Avatar, CUIConfig::EAvatarVariant _AvatarVariant, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) SendNotice(Player, _Notice, _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
 }
 
 // ---------------------------------- //
-/** Send UI notice (SM only, with composes)
+/** Send composed notice to specified player (SM)
  *
- *	@param	_Message		A message that has to be translated
- *	@param	_NoticeSound	Play pop sound
+ *	@param	_Player				Player to receive a notice
+ *	@param	_Arguments			Arguments of the notice to send
+ *	@param	_Level				Level of the notice
+ *	@param	_Avatar				User to use avatar as icon
+ *	@param	_AvatarVariant		Variant of the user's avatar
+ *	@param	_Sound				Notice sound
+ *	@param	_SoundVariant		Variant of the notice sound
  */
-Void SendNotice(Text[] _Message, Boolean _NoticeSound) {
-	if (!(This is CSmMode)) return;
-	foreach (Player in AllPlayers) SendNotice(Player, _Message, _NoticeSound);
-}
-
-// ---------------------------------- //
-/** Insert library functions into manialink
- *
- *	@param	_Messages	Messages to be inserted
- *
- *	@return		Translations module
- */
-Text InsertToManialink(Text[] _Messages) {
-	declare Text[Text] WordBanks;
-	declare Langs = ["cz", "de", "fr", "hr", "nl", "pl", "pt", "ru", "sk"];
-	foreach (Lang in Langs) WordBanks[Lang] = "0 => \"\"";
-	WordBanks["en"] = "\"\" => 0";
+Void SendNotice(CPlayer _Player, Text[] _Arguments, CUIConfig::ENoticeLevel _Level, CUser _Avatar, CUIConfig::EAvatarVariant _AvatarVariant, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	if (_Arguments.count <= 0 || _Player == Null || _Player.User == Null || _Player.User.IsFakeUser) return;
 	
-	for (I, 0, _Messages.count - 1) {
-		declare Index = SentenceBank::GetIndex(_Messages[I]);
-		if (Index != 0) {
-			// Add messages to banks
-			WordBanks["en"] ^= ", \""^_Messages[I]^"\" => "^Index;
-			WordBanks["cz"] ^= ", "^Index^" => \""^SentenceBank::GetCzech(Index)^"\"";
-			WordBanks["de"] ^= ", "^Index^" => \""^SentenceBank::GetGerman(Index)^"\"";
-			WordBanks["fr"] ^= ", "^Index^" => \""^SentenceBank::GetFrench(Index)^"\"";
-			WordBanks["hr"] ^= ", "^Index^" => \""^SentenceBank::GetCroatian(Index)^"\"";
-			WordBanks["nl"] ^= ", "^Index^" => \""^SentenceBank::GetDutch(Index)^"\"";
-			WordBanks["pl"] ^= ", "^Index^" => \""^SentenceBank::GetPolish(Index)^"\"";
-			WordBanks["pt"] ^= ", "^Index^" => \""^SentenceBank::GetPortuguese(Index)^"\"";
-			WordBanks["ru"] ^= ", "^Index^" => \""^SentenceBank::GetRussian(Index)^"\"";
-			WordBanks["sk"] ^= ", "^Index^" => \""^SentenceBank::GetSlovak(Index)^"\"";
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI != Null) UI.SendNotice(Private_GetComposedTranslation(_Player.User.Language, "", _Arguments, ""), _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/** Send composed notice to all players (SM)
+ *
+ *	@param	_Arguments			Arguments of the notice to send
+ *	@param	_Level				Level of the notice
+ *	@param	_Avatar				User to use avatar as icon
+ *	@param	_AvatarVariant		Variant of the user's avatar
+ *	@param	_Sound				Notice sound
+ *	@param	_SoundVariant		Variant of the notice sound
+ */
+Void SendNotice(Text[] _Arguments, CUIConfig::ENoticeLevel _Level, CUser _Avatar, CUIConfig::EAvatarVariant _AvatarVariant, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) SendNotice(Player, _Arguments, _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/** Insert library functions inside a manialink
+ *
+ *	@param	_Sentences		List of sentences to include in manialink
+ *
+ *	@return		Text containing generated functions
+ */
+Text InsertToManialink(Text[] _Sentences) {
+	if (_Sentences.count <= 0) return "";
+	
+	// Create languages sentence banks
+	declare Text[Text] SentenceBanks;
+	declare Languages = ["en", "cz", "de", "es", "fr", "hr", "nl", "pl", "pt", "ru", "sk"];
+	foreach (Language in Languages) SentenceBanks[Language] = "-2 => \"\"";
+	
+	// Fill banks with available translations
+	foreach (Sentence in _Sentences) {
+		declare Index = SB::GetIndex(Sentence);
+		if (Index != SB::UnknownIndex()) {
+			SentenceBanks["en"] ^= ", "^Index^" => \""^Sentence^"\"";
+			SentenceBanks["cz"] ^= ", "^Index^" => \""^SB::GetCzech(Index)^"\"";
+			SentenceBanks["de"] ^= ", "^Index^" => \""^SB::GetGerman(Index)^"\"";
+			SentenceBanks["es"] ^= ", "^Index^" => \""^SB::GetSpanish(Index)^"\"";
+			SentenceBanks["fr"] ^= ", "^Index^" => \""^SB::GetFrench(Index)^"\"";
+			SentenceBanks["hr"] ^= ", "^Index^" => \""^SB::GetCroatian(Index)^"\"";
+			SentenceBanks["nl"] ^= ", "^Index^" => \""^SB::GetDutch(Index)^"\"";
+			SentenceBanks["pl"] ^= ", "^Index^" => \""^SB::GetPolish(Index)^"\"";
+			SentenceBanks["pt"] ^= ", "^Index^" => \""^SB::GetPortuguese(Index)^"\"";
+			SentenceBanks["ru"] ^= ", "^Index^" => \""^SB::GetRussian(Index)^"\"";
+			SentenceBanks["sk"] ^= ", "^Index^" => \""^SB::GetSlovak(Index)^"\"";
 		}
 	}
 	
 	return """
 // ---------------------------------- //
-// Lib Transations Start >
+// Translations Start
 // ---------------------------------- //
 
-// ---------------------------------- //
-// Private
-// ---------------------------------- //
-
-Integer GetIndex(Text _Message) {
-	declare IndexBank = [{{{WordBanks["en"]}}}];
-	// Return index
-	if (IndexBank.existskey(_Message)) return IndexBank[_Message];
-	return 0;
+Integer LibTranslations_GetIndex(Text _Sentence) {
+	declare C_LibSB_Index = [{{{SentenceBanks["en"]}}}];
+	if (C_LibSB_Index.exists(_Sentence)) return C_LibSB_Index.keyof(_Sentence);
+	return {{{SB::UnknownIndex()}}};
 }
 
-Text GetCzech(Integer _Index) {
-	declare CzechBank = [{{{WordBanks["cz"]}}}];
-	// Return translation
-	if (CzechBank.existskey(_Index)) return CzechBank[_Index];
-	return "";
+Text LibTranslations_GetCzech(Integer _Index) {
+	declare C_LibSB_Czech = [{{{SentenceBanks["cz"]}}}];
+	if (C_LibSB_Czech.existskey(_Index)) return C_LibSB_Czech[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-Text GetGerman(Integer _Index) {
-	declare GermanBank = [{{{WordBanks["de"]}}}];
-	// Return translation
-	if (GermanBank.existskey(_Index)) return GermanBank[_Index];
-	return "";
+Text LibTranslations_GetGerman(Integer _Index) {
+	declare C_LibSB_German = [{{{SentenceBanks["de"]}}}];
+	if (C_LibSB_German.existskey(_Index)) return C_LibSB_German[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-Text GetFrench(Integer _Index) {
-	declare FrenchBank = [{{{WordBanks["fr"]}}}];
-	// Return translation
-	if (FrenchBank.existskey(_Index)) return FrenchBank[_Index];
-	return "";
+Text LibTranslations_GetSpanish(Integer _Index) {
+	declare C_LibSB_Spanish = [{{{SentenceBanks["es"]}}}];
+	if (C_LibSB_Spanish.existskey(_Index)) return C_LibSB_Spanish[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-Text GetCroatian(Integer _Index) {
-	declare CroatianBank = [{{{WordBanks["hr"]}}}];
-	// Return translation
-	if (CroatianBank.existskey(_Index)) return CroatianBank[_Index];
-	return "";
+Text LibTranslations_GetFrench(Integer _Index) {
+	declare C_LibSB_French = [{{{SentenceBanks["fr"]}}}];
+	if (C_LibSB_French.existskey(_Index)) return C_LibSB_French[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-Text GetDutch(Integer _Index) {
-	declare DutchBank = [{{{WordBanks["nl"]}}}];
-	// Return translation
-	if (DutchBank.existskey(_Index)) return DutchBank[_Index];
-	return "";
+Text LibTranslations_GetCroatian(Integer _Index) {
+	declare C_LibSB_Croatian = [{{{SentenceBanks["hr"]}}}];
+	if (C_LibSB_Croatian.existskey(_Index)) return C_LibSB_Croatian[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-Text GetPolish(Integer _Index) {
-	declare PolishBank = [{{{WordBanks["pl"]}}}];
-	// Return translation
-	if (PolishBank.existskey(_Index)) return PolishBank[_Index];
-	return "";
+Text LibTranslations_GetDutch(Integer _Index) {
+	declare C_LibSB_Dutch = [{{{SentenceBanks["nl"]}}}];
+	if (C_LibSB_Dutch.existskey(_Index)) return C_LibSB_Dutch[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-Text GetPortuguese(Integer _Index) {
-	declare PortugueseBank = [{{{WordBanks["pt"]}}}];
-	// Return translation
-	if (PortugueseBank.existskey(_Index)) return PortugueseBank[_Index];
-	return "";
+Text LibTranslations_GetPolish(Integer _Index) {
+	declare C_LibSB_Polish = [{{{SentenceBanks["pl"]}}}];
+	if (C_LibSB_Polish.existskey(_Index)) return C_LibSB_Polish[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-Text GetRussian(Integer _Index) {
-	declare RussianBank = [{{{WordBanks["ru"]}}}];
-	// Return translation
-	if (RussianBank.existskey(_Index)) return RussianBank[_Index];
-	return "";
+Text LibTranslations_GetPortuguese(Integer _Index) {
+	declare C_LibSB_Portuguese = [{{{SentenceBanks["pt"]}}}];
+	if (C_LibSB_Portuguese.existskey(_Index)) return C_LibSB_Portuguese[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-Text GetSlovak(Integer _Index) {
-	declare SlovakBank = [{{{WordBanks["sk"]}}}];
-	// Return translation
-	if (SlovakBank.existskey(_Index)) return SlovakBank[_Index];
-	return "";
+Text LibTranslations_GetRussian(Integer _Index) {
+	declare C_LibSB_Russian = [{{{SentenceBanks["ru"]}}}];
+	if (C_LibSB_Russian.existskey(_Index)) return C_LibSB_Russian[_Index];
+	return "{{{SB::NotFoundString()}}}";
 }
 
-// ---------------------------------- //
-// Public
-// ---------------------------------- //
+Text LibTranslations_GetSlovak(Integer _Index) {
+	declare C_LibSB_Slovak = [{{{SentenceBanks["sk"]}}}];
+	if (C_LibSB_Slovak.existskey(_Index)) return C_LibSB_Slovak[_Index];
+	return "{{{SB::NotFoundString()}}}";
+}
 
-Text Translations_Get(Text _Message) {
-	if (LocalUser == Null) return _Message;
-	declare MessageId = GetIndex(_Message);
-	if (MessageId == 0) return _Message;
-	declare Text OutputMessage;
-	OutputMessage = _Message;
+Text Translations_Get(Text _Sentence) {
+	if (_Sentence == "" || LocalUser.Language == "en" || LocalUser.Language == "en_GB") return _Sentence;
+	
+	declare SentenceIndex = LibTranslations_GetIndex(_Sentence);
+	if (SentenceIndex == {{{SB::UnknownIndex()}}}) return _Sentence;
+	
+	declare Text TranslatedSentence;
 	switch (LocalUser.Language) {
-		case "cz" : OutputMessage = GetCzech(MessageId);
-		case "de" : OutputMessage = GetGerman(MessageId);
-		case "fr" : OutputMessage = GetFrench(MessageId);
-		case "hr" : OutputMessage = GetCroatian(MessageId);
-		case "nl" : OutputMessage = GetDutch(MessageId);
-		case "pl" : OutputMessage = GetPolish(MessageId);
-		case "pt" : OutputMessage = GetPortuguese(MessageId);
-		case "pt_BR" : OutputMessage = GetPortuguese(MessageId);
-		case "ru" : OutputMessage = GetRussian(MessageId);
-		case "sk" : OutputMessage = GetSlovak(MessageId);
-	}
-	if (OutputMessage == "") return _Message;
-	return OutputMessage;
-}
-
-Text Translations_GetComposed(Text[] _Com, Text _Prefix) {
-	if (_Com.count < 1 || _Com.count > 6) return "{{{C_ErrorMessage}}}";
-	if (LocalUser == Null) return _Com[0];
-	
-	declare Text ReturnedText;
-	
-	// Get translation of primary message
-	declare BaseMsg = _Prefix^Translations_Get(_Com[0]);
-	
-	// Compose
-	switch (_Com.count) {
-		case 2 : ReturnedText = TL::Compose(BaseMsg, _Com[1]);
-		case 3 : ReturnedText = TL::Compose(BaseMsg, _Com[1], _Com[2]);
-		case 4 : ReturnedText = TL::Compose(BaseMsg, _Com[1], _Com[2], _Com[3]);
-		case 5 : ReturnedText = TL::Compose(BaseMsg, _Com[1], _Com[2], _Com[3], _Com[4]);
-		case 6 : ReturnedText = TL::Compose(BaseMsg, _Com[1], _Com[2], _Com[3], _Com[4], _Com[5]);
-		default : ReturnedText = BaseMsg;
+		case "cz" : TranslatedSentence = LibTranslations_GetCzech(SentenceIndex);
+		case "de" : TranslatedSentence = LibTranslations_GetGerman(SentenceIndex);
+		case "es" : TranslatedSentence = LibTranslations_GetSpanish(SentenceIndex);
+		case "fr" : TranslatedSentence = LibTranslations_GetFrench(SentenceIndex);
+		case "hr" : TranslatedSentence = LibTranslations_GetCroatian(SentenceIndex);
+		case "nl" : TranslatedSentence = LibTranslations_GetDutch(SentenceIndex);
+		case "pl" : TranslatedSentence = LibTranslations_GetPolish(SentenceIndex);
+		case "pt" : TranslatedSentence = LibTranslations_GetPortuguese(SentenceIndex);
+		case "pt_BR" : TranslatedSentence = LibTranslations_GetPortuguese(SentenceIndex);
+		case "ru" : TranslatedSentence = LibTranslations_GetRussian(SentenceIndex);
+		case "sk" : TranslatedSentence = LibTranslations_GetCzech(SentenceIndex);
+		default : return _Sentence;
 	}
 	
-	return ReturnedText;
+	if (TranslatedSentence == "{{{SB::NotFoundString()}}}") return _Sentence;
+	return TranslatedSentence;
 }
 
-Text Translations_GetComposed(Text[] _Com) {
-	return Translations_GetComposed(_Com, "");
+Text Translations_GetComposed(Text[] _Arguments) {
+	if (_Arguments.count == 1) return Translations_Get(_Arguments[0]);
+	
+	declare Text[] Args;
+	foreach (I => Argument in _Arguments) if (I <= 5) Args.add(Translations_Get(Argument));
+	
+	switch (Args.count - 1) {
+		case 5 : return TL::Compose(Args[0], Args[1], Args[2], Args[3], Args[4], Args[5]);
+		case 4 : return TL::Compose(Args[0], Args[1], Args[2], Args[3], Args[4]);
+		case 3 : return TL::Compose(Args[0], Args[1], Args[2], Args[3]);
+		case 2 : return TL::Compose(Args[0], Args[1], Args[2]);
+		case 1 : return TL::Compose(Args[0], Args[1]);
+	}
+	return TL::Compose(Args[0]);
 }
 
 // ---------------------------------- //
-// Lib Transations End < >
+// Translations Stop
 // ---------------------------------- //
 	""";
 }
 
 // ---------------------------------- //
-// Extend Message Library
+// Message library extension
 // ---------------------------------- //
 
-// ---------------------------------- //
-// Big message
-// ---------------------------------- //
-
-// ---------------------------------- //
-/// Send a big message with sound to player
 Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	Message::SendBigMessage(_Player, GetTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+	if (_Player == Null || _Player.User == Null) return;
+	Message::SendBigMessage(_Player, Private_GetTranslation(_Player.User.Language, _Message), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
-Void SendBigMessage(CPlayer _Player, Text[] _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	Message::SendBigMessage(_Player, GetComposedTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
-}
-
-// ---------------------------------- //
-/// Send a big message without sound to player
-Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
-	Message::SendBigMessage(_Player, GetTranslation(_Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
-}
-
-Void SendBigMessage(CPlayer _Player, Text[] _Message, Integer _Duration, Integer _Priority) {
-	Message::SendBigMessage(_Player, GetComposedTranslation(_Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
-}
-
-// ---------------------------------- //
-/// Send a big message with sound to all players
 Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	foreach (Player in AllPlayers) Message::SendBigMessage(Player, GetTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+	foreach (Player in AllPlayers) SendBigMessage(Player, _Message, _Duration, _Priority, _Sound, _SoundVariant);
 }
 
-Void SendBigMessage(Text[] _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	foreach (Player in AllPlayers) Message::SendBigMessage(Player, GetComposedTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+Void SendBigMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	if (_Player == Null || _Player.User == Null) return;
+	Message::SendBigMessage(_Player, Private_GetComposedTranslation(_Player.User.Language, "", _Arguments, ""), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
-// ---------------------------------- //
-/// Send a big message without sound to all players
-Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority) {
-	foreach (Player in AllPlayers) Message::SendBigMessage(Player, GetTranslation(Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+Void SendBigMessage(Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) SendBigMessage(Player, _Arguments, _Duration, _Priority, _Sound, _SoundVariant);
 }
 
-Void SendBigMessage(Text[] _Message, Integer _Duration, Integer _Priority) {
-	foreach (Player in AllPlayers) Message::SendBigMessage(Player, GetComposedTranslation(Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
-}
-
-// ---------------------------------- //
-// Status message
-// ---------------------------------- //
-
-// ---------------------------------- //
-/// Send a status message with sound to player
 Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	Message::SendStatusMessage(_Player, GetTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+	if (_Player == Null || _Player.User == Null) return;
+	Message::SendStatusMessage(_Player, Private_GetTranslation(_Player.User.Language, _Message), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
-Void SendStatusMessage(CPlayer _Player, Text[] _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	Message::SendStatusMessage(_Player, GetComposedTranslation(_Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
-}
-
-// ---------------------------------- //
-/// Send a status message without sound to player
-Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
-	Message::SendStatusMessage(_Player, GetTranslation(_Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
-}
-
-Void SendStatusMessage(CPlayer _Player, Text[] _Message, Integer _Duration, Integer _Priority) {
-	Message::SendStatusMessage(_Player, GetComposedTranslation(_Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
-}
-
-// ---------------------------------- //
-/// Send a status message with sound to all players
 Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	foreach (Player in AllPlayers) Message::SendStatusMessage(Player, GetTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+	foreach (Player in AllPlayers) SendStatusMessage(Player, _Message, _Duration, _Priority, _Sound, _SoundVariant);
 }
 
-Void SendStatusMessage(Text[] _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
-	foreach (Player in AllPlayers) Message::SendStatusMessage(Player, GetComposedTranslation(Player, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+Void SendStatusMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	if (_Player == Null || _Player.User == Null) return;
+	Message::SendStatusMessage(_Player, Private_GetComposedTranslation(_Player.User.Language, "", _Arguments, ""), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
-// ---------------------------------- //
-/// Send a big message without sound to all players
+Void SendStatusMessage(Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
+	foreach (Player in AllPlayers) SendStatusMessage(Player, _Arguments, _Duration, _Priority, _Sound, _SoundVariant);
+}
+
+Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
+	if (_Player == Null || _Player.User == Null) return;
+	Message::SendBigMessage(_Player, Private_GetTranslation(_Player.User.Language, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority) {
+	foreach (Player in AllPlayers) SendBigMessage(Player, _Message, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendBigMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority) {
+	if (_Player == Null || _Player.User == Null) return;
+	Message::SendBigMessage(_Player, Private_GetComposedTranslation(_Player.User.Language, "", _Arguments, ""), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendBigMessage(Text[] _Arguments, Integer _Duration, Integer _Priority) {
+	foreach (Player in AllPlayers) SendBigMessage(Player, _Arguments, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
+	if (_Player == Null || _Player.User == Null) return;
+	Message::SendStatusMessage(_Player, Private_GetTranslation(_Player.User.Language, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
 Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority) {
-	foreach (Player in AllPlayers) Message::SendStatusMessage(Player, GetTranslation(Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	foreach (Player in AllPlayers) SendStatusMessage(Player, _Message, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }
 
-Void SendStatusMessage(Text[] _Message, Integer _Duration, Integer _Priority) {
-	foreach (Player in AllPlayers) Message::SendStatusMessage(Player, GetComposedTranslation(Player, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+Void SendStatusMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority) {
+	if (_Player == Null || _Player.User == Null) return;
+	Message::SendStatusMessage(_Player, Private_GetComposedTranslation(_Player.User.Language, "", _Arguments, ""), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+}
+
+Void SendStatusMessage(Text[] _Arguments, Integer _Duration, Integer _Priority) {
+	foreach (Player in AllPlayers) SendStatusMessage(Player, _Arguments, _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }

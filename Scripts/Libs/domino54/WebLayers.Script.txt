@@ -1,0 +1,84 @@
+// -------------------------------------- //
+//  LIBRARY WEB LAYERS by domino54        //
+//  script version: 2015-10-31            //
+// -------------------------------------- //
+
+/**
+ *	This library allows to display custom manialink layers from
+ *	URLs or manialink codes, just by putting them in hidden script
+ *	setting, separated with spaces. Useful for displaying custom
+ *	server widgets, eg. music plugin, logos, context menus.
+ */
+
+#Const Version		"2015-10-31"
+#Const ScriptName	"WebLayers.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[] G_LayersAddress;		///< Loaded layers address
+declare Text G_PrevSettingValue;	///< Previous setting value
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Update the custom interface layers
+ *
+ *	/!\ Put this function inside ***Yield*** label, using script setting as the parameter /!\
+ *
+ *	@param	_LayersURLs		Setting containing custom layers addresses
+ */
+Void Update(Text _LayersURLs) {
+	if (_LayersURLs == G_PrevSettingValue) return;
+	G_PrevSettingValue = _LayersURLs;
+	
+	// Get new layers URLs
+	declare NewLayers = TL::Split(" ", _LayersURLs);
+	
+	// ---------------------------------- //
+	// Create new layers
+	foreach (Layer in NewLayers) if (!G_LayersAddress.exists(Layer)) {
+		G_LayersAddress.add(Layer);
+		Layers::Create("WebLayers:"^Layer, Layer);
+		Layers::Attach("WebLayers:"^Layer);
+	}
+	
+	// ---------------------------------- //
+	// Destroy old layers
+	declare LayersToRemove = Text[];
+	foreach (Layer in G_LayersAddress) if (!NewLayers.exists(Layer)) {
+		LayersToRemove.add(Layer);
+		Layers::Detach("WebLayers:"^Layer);
+		Layers::Destroy("WebLayers:"^Layer);
+	}
+	foreach (Layer in LayersToRemove) {
+		declare Removed = G_LayersAddress.remove(Layer);
+	}
+}

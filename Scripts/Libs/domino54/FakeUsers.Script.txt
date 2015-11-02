@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY FAKE USERS by domino54        //
-//  script version: 2015-10-31            //
+//  script version: 2015-11-02            //
 // -------------------------------------- //
 
 /**
@@ -8,7 +8,7 @@
  *	creation process, creating bots with fancy nicknames.
  */
 
-#Const Version		"2015-10-31"
+#Const Version		"2015-11-02"
 #Const ScriptName	"FakeUsers.Script.txt"
 
 #Include "MathLib" as ML
@@ -40,7 +40,6 @@
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare CUser[] FakeUsers;			///< Array of all fake users
 declare Text[] G_AvailableNames;	///< Nicknames available to toss
 declare Integer G_PrevNbFakeUsers;	///< Previous amount of the fake users
 
@@ -95,13 +94,6 @@ Text GetScriptName() {
 }
 
 // ---------------------------------- //
-/// Update fake users array on server restart
-Void StartServer() {
-	FakeUsers.clear();
-	foreach (User in Users) if (User.IsFakeUser) FakeUsers.add(User);
-}
-
-// ---------------------------------- //
 /** Update amount of the fake users
  *
  *	/!\ Put this function inside ***Yield*** label, using script setting as the parameter /!\
@@ -111,6 +103,9 @@ Void StartServer() {
 Void UpdateAmount(Integer _NbFakeUsers) {
 	if (_NbFakeUsers == G_PrevNbFakeUsers) return;
 	G_PrevNbFakeUsers = _NbFakeUsers;
+	
+	declare FakeUsers = CUser[];
+	foreach (User in Users) if (User.IsFakeUser) FakeUsers.add(User);
 	declare DeltaAmount = _NbFakeUsers - FakeUsers.count;
 	
 	// Create new fake players

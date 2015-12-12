@@ -1,7 +1,6 @@
 // -------------------------------------- //
 //  OFFZONE LIB by domino54               //
-//  script version: 2015-07-23            //
-//  - in development -                    //
+//  script version: 2015-12-12            //
 // -------------------------------------- //
 
 /**
@@ -14,7 +13,7 @@
  *	for free from domino54's GitHub repository.
  */
 
-#Const Version		"2015-07-23"
+#Const Version		"2015-12-12"
 #Const ScriptName	"OffZone.Script.txt"
 
 #Include "MathLib" as ML
@@ -41,10 +40,10 @@
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Boolean G_LibOffZone_IsLoaded;				///< True, if environment dimensions loaded correctly
-declare Vec3[] G_LibOffZone_ColBlockDimensions;	///< Size of current environment blocks in meters
-declare Integer G_LibOffZone_ColGroundCoordY;		///< Y index of block in position <0., 0., 0.>
-declare Int3[] G_LibOffZone_OffZoneLocations;		///< Positions of the blocks containing OffZone triggers
+declare Boolean	G_LibOffZone_IsLoaded;				///< True, if environment dimensions loaded correctly
+declare Vec3	G_LibOffZone_ColBlockDimensions;	///< Size of current environment blocks in meters
+declare Integer	G_LibOffZone_ColGroundCoordY;		///< Y index of block in position <0., 0., 0.>
+declare Int3[]	G_LibOffZone_OffZoneLocations;		///< Positions of the blocks containing OffZone triggers
 
 /// Functions activity settings
 declare Boolean G_LibOffZone_DisableOffZone; ///< Disable event when Player touch OffZone block
@@ -67,7 +66,8 @@ Int3 Private_GetPlayerBlockCoords(Vec3 _Position) {
 	
 	declare Int3 BlockCoords;
 	for (I, 0, 2) BlockCoords[I] = ML::FloorInteger(_Position[I] / G_LibOffZone_ColBlockDimensions[I]);
-	BlockCoords.Y += G_LibOffZone_ColGroundCoordY;
+	BlockCoords.Y += G_LibOffZone_ColGroundCoordY - 1;
+	return BlockCoords;
 }
 
 // ---------------------------------- //
@@ -115,8 +115,8 @@ Void StartMap() {
 	
 	// ---------------------------------- //
 	// Cet current collection ground Y
-	if (G_LibOffZone_ColGroundCoordY.existskey(Map.CollectionName))
-		G_LibOffZone_ColGroundCoordY = G_LibOffZone_ColGroundCoordY[Map.CollectionName];
+	if (C_LibOffZone_ColGroundCoordY.existskey(Map.CollectionName))
+		G_LibOffZone_ColGroundCoordY = C_LibOffZone_ColGroundCoordY[Map.CollectionName];
 	else return;
 	
 	// Environment loaded correctly
@@ -139,7 +139,7 @@ Void StartMap() {
 Boolean IsInOffZone(CTmPlayer _Player) {
 	if (G_LibOffZone_DisableOffZone || _Player == Null) return False;
 	if (!G_LibOffZone_IsLoaded || G_LibOffZone_OffZoneLocations.count == 0) return False;
-	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || _Now < Player.RaceStartTime) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || Now < _Player.RaceStartTime) return False;
 	
 	return G_LibOffZone_OffZoneLocations.exists(Private_GetPlayerBlockCoords(_Player.Position));
 }
@@ -153,7 +153,7 @@ Boolean IsInOffZone(CTmPlayer _Player) {
  */
 Boolean IsBelowMapBottom(CTmPlayer _Player) {
 	if (!G_LibOffZone_IsLoaded || G_LibOffZone_DisableFalling || _Player == Null) return False;
-	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || _Now < Player.RaceStartTime) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || Now < _Player.RaceStartTime) return False;
 	
 	return (_Player.Position.Y <= G_LibOffZone_ColBlockDimensions.Y * -G_LibOffZone_ColGroundCoordY);
 }
@@ -167,11 +167,11 @@ Boolean IsBelowMapBottom(CTmPlayer _Player) {
  */
 Boolean IsBeyondMapEdge(CTmPlayer _Player) {
 	if (!G_LibOffZone_IsLoaded || G_LibOffZone_DisableBorders || _Player == Null) return False;
-	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || _Now < Player.RaceStartTime) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || Now < _Player.RaceStartTime) return False;
 	
 	return (
 		_Player.Position.X < 0 || _Player.Position.Z < 0 ||
-		_Player.Position.X > G_LibOffZone_ColBlockDimensions.X * Map.Size.X
+		_Player.Position.X > G_LibOffZone_ColBlockDimensions.X * Map.Size.X ||
 		_Player.Position.Z > G_LibOffZone_ColBlockDimensions.Z * Map.Size.Z
 	);
 }

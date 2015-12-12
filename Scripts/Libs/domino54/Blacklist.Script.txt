@@ -1,0 +1,169 @@
+// -------------------------------------- //
+//  LIBRARY BLACKLIST by domino54         //
+//  script version: 2015-12-12            //
+// -------------------------------------- //
+
+/**
+ *	This library is connecting to a blacklist shared between
+ *	all modes created by domino54 to automatically kick users
+ *	reported and banned for bad behaviour.
+ */
+
+#Const Version		"2015-12-12"
+#Const ScriptName	"Blacklist.Script.txt"
+
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibBlacklist_DefaultListURL	"https://raw.githubusercontent.com/domino54/title-packs/master/blacklist.xml"
+#Const C_LibBlacklist_UserMessage		"You have been kicked due your GalaxyTitles ban. Ban reason: %1."
+#Const C_LibBlacklist_ChatMessage		"User $<%1$> was kicked due their GalaxyTitles ban. Ban reason: %2."
+#Const C_LibBlacklist_DefaultReason		"not specified"
+#Const C_LibBlacklist_CheckInterval		60000
+#Const C_LibBlacklist_HttpReqInterval	300000
+#Const C_LibBlacklist_HttpReqTimeout	15000
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text G_LibBlacklist_BlacklistURL;			///< URL of the blacklist file
+declare Text[Text] G_LibBlacklist_BannedUsers;		///< List of all banned users with their ban reason
+declare Text[] G_LibBlacklist_ShownReasons;			///< List with logins of users kicked at least once per map
+declare Integer G_LibBlacklist_NextUsersCheck;		///< Time of the users next validation
+declare Integer G_LibBlacklist_PrevUsersCount;		///< Previous amount of connected users
+declare Integer G_LibBlacklist_NextRequestTime;		///< Time of the next blacklist update
+declare CHttpRequest G_LibBlacklist_Request;		///< Blacklist document request
+declare Integer G_LibBlacklist_RequestStartTime;	///< Request start time
+declare Boolean G_LibBlacklist_PrevMapLoaded;		///< Previous loaded map status
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Update blacklist data from XML file
+ *
+ *	@param	_Result		Request result
+ */
+Void UpdateBlacklistFromXML(Text _Result) {
+	if (_Result == "") return;
+	declare Document = Xml.Create(_Result);
+	if (Document == Null || Document.Root == Null || Document.Root.Name != "blacklist") return;
+	
+	// Clear existing blacklist array
+	G_LibBlacklist_BannedUsers.clear();
+	
+	// Read information about banned players
+	foreach (Node in Document.Root.Children) {
+		if (Node.Name == "player") {
+			declare Login = Node.GetAttributeText("login", "");
+			declare Reason = Node.GetAttributeText("reason", C_LibBlacklist_DefaultReason);
+			if (Login != "") G_LibBlacklist_BannedUsers[Login] = Reason;
+		}
+	}
+	
+	// Destroy document
+	Xml.Destroy(Document);
+}
+
+// ---------------------------------- //
+/// Library loop
+Void Loop() {
+	// ---------------------------------- //
+	// Update blacklist data
+	if (Now >= G_LibBlacklist_NextRequestTime) {
+		G_LibBlacklist_NextRequestTime = Now + C_LibBlacklist_HttpReqInterval;
+		
+		if (G_LibBlacklist_Request != Null) Http.Destroy(G_LibBlacklist_Request);
+		G_LibBlacklist_Request = Null;
+		
+		if (G_LibBlacklist_BlacklistURL == "") G_LibBlacklist_BlacklistURL = C_LibBlacklist_DefaultListURL;
+		
+		if (Http.IsValidUrl(G_LibBlacklist_BlacklistURL)) {
+			G_LibBlacklist_Request = Http.CreateGet(G_LibBlacklist_BlacklistURL, False);
+			G_LibBlacklist_RequestStartTime = Now;
+		}
+	}
+	
+	if (G_LibBlacklist_Request != Null) {
+		// ---------------------------------- //
+		// Request finished
+		if (G_LibBlacklist_Request.IsCompleted) {
+			UpdateBlacklistFromXML(G_LibBlacklist_Request.Result);
+			Http.Destroy(G_LibBlacklist_Request);
+			G_LibBlacklist_Request = Null;
+		}
+		
+		// ---------------------------------- //
+		// Request timed out
+		else if (Now >= G_LibBlacklist_RequestStartTime + C_LibBlacklist_HttpReqTimeout) {
+			Http.Destroy(G_LibBlacklist_Request);
+			G_LibBlacklist_Request = Null;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Kick banned users trying to connect or already connected
+	if (Users.count > 0 && (Now >= G_LibBlacklist_NextUsersCheck || G_LibBlacklist_PrevUsersCount != Users.count)) {
+		G_LibBlacklist_PrevUsersCount = Users.count;
+		
+		foreach (User in Users) {
+			if (User.Login != ServerLogin && G_LibBlacklist_BannedUsers.existskey(User.Login)) {
+				declare Reason = G_LibBlacklist_BannedUsers[User.Login];
+				
+				// Notify all players on the server about kick
+				if (!G_LibBlacklist_ShownReasons.exists(User.Login)) {
+					G_LibBlacklist_ShownReasons.add(User.Login);
+					Translations::SendChat([C_LibBlacklist_ChatMessage, User.Name, Reason]);
+				}
+				
+				// Kick the user
+				Admin_KickUser(User, Translations::Compose(User.Language, "", [C_LibBlacklist_UserMessage, Reason], ""));
+			}
+		}
+		
+		// Set next validation time
+		G_LibBlacklist_NextUsersCheck = Now + C_LibBlacklist_CheckInterval;
+	}
+	
+	// ---------------------------------- //
+	// Clear displayed reason on map change
+	if (G_LibBlacklist_PrevMapLoaded != MapLoaded) {
+		G_LibBlacklist_PrevMapLoaded = MapLoaded;
+		if (!MapLoaded) G_LibBlacklist_ShownReasons.clear();
+	}
+}
+
+// ---------------------------------- //
+/** Change blacklist file URL
+ *
+ *	@param	_URL		New address
+ */
+Void ChangeBlacklistURL(Text _URL) {
+	if (_URL == "" || !Http.IsValidUrl(_URL)) return;
+	G_LibBlacklist_BlacklistURL = _URL;
+}

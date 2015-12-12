@@ -1,0 +1,129 @@
+// -------------------------------------- //
+//  XML DOCUMENT GENERATOR by domino54    //
+//  script version: 2015-12-12            //
+// -------------------------------------- //
+
+#Const Version		"2015-12-12"
+#Const ScriptName	"XMLGenerator.Script.txt"
+
+/**
+ *	This library allows to generate simple XML documents
+ *	with custom created nodes.
+ */
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibXMLGenerator_DefaultRootName	"document"	///< Default name of the document root
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text G_LibXMLGenerator_RootName;
+declare Text G_LibXMLGenerator_RootProperties;
+declare Text[] G_LibXMLGenerator_CreatedNodes;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Reset everything
+Void Clear() {
+	G_LibXMLGenerator_RootName = C_LibXMLGenerator_DefaultRootName;
+	G_LibXMLGenerator_RootProperties = "";
+	G_LibXMLGenerator_CreatedNodes.clear();
+}
+
+// ---------------------------------- //
+/** Set the root name
+ *
+ *	@param	_RootName		The name of the root
+ */
+Void SetRootName(Text _RootName) {
+	if (_RootName != "") G_LibXMLGenerator_RootName = _RootName;
+}
+
+// ---------------------------------- //
+/** Set the root properties
+ *
+ *	@param	_RootProperties		The root properties
+ */
+Void SetRootProperties(Text[Text] _RootProperties) {
+	declare Root = "";
+	
+	// Attach root properties
+	if (_RootProperties.count > 0) foreach (Property => Value in _RootProperties) Root ^= " "^Property^"=\""^Value^"\"";
+	
+	// Save properties
+	G_LibXMLGenerator_RootProperties = Root;
+}
+
+// ---------------------------------- //
+/** Create root node
+ *
+ *	@param	_NodeName			The name of the node
+ *	@param	_NodeProperties		The node properties
+ *	@param	_NodeRawText		The node raw text
+ */
+Void CreateNode(Text _NodeName, Text[Text] _NodeProperties, Text _NodeRawText) {
+	if (_NodeName == "") return;
+	declare Node = "<"^_NodeName;
+	declare NodeIsClosed = (_NodeRawText == "");
+	
+	// Attach node properties
+	if (_NodeProperties.count > 0) foreach (Property => Value in _NodeProperties) Node ^= " "^Property^"=\""^Value^"\"";
+	
+	// Close node or insert raw text
+	if (NodeIsClosed) Node ^= "/>";
+	else Node ^= ">"^_NodeRawText^"</"^_NodeName^">";
+	
+	// Save node
+	G_LibXMLGenerator_CreatedNodes.add(Node);
+}
+
+// ---------------------------------- //
+/** Create the XML document file
+ *
+ *	@return		Complete document
+ */
+Text CreateDocument() {
+	// XML file declaration
+	declare Document = "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>\n";
+	
+	// Get the root name
+	declare RootName = G_LibXMLGenerator_RootName;
+	if (G_LibXMLGenerator_RootName == "") RootName = C_LibXMLGenerator_DefaultRootName;
+	Document ^= "<"^RootName^">\n";
+	
+	// Insert nodes
+	if (G_LibXMLGenerator_CreatedNodes.count > 0) {
+		foreach (Node in G_LibXMLGenerator_CreatedNodes) Document ^= "	"^Node^"\n";
+	}
+	
+	// Close document
+	Document ^= "</"^RootName^">";
+	return Document;
+}

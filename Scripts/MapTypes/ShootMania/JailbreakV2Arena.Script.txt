@@ -1,0 +1,265 @@
+// -------------------------------------- //
+//  JAILBREAK V2 ARENA by domino54        //
+//  script version: 2016-05-04            //
+//  original concept by Akbalder          //
+// -------------------------------------- //
+
+#RequireContext CSmMapType
+
+#Const Version			"2016-05-04"
+#Const MapTypeVersion	1
+#Const ScriptName		"JailbreakV2Arena.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_Rules _("- You must place exactly one Spawn #1 and one Spawn #2 (here players spawn at the beginning of the game).\n- You must place exactly one JailSpawn #1 and one JailSpawn #2 (here jailed players will spawn).\n- You must place exactly one Goal #1 and one Goal #2 (teammates standing on these make the Gates and OffZone open).\n- You must place the same number of Gate #1 and Gate #2 or use OffZone to isolate jails.\n- Players $F00CANNOT$g leave the jail other way than passing Gate or OffZone!\n- Gates $F00MUST$g have their circular capture plate located outside of the jail!")
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Initialize the anchors
+Void InitAnchors() {
+	foreach (Anchor in AnchorData) {
+		if (Anchor.DefaultTag == "Spawn") {
+			if (Anchor.Tag != "Spawn" && Anchor.Tag != "JailSpawn") Anchor.Tag = Anchor.DefaultTag;
+			if (Anchor.Order != 1 && Anchor.Order != 2) Anchor.Order = 1;
+		} else if (Anchor.DefaultTag == "Goal") {
+			Anchor.Tag = Anchor.DefaultTag;
+			if (Anchor.Order != 1 && Anchor.Order != 2) Anchor.Order = 1;
+		} else if (Anchor.DefaultTag == "Checkpoint") {
+			Anchor.Tag = "Goal";
+			if (Anchor.Order != 1 && Anchor.Order != 2) Anchor.Order = 1;
+		} else if (Anchor.DefaultTag == "Gate") {
+			Anchor.Tag = "Gate";
+			if (Anchor.Order != 1 && Anchor.Order != 2) Anchor.Order = 1;
+		} else {
+			Anchor.Tag = Anchor.DefaultTag;
+			Anchor.Order = Anchor.DefaultOrder;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Check if the map is valid
+Void UpdateValidability() {
+	ValidationStatus = CSmMapType::ValidationStatus::NotValidable;
+	InitAnchors();
+	Anchor::UpdateAnchorCounts();
+	
+	// ---------------------------------- //
+	// Get the amount of Gates
+	declare ClansNbGates = [1 => 0, 2 => 0];
+	foreach (Data in AnchorData)	
+		if (Data.Tag == "Gate" && ClansNbGates.existskey(Data.Order)) ClansNbGates[Data.Order] += 1;
+	
+	// ---------------------------------- //
+	// Check if map has exactly one landmark type per team
+	for (I, 1, 2) {
+		if (
+			!Anchor::HasExactlyOneAnchor("Spawn", I, TL::Compose(_("You must place exactly one Spawn #%1"), ""^I)) ||
+			!Anchor::HasExactlyOneAnchor("JailSpawn", I, TL::Compose(_("You must place exactly one JailSpawn #%1"), ""^I)) ||
+			!Anchor::HasExactlyOneAnchor("Goal", I, TL::Compose(_("You must place at least one Goal #%1"), ""^I))
+		) return;
+	}
+	
+	// ---------------------------------- //
+	// Gates amount doesn't match
+	if (ClansNbGates[1] != ClansNbGates[2]) {
+		ValidationStatus = CSmMapType::ValidationStatus::NotValidable;
+		ValidabilityRequirementsMessage = _("You must place the same number of Gate #1 and Gate #2");
+		return;
+	}
+	
+	// Map is valid
+	ValidationStatus = CSmMapType::ValidationStatus::Validated;	
+}
+
+// ---------------------------------- //
+// Return the manialink for anchor edition
+Text EditAnchorManialink(Text _DefaultTag, Text[] _Options) {
+	declare Text OptionsLabels;
+	foreach (I => Option in _Options) {
+		OptionsLabels ^= """<label
+			posn="0 {{{I * -5 + _Options.count / 2 * 5}}}"
+			halign="center" valign="center2" style="TextButtonNav" textsize="3" textcolor="000"
+			text="{{{Option}}}" class="Option" id="{{{I}}}" ScriptEvents="1"
+		/>""";
+	}
+	
+	return """
+<manialink version="2" name="JailbreakV2Arena:EditAnchor">
+<frame id="Frame_SelectTag" posn="98 60 5">
+	<quad posn="-2 2" sizen="64 14" style="Bgs1InRace" substyle="BgTitle3_1" ScriptEvents="1"/>
+	<label posn="30 -5 1" halign="center" valign="center2" style="TextTitle3" text="{{{TL::Compose("%1 %2", _("Edit"), _DefaultTag)}}}"/>
+	<quad posn="0 -11" sizen="60 32" style="Bgs1InRace" substyle="BgTitlePage" ScriptEvents="1"/>
+	<frame posn="30 -26 1">{{{OptionsLabels}}}</frame>
+	<label posn="16 -38" halign="center" valign="center2" style="CardButtonSmallS" text="OK" translate="1" id="OK" ScriptEvents="1"/>
+	<label posn="44 -38" halign="center" valign="center2" style="CardButtonSmallS" text="Cancel" translate="1" id="Cancel" ScriptEvents="1"/>
+</frame>
+
+<frame id="Frame_Rules" posn="98 14">
+	<quad posn="-2 2" sizen="64 14" style="Bgs1InRace" substyle="BgTitle3_1" ScriptEvents="1"/>
+	<label posn="30 -5 1" halign="center" valign="center2" style="TextTitle3" text="Rules" translate="1"/>
+	<quad posn="0 -11" sizen="60 52" style="Bgs1InRace" substyle="BgTitlePage" ScriptEvents="1"/>
+	<label posn="2 -13" sizen="56" textsize="1" textcolor="000" text="{{{C_Rules}}}" autonewline="1"/>
+</frame>
+
+<script><!--
+/**
+ *	JailbreakV2Arena: EditAnchor
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load interface elements
+	declare CMlLabel[] Label_Options;
+	for (I, 0, {{{_Options.count}}} - 1)
+		Label_Options.add((Page.GetFirstChild(TL::ToText(I)) as CMlLabel));
+	
+	// ---------------------------------- //
+	// Variables
+	declare Boolean CloseManialink for Page;
+	declare Integer SelectedOption for Page;
+	declare OptionBackup = SelectedOption;
+	declare PrevOption = -2;
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Manage events
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// Mouse click
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				// ---------------------------------- //
+				// Select option
+				if (Event.Control.HasClass("Option"))
+					SelectedOption = TL::ToInteger(Event.ControlId);
+				
+				// ---------------------------------- //
+				// Apply changes
+				else if (Event.ControlId == "OK")
+					CloseManialink = True;
+				
+				// ---------------------------------- //
+				// Cancel changes
+				else if (Event.ControlId == "Cancel") {
+					SelectedOption = OptionBackup;
+					CloseManialink = True;
+				}
+			}
+		}
+		
+		// ---------------------------------- //
+		// Update selected option
+		if (PrevOption != SelectedOption) {
+			PrevOption = SelectedOption;
+			foreach (I => Label in Label_Options) {
+				if (I == SelectedOption) Label.TextColor = <0., .5, 0.>;
+				else Label.TextColor = <0., 0., 0.>;
+			}
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/// Show the anchor edition manialink
+Void EditAnchorData(Ident _EditedAnchorDataId) {
+	if (_EditedAnchorDataId == NullId) return;
+	UpdateValidability();
+	declare Anchor <=> AnchorData[_EditedAnchorDataId];
+	
+	declare Boolean CloseManialink for ManialinkPage;
+	declare Integer SelectedOption for ManialinkPage;
+	CloseManialink = False;
+	SelectedOption = 0;
+	
+	// ---------------------------------- //
+	// Create anchor edition manialink
+	declare Text[] SelectableOptions;
+	switch (Anchor.DefaultTag) {
+		case "Spawn" : {
+			if (Anchor.Tag == "JailSpawn") SelectedOption = 2;
+			SelectedOption += Anchor.Order - 1;
+			SelectableOptions = ["Spawn #1", "Spawn #2", "JailSpawn #1", "JailSpawn #2"];
+		}
+		case "Goal" : {
+			SelectedOption = Anchor.Order - 1;
+			SelectableOptions = ["Goal #1", "Goal #2"];
+		}
+		case "Checkpoint" : {
+			SelectedOption = Anchor.Order - 1;
+			SelectableOptions = ["Goal #1", "Goal #2"];
+		}
+		case "Gate" : {
+			SelectedOption = Anchor.Order - 1;
+			SelectableOptions = ["Gate #1", "Gate #2"];
+		}
+	}
+	ManialinkText = EditAnchorManialink(Anchor.DefaultTag, SelectableOptions);
+	
+	// Pause script until user selectes an option in the manialink
+	while (!CloseManialink) yield;
+	
+	// ---------------------------------- //
+	// Apply changes to the anchor data
+	if (SelectedOption >= 0) {
+		switch (Anchor.DefaultTag) {
+			case "Spawn" : {
+				if (SelectedOption == 2 || SelectedOption == 3) Anchor.Tag = "JailSpawn";
+				else Anchor.Tag = "Spawn";
+				Anchor.Order = (SelectedOption % 2) + 1;
+			}
+			case "Goal"			: Anchor.Order = (SelectedOption % 2) + 1;
+			case "Checkpoint"	: Anchor.Order = (SelectedOption % 2) + 1;
+			case "Gate"			: Anchor.Order = (SelectedOption % 2) + 1;
+		}
+	}
+	
+	UpdateValidability();
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	MapType::SetVersion(MapTypeVersion);
+	UpdateValidability();
+	CustomEditAnchorData = True;
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		ManialinkText = "";
+		
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			switch (Event.Type) {
+				case CPluginEvent::Type::MapModified	: UpdateValidability();			
+				case CPluginEvent::Type::EditAnchor		: EditAnchorData(Event.EditedAnchorDataId);
+			}
+		}
+	}
+}

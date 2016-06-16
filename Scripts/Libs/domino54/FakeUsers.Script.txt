@@ -1,14 +1,14 @@
 // -------------------------------------- //
 //  LIBRARY FAKE USERS by domino54        //
-//  script version: 2015-11-02            //
+//  script version: 2016-06-16            //
 // -------------------------------------- //
 
 /**
- *	This library allows automization of the fake users
+ *	This library allows easy automization of the fake users
  *	creation process, creating bots with fancy nicknames.
  */
 
-#Const Version		"2015-11-02"
+#Const Version		"2016-06-16"
 #Const ScriptName	"FakeUsers.Script.txt"
 
 #Include "MathLib" as ML
@@ -16,32 +16,41 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_TeamTagChance	.25	///< Chance of applying a team tag to the nickname
+#Const C_LibFakeUsers_TeamTagChance .33 ///< Chance for applying a team tag to the nickname
 
 /// Available nicknames
-#Const C_FakeUsersNicknames [
+#Const C_LibFakeUsers_FakeUsersNicknames [
 	// w/w format
 	"$i$4B8Steve ['_']", "$5B5Gordon Weedman", "$FF0POT$AAAa$FF0TOS", "Cr33pyM0nstrum", "$w$i$FF0KamiQuadzX", "$A00DMark",
 	"Pls senpai {>^_^}>", "$DDDCompany $FBB<3 $DDDCube", "$48DTalmael !«", "$FFFOniMod$888'$6BF45", "$CCCSilver Freddy",
 	"$08BCSGO $o$DB0Local Elite", "$w$CFCGuerritos", "$777TRUBO$BBB77", "$o$888#$BBBHash$EEETag", "$i$FFFOsom",
-	"$FFFPan$666dah$888|$0DFNewMouse", "$iPROLAME $o@OnboardGPU",
+	"$FFFPan$666dah$888|$0DFNewMouse", "$iPROLAME $o@OnboardGPU", "$i$FFFRex$F0F-$FFFZa", "$36DNerpdaughter",
+	"$0FFM$AAA-$FFFJim", "$w$i$F00YourDad", "$FA0CeroSUV", "$fa5GHB $333M.$f82St$333e$f82fool", "$irilou$FF0!",
+	"$i$06fв$fffυввle$06f«", "$w$6bfBlauBlaue", "$s$i$f20Pu$f42ppy$f64Ch$f86am$fa8py", "$3b5$wShrek", "$000Satan$070ø",
+	"$ccc.|$111Doctor Crime", "$i$w$F00Mr. $FFFBlu-Ray", "$FF0Super Mario 89", "$i$fffclaרiिιςατiση", "$o$F80earbo",
+	"$o$iM4nsion", "$o$a83sta$b94rt$ca5o$db6x$ec7ys", "$0F0»$4F1яe$8F2nt$BF2ge$FF3n$FF3ј$FA2а$F51у$F00«",
+	"$o$i$fa2P$fffro$fa2t$fffon", "$i$fffMister$f39 ノ", "$fffheat$0a0Nodule", "$0C0$wM$w$0A3arijuana$06A$wD$w$06Ariver",
+	"$0F0tomdestroyer", "$fff$iVoldemort", "$i$0ffmirindaribo", "$fffRabbitface", "$bbbSputnik$fa00$f900$f806",
+	"$F00I$F44r$F88D$FFFA",
 	// w/o format
 	"Kawaii Nate", "Miszczur", "Vladimir Shootin", "Alt+F4 free hax", "Smon1945", "Oldbie16x", "Kaszczu", "Combo66",
 	"Spammur", "Gimme a BOOGER", "Lorenfiusted", "Player #3.1416", "MLG-SlowScoper", "Thateadthe", "ManiaProject",
-	"GurkenGurke", "PeeNightly xd", "Cutkness", "happyzealot", "lightplus"
+	"GurkenGurke", "PeeNightly xd", "Cutkness", "happyzealot", "lightplus", "Sleepyw0w", "Mars", "BBinder", "Accelerator",
+	"evekooo3", "mingoal", "magnes", "slowforza", "TheseTwoGuys", "ASmallMike", "Warmsnake", "caramel", "TheSmallH."
 ]
 
 /// Availalbe teams tags
-#Const C_TeamsNames [
-	"$AAASa$6F6W !$AAA", "$FF0xτԍ$966» $FF8", "$6BFBL$DDDu$6BFE $DDD// $6BF",
-	 "$800R$A00O$C00T $FDB", "$o$0A0pr0$000$o$AAA» $6F6"
+#Const C_LibFakeUsers_TeamsNames [
+	"Mr ", "$AAASa$6F6W !$AAA", "$FF0xτԍ$966» $FF8", "$6BFBL$DDDu$6BFE $DDD// $6BF", "$49F$iGargamel $z",
+	"$0C6zoom$000off$fff", "$800R$A00O$C00T $FDB", "$o$0A0pr0$000$o$AAA» $6F6", "$900*bBb* $i$s$FFF", "$FA0Mando $z",
+	"$F00ZPLAY $i$000bG$FFF.$z ", "$i$FF0americanics.", "$i$39Fq$000.$FFF", "$FF0TTM* $z", "$i$fd0»$666Xerox$fd0|$fff"
 ]
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Text[] G_AvailableNames;	///< Nicknames available to toss
-declare Integer G_PrevNbFakeUsers;	///< Previous amount of the fake users
+declare Text[] G_LibFakeUsers_AvailableNames;		///< Nicknames available to toss
+declare Integer G_LibFakeUsers_PrevNbFakeUsers;		///< Previous amount of the fake users
 
 // ---------------------------------- //
 // Functions
@@ -57,15 +66,16 @@ declare Integer G_PrevNbFakeUsers;	///< Previous amount of the fake users
  *	@return		Random nickname
  */
 Text Private_GetNewNickname() {
-	if (G_AvailableNames.count <= 0) foreach (Name in C_FakeUsersNicknames) G_AvailableNames.add(Name);
+	if (G_LibFakeUsers_AvailableNames.count <= 0) foreach (Name in C_LibFakeUsers_FakeUsersNicknames) G_LibFakeUsers_AvailableNames.add(Name);
 	
 	// Select random name
 	declare Text Nickname;
-	Nickname = G_AvailableNames[ML::Rand(0, G_AvailableNames.count - 1)];
-	declare Removed = G_AvailableNames.remove(Nickname);
+	Nickname = G_LibFakeUsers_AvailableNames[ML::Rand(0, G_LibFakeUsers_AvailableNames.count - 1)];
+	declare Removed = G_LibFakeUsers_AvailableNames.remove(Nickname);
 	
 	// Attach team tag
-	if (ML::Rand(0., 1.) <= C_TeamTagChance) Nickname = C_TeamsNames[ML::Rand(0, C_TeamsNames.count - 1)]^Nickname;
+	if (ML::Rand(0., 1.) <= C_LibFakeUsers_TeamTagChance)
+		Nickname = C_LibFakeUsers_TeamsNames[ML::Rand(0, C_LibFakeUsers_TeamsNames.count - 1)]^Nickname;
 	
 	// Return nickname
 	return Nickname;
@@ -80,18 +90,14 @@ Text Private_GetNewNickname() {
  *
  *	@return		The version number of the script
  */
-Text GetScriptVersion() {
-	return Version;
-}
+Text GetScriptVersion() { return Version; }
 
 // ---------------------------------- //
 /** Return the name of the script
  *
  *	@return		The name of the script
  */
-Text GetScriptName() {
-	return ScriptName;
-}
+Text GetScriptName() { return ScriptName; }
 
 // ---------------------------------- //
 /** Update amount of the fake users
@@ -101,11 +107,11 @@ Text GetScriptName() {
  *	@param	_NbFakeUsers		The target amount of the fake users
  */
 Void UpdateAmount(Integer _NbFakeUsers) {
-	if (_NbFakeUsers == G_PrevNbFakeUsers) return;
-	G_PrevNbFakeUsers = _NbFakeUsers;
+	if (_NbFakeUsers == G_LibFakeUsers_PrevNbFakeUsers) return;
+	G_LibFakeUsers_PrevNbFakeUsers = _NbFakeUsers;
 	
 	declare FakeUsers = CUser[];
-	foreach (User in Users) if (User.IsFakeUser) FakeUsers.add(User);
+	foreach (Player in Players) if (Player.User.IsFakeUser) FakeUsers.add(Player.User);
 	declare DeltaAmount = _NbFakeUsers - FakeUsers.count;
 	
 	// Create new fake players
@@ -115,6 +121,6 @@ Void UpdateAmount(Integer _NbFakeUsers) {
 	if (DeltaAmount < 0) for (I, 1, -DeltaAmount) if (FakeUsers.count > 0) {
 		declare User = FakeUsers[FakeUsers.count - 1];
 		declare Removed = FakeUsers.remove(User);
-		Users_DestroyFake(User);
+		if (User != Null) Users_DestroyFake(User);
 	}
 }

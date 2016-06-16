@@ -1,0 +1,796 @@
+// -------------------------------------- //
+//  LIBRARY GALAXYTITLES by domino54      //
+//  script version: 2016-06-16            //
+// -------------------------------------- //
+
+/**
+ *	Works only in the title pack "GalaxyTitles@domino54".
+ *	This library contains essential features for all
+ *	game modes running in the GalaxyTitles title pack:
+ *	-	Spawning and managing Fuel and Armor
+ *	-	Spawning Combo weapon items and managing inventory
+ *	-	Spawning and managing NPC Toads
+ *	-	Managing players' reload boost
+ */
+
+#Const Version		"2016-06-16"
+#Const ScriptName	"GalaxyTitles.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
+#Include "Libs/domino54/TopScores.Script.txt" as TopScores
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+#Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
+#Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
+#Include "Libs/domino54/ShootMania/MiniMap.Script.txt" as MiniMap
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
+#Const C_LibGalaxyTitles_AcceptedObjects ["Armor", "Fuel", "Laser", "Nucleus", "Arrow", "Rocket"]
+#Const C_LibGalaxyTitles_WeaponItemsTags ["Laser", "Nucleus", "Arrow", "Rocket"]
+#Const C_LibGalaxyTitles_ArmorPickupRadius		10.		///< Armor item healing radius
+#Const C_LibGalaxyTitles_ArmorHealAmount		100		///< Armor item heal amount
+#Const C_LibGalaxyTitles_FuelPickupRadius		10.		///< Fuel item bonus radius
+#Const C_LibGalaxyTitles_FuelReloadMultipler	3.		///< Fuel reload bonus multipler
+#Const C_LibGalaxyTitles_FuelReloadDuration		2000	///< Fuel reload bonus duration
+#Const C_LibGalaxyTitles_DefaultPointsForPick	1		///< Default amount of points for affecting other player
+#Const C_LibGalaxyTitles_NoteDisplayTime		1750	///< Duration of the notice display time
+// Toads
+#Const C_LibGalaxyTitles_ToadLandmarksRatio		.5		///< Minimal amount of landmark spawning Toads
+#Const C_LibGalaxyTitles_ToadChillingTime		5000	///< Toad wandering delay
+#Const C_LibGalaxyTitles_ToadSaunterRadius		6.		///< Toad wandering area radius
+#Const C_LibGalaxyTitles_ToadShootPeriod		1000	///< Toad shoot period
+#Const C_LibGalaxyTitles_ToadSpeedPower			.25		///< Toad speed factor
+#Const C_LibGalaxyTitles_ToadAmmoGain			.5		///< Toad ammo reload speed
+#Const C_LibGalaxyTitles_ToadArmorMax			200		///< Amount of Toads armor points
+#Const C_LibGalaxyTitles_ToadAggroRadius		8.		///< Distance within shoot provokes Toad
+#Const C_LibGalaxyTitles_ToadPeaceDistance		16.		///< Distance within Toad will follow Player
+
+#Const C_LibGalaxyTitles_MinimapColors [
+	"Laser" => <1., 0., 1.>, "Nucleus" => <1., 0., .5>, "Arrow" => <1., 0., 0.>, "Rocket" => <1., 1., 0.>
+]
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident[Text] G_LibGalaxyTitles_Objects;
+declare Boolean G_LibGalaxyTitles_LibraryLoaded;
+declare Boolean G_LibGalaxyTitles_ObjectsAffectEveryone;
+declare Integer G_LibGalaxyTitles_PointsForPick;
+declare Ident[] G_LibGalaxyTitles_ToadsSpawns;
+declare Integer G_LibGalaxyTitles_ToadsArmorMax;
+declare Boolean G_LibGalaxyTitles_UseComboWeapons;
+declare Boolean G_LibGalaxyTitles_WeaponItemsAvailable;
+declare Text[] G_LibGalaxyTitles_MinimapMarkers;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Trim ammo reload value between 0 and 10 to avoid runtime error
+ *
+ *	@param	_AmmoGain	Reload speed to trim
+ *
+ *	@return		Safe ammo reload value
+ */
+Real Private_AdjustAmmoGain(Real _AmmoGain) {
+	if (_AmmoGain > 10) return 10.;
+	if (_AmmoGain < 0) return 0.;
+	return _AmmoGain;
+}
+
+// ---------------------------------- //
+/** Get the third team color
+ *
+ *	@param	_Color1		Color of the first clan
+ *	@param	_Color2		Color of the second clan
+ *
+ *	@return		Color of the third clan
+ */
+Vec3 Private_GetThirdClanColor(Vec3 _Color1, Vec3 _Color2) {
+	declare Vec3 Sum;
+	declare Real Max;
+	for (I, 0, 2) {
+		Sum[I] = _Color1[I] + _Color2[I];
+		if (Sum[I] > Max) Max = Sum[I];
+	}
+	if (Max > 0) for (I, 0, 2) Sum[I] = 1. - (Sum[I] / Max);
+	Max = 0.;
+	for (I, 0, 2) if (Sum[I] > Max) Max = Sum[I];
+	if (Max > 0) for (I, 0, 2) Sum[I] *= 1 / Max;
+	return Sum;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/// Unload library
+Void Unload() {
+	G_LibGalaxyTitles_ObjectsAffectEveryone = False;
+	G_LibGalaxyTitles_PointsForPick = C_LibGalaxyTitles_DefaultPointsForPick;
+	G_LibGalaxyTitles_ToadsArmorMax = C_LibGalaxyTitles_ToadArmorMax;
+	G_LibGalaxyTitles_LibraryLoaded = False;
+	
+	// Unload libraries
+	Inventory::Unload();
+}
+
+// ---------------------------------- //
+/// Load library
+Void Load() {
+	Unload();
+	G_LibGalaxyTitles_LibraryLoaded = True;
+	
+	// ---------------------------------- //
+	// Load objects
+	G_LibGalaxyTitles_Objects["Fuel"]		= ItemList_Add("SMCommon\\Collectibles\\Fuel.Item.gbx");
+	G_LibGalaxyTitles_Objects["Armor"]		= ItemList_Add("SMCommon\\Pickups\\Armor.Item.gbx");
+	G_LibGalaxyTitles_Objects["Laser"]		= ItemList_Add("SMCommon\\Pickups\\Laser.Item.gbx");
+	G_LibGalaxyTitles_Objects["Nucleus"]	= ItemList_Add("SMCommon\\Pickups\\Nucleus.Item.gbx");
+	G_LibGalaxyTitles_Objects["Arrow"]		= ItemList_Add("SMCommon\\Pickups\\Arrow.Item.gbx");
+	G_LibGalaxyTitles_Objects["Rocket"]		= ItemList_Add("SMCommon\\Pickups\\Rocket.Item.gbx");
+	G_LibGalaxyTitles_Objects["Toad"]		= ItemList_Add("Characters\\ToadSample.Item.gbx");
+	
+	// ---------------------------------- //
+	// Load interface
+	Interfancy::SetGaugesTextFont("Eurostile_Bold");
+	Interfancy::SetBoostIconImage(C_ImgBase^"Icons/ReloadBoost.png");
+	Interfancy::SetGaugesIconsImages([
+		"Laser"		=> C_ImgBase^"Icons/Laser.png",
+		"Rocket"	=> C_ImgBase^"Icons/Rocket.png",
+		"Nucleus"	=> C_ImgBase^"Icons/Nucleus.png",
+		"Arrow"		=> C_ImgBase^"Icons/Arrow.png",
+		"Armor"		=> C_ImgBase^"Icons/Armor.png",
+		"Stamina"	=> C_ImgBase^"Icons/Jump.png",
+		"Sprint"	=> C_ImgBase^"Icons/Run.png"
+	]);
+	Interfancy::SetGaugesSoundPath([
+		"AmmoStep"		=> C_ImgBase^"SoundGauge/UIGaugeEnergyBallSlot.wav",
+		"ArmorStep"		=> C_ImgBase^"SoundGauge/UIGaugeHealthGradFull.wav",
+		"StaminaFull"	=> C_ImgBase^"SoundGauge/UIGaugeStaminaFull.wav",
+		"StaminaEmpty"	=> C_ImgBase^"SoundGauge/UIGaugeStaminaEmpty.wav"
+	]);
+	
+	// ---------------------------------- //
+	// Load and format Inventory
+	Inventory::Load();
+	Inventory::FormatInterfaceHotbar(
+		<158., -74., 5.>, <8., 8.>, 1., 2.,
+		CMlControl::AlignHorizontal::Right, CMlControl::AlignVertical::VCenter
+	);
+	
+	Inventory::FormatLabelAmount("<label posn=\"4 -2.5\" valign=\"center2\" textfont=\"Eurostile_Bold\"/>");
+	Inventory::FormatLabelHotkey("<label posn=\"-3.5 3\" valign=\"center2\" textfont=\"Eurostile_Bold\"/>");
+	Inventory::FormatLabelCooldown("<label textsize=\"3\" textfont=\"Eurostile_Bold\"/>");
+	Inventory::FormatQuadBackground("<quad sizen=\"8 8\" image=\""^C_ImgBase^"UiItemShadow.png\"/>");
+	Inventory::FormatQuadHighlight("<quad sizen=\"10 10\" image=\""^C_ImgBase^"UiCurrentWeapon.png\"/>");
+	
+	Inventory::SetWeaponsIcons([
+		CSmMode::EWeapon::Laser		=> C_ImgBase^"Icons/Laser.png",
+		CSmMode::EWeapon::Nucleus	=> C_ImgBase^"Icons/Nucleus.png",
+		CSmMode::EWeapon::Arrow		=> C_ImgBase^"Icons/Arrow.png",
+		CSmMode::EWeapon::Rocket	=> C_ImgBase^"Icons/Rocket.png"
+	]);
+}
+
+// ---------------------------------- //
+/// Apply and remove reload boost to the Players
+Void ReloadBoost() {
+	if (Players.count <= 0) return;
+	foreach (Player in Players) {
+		declare LibGalaxyTitles_BoostEndTime for Player = -1;
+		declare LibGalaxyTitles_PrevAmmoGain for Player = -1.;
+		declare LibGalaxyTitles_BoostMultipler for Player = 1.;
+		
+		// ---------------------------------- //
+		// Increase player reload speed
+		if (Now < LibGalaxyTitles_BoostEndTime) {
+			if (LibGalaxyTitles_PrevAmmoGain < 0.) {
+				LibGalaxyTitles_PrevAmmoGain = Player.AmmoGain;
+				Player.AmmoGain = Private_AdjustAmmoGain(Player.AmmoGain * LibGalaxyTitles_BoostMultipler);
+			}
+			// ---------------------------------- //
+			// Player base reload speed changed during boost
+			else if (
+				Player.AmmoGain < 10 &&
+				LibGalaxyTitles_PrevAmmoGain != Player.AmmoGain / C_LibGalaxyTitles_FuelReloadMultipler
+			) {
+				declare ReloadDelta = Player.AmmoGain - LibGalaxyTitles_PrevAmmoGain / LibGalaxyTitles_BoostMultipler;
+				LibGalaxyTitles_PrevAmmoGain += ReloadDelta;
+				Player.AmmoGain = Private_AdjustAmmoGain(LibGalaxyTitles_PrevAmmoGain * LibGalaxyTitles_BoostMultipler);
+			}
+		}
+		// ---------------------------------- //
+		// Reverse reload speed back to the old value
+		else if (LibGalaxyTitles_PrevAmmoGain >= 0) {
+			Player.AmmoGain = Private_AdjustAmmoGain(LibGalaxyTitles_PrevAmmoGain);
+			LibGalaxyTitles_PrevAmmoGain = -1.;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Give the Player reload boost for certain amount of time
+ *
+ *	@param	_Player			The Player to apply boost
+ *	@param	_Duration		Reload boost duration
+ *	@param	_Multipler		Reload boost multipler
+ */
+Void AddReloadBoost(CSmPlayer _Player, Integer _Duration, Real _Multipler) {
+	declare LibGalaxyTitles_BoostEndTime for _Player = -1;
+	declare LibGalaxyTitles_BoostMultipler for _Player = 1.;
+	
+	if (LibGalaxyTitles_BoostEndTime < Now) LibGalaxyTitles_BoostEndTime = Now + _Duration;
+	else LibGalaxyTitles_BoostEndTime += _Duration;
+	LibGalaxyTitles_BoostMultipler = _Multipler;
+	Interfancy::SetPlayerReloadData(_Player, Now, LibGalaxyTitles_BoostEndTime - Now);
+}
+
+Void AddReloadBoost(CSmPlayer _Player, Integer _Duration) {
+	AddReloadBoost(_Player, _Duration, C_LibGalaxyTitles_FuelReloadMultipler);
+}
+
+Void AddReloadBoost(CSmPlayer _Player, Real _Multipler) {
+	AddReloadBoost(_Player, C_LibGalaxyTitles_FuelReloadDuration, _Multipler);
+}
+
+Void AddReloadBoost(CSmPlayer _Player) {
+	AddReloadBoost(_Player, C_LibGalaxyTitles_FuelReloadDuration, C_LibGalaxyTitles_FuelReloadMultipler);
+}
+
+// ---------------------------------- //
+/** Remove reload boost from specific Player
+ *
+ *	@param	_Player		The Player to remove boost
+ */
+Void ClearReloadBoost(CSmPlayer _Player) {
+	declare LibGalaxyTitles_BoostEndTime for _Player = -1;
+	LibGalaxyTitles_BoostEndTime = -1;
+}
+
+// ---------------------------------- //
+// Remove reload boost from all players
+Void ClearReloadBoost() {
+	foreach (Player in AllPlayers) ClearReloadBoost(Player);
+	Interfancy::ResetReloadData();
+}
+
+// ---------------------------------- //
+/// Destroy all objects and reset landmarks settings
+Void InitObjects() {
+	ObjectDestroyAll();
+	G_LibGalaxyTitles_WeaponItemsAvailable = False;
+	
+	foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+		declare Boolean LibGalaxyTitles_ObjectSpawned for MapLandmark;
+		declare Integer LibGalaxyTitles_ObjectNextSpawn for MapLandmark;
+		LibGalaxyTitles_ObjectSpawned = False;
+		LibGalaxyTitles_ObjectNextSpawn = Now;
+		
+		if (
+			G_LibGalaxyTitles_UseComboWeapons &&
+			C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)
+		)
+			G_LibGalaxyTitles_WeaponItemsAvailable = True;
+	}
+	
+	foreach (MarkerTag in G_LibGalaxyTitles_MinimapMarkers) MiniMap::DestroyMarker(MarkerTag);
+	G_LibGalaxyTitles_MinimapMarkers.clear();
+}
+
+// ---------------------------------- //
+/** Spawn objects on landmarks
+ *
+ *	@param	_SpawnObjects	If False, objects won't be spawned
+ */
+Void SpawnObjects(Boolean _SpawnObjects) {
+	if (!_SpawnObjects || !G_LibGalaxyTitles_LibraryLoaded) return;
+	foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+		declare LibGalaxyTitles_ObjectSpawned for MapLandmark = False;
+		declare LibGalaxyTitles_ObjectNextSpawn for MapLandmark = Now;
+		declare LibGalaxyTitles_ObjectPlayerId for MapLandmark = NullId;
+		
+		// ---------------------------------- //
+		// Continue if landmark has object or object can't be spawned
+		if (LibGalaxyTitles_ObjectSpawned || LibGalaxyTitles_ObjectNextSpawn > Now) continue;
+		
+		// ---------------------------------- //
+		// Continue if landmark spawns weapons when they're not available
+		if (!G_LibGalaxyTitles_WeaponItemsAvailable && C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) continue;
+		
+		// ---------------------------------- //
+		// Continue if weapon is carried by the player
+		if (
+			LibGalaxyTitles_ObjectPlayerId != NullId &&
+			Players.existskey(LibGalaxyTitles_ObjectPlayerId) &&
+			Players[LibGalaxyTitles_ObjectPlayerId].SpawnStatus == CSmPlayer::ESpawnStatus::Spawned
+		) continue;
+		
+		// ---------------------------------- //
+		// Create object
+		declare CSmObject Object;
+		switch (MapLandmark.Tag) {
+			case "Armor"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Armor"]);
+			case "Laser"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Laser"]);
+			case "Nucleus"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Nucleus"]);
+			case "Arrow"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Arrow"]);
+			case "Rocket"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Rocket"]);
+			case "Fuel"		: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Fuel"]);
+		}
+		
+		if (Object == Null) continue;
+		LibGalaxyTitles_ObjectSpawned = True;
+		
+		// ---------------------------------- //
+		// Set object properties
+		declare Ident LibGalaxyTitles_AnchorId for Object;
+		declare Text LibGalaxyTitles_Tag for Object;
+		LibGalaxyTitles_AnchorId = MapLandmark.Id;
+		LibGalaxyTitles_Tag = MapLandmark.Tag;
+		
+		// Reset weapon carrier
+		LibGalaxyTitles_ObjectPlayerId = NullId;
+		
+		// Create weapon marker
+		if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
+			declare MarkerTag = "Object#"^MapLandmark.Id;
+			MiniMap::SetMarker(
+				MarkerTag, C_ImgBase^"Minimap/"^MapLandmark.Tag^".png",
+				C_LibGalaxyTitles_MinimapColors[MapLandmark.Tag], MapLandmark.Position
+			);
+			G_LibGalaxyTitles_MinimapMarkers.add(MarkerTag);
+		}
+		
+		// Spawn object
+		Object.SetPosition(MapLandmark.Position);
+	}
+}
+
+// ---------------------------------- //
+/// Spawn objects on landmarks
+Void SpawnObjects() {
+	SpawnObjects(True);
+}
+
+// ---------------------------------- //
+/** Pick up object
+ *
+ *	@param	_Event			The event to proceed
+ *	@param	_RespawnTime	Time before object will be spawned again after pick
+ *
+ *	@return		True, if player has successfully picked up item
+ */
+Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
+	if (
+		_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerTouchesObject ||
+		_Event.Object == Null || _Event.Player == Null || _Event.Player.IsBot ||
+		_Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned
+	) return False;
+	
+	declare Text LibGalaxyTitles_Tag for _Event.Object;
+	declare Ident LibGalaxyTitles_AnchorId for _Event.Object;
+	
+	// Return False if object is not handled by GalaxyTitles library
+	if (!C_LibGalaxyTitles_AcceptedObjects.exists(LibGalaxyTitles_Tag)) return False;
+	
+	// ---------------------------------- //
+	// Pick conditions
+	switch (LibGalaxyTitles_Tag) {
+		// ---------------------------------- //
+		// Armor conditions
+		case "Armor" : {
+			declare CanPickUpArmor = (_Event.Player.Armor < _Event.Player.ArmorMax);
+			
+			// Check if players nearby can be healed
+			if (!CanPickUpArmor) foreach (Player in Players)
+				if (
+					Player != _Event.Player &&
+					Player.CurrentClan == _Event.Player.CurrentClan && Player.Armor < Player.ArmorMax &&
+					ML::Distance(_Event.Player.Position, Player.Position) <= C_LibGalaxyTitles_ArmorPickupRadius
+				) {
+					CanPickUpArmor = True;
+					break;
+				}
+			
+			// Cant pick up Armor
+			if (!CanPickUpArmor) return False;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Item respawn timer
+	if (MapLandmarks_ObjectAnchor.existskey(LibGalaxyTitles_AnchorId)) {
+		declare MapLandmark <=> MapLandmarks_ObjectAnchor[LibGalaxyTitles_AnchorId];
+		declare LibGalaxyTitles_ObjectSpawned for MapLandmark = False;
+		declare LibGalaxyTitles_ObjectNextSpawn for MapLandmark = Now;
+		declare LibGalaxyTitles_ObjectPlayerId for MapLandmark = NullId;
+		
+		LibGalaxyTitles_ObjectSpawned = False;
+		LibGalaxyTitles_ObjectNextSpawn = Now + _RespawnTime;
+		
+		// ---------------------------------- //
+		// Set weapon carrier
+		if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
+			LibGalaxyTitles_ObjectNextSpawn = Now;
+			LibGalaxyTitles_ObjectPlayerId = _Event.Player.Id;
+			
+			// Destroy weapon marker
+			declare MarkerTag = "Object#"^MapLandmark.Id;
+			MiniMap::DestroyMarker(MarkerTag);
+			declare Removed = G_LibGalaxyTitles_MinimapMarkers.remove(MarkerTag);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Apply effect
+	declare NbOtherPlayersAffected = 0;
+	declare Message = Text[];
+	
+	switch (LibGalaxyTitles_Tag) {
+		// ---------------------------------- //
+		// Armor - heal players
+		case "Armor" : {
+			foreach (Player in Players) {
+				if (
+					Player.Armor < Player.ArmorMax &&
+					((Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) ||
+					G_LibGalaxyTitles_ObjectsAffectEveryone) &&
+					ML::Distance(_Event.Player.Position, Player.Position) <= C_LibGalaxyTitles_ArmorPickupRadius
+				) {
+					// ---------------------------------- //
+					// Heal players
+					AddPlayerArmor(Player, C_LibGalaxyTitles_ArmorHealAmount, Null, 0);
+					
+					// ---------------------------------- //
+					// Notice other healed players
+					if (Player == _Event.Player) continue;
+					NbOtherPlayersAffected += 1;
+					
+					Interfancy::SendCrosshairNote(
+						Player, ["$<%1$> healed you!", _Event.Player.Name],
+						C_LibGalaxyTitles_NoteDisplayTime
+					);
+				}
+			}
+			
+			// Compose notice for the player
+			if (NbOtherPlayersAffected > 0) {
+				if (NbOtherPlayersAffected > 1) Message = ["Healed %1 players", TL::ToText(NbOtherPlayersAffected)];
+				else Message = ["Healed 1 player"];
+			}
+		}
+		// ---------------------------------- //
+		// Fuel - reload boost and stamina
+		case "Fuel" : {
+			foreach (Player in Players) {
+				if (
+					Player.CurrentClan == _Event.Player.CurrentClan &&
+					((Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) ||
+					G_LibGalaxyTitles_ObjectsAffectEveryone) &&
+					ML::Distance(_Event.Player.Position, Player.Position) <= C_LibGalaxyTitles_FuelPickupRadius
+				) {
+					// ---------------------------------- //
+					// Boost players
+					AddReloadBoost(Player);
+					Player.Stamina = ML::FloorInteger(Player.StaminaMax * 3600);
+					
+					// ---------------------------------- //
+					// Notice other boosted players
+					if (Player == _Event.Player) continue;
+					NbOtherPlayersAffected += 1;
+					
+					Interfancy::SendCrosshairNote(
+						Player, ["$<%1$> boosted you!", _Event.Player.Name],
+						C_LibGalaxyTitles_NoteDisplayTime
+					);
+				}
+			}
+			
+			// Compose notice for the player
+			if (NbOtherPlayersAffected > 0) {
+				if (NbOtherPlayersAffected > 1) Message = ["Boosted %1 players", TL::ToText(NbOtherPlayersAffected)];
+				else Message = ["Boosted 1 player"];
+			}
+		}
+		// ---------------------------------- //
+		// Give Laser weapon slot
+		case "Laser" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Laser, 1);
+		
+		// ---------------------------------- //
+		// Give Nucleus weapon slot
+		case "Nucleus" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Nucleus, 1);
+		
+		// ---------------------------------- //
+		// Give Arrow weapon slot
+		case "Arrow" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Arrow, 1);
+		
+		// ---------------------------------- //
+		// Give Rocket weapon slot
+		case "Rocket" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Rocket, 1);
+	}
+	
+	// ---------------------------------- //
+	// Send notice and give points if player has affected somebody
+	if (NbOtherPlayersAffected > 0) {
+		Interfancy::SendCrosshairNote(_Event.Player, Message, C_LibGalaxyTitles_NoteDisplayTime);
+		Score::AddPoints(_Event.Player, NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
+		TopScores::AddPoints(_Event.Player.Score, "Items", NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
+	}
+	
+	// ---------------------------------- //
+	// Destroy object (unspawning the object gives a quiet sound)
+	_Event.Object.SetUnspawned();
+	ObjectDestroy(_Event.Object);
+	return True;
+}
+
+// ---------------------------------- //
+/** Set the Combo weapons usage and reset all players inventories
+ *	/!\ Must be set before InitObjects() or InitAll() /!\
+ */
+Void UseComboWeapons(Boolean _UseWeapons) {
+	G_LibGalaxyTitles_UseComboWeapons = _UseWeapons;
+	Inventory::ResetAllInventories();
+}
+
+// ---------------------------------- //
+/** Reset and load player weapons after player is respawned
+ *	/!\ Must be placed after player is spawned in the world /!\
+ *
+ *	@param	_Player		Player to set weapon
+ */
+Void InitPlayerComboWeapons(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	Inventory::ResetInventory(_Player);
+	
+	if (!G_LibGalaxyTitles_WeaponItemsAvailable) return;
+	Inventory::SetAllWeapons(_Player);
+	Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Rocket, 4);
+	Inventory::SetFirstWeapon(_Player);
+	
+	// Change icons to GalaxyTitles style
+	foreach (Weapon in C_LibGalaxyTitles_WeaponItemsTags)
+		Inventory::ChangeSlotIcon(_Player, "LibInventory_Weapon"^Weapon, C_ImgBase^"Icons/"^Weapon^".png");
+}
+
+// ---------------------------------- //
+/** Initialize Toads spawn landmarks
+ *
+ *	@param	_ToadsSpawnRatio	Target ratio of landmarks spawning Toads to all landmarks
+ */
+Void InitToads(Real _ToadsSpawnRatio) {
+	DestroyAllBotPlayers();
+	G_LibGalaxyTitles_ToadsSpawns.clear();
+	if (MapLandmarks_BotPath.count <= 0 || _ToadsSpawnRatio <= 0) return;
+	
+	// ---------------------------------- //
+	// Reset Toads information in landmarks
+	foreach (MapLandmark in MapLandmarks_BotPath) {
+		declare Boolean LibGalaxyTitles_ToadSpawned for MapLandmark;
+		declare Integer LibGalaxyTitles_ToadNextSpawn for MapLandmark;
+		LibGalaxyTitles_ToadSpawned = False;
+		LibGalaxyTitles_ToadNextSpawn = Now;
+	}
+	
+	// ---------------------------------- //
+	// Select landmark what will spawn Toads
+	declare LandmarksRatio = 0.;
+	while (True) {
+		declare Ident LandmarkId;
+		LandmarkId = NullId;
+		
+		while (True) {
+			LandmarkId = MapLandmarks_BotPath[ML::Rand(0, MapLandmarks_BotPath.count - 1)].Id;
+			if (!G_LibGalaxyTitles_ToadsSpawns.exists(LandmarkId)) break;
+		}
+		
+		G_LibGalaxyTitles_ToadsSpawns.add(LandmarkId);
+		LandmarksRatio = ML::ToReal(G_LibGalaxyTitles_ToadsSpawns.count) / MapLandmarks_BotPath.count;
+		if (LandmarksRatio >= _ToadsSpawnRatio || G_LibGalaxyTitles_ToadsSpawns.count >= MapLandmarks_BotPath.count) break;
+	}
+}
+
+// ---------------------------------- //
+/// Initialize Toads spawn landmarks with default spawn ratio 
+Void InitToads() {
+	InitToads(C_LibGalaxyTitles_ToadLandmarksRatio);
+}
+
+// ---------------------------------- //
+/** Manage everything related with Toads
+ *
+ *	@param	_ToadsRespawnTime	Time before Toad will respawn after elimination
+ */
+Void ToadsLoop(Integer _ToadsRespawnTime) {
+	// ---------------------------------- //
+	// Spawn Toads
+	foreach (MapLandmark in MapLandmarks_BotPath) {
+		if (_ToadsRespawnTime <= 0) continue;
+		if (!G_LibGalaxyTitles_ToadsSpawns.exists(MapLandmark.Id)) continue;
+		
+		declare LibGalaxyTitles_ToadSpawned for MapLandmark = False;
+		declare LibGalaxyTitles_ToadNextSpawn for MapLandmark = Now;
+		
+		// ---------------------------------- //
+		// Continue if landmark can't spawn Toad or if Toad is already spawned
+		if (LibGalaxyTitles_ToadSpawned || LibGalaxyTitles_ToadNextSpawn > Now) continue;
+		
+		// ---------------------------------- //
+		// Create Toad
+		declare Toad <=> CreateBotPlayer(G_LibGalaxyTitles_Objects["Toad"], 0);
+		
+		// ---------------------------------- //
+		// Define behaviour depending on amount of path points
+		if (MapLandmark.BotPath.Path.count > 1) {
+			Toad.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::Patrol;
+			if (
+				MapLandmark.BotPath.Path.count >= 3 &&
+				ML::Distance(MapLandmark.BotPath.Path[0], MapLandmark.BotPath.Path[MapLandmark.BotPath.Path.count-1]) <= 8.
+			)
+				Toad.Driver.Patrol_Mode = CSmPlayerDriver::ESmDriverPatrolMode::Loop;
+			else
+				Toad.Driver.Patrol_Mode = CSmPlayerDriver::ESmDriverPatrolMode::BackAndForth;
+		} else
+			Toad.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::Saunter;
+		
+		// ---------------------------------- //
+		// Configure Toad
+		Toad.Driver.AttackFilter = CSmPlayerDriver::ESmAttackFilter::Nobody;
+		Toad.Driver.Saunter_BaseChillingTime	= C_LibGalaxyTitles_ToadChillingTime;
+		Toad.Driver.Saunter_ChillingTimeDelta	= 0;
+		Toad.Driver.Saunter_Radius	= C_LibGalaxyTitles_ToadSaunterRadius;
+		Toad.Driver.ShootPeriodMin	= C_LibGalaxyTitles_ToadShootPeriod;
+		Toad.Driver.ShootPeriodMax	= C_LibGalaxyTitles_ToadShootPeriod;
+		Toad.Driver.AggroRadius		= C_LibGalaxyTitles_ToadPeaceDistance;
+		Toad.Driver.DisengageDistance	= C_LibGalaxyTitles_ToadPeaceDistance;
+		Toad.SpeedPower	= C_LibGalaxyTitles_ToadSpeedPower;
+		Toad.AmmoGain	= C_LibGalaxyTitles_ToadAmmoGain;
+		Toad.ArmorMax	= G_LibGalaxyTitles_ToadsArmorMax;
+		Toad.ForceColor	= Private_GetThirdClanColor(Teams[0].ColorPrimary, Teams[1].ColorPrimary);
+		
+		// ---------------------------------- //
+		// Spawn Toad
+		declare Ident LibGalaxyTitles_AnchorId for Toad;
+		LibGalaxyTitles_AnchorId = MapLandmark.Id;
+		
+		SpawnBotPlayer(Toad, 0, Toad.ArmorMax, MapLandmark.BotPath, Now);
+		LibGalaxyTitles_ToadSpawned = True;
+	}
+	
+	// ---------------------------------- //
+	// Manage events
+	foreach (Event in PendingEvents) {
+		// ---------------------------------- //
+		// Respawn eliminated Toads
+		if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+			if (Event.Victim.IsBot && Event.Victim.ForceModelId == G_LibGalaxyTitles_Objects["Toad"]) {
+				declare Ident LibGalaxyTitles_AnchorId for Event.Victim;
+				if (MapLandmarks_BotPath.existskey(LibGalaxyTitles_AnchorId)) {
+					declare MapLandmark <=> MapLandmarks_BotPath[LibGalaxyTitles_AnchorId];
+					declare Boolean LibGalaxyTitles_ToadSpawned for MapLandmark = False;
+					declare Integer LibGalaxyTitles_ToadNextSpawn for MapLandmark = Now;
+					LibGalaxyTitles_ToadSpawned = False;
+					LibGalaxyTitles_ToadNextSpawn = Now + _ToadsRespawnTime;
+				}
+				DestroyBotPlayer(Event.Victim);
+			}
+		}
+		// ---------------------------------- //
+		// Make player who shoot the Toad its target
+		else if (Event.Type == CSmModeEvent::EType::OnHit) {
+			if (
+				Event.Victim != Null && Event.Victim.IsBot &&
+				Event.Victim.ForceModelId == G_LibGalaxyTitles_Objects["Toad"]
+			)
+				Event.Victim.Driver.ForcedTarget = Event.Shooter;
+		}
+		// ---------------------------------- //
+		// Make the Player shooting near Toad its target
+		else if (Event.Type == CSmModeEvent::EType::OnShoot) {
+			if (Event.Shooter != Null && !Event.Shooter.IsBot) {
+				foreach (BotPlayer in BotPlayers) {
+					if (
+						BotPlayer.ForceModelId == G_LibGalaxyTitles_Objects["Toad"] &&
+						ML::Distance(BotPlayer.Position, Event.Shooter.Position) <= C_LibGalaxyTitles_ToadAggroRadius
+					)
+						BotPlayer.Driver.ForcedTarget = Event.Shooter;
+				}
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Manage Toads functions
+	foreach (BotPlayer in BotPlayers) {
+		if (BotPlayer.ForceModelId != G_LibGalaxyTitles_Objects["Toad"]) continue;
+		
+		// ---------------------------------- //
+		// Make player touching Toad its target
+		if (BotPlayer.Driver.ForcedTarget == Null) {
+			foreach (Player in Players) {
+				if (
+					Player.Armor > 0 && Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned &&
+					ML::Distance(BotPlayer.Position, Player.Position) < 1.5
+				)
+					BotPlayer.Driver.ForcedTarget = Player;
+			}
+		}
+		
+		// ---------------------------------- //
+		// Clear Toad target if out of range
+		if (BotPlayer.Driver.ForcedTarget != Null) {
+			declare Player <=> BotPlayer.Driver.ForcedTarget;
+			if (
+				Player.Armor <= 0 || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned ||
+				ML::Distance(BotPlayer.Position, Player.Position) > BotPlayer.Driver.DisengageDistance
+			)
+				BotPlayer.Driver.ForcedTarget = Null;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Initialize and reset the library
+Void Init() {
+	ClearReloadBoost();
+	InitObjects();
+	InitToads();
+}
+
+// ---------------------------------- //
+/** Initialize all settings of a player
+ *
+ *	@param	_Player		Player to initialize
+ */
+Void InitPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	ClearReloadBoost(_Player);
+	InitPlayerComboWeapons(_Player);
+}
+
+// ---------------------------------- //
+/** Set if objects affect also enemy players
+ *
+ *	@param	_Setting	True, if objects may affect enemies
+ */
+Void SetObjectsAffectEveryone(Boolean _Setting) {
+	G_LibGalaxyTitles_ObjectsAffectEveryone = _Setting;
+}
+
+// ---------------------------------- //
+/** Set amount of points given for picking up object
+ *
+ *	@param	_Setting	Amount of points for picking up object
+ */
+Void SetPointsForPick(Integer _Setting) {
+	G_LibGalaxyTitles_PointsForPick = _Setting;
+}
+
+// ---------------------------------- //
+/** Set amount of Toads armor points
+ *
+ *	@param	_Setting	Toads armor points
+ */
+Void SetToadsArmorMax(Integer _Setting) {
+	G_LibGalaxyTitles_ToadsArmorMax = _Setting;
+}

@@ -1,0 +1,1439 @@
+// -------------------------------------- //
+//  LIBRARY INVENTORY by domino54         //
+//  script version: 2016-06-16            //
+// -------------------------------------- //
+
+/**
+ *	This library can manage simple inventories for the players.
+ *	Inventory can handle consumable items, weapons amount and spells.
+ *	Library can be used for easy switching between weapons on action keys.
+ *	Hotbar manialink can be fully customized with several formatting functions.
+ */
+
+#Const Version		"2016-06-16"
+#Const ScriptName	"Inventory.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibInventory_UILayerID				"LibInventory:Interface"
+#Const C_LibInventory_UINbItemsDisplayed	10
+#Const C_LibInventory_UIHotbarPosition		<160., -90., 5.>
+#Const C_LibInventory_UIHotbarItemSize		<10., 10.>
+#Const C_LibInventory_UIHotbarScale			1.
+#Const C_LibInventory_UIHotbarRotation		0.
+#Const C_LibInventory_UIHotbarHAlign		"right"
+#Const C_LibInventory_UIHotbarVAlign		"bottom"
+#Const C_LibInventory_UIItemColorEmpty		<.5, .5, .5>
+#Const C_LibInventory_UIItemColorDefault	<1., 1., 1.>
+#Const C_LibInventory_UIItemColorCooldown	<.25, .25, .25>
+
+/// Sort items depending on their hotkeys order
+#Const C_LibInventory_OrganizedOrder [
+	CSmModeEvent::EActionInput::Weapon,
+	CSmModeEvent::EActionInput::Activable1,
+	CSmModeEvent::EActionInput::Activable2,
+	CSmModeEvent::EActionInput::Activable3,
+	CSmModeEvent::EActionInput::Activable4,
+	CSmModeEvent::EActionInput::Movement,
+	CSmModeEvent::EActionInput::Consumable1,
+	CSmModeEvent::EActionInput::Consumable2,
+	CSmModeEvent::EActionInput::None
+]
+
+#Const C_LibInventory_Weapons [
+	CSmMode::EWeapon::Laser, CSmMode::EWeapon::Nucleus, CSmMode::EWeapon::Arrow, CSmMode::EWeapon::Rocket
+]
+
+/// Names of the items representing players weapons
+#Const C_LibInventory_WeaponsPredefinedNames [
+	CSmMode::EWeapon::Laser		=> "LibInventory_WeaponLaser",
+	CSmMode::EWeapon::Nucleus	=> "LibInventory_WeaponNucleus",
+	CSmMode::EWeapon::Arrow		=> "LibInventory_WeaponArrow",
+	CSmMode::EWeapon::Rocket	=> "LibInventory_WeaponRocket"
+]
+
+/// Weapons switch keyboard keys
+#Const C_LibInventory_GetWeaponHotkey [
+	CSmMode::EWeapon::Laser		=> CSmModeEvent::EActionInput::Activable1,
+	CSmMode::EWeapon::Nucleus	=> CSmModeEvent::EActionInput::Activable2,
+	CSmMode::EWeapon::Arrow		=> CSmModeEvent::EActionInput::Activable3,
+	CSmMode::EWeapon::Rocket	=> CSmModeEvent::EActionInput::Activable4
+]
+
+/// Default icons of the weapons
+#Const C_LibInventory_GetWeaponIcon [
+	CSmMode::EWeapon::Laser		=> "file://Media/Manialinks/ShootMania/Common/LaserWhite.dds",
+	CSmMode::EWeapon::Nucleus	=> "file://Media/Manialinks/ShootMania/Common/NucleusWhite.dds",
+	CSmMode::EWeapon::Arrow		=> "file://Media/Manialinks/ShootMania/Common/ArrowWhite.dds",
+	CSmMode::EWeapon::Rocket	=> "file://Media/Manialinks/ShootMania/Common/RocketWhite.dds"
+]
+
+/// Get the text coresponding to hotkey
+#Const C_LibInventory_GetHotkeyText [
+	CSmModeEvent::EActionInput::Activable1 => "1",
+	CSmModeEvent::EActionInput::Activable2 => "2",
+	CSmModeEvent::EActionInput::Activable3 => "3",
+	CSmModeEvent::EActionInput::Activable4 => "4",
+	CSmModeEvent::EActionInput::Consumable1 => "Q",
+	CSmModeEvent::EActionInput::Consumable2 => "E",
+	CSmModeEvent::EActionInput::Weapon => "LMB",
+	CSmModeEvent::EActionInput::Movement => "RMB",
+	CSmModeEvent::EActionInput::None => ""
+]
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Boolean G_LibInventory_IsLoaded;	///< True, if the library has been loaded
+declare Text[CSmMode::EWeapon] G_LibInventory_WeaponsIcons;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the inventory module
+ *
+ *	@return		The inventory manialink
+ */
+Text Private_CreateManialinkInventory() {
+	declare Text ItemsModels;
+	for (I, 0, C_LibInventory_UINbItemsDisplayed - 1)
+		ItemsModels ^= """<frameinstance modelid="FrameModel_InventoryItem" id="Frame_InventoryItem#{{{I}}}" hidden="1"/>""";
+		
+	return """
+<manialink version="2" name="{{{C_LibInventory_UILayerID}}}">
+<stylesheet>
+	<style id="Quad_ItemBackground" style="UiSMSpectatorScoreBig" substyle="PlayerIconBg"/>
+	<style id="Label_ItemHotkey" style="TextValueSmallSm" textsize="1" textemboss="1" textcolor="888"/>
+	<style id="Label_ItemAmount" style="TextValueSmallSm" textsize="2" textemboss="1" textcolor="FFF"/>
+	<style id="Label_ItemCooldown" style="TextValueSmallSm" textsize="4" textemboss="1" textcolor="FFF"/>
+	<style id="Quad_ItemIsCurWeapon" style="Bgs1InRace" substyle="BgColorContour" colorize="0F0"/>
+</stylesheet>
+
+<framemodel id="FrameModel_InventoryItem">
+	<quad posn="0 0 -.2" halign="center" valign="center" sizen="10.5 10" id="Quad_ItemBackground" opacity="0"/>
+	<quad halign="center" valign="center" sizen="7 7" id="Quad_ItemIcon" opacity="0"/>
+	<label posn="-4.25 4.25 .3" id="Label_ItemHotkey" opacity="0"/>
+	<label posn="4.5 -5.25 .3" halign="right" valign="bottom" id="Label_ItemAmount" opacity="0"/>
+	<quad posn="0 0 -.1" halign="center" valign="center" sizen="10 10" id="Quad_ItemIsCurWeapon" opacity="0" hidden="1"/>
+	<label posn="0 0 .3" halign="center" valign="center2" id="Label_ItemCooldown" opacity="0"/>
+</framemodel>
+
+<frame id="Frame_InventoryHotbar"><frame id="Frame_HotbarItems">{{{ItemsModels}}}</frame></frame>
+
+<script><!--
+/**
+ *	{{{C_LibInventory_UILayerID}}}
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_UIUpdateDelay 500
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_InventoryHotbar <=> (Page.GetFirstChild("Frame_InventoryHotbar") as CMlFrame);
+declare Frame_HotbarItems <=> (Page.GetFirstChild("Frame_HotbarItems") as CMlFrame);
+
+/// Load inventory items frames
+declare CMlFrame[] Frame_InventoryItems;
+for (I, 0, {{{C_LibInventory_UINbItemsDisplayed - 1}}})
+	Frame_InventoryItems.add((Page.GetFirstChild("Frame_InventoryItem#"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInventory_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInventory_Settings for Teams[0];
+
+/// Players data
+declare netread Integer[Text] Net_LibInventory_PlayerUpdate for Teams[0];
+declare netread Text[][Text] Net_LibInventory_PlayerItems for Teams[0];
+declare netread Text[Text][Text] Net_LibInventory_PlayerItemHotkey for Teams[0];
+declare netread Text[Text][Text] Net_LibInventory_PlayerItemIcon for Teams[0];
+declare netread Integer[Text][Text] Net_LibInventory_PlayerItemAmount for Teams[0];
+declare netread Integer[Text][Text] Net_LibInventory_PlayerItemWeaponNum for Teams[0];
+declare netread Integer[Text][Text] Net_LibInventory_PlayerItemCooldownStart for Teams[0];
+declare netread Integer[Text][Text] Net_LibInventory_PlayerItemCooldownDuration for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare CurrentPlayerLogin = "";
+declare CurrentPlayerUpdateTime = -1;
+declare UpdateInterface = Now;
+declare UpdateColor = True;
+declare DisplayHotbar = True;
+declare InterfaceVisible = False;
+
+/// Hotbar frame properties
+declare HotbarPosition = {{{C_LibInventory_UIHotbarPosition}}};
+declare HotbarItemSize = {{{C_LibInventory_UIHotbarItemSize}}};
+declare HotbarScale = {{{C_LibInventory_UIHotbarScale}}};
+declare HotbarRotation = {{{C_LibInventory_UIHotbarRotation}}};
+declare HotbarHorizontalAlign = "{{{C_LibInventory_UIHotbarHAlign}}}";
+declare HotbarVerticalAlign = "{{{C_LibInventory_UIHotbarVAlign}}}";
+
+/// Update
+declare PrevSettingsUpdate = -1;
+declare PrevInterfaceVisible = False;
+declare PrevPlayerLogin = "";
+declare PrevPlayerClan = -1;
+declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInventory_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInventory_SettingsUpdate;
+	foreach (SettingName => SettingValue in Net_LibInventory_Settings) {
+		switch (SettingName) {
+			// ---------------------------------- //
+			// Set hotbar visibility
+			case "DisplayHotbar" : DisplayHotbar = SettingValue == "True";
+			
+			// ---------------------------------- //
+			// Change hotbar properties
+			case "FormatInterfaceHotbar" : {
+				// <0., 1., 2.>, <3., 4.>, 5., 6., "7", "8"
+				declare Params = TL::Split(" ", SettingValue);
+				if (Params.count == 9) {
+					HotbarPosition = <TL::ToReal(Params[0]), TL::ToReal(Params[1]), TL::ToReal(Params[2])>;
+					HotbarItemSize = <TL::ToReal(Params[3]), TL::ToReal(Params[4])>;
+					HotbarScale = TL::ToReal(Params[5]);
+					HotbarRotation = TL::ToReal(Params[6]);
+					HotbarHorizontalAlign = Params[7];
+					HotbarVerticalAlign = Params[8];
+				}
+			}
+			// ---------------------------------- //
+			// Format item amount label
+			case "FormatLabelAmount" : {
+				foreach (Frame in Frame_InventoryItems)
+					FormatControl(Frame.GetFirstChild("Label_ItemAmount"), SettingValue);
+			}
+			// ---------------------------------- //
+			// Format item hotkey label
+			case "FormatLabelHotkey" : {
+				foreach (Frame in Frame_InventoryItems)
+					FormatControl(Frame.GetFirstChild("Label_ItemHotkey"), SettingValue);
+			}
+			// ---------------------------------- //
+			// Format item background quad
+			case "FormatQuadBackground" : {
+				foreach (Frame in Frame_InventoryItems)
+					FormatControl(Frame.GetFirstChild("Quad_ItemBackground"), SettingValue);
+			}
+			// ---------------------------------- //
+			// Format item current weapon quad
+			case "FormatQuadHighlight" : {
+				foreach (Frame in Frame_InventoryItems)
+					FormatControl(Frame.GetFirstChild("Quad_ItemIsCurWeapon"), SettingValue);
+			}
+			// ---------------------------------- //
+			// Format item cooldown label
+			case "FormatLabelCooldown" : {
+				foreach (Frame in Frame_InventoryItems)
+					FormatControl(Frame.GetFirstChild("Label_ItemCooldown"), SettingValue);
+			}
+		}
+	}
+	UpdateInterface = Now;
+}
+
+// ---------------------------------- //
+// Update interface on current player change
+if (GUIPlayer != Null) {
+	if (CurrentPlayerLogin != GUIPlayer.Login) {
+		CurrentPlayerLogin = GUIPlayer.Login;
+		UpdateInterface = Now;
+	}
+} else if (CurrentPlayerLogin != "") {
+	CurrentPlayerLogin = "";
+	CurrentPlayerUpdateTime = -1;
+}
+
+// ---------------------------------- //
+// Update interface if mode triggered change in current player
+if (
+	CurrentPlayerLogin != "" &&
+	Net_LibInventory_PlayerUpdate.existskey(CurrentPlayerLogin) &&
+	Net_LibInventory_PlayerUpdate[CurrentPlayerLogin] != CurrentPlayerUpdateTime
+) {
+	CurrentPlayerUpdateTime = Net_LibInventory_PlayerUpdate[CurrentPlayerLogin];
+	UpdateInterface = Now;
+}
+
+// ---------------------------------- //
+// Set interface visibility
+InterfaceVisible = DisplayHotbar && GUIPlayer != Null && !GUIPlayer.IsBot && GUIPlayer.Position != <0., 0., 0.>;
+
+// ---------------------------------- //
+// Change interface visibility
+if (PrevInterfaceVisible != InterfaceVisible) {
+	PrevInterfaceVisible = InterfaceVisible;
+	
+	// ---------------------------------- //
+	// Set animation parameters
+	declare Opacity = 0.;
+	declare Easing = "EaseInSine";
+	
+	if (InterfaceVisible) {
+		Opacity = 1.;
+		Easing = "EaseOutSine";
+	}
+	
+	// ---------------------------------- //
+	// Animate frames
+	foreach (Frame in Frame_InventoryItems) {
+		declare CMlControl[] ControlsToAnim;
+		ControlsToAnim.add(Frame.GetFirstChild("Label_ItemAmount"));
+		ControlsToAnim.add(Frame.GetFirstChild("Label_ItemHotkey"));
+		ControlsToAnim.add(Frame.GetFirstChild("Label_ItemCooldown"));
+		ControlsToAnim.add(Frame.GetFirstChild("Quad_ItemIcon"));
+		ControlsToAnim.add(Frame.GetFirstChild("Quad_ItemBackground"));
+		ControlsToAnim.add(Frame.GetFirstChild("Quad_ItemIsCurWeapon"));
+		
+		foreach (Control in ControlsToAnim) {
+			if (Control == Null) continue;
+			LibManialink_AnimStop(Control);
+			
+			declare Text ControlType;
+			switchtype (Control) {
+				case CMlLabel : ControlType = "label";
+				case CMlQuad : ControlType = "quad";
+			}
+			
+			LibManialink_Anim(Control, "<"^ControlType^" opacity=\""^Opacity^"\"/>", 250, Easing);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update the interface
+if (InterfaceVisible) {
+	if (Now > UpdateInterface) {
+		UpdateInterface = Now + C_UIUpdateDelay;
+		
+		// ---------------------------------- //
+		// Obtain data about current player
+		declare Text[] PlayerItems;
+		if (Net_LibInventory_PlayerItems.existskey(CurrentPlayerLogin))
+			PlayerItems = Net_LibInventory_PlayerItems[CurrentPlayerLogin];
+		
+		declare Text[Text] PlayerItemHotkey;
+		if (Net_LibInventory_PlayerItemHotkey.existskey(CurrentPlayerLogin))
+			PlayerItemHotkey = Net_LibInventory_PlayerItemHotkey[CurrentPlayerLogin];
+		
+		declare Text[Text] PlayerItemIcon;
+		if (Net_LibInventory_PlayerItemIcon.existskey(CurrentPlayerLogin))
+			PlayerItemIcon = Net_LibInventory_PlayerItemIcon[CurrentPlayerLogin];
+		
+		declare Integer[Text] PlayerItemAmount;
+		if (Net_LibInventory_PlayerItemAmount.existskey(CurrentPlayerLogin))
+			PlayerItemAmount = Net_LibInventory_PlayerItemAmount[CurrentPlayerLogin];
+		
+		declare Integer[Text] PlayerItemWeaponNum;
+		if (Net_LibInventory_PlayerItemWeaponNum.existskey(CurrentPlayerLogin))
+			PlayerItemWeaponNum = Net_LibInventory_PlayerItemWeaponNum[CurrentPlayerLogin];
+		
+		declare Integer[Text] PlayerItemCooldownStart;
+		if (Net_LibInventory_PlayerItemCooldownStart.existskey(CurrentPlayerLogin))
+			PlayerItemCooldownStart = Net_LibInventory_PlayerItemCooldownStart[CurrentPlayerLogin];
+		
+		declare Integer[Text] PlayerItemCooldownDuration;
+		if (Net_LibInventory_PlayerItemCooldownDuration.existskey(CurrentPlayerLogin))
+			PlayerItemCooldownDuration = Net_LibInventory_PlayerItemCooldownDuration[CurrentPlayerLogin];
+		
+		// ---------------------------------- //
+		// Configure items slots
+		foreach (I => Frame in Frame_InventoryItems) {
+			Frame.Visible = PlayerItems.existskey(I);
+			if (!Frame.Visible) continue;
+			declare ItemName = PlayerItems[I];
+			
+			// ---------------------------------- //
+			// Set the frame position
+			Frame.RelativePosition.X = I * HotbarItemSize.X;
+			
+			// ---------------------------------- //
+			// Load frame elements
+			declare Label_ItemAmount <=> (Frame.GetFirstChild("Label_ItemAmount") as CMlLabel);
+			declare Label_ItemHotkey <=> (Frame.GetFirstChild("Label_ItemHotkey") as CMlLabel);
+			declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
+			declare Quad_ItemBackground <=> (Frame.GetFirstChild("Quad_ItemBackground") as CMlQuad);
+			
+			// ---------------------------------- //
+			// Get the information about current item
+			declare Text ItemHotkey;
+			if (PlayerItemHotkey.existskey(ItemName)) ItemHotkey = PlayerItemHotkey[ItemName];
+			
+			declare Text ItemIcon;
+			if (PlayerItemIcon.existskey(ItemName)) ItemIcon = PlayerItemIcon[ItemName];
+			
+			declare Integer ItemAmount;
+			if (PlayerItemAmount.existskey(ItemName)) ItemAmount = PlayerItemAmount[ItemName];
+			
+			declare Integer ItemWeaponNum;
+			if (PlayerItemWeaponNum.existskey(ItemName)) ItemWeaponNum = PlayerItemWeaponNum[ItemName];
+			
+			declare Integer ItemCooldownStart;
+			if (PlayerItemCooldownStart.existskey(ItemName)) ItemCooldownStart = PlayerItemCooldownStart[ItemName];
+			
+			declare Integer ItemCooldownDuration;
+			if (PlayerItemCooldownDuration.existskey(ItemName)) ItemCooldownDuration = PlayerItemCooldownDuration[ItemName];
+			
+			// ---------------------------------- //
+			// Apply information to the interface model
+			Quad_ItemIcon.ImageUrl = ItemIcon;
+			Label_ItemHotkey.SetText(ItemHotkey);
+			
+			// Display amount
+			declare Text AmountText;
+			if (ItemAmount >= 0) AmountText = TL::ToText(ItemAmount);
+			Label_ItemAmount.SetText(AmountText);
+			
+			// ---------------------------------- //
+			// Icon color depending on item amount
+			if (ItemAmount == 0) {
+				Label_ItemAmount.TextColor = {{{C_LibInventory_UIItemColorEmpty}}};
+				Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorEmpty}}};
+			} else {
+				Label_ItemAmount.TextColor = {{{C_LibInventory_UIItemColorDefault}}};
+				Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorDefault}}};
+			}
+			
+			// ---------------------------------- //
+			// Save settings in the frame model
+			Frame.DataAttributeSet("ItemAmount", TL::ToText(ItemAmount));
+			Frame.DataAttributeSet("ItemWeaponNum", TL::ToText(ItemWeaponNum));
+			Frame.DataAttributeSet("ItemCooldownStart", TL::ToText(ItemCooldownStart));
+			Frame.DataAttributeSet("ItemCooldownDuration", TL::ToText(ItemCooldownDuration));
+		}
+		
+		// ---------------------------------- //
+		// Set hotbar properties
+		Frame_InventoryHotbar.RelativePosition = HotbarPosition;
+		Frame_InventoryHotbar.RelativeRotation = HotbarRotation;
+		Frame_InventoryHotbar.RelativeScale = HotbarScale;
+		
+		// Calculate the hotbar size depending on displayed items count
+		declare HotbarSize = <ML::Min(PlayerItems.count, Frame_InventoryItems.count) * HotbarItemSize.X, HotbarItemSize.Y>;
+		
+		// Get the horizontal position of the items
+		declare Position = <0., 0.>;
+		switch (HotbarHorizontalAlign) {
+			case "left"		: Position.X = HotbarItemSize.X / 2;
+			case "center"	: Position.X = -(HotbarSize.X - HotbarItemSize.X) / 2;
+			case "right"	: Position.X = -HotbarSize.X + HotbarItemSize.X / 2;
+		}
+		
+		// Get the vertical position of the items
+		switch (HotbarVerticalAlign) {
+			case "top"		: Position.Y = -HotbarItemSize.Y / 2;
+			case "bottom"	: Position.Y = HotbarItemSize.Y / 2;
+		}
+		
+		// Set position
+		for (I, 0, 1) Frame_HotbarItems.RelativePosition[I] = Position[I];
+	}
+	
+	// ---------------------------------- //
+	// Update interface color on player change
+	if (PrevPlayerLogin != CurrentPlayerLogin) {
+		PrevPlayerLogin = CurrentPlayerLogin;
+		UpdateColor = True;
+	}
+	
+	// ---------------------------------- //
+	// Update interface color on clan change
+	if (GUIPlayer.CurrentClan != PrevPlayerClan) {
+		PrevPlayerClan = GUIPlayer.CurrentClan;
+		UpdateColor = True;
+	}
+	
+	// ---------------------------------- //
+	// Update colors on team colrr change
+	for (I, 0, 1) if (PrevTeamsColors[I] != Teams[I].ColorPrimary) {
+		PrevTeamsColors[I] = Teams[I].ColorPrimary;
+		UpdateColor = True;
+	}
+	
+	// ---------------------------------- //
+	// Update color
+	if (UpdateColor) {
+		UpdateColor = False;
+		
+		declare Color = GUIPlayer.User.Color;
+		if (GUIPlayer.CurrentClan != 0) Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+		
+		foreach (I => Frame in Frame_InventoryItems) {
+			declare Quad_ItemIsCurWeapon <=> (Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad);
+			Quad_ItemIsCurWeapon.Colorize = Color;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Manage frames
+	foreach (I => Frame in Frame_InventoryItems) {
+		if (!Frame.Visible) continue;
+		declare Quad_ItemIsCurWeapon <=> (Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad);
+		
+		declare ItemWeaponNum = TL::ToInteger(Frame.DataAttributeGet("ItemWeaponNum"));
+		Quad_ItemIsCurWeapon.Visible = GUIPlayer.CurWeapon == ItemWeaponNum;
+		
+		declare ItemAmount = TL::ToInteger(Frame.DataAttributeGet("ItemAmount"));
+		if (ItemAmount >= 0) continue;
+		
+		declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
+		declare Label_ItemCooldown <=> (Frame.GetFirstChild("Label_ItemCooldown") as CMlLabel);
+		declare ItemCooldownStart = TL::ToInteger(Frame.DataAttributeGet("ItemCooldownStart"));
+		declare ItemCooldownDuration = TL::ToInteger(Frame.DataAttributeGet("ItemCooldownDuration"));
+		
+		declare CooldownCounter = (ItemCooldownStart + ItemCooldownDuration - GameTime) / 1000;
+		Label_ItemCooldown.Visible = CooldownCounter > 0;
+		
+		if (CooldownCounter > 0) {
+			Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorCooldown}}};
+			Label_ItemCooldown.Value = TL::ToText(CooldownCounter);
+		} else {
+			Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorDefault}}};
+		}
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Format control with formatting saved in an XML tag
+ *
+ *	@param	_Control	Control to change format
+ *	@param	_Format		XML tag containing control format
+ */
+Void FormatControl(CMlControl _Control, Text _Format) {
+	if (_Control == Null || _Format == "") return;
+	
+	// ---------------------------------- //
+	// Create document containing format data
+	declare XMLDocument = Xml.Create(_Format);
+	if (XMLDocument == Null) return;
+	if (XMLDocument.Root == Null) {
+		Xml.Destroy(XMLDocument);
+		return;
+	}
+	
+	// ---------------------------------- //
+	// Scale
+	declare Scale = XMLDocument.Root.GetAttributeReal("scale", -1.);
+	if (Scale != -1) _Control.RelativeScale = Scale;
+	
+	// ---------------------------------- //
+	// Rotation
+	declare Rotation = XMLDocument.Root.GetAttributeReal("rot", -1.);
+	if (Rotation != -1) _Control.RelativeRotation = Rotation;
+	
+	// ---------------------------------- //
+	// Position
+	declare PositionText = TL::Split(" ", XMLDocument.Root.GetAttributeText("posn", ""));
+	if (PositionText.count > 0) for (I, 0, 2) if (PositionText.existskey(I)) _Control.RelativePosition[I] = TL::ToReal(PositionText[I]);
+	
+	// ---------------------------------- //
+	// Size
+	declare SizeText = TL::Split(" ", XMLDocument.Root.GetAttributeText("sizen", ""));
+	if (SizeText.count > 0) for (I, 0, 1) if (SizeText.existskey(I)) _Control.Size[I] = TL::ToReal(SizeText[I]);
+	
+	// ---------------------------------- //
+	// Horizontal align
+	declare HorizontalAlign = XMLDocument.Root.GetAttributeText("halign", "");
+	declare HAlign = CMlControl::AlignHorizontal::None;
+	switch (HorizontalAlign) {
+		case "left"		: HAlign = CMlControl::AlignHorizontal::Left;
+		case "center"	: HAlign = CMlControl::AlignHorizontal::HCenter;
+		case "right"	: HAlign = CMlControl::AlignHorizontal::Right;
+	}
+	if (HAlign != CMlControl::AlignHorizontal::None) _Control.HorizontalAlign = HAlign;
+	
+	// ---------------------------------- //
+	// Vertical align
+	declare VerticalAlign = XMLDocument.Root.GetAttributeText("valign", "");
+	declare VAlign = CMlControl::AlignVertical::None;
+	switch (VerticalAlign) {
+		case "top"		: VAlign = CMlControl::AlignVertical::Top;
+		case "center"	: VAlign = CMlControl::AlignVertical::VCenter;
+		case "center2"	: VAlign = CMlControl::AlignVertical::VCenter2;
+		case "bottom"	: VAlign = CMlControl::AlignVertical::Bottom;
+	}
+	if (VAlign != CMlControl::AlignVertical::None) _Control.VerticalAlign = VAlign;
+	
+	// ---------------------------------- //
+	// Element specific attributes
+	switchtype (_Control) {
+		// ---------------------------------- //
+		// Label
+		case CMlLabel : {
+			declare _Label = (_Control as CMlLabel);
+			
+			// ---------------------------------- //
+			// Text size
+			declare TextSize = XMLDocument.Root.GetAttributeInteger("textsize", -1);
+			if (TextSize != -1) _Label.TextSize = TextSize;
+			
+			// ---------------------------------- //
+			// Text color
+			declare TextColor = XMLDocument.Root.GetAttributeText("textcolor", "");
+			if (TextColor != "") _Label.TextColor = TL::ToColor(TextColor);
+			
+			// ---------------------------------- //
+			// Style
+			declare Style = XMLDocument.Root.GetAttributeText("style", "");
+			if (Style != "") _Label.Style = Style;
+			
+			// ---------------------------------- //
+			// Text font
+			declare TextFont = XMLDocument.Root.GetAttributeText("textfont", "");
+			if (TextFont != "") _Label.TextFont = TextFont;
+		}
+		// ---------------------------------- //
+		// Quad
+		case CMlQuad : {
+			declare _Quad = (_Control as CMlQuad);
+			
+			// ---------------------------------- //
+			// Style
+			declare Style = XMLDocument.Root.GetAttributeText("style", "");
+			if (Style != "") _Quad.Style = Style;
+			
+			// ---------------------------------- //
+			// Substyle
+			declare Substyle = XMLDocument.Root.GetAttributeText("substyle", "");
+			if (Substyle != "") _Quad.Substyle = Substyle;
+			
+			// ---------------------------------- //
+			// ImageUrl
+			declare ImageUrl = XMLDocument.Root.GetAttributeText("image", "");
+			if (ImageUrl != "") _Quad.ImageUrl = ImageUrl;
+			
+			// ---------------------------------- //
+			// Colorize
+			declare Colorize = XMLDocument.Root.GetAttributeText("colorize", "");
+			if (Colorize != "") _Quad.Colorize = TL::ToColor(Colorize);
+		}
+	}
+	
+	// Destroy document
+	Xml.Destroy(XMLDocument);
+}
+
+{{{Manialink::Animations(["EaseInSine", "EaseOutSine"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		+++Yield+++
+		LibManialink_AnimLoop();
+		yield;
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Update the settings of the interface
+ *
+ *	@param	_Name		The name of the setting
+ *	@param	_Value		The value of the setting
+ */
+Void Private_SetModuleSetting(Text _Name, Text _Value) {
+	declare netwrite Net_LibInventory_SettingsUpdate for Teams[0] = 0;
+	declare netwrite Net_LibInventory_Settings for Teams[0] = Text[Text];
+	Net_LibInventory_SettingsUpdate = Now;
+	Net_LibInventory_Settings[_Name] = _Value;
+}
+
+// ---------------------------------- //
+/** Update the net variables for the player and trigger interface update
+ *
+ *	@param	_Player		The player to update interface
+ */
+Void Private_UpdatePlayerUI(CSmPlayer _Player) {
+	if (_Player == Null || _Player.IsBot) return;
+	
+	// ---------------------------------- //
+	// Load all stored data about player items
+	declare Text[] LibInventory_PlayerItems for _Player;
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	declare Text[Text] LibInventory_PlayerItemIcon for _Player;
+	declare Integer[Text] LibInventory_PlayerItemAmount for _Player;
+	declare Integer[Text] LibInventory_PlayerItemWeaponNum for _Player;
+	declare Integer[Text] LibInventory_PlayerItemCooldownStart for _Player;
+	declare Integer[Text] LibInventory_PlayerItemCooldownDuration for _Player;
+	
+	// ---------------------------------- //
+	// Create net variables
+	declare netwrite Text[][Text] Net_LibInventory_PlayerItems for Teams[0];
+	declare netwrite Text[Text][Text] Net_LibInventory_PlayerItemHotkey for Teams[0];
+	declare netwrite Text[Text][Text] Net_LibInventory_PlayerItemIcon for Teams[0];
+	declare netwrite Integer[Text][Text] Net_LibInventory_PlayerItemAmount for Teams[0];
+	declare netwrite Integer[Text][Text] Net_LibInventory_PlayerItemWeaponNum for Teams[0];
+	declare netwrite Integer[Text][Text] Net_LibInventory_PlayerItemCooldownStart for Teams[0];
+	declare netwrite Integer[Text][Text] Net_LibInventory_PlayerItemCooldownDuration for Teams[0];
+	
+	// ---------------------------------- //
+	// Update player net data
+	declare Text[Text] Hotkeys;
+	foreach (ItemName => Hotkey in LibInventory_PlayerItemHotkey)
+		Hotkeys[ItemName] = C_LibInventory_GetHotkeyText[Hotkey];
+	
+	Net_LibInventory_PlayerItems[_Player.Login] = LibInventory_PlayerItems;
+	Net_LibInventory_PlayerItemHotkey[_Player.Login] = Hotkeys;
+	Net_LibInventory_PlayerItemIcon[_Player.Login] = LibInventory_PlayerItemIcon;
+	Net_LibInventory_PlayerItemAmount[_Player.Login] = LibInventory_PlayerItemAmount;
+	Net_LibInventory_PlayerItemWeaponNum[_Player.Login] = LibInventory_PlayerItemWeaponNum;
+	Net_LibInventory_PlayerItemCooldownStart[_Player.Login] = LibInventory_PlayerItemCooldownStart;
+	Net_LibInventory_PlayerItemCooldownDuration[_Player.Login] = LibInventory_PlayerItemCooldownDuration;
+	
+	// ---------------------------------- //
+	// Trigger player update in the interface
+	declare netwrite Integer[Text] Net_LibInventory_PlayerUpdate for Teams[0];
+	Net_LibInventory_PlayerUpdate[_Player.Login] = Now;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Set the order of items displayed on the interface
+ *
+ *	@param	_Player			The player to set items order
+ *	@param	_ItemsOrder		Order of the items
+ */
+Void SetItemsOrder(CSmPlayer _Player, Text[] _ItemsOrder) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemsOrder.count <= 0) return;
+	
+	// Check if player has at least 2 items in their inventory
+	declare Text[] LibInventory_PlayerItems for _Player;
+	if (LibInventory_PlayerItems.count < 2) return;
+	
+	// Backup items names and clear items list
+	declare RemainingItems = LibInventory_PlayerItems;
+	LibInventory_PlayerItems.clear();
+	
+	// ---------------------------------- //
+	// Sort items with provided order
+	foreach (ItemName in _ItemsOrder) {
+		if (RemainingItems.exists(ItemName)) {
+			LibInventory_PlayerItems.add(ItemName);
+			declare Removed = RemainingItems.remove(ItemName);
+		}
+	}
+	
+	// Add items that weren't specified in target order
+	if (RemainingItems.count > 0) foreach (ItemName in RemainingItems) LibInventory_PlayerItems.add(ItemName);
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Automatically organize interface items depending on their hotkeys
+ *
+ *	@param	_Player		The player to organize items
+ */
+Void Organize(CSmPlayer _Player) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	
+	// Check if player has at least 2 items in their inventory
+	declare Text[] LibInventory_PlayerItems for _Player;
+	if (LibInventory_PlayerItems.count < 2) return;
+	
+	// ---------------------------------- //
+	// Sort items with predefined order
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	declare Text[] TargetOrder;
+	
+	foreach (ActionInput in C_LibInventory_OrganizedOrder) {
+		if (!LibInventory_PlayerItemHotkey.exists(ActionInput)) continue;
+		
+		foreach (ItemName in LibInventory_PlayerItems) {
+			if (
+				LibInventory_PlayerItemHotkey.existskey(ItemName) && 
+				LibInventory_PlayerItemHotkey[ItemName] == ActionInput &&
+				!TargetOrder.exists(ItemName)
+			)
+				TargetOrder.add(ItemName);
+		}
+	}
+	
+	// Add remaining items if they somehow weren't added before
+	if (TargetOrder.count != LibInventory_PlayerItems.count)
+		foreach (ItemName in LibInventory_PlayerItems) if (!TargetOrder.exists(ItemName)) TargetOrder.add(ItemName);
+	
+	// Set new order (Illuminati /o\)
+	SetItemsOrder(_Player, TargetOrder);
+}
+
+// ---------------------------------- //
+/** Check if requested item exists in player inventory
+ *
+ *	@param	_Player			The player to check if has item
+ *	@param	_ItemName		Name of the item to check
+ *
+ *	@return		True, if player has specified item
+ */
+Boolean ItemExists(CSmPlayer _Player, Text _ItemName) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return False;
+	declare Text[] LibInventory_PlayerItems for _Player;
+	return LibInventory_PlayerItems.exists(_ItemName);
+}
+
+// ---------------------------------- //
+/** Create item slot for the player, if doesn't exists
+ *
+ *	@param	_Player			The player to create item slot
+ *	@param	_ItemName		Name of the item
+ *	@param	_Hotkey			Action key acrivating item (HUD cosmetic only)
+ *	@param	_Amount			Amount of the item at the beginning
+ *	@param	_IconImage		Path to the HUD icon image of the item
+ *	@param	_WeaponNum		Weapon number (used to highlight active weapon)
+ */
+Void CreateItemSlot(CSmPlayer _Player, Text _ItemName, CSmModeEvent::EActionInput _Hotkey, Integer _Amount, Text _IconImage, Integer _WeaponNum) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return;
+	if (ItemExists(_Player, _ItemName)) return;
+	
+	// ---------------------------------- //
+	// Create slot
+	declare Text[] LibInventory_PlayerItems for _Player;
+	LibInventory_PlayerItems.add(_ItemName);
+	
+	// ---------------------------------- //
+	// Set item properties
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	declare Text[Text]		LibInventory_PlayerItemIcon for _Player;
+	declare Integer[Text]	LibInventory_PlayerItemAmount for _Player;
+	declare Integer[Text]	LibInventory_PlayerItemWeaponNum for _Player;
+	
+	LibInventory_PlayerItemHotkey		[_ItemName] = _Hotkey;
+	LibInventory_PlayerItemIcon			[_ItemName] = _IconImage;
+	LibInventory_PlayerItemAmount		[_ItemName] = ML::Max(-1, _Amount);
+	LibInventory_PlayerItemWeaponNum	[_ItemName] = _WeaponNum;
+	
+	// Organize player inventory
+	Organize(_Player);
+}
+
+Void CreateItemSlot(CSmPlayer _Player, Text _ItemName, CSmModeEvent::EActionInput _Hotkey, Integer _Amount, Text _IconImage) {
+	CreateItemSlot(_Player, _ItemName, _Hotkey, _Amount, _IconImage, -1);
+}
+
+Void CreateItemSlot(CSmPlayer _Player, Text _ItemName, Integer _Amount, Text _IconImage) {
+	CreateItemSlot(_Player, _ItemName, CSmModeEvent::EActionInput::None, _Amount, _IconImage, -1);
+}
+
+// ---------------------------------- //
+/** Destroy item slot of a player
+ *
+ *	@param	_Player			The player to destroy item slot
+ *	@param	_ItemName		Name of the item to destroy
+ */
+Void DestroyItemSlot(CSmPlayer _Player, Text _ItemName) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return;
+	if (!ItemExists(_Player, _ItemName)) return;
+	
+	declare Text[] LibInventory_PlayerItems for _Player;
+	declare Removed = LibInventory_PlayerItems.remove(_ItemName);
+	
+	// Organize player inventory
+	Organize(_Player);
+}
+
+// ---------------------------------- //
+/** Change hotkey of the item
+ *
+ *	@param	_Player		The player to change item hotkey
+ *	@param	_ItemName	Name of the item to set hotkey
+ *	@param	_Hotkey		Requested hotkey
+ */
+Void ChangeSlotHotkey(CSmPlayer _Player, Text _ItemName, CSmModeEvent::EActionInput _Hotkey) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return;
+	if (!ItemExists(_Player, _ItemName)) return;
+	
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	LibInventory_PlayerItemHotkey[_ItemName] = _Hotkey;
+	
+	// Organize player inventory
+	Organize(_Player);
+}
+
+// ---------------------------------- //
+/** Change icon image of the item
+ *
+ *	@param	_Player		The player to change item icon
+ *	@param	_ItemName	Name of the item to set icon
+ *	@param	_IconImage	Image of the item icon
+ */
+Void ChangeSlotIcon(CSmPlayer _Player, Text _ItemName, Text _IconImage) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return;
+	if (!ItemExists(_Player, _ItemName)) return;
+	
+	declare Text[Text] LibInventory_PlayerItemIcon for _Player;
+	LibInventory_PlayerItemIcon[_ItemName] = _IconImage;
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Change the weapon number of the item
+ *
+ *	@param	_Player		The player to change item weapon number
+ *	@param	_ItemName	Name of the item to set weapon number
+ *	@param	_WeaponNum	Number of the item weapon
+ */
+Void ChangeSlotWeaponNum(CSmPlayer _Player, Text _ItemName, Integer _WeaponNum) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return;
+	if (!ItemExists(_Player, _ItemName)) return;
+	
+	declare Integer[Text] LibInventory_PlayerItemWeaponNum for _Player;
+	LibInventory_PlayerItemWeaponNum[_ItemName] = _WeaponNum;
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Set amount of specific item (-1 for spell mode)
+ *
+ *	@param	_Player		The player to set amount
+ *	@param	_ItemName	Name of the item to set amount
+ *	@param	_Amount		Amount of specific item
+ */
+Void SetItemAmount(CSmPlayer _Player, Text _ItemName, Integer _Amount) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return;
+	if (!ItemExists(_Player, _ItemName)) return;
+	
+	// Set the item amount
+	declare Integer[Text] LibInventory_PlayerItemAmount for _Player;
+	LibInventory_PlayerItemAmount[_ItemName] = ML::Max(-1, _Amount);
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Get amount of specific item
+ *
+ *	@param	_Player		The player to get amount
+ *	@param	_ItemName	Name of the item to get amount
+ *
+ *	@return		Amount of the specific item
+ */
+Integer GetItemAmount(CSmPlayer _Player, Text _ItemName) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return -1;
+	if (!ItemExists(_Player, _ItemName)) return -1;
+	
+	// Get the item amount
+	declare Integer[Text] LibInventory_PlayerItemAmount for _Player;
+	if (LibInventory_PlayerItemAmount.existskey(_ItemName)) return ML::Max(-1, LibInventory_PlayerItemAmount[_ItemName]);
+	return -1;
+}
+
+// ---------------------------------- //
+/** Give the player specific items
+ *
+ *	@param	_Player		The player to give items
+ *	@param	_ItemName	Name of the item to give
+ *	@param	_Amount		Amount of items to give
+ */
+Void AddItems(CSmPlayer _Player, Text _ItemName, Integer _Amount) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "" || _Amount == 0) return;
+	if (!ItemExists(_Player, _ItemName)) return;
+	
+	if (GetItemAmount(_Player, _ItemName) < 0) SetItemAmount(_Player, _ItemName, 0);
+	
+	// Set the item amount
+	declare ItemAmount = GetItemAmount(_Player, _ItemName);
+	ItemAmount += _Amount;
+	SetItemAmount(_Player, _ItemName, ML::Max(0, ItemAmount));
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Remove specific item from the player
+ *
+ *	@param	_Player		The player to remove items
+ *	@param	_ItemName	Name of the item to remove
+ *	@param	_Amount		Amount of items to remove
+ */
+Void RemoveItems(CSmPlayer _Player, Text _ItemName, Integer _Amount) {
+	AddItems(_Player, _ItemName, -_Amount);
+}
+
+// ---------------------------------- //
+/** Set the cooldown duration of specific item
+ *
+ *	@param	_Player				The player to set item cooldown
+ *	@param	_ItemName			Name of the item to set cooldown
+ *	@param	_CooldownStart		Time of the cooldown start
+ *	@param	_CooldownDuration	Duration of the cooldown
+ */
+Void SetItemCooldown(CSmPlayer _Player, Text _ItemName, Integer _CooldownStart, Integer _CooldownDuration) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == ""|| _CooldownDuration <= 0) return;
+	if (!ItemExists(_Player, _ItemName)) return;
+	
+	// Set the cooldown duration
+	declare Integer[Text] LibInventory_PlayerItemCooldownStart for _Player;
+	declare Integer[Text] LibInventory_PlayerItemCooldownDuration for _Player;
+	LibInventory_PlayerItemCooldownStart	[_ItemName] = ML::Max(-1, _CooldownStart);
+	LibInventory_PlayerItemCooldownDuration	[_ItemName] = ML::Max(0, _CooldownDuration);
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Check if item is ready to be used again
+ *
+ *	@param	_Player				The player to check if the item is ready
+ *	@param	_ItemName			Name of the item to check
+ *
+ *	@return		True, if the item is ready to use
+ */
+Boolean CooldownIsReady(CSmPlayer _Player, Text _ItemName) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return False;
+	if (!ItemExists(_Player, _ItemName)) return False;
+	
+	// Check the cooldown duration
+	declare Integer[Text] LibInventory_PlayerItemCooldownStart for _Player;
+	declare Integer[Text] LibInventory_PlayerItemCooldownDuration for _Player;
+	
+	// Return True, if the item has no cooldown set
+	if (
+		LibInventory_PlayerItemCooldownStart.existskey(_ItemName) ||
+		LibInventory_PlayerItemCooldownDuration.existskey(_ItemName)
+	)
+		return True;
+	
+	// Return False, if the item is cooling down
+	if (Now < LibInventory_PlayerItemCooldownStart[_ItemName] + LibInventory_PlayerItemCooldownDuration[_ItemName])
+		return False;
+	
+	// The item is ready to use
+	return True;
+}
+
+// ---------------------------------- //
+/** Use one item and start cooldown
+ *
+ *	@param	_Player				The player to use item
+ *	@param	_ItemName			Name of the item to use
+ *	@param	_Cooldown			Duration if the cooldown to set
+ *	@param	_DestroyIfEmpty		Destroy item slot if player used all items
+ *
+ *	@return		True, if the item has been successfully used
+ */
+Boolean UseItem(CSmPlayer _Player, Text _ItemName, Integer _Cooldown, Boolean _DestroyIfEmpty) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return False;
+	if (!ItemExists(_Player, _ItemName) || GetItemAmount(_Player, _ItemName) < 1 || !CooldownIsReady(_Player, _ItemName)) return False;
+	
+	RemoveItems(_Player, _ItemName, 1);
+	SetItemCooldown(_Player, _ItemName, Now, _Cooldown);
+	if (_DestroyIfEmpty && GetItemAmount(_Player, _ItemName) <= 0) DestroyItemSlot(_Player, _ItemName);
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+	
+	return True;
+}
+
+// ---------------------------------- //
+/** Load specific weapons for the player
+ *
+ *	@param	_Player		The player to load weapons
+ *	@param	_Weapons	The weapons to load
+ */
+Void SetAvailableWeapons(CSmPlayer _Player, CSmMode::EWeapon[] _Weapons) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _Weapons.count <= 0) return;
+	
+	// ---------------------------------- //
+	// Load weapons as items
+	foreach (Weapon in _Weapons) {
+		if (!C_LibInventory_WeaponsPredefinedNames.existskey(Weapon)) continue;
+		
+		// Load default weapon icon
+		if (!G_LibInventory_WeaponsIcons.existskey(Weapon))
+			G_LibInventory_WeaponsIcons[Weapon] = C_LibInventory_GetWeaponIcon[Weapon];
+		
+		declare WeaponName = C_LibInventory_WeaponsPredefinedNames[Weapon];
+		declare WeaponHotkey = C_LibInventory_GetWeaponHotkey[Weapon];
+		declare WeaponIcon = G_LibInventory_WeaponsIcons[Weapon];
+		declare WeaponNum = GetWeaponNum(Weapon);
+		
+		CreateItemSlot(_Player, WeaponName, WeaponHotkey, 0, WeaponIcon, WeaponNum);
+		SetPlayerAmmoMax(_Player, Weapon, 0);
+	}
+	
+	// Set first weapon for the player on late change
+	declare Boolean LibInventory_SetFirstWeapon for _Player;
+	LibInventory_SetFirstWeapon = True;
+}
+
+// ---------------------------------- //
+/** Load all weapons for the player
+ *
+ *	@param	_Player		The player to load all weapons
+ */
+Void SetAllWeapons(CSmPlayer _Player) {
+	SetAvailableWeapons(_Player, C_LibInventory_Weapons);
+}
+
+// ---------------------------------- //
+/** Set amount of slots for specific weapon
+ *
+ *	@param	_Player		The player to set weapon slots
+ *	@param	_Weapon		The weapon to set slots
+ *	@param	_Amount		Amount of slots to set
+ */
+Void SetWeaponSlots(CSmPlayer _Player, CSmMode::EWeapon _Weapon, Integer _Amount) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	declare WeaponName = C_LibInventory_WeaponsPredefinedNames[_Weapon];
+	if (!ItemExists(_Player, WeaponName)) return;
+	
+	declare SlotsAmount = ML::Max(0, _Amount);
+	SetItemAmount(_Player, WeaponName, SlotsAmount);
+	SetPlayerAmmoMax(_Player, _Weapon, SlotsAmount);
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Get amount of specific weapon slots
+ *
+ *	@param	_Player		The player to get weapon slots
+ *	@param	_Weapon		The weapon to get slots
+ *
+ *	@return		Amount of the weapon slots
+ */
+Integer GetWeaponSlots(CSmPlayer _Player, CSmMode::EWeapon _Weapon) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return 0;
+	declare WeaponName = C_LibInventory_WeaponsPredefinedNames[_Weapon];
+	if (!ItemExists(_Player, WeaponName)) return 0;
+	return GetItemAmount(_Player, WeaponName);
+}
+
+// ---------------------------------- //
+/** Add slots of specific weapon
+ *
+ *	@param	_Player		The player to add weapon slots
+ *	@param	_Weapon		The weapon to add slots
+ *	@param	_Amount		Amount of slots to add
+ */
+Void AddWeaponSlots(CSmPlayer _Player, CSmMode::EWeapon _Weapon, Integer _Amount) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _Amount == 0) return;
+	declare WeaponName = C_LibInventory_WeaponsPredefinedNames[_Weapon];
+	if (!ItemExists(_Player, WeaponName)) return;
+	
+	AddItems(_Player, WeaponName, _Amount);
+	declare SlotsAmount = GetItemAmount(_Player, WeaponName);
+	SetPlayerAmmoMax(_Player, _Weapon, SlotsAmount);
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Remove slots of specific weapon
+ *
+ *	@param	_Player		The player to remove weapon slots
+ *	@param	_Weapon		The weapon to remove slots
+ *	@param	_Amount		Amount of slots to remove
+ */
+Void RemoveWeaponSlots(CSmPlayer _Player, CSmMode::EWeapon _Weapon, Integer _Amount) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	AddWeaponSlots(_Player, _Weapon, -_Amount);
+}
+
+// ---------------------------------- //
+/** Select first weapon when spawning, depending on weapons slots amount.
+ *	Will set Rocket, if player has no weapons or weapons list includes Rocket.
+ *	Otherwise last weapon from the list is selected.
+ *
+ *	@param	_Player		The player to set first weapon
+ */
+Void SetFirstWeapon(CSmPlayer _Player) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	
+	// Get all weapons with at least one slot
+	declare CSmMode::EWeapon[] PlayerWeapons;
+	foreach (Weapon in C_LibInventory_Weapons) if (GetWeaponSlots(_Player, Weapon) > 0) PlayerWeapons.add(Weapon);
+	
+	// Select last weapon or set rocket
+	declare WeaponToSet = CSmMode::EWeapon::Rocket;
+	if (PlayerWeapons.count > 0) WeaponToSet = PlayerWeapons[PlayerWeapons.count - 1];
+	if (_Player.AutoSwitchWeapon || _Player.CurWeapon != GetWeaponNum(WeaponToSet))
+		SetPlayerWeapon(_Player, WeaponToSet, False);
+}
+
+// ---------------------------------- //
+/** Switch player weapon on hotkey
+ *
+ *	@param	_Player			The player to switch weapon
+ *	@param	_ActionInput	Event weapon hotkey
+ */
+Boolean SwitchWeapon(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return False;
+	
+	// Get the weapon to set
+	declare CSmMode::EWeapon Weapon;
+	if (!C_LibInventory_GetWeaponHotkey.exists(_ActionInput)) return False;
+	Weapon = C_LibInventory_GetWeaponHotkey.keyof(_ActionInput);
+	
+	// Set weapon only if it has at least one ammo slot
+	if (GetWeaponSlots(_Player, Weapon) <= 0) return False;
+	
+	SetPlayerWeapon(_Player, Weapon, False);
+	return True;
+}
+
+// ---------------------------------- //
+/** Switch player weapon on mouse roll
+ *
+ *	@param	_Player			The player that scrolls weapons
+ *	@param	_ActionChange	Scroll direction
+ */
+Void ScrollWeapons(CSmPlayer _Player, Integer _ActionChange) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ActionChange == 0) return;
+	declare WeaponNum = [
+		CSmMode::EWeapon::Laser => 1,
+		CSmMode::EWeapon::Rocket => 2,
+		CSmMode::EWeapon::Nucleus => 3,
+		 CSmMode::EWeapon::Arrow => 5
+	];
+	
+	declare ActionChange = 0;
+	if (_ActionChange < 0) ActionChange = -1;
+	if (_ActionChange > 0) ActionChange = 1;
+	
+	// Get player weapons
+	declare CSmMode::EWeapon[] PlayerWeapons;
+	foreach (Weapon in C_LibInventory_Weapons) if (GetWeaponSlots(_Player, Weapon) > 0) PlayerWeapons.add(Weapon);
+	if (PlayerWeapons.count < 2) return;
+	
+	// ---------------------------------- //
+	// Select next weapon
+	declare CurrentWeapon = WeaponNum.keyof(_Player.CurWeapon);
+	declare Key = PlayerWeapons.keyof(CurrentWeapon);
+	Key += -_ActionChange;
+	if (Key < 0) Key = PlayerWeapons.count - 1;
+	if (Key > PlayerWeapons.count - 1) Key = 0;
+	CurrentWeapon = PlayerWeapons[Key];
+	
+	// Set new weapon
+	SetPlayerWeapon(_Player, CurrentWeapon, False);
+}
+
+// ---------------------------------- //
+/** Reset player inventory
+ *
+ *	@param	_Player		The player to reset inventory
+ */
+Void ResetInventory(CSmPlayer _Player) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	
+	declare Text[] LibInventory_PlayerItems for _Player;
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	declare Text[Text] LibInventory_PlayerItemIcon for _Player;
+	declare Integer[Text] LibInventory_PlayerItemAmount for _Player;
+	declare Integer[Text] LibInventory_PlayerItemWeaponNum for _Player;
+	
+	LibInventory_PlayerItems.clear();
+	LibInventory_PlayerItemHotkey.clear();
+	LibInventory_PlayerItemIcon.clear();
+	LibInventory_PlayerItemAmount.clear();
+	LibInventory_PlayerItemWeaponNum.clear();
+	
+	// Reset player weapons
+	SetPlayerWeapon(_Player, CSmMode::EWeapon::Rocket, True);
+	SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Laser, 1);
+	SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Nucleus, 2);
+	SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Arrow, 3);
+	SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Rocket, 4);
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/// Reset all players inventories
+Void ResetAllInventories() {
+	if (!G_LibInventory_IsLoaded) return;
+	foreach (Player in AllPlayers) if (!Player.IsBot) ResetInventory(Player);
+}
+
+// ---------------------------------- //
+/// Reset all settings and unload library
+Void Unload() {
+	ResetAllInventories();
+	Layers::Detach(C_LibInventory_UILayerID);
+	Layers::Destroy(C_LibInventory_UILayerID);
+	
+	declare netwrite Net_LibInventory_SettingsUpdate for Teams[0] = 0;
+	declare netwrite Net_LibInventory_Settings for Teams[0] = Text[Text];
+	Net_LibInventory_SettingsUpdate = -1;
+	Net_LibInventory_Settings.clear();
+	
+	G_LibInventory_IsLoaded = False;
+}
+
+// ---------------------------------- //
+/// Load library
+Void Load() {
+	Unload();
+	Layers::Create(C_LibInventory_UILayerID, Private_CreateManialinkInventory());
+	Layers::Attach(C_LibInventory_UILayerID);
+	G_LibInventory_IsLoaded = True;
+}
+
+// ---------------------------------- //
+/** Set interface hotbar visibility
+ *
+ *	@param _DisplayHotbar	Hotbar visibility
+ */
+Void SetDisplayHotbar(Boolean _DisplayHotbar) {
+	Private_SetModuleSetting("DisplayHotbar", TL::ToText(_DisplayHotbar));
+}
+
+// ---------------------------------- //
+/** format the interface hotbar frame
+ *
+ *	@param	_Position	Hotbar frame position
+ *	@param	_ItemSize	Size of a single hotbar item slot
+ *	@param	_Scale		Scale of the hotbar frame
+ *	@param	_Rotation	Hotbar frame rotation
+ *	@param	_HAlign		Horizontal align of the hotbar frame
+ *	@param	_VAlign		Vertical align of the hotbar frame
+ */
+Void FormatInterfaceHotbar(Vec3 _Position, Vec2 _ItemSize, Real _Scale, Real _Rotation, CMlControl::AlignHorizontal _HAlign, CMlControl::AlignVertical _VAlign) {
+	// Translate horizontal align to text
+	declare HAlign = "center";
+	switch (_HAlign) {
+		case CMlControl::AlignHorizontal::Left	: HAlign = "left";
+		case CMlControl::AlignHorizontal::Right	: HAlign = "right";
+	}
+	
+	// Translate vertical align to text
+	declare VAlign = "center";
+	switch (_VAlign) {
+		case CMlControl::AlignVertical::Top		: HAlign = "top";
+		case CMlControl::AlignVertical::Bottom	: HAlign = "bottom";
+	}
+	
+	Private_SetModuleSetting(
+		"FormatInterfaceHotbar", _Position.X^" "^_Position.Y^" "^_Position.Z^" "^_ItemSize.X^" "^_ItemSize.Y^" "^
+		_Scale^" "^_Rotation^" "^HAlign^" "^VAlign
+	);
+}
+
+// ---------------------------------- //
+/** Format the item amount label
+ *
+ *	@param	_Format		Formatting string, eg. '<label textsize="3"/>'
+ */
+Void FormatLabelAmount(Text _Format) {
+	if (_Format == "") return;
+	Private_SetModuleSetting("FormatLabelAmount", _Format);
+}
+
+// ---------------------------------- //
+/** Format the item hotkey label
+ *
+ *	@param	_Format		Formatting string, eg. '<label textsize="3"/>'
+ */
+Void FormatLabelHotkey(Text _Format) {
+	if (_Format == "") return;
+	Private_SetModuleSetting("FormatLabelHotkey", _Format);
+}
+
+// ---------------------------------- //
+/** Format the item cooldown label
+ *
+ *	@param	_Format		Formatting string, eg. '<label textsize="3"/>'
+ */
+Void FormatLabelCooldown(Text _Format) {
+	if (_Format == "") return;
+	Private_SetModuleSetting("FormatLabelCooldown", _Format);
+}
+
+// ---------------------------------- //
+/** Format the item background quad
+ *
+ *	@param	_Format		Formatting string, eg. '<quad sizen="8 8"/>'
+ */
+Void FormatQuadBackground(Text _Format) {
+	if (_Format == "") return;
+	Private_SetModuleSetting("FormatQuadBackground", _Format);
+}
+
+// ---------------------------------- //
+/** Format the item current weapon quad
+ *
+ *	@param	_Format		Formatting string, eg. '<quad sizen="8 8"/>'
+ */
+Void FormatQuadHighlight(Text _Format) {
+	if (_Format == "") return;
+	Private_SetModuleSetting("FormatQuadHighlight", _Format);
+}
+
+// ---------------------------------- //
+/** Change default images of the weapons icons
+ *
+ *	@param	_Icons		Weapons icons images
+ */
+Void SetWeaponsIcons(Text[CSmMode::EWeapon] _Icons) {
+	if (_Icons.count <= 0) return;
+	foreach (Weapon => Icon in _Icons) G_LibInventory_WeaponsIcons[Weapon] = Icon;
+}

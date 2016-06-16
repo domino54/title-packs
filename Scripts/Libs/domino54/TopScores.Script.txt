@@ -1,0 +1,183 @@
+// -------------------------------------- //
+//  LIBRARY TOP SCORES by domino54        //
+//  script version: 2016-06-16            //
+// -------------------------------------- //
+
+/**
+ *	This library allows easy management of the
+ *	tops in ScoresTable2. You can create categories
+ *	and give points in them. Library can display
+ *	summary of all rounds points at the end of the
+ *	match.
+ */
+
+#Const Version		"2016-06-16"
+#Const ScriptName	"TopScores.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/ScoresTable2.Script.txt" as ST2
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[] G_LibTopScores_TopsIds;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Set ScoresTable2 column value
+ *
+ *	@param	_Score			Score to set value
+ *	@param	_CategoryId		Category in which value is set
+ *	@param	_Points			Player points in specific category
+ */
+Void Private_SetColValue(CScore _Score, Text _CategoryId, Integer _Points) {
+	declare ColValue = "";
+	if (_Points > 0) ColValue = TL::ToText(_Points);
+	ST2::SetColValue(_CategoryId, _Score, ColValue);
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Create new category
+ *	/!\ Must be placed before ST2::Build() /!\
+ *
+ *	@param	_CategoryId		Id of the category to add
+ *	@param	_LegendLabel	Label displayed over ScoresTable2 column
+ *	@param	_Width			Width of the ScoresTable2 column
+ *	@param	_Position		Position of the column in ScoresTable2
+ */
+Void AddCategory(Text _CategoryId, Text _LegendLabel, Real _Width, Real _Position) {
+	if (G_LibTopScores_TopsIds.exists(_CategoryId)) return;
+	G_LibTopScores_TopsIds.add(_CategoryId);
+	ST2::CreateCol(_CategoryId, _LegendLabel, "", _Width, _Position);
+}
+
+// ---------------------------------- //
+/** Remove existing category
+ *
+ *	@param	_CategoryId		Id of the category to remove
+ */
+Void RemoveCategory(Text _CategoryId) {
+	if (!G_LibTopScores_TopsIds.exists(_CategoryId)) return;
+	ST2::DestroyCol(_CategoryId);
+}
+
+// ---------------------------------- //
+/** Clear values of specific category
+ *
+ *	@param	_CategoryId		Id of the category to clear
+ */
+Void ClearCategory(Text _CategoryId) {
+	foreach (Score in Scores) Private_SetColValue(Score, _CategoryId, 0);
+}
+
+// ---------------------------------- //
+/// Clear values of all columns
+Void ClearAllCategories() {
+	foreach (CategoryId in G_LibTopScores_TopsIds) ClearCategory(CategoryId);
+}
+
+// ---------------------------------- //
+/** Give points to a player in specific category
+ *
+ *	@param	_Score			Score to add points
+ *	@param	_CategoryId		Id of the category to add
+ *	@param	_Points			Amount of points to add
+ */
+Void AddPoints(CScore _Score, Text _CategoryId, Integer _Points) {
+	if (_Score == Null || !G_LibTopScores_TopsIds.exists(_CategoryId) || _Points == 0) return;
+	declare Integer[Text] LibTopScores_MatchPoints for _Score;
+	declare Integer[Text] LibTopScores_RoundPoints for _Score;
+	
+	if (!LibTopScores_MatchPoints.existskey(_CategoryId)) LibTopScores_MatchPoints[_CategoryId] = 0;
+	if (!LibTopScores_RoundPoints.existskey(_CategoryId)) LibTopScores_RoundPoints[_CategoryId] = 0;
+	
+	LibTopScores_MatchPoints[_CategoryId] += _Points;
+	LibTopScores_RoundPoints[_CategoryId] += _Points;
+	
+	// Don't allow points to go negative
+	if (LibTopScores_MatchPoints[_CategoryId] < 0) LibTopScores_MatchPoints[_CategoryId] = 0;
+	if (LibTopScores_RoundPoints[_CategoryId] < 0) LibTopScores_MatchPoints[_CategoryId] = 0;
+	
+	Private_SetColValue(_Score, _CategoryId, LibTopScores_RoundPoints[_CategoryId]);
+}
+
+// ---------------------------------- //
+/** Remove points from player in specific category
+ *
+ *	@param	_Score			Score to add points
+ *	@param	_CategoryId		Id of the category to add
+ *	@param	_Points			Amount of points to substract
+ */
+Void RemovePoints(CScore _Score, Text _CategoryId, Integer _Points) {
+	if (_Score == Null || !G_LibTopScores_TopsIds.exists(_CategoryId) || _Points == 0) return;
+	AddPoints(_Score, _CategoryId, -_Points);
+}
+
+// ---------------------------------- //
+/// Handle the match start
+Void MatchBegin() {
+	ClearAllCategories();
+	foreach (Score in Scores) {
+		declare Integer[Text] LibTopScores_MatchPoints for Score;
+		declare Integer[Text] LibTopScores_RoundPoints for Score;
+		LibTopScores_MatchPoints.clear();
+		LibTopScores_RoundPoints.clear();
+	}
+}
+
+// ---------------------------------- //
+/// Handle the round start
+Void RoundBegin() {
+	ClearAllCategories();
+	foreach (Score in Scores) {
+		declare Integer[Text] LibTopScores_RoundPoints for Score;
+		LibTopScores_RoundPoints.clear();
+	}
+}
+
+// ---------------------------------- //
+/// Handle the round end
+Void RoundEnd() {
+	ClearAllCategories();
+	foreach (Score in Scores) {
+		declare Integer[Text] LibTopScores_RoundPoints for Score;
+		foreach (CategoryId => Points in LibTopScores_RoundPoints)
+			Private_SetColValue(Score, CategoryId, Points);
+	}
+}
+
+// ---------------------------------- //
+/// Handle the match end
+Void MatchEnd() {
+	ClearAllCategories();
+	foreach (Score in Scores) {
+		declare Integer[Text] LibTopScores_MatchPoints for Score;
+		foreach (CategoryId => Points in LibTopScores_MatchPoints)
+			Private_SetColValue(Score, CategoryId, Points);
+	}
+}

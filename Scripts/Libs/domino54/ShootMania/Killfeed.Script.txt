@@ -1,0 +1,890 @@
+// -------------------------------------- //
+//  LIBRARY KILLFEED by domino54          //
+//  script version: 2016-06-16            //
+// -------------------------------------- //
+
+/**
+ *	This library will create custom elimination notices
+ *	feed in the top right corner of the screen. Automatically
+ *	shows new players connection, can send custom messages
+ *	and display eliminations with weapon icon and assists.
+ */
+
+#Const Version		"2016-06-16"
+#Const ScriptName	"Killfeed.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibKillfeed_DefaultWidgetPosn		<159., 89., 5.>
+#Const C_LibKillfeed_DefaultSizeVertical	5.
+#Const C_LibKillfeed_MinimumSizeVertical	3.
+#Const C_LibKillfeed_DefaultTextScale		.85
+#Const C_LibKillfeed_MinimumTextScale		.5
+#Const C_LibKillFeed_NoticeElementsSpacing	1.
+
+#Const C_LibKillfeed_NotificationLifetime	5000
+#Const C_LibKillfeed_MaxNbNotifications		10
+
+#Const C_LibKillfeed_DefaultWeaponsIcons [
+	0 => "file://Media/Manialinks/ShootMania/Common/ShieldWhite.dds",
+	1 => "file://Media/Manialinks/ShootMania/Common/LaserWhite.dds",
+	2 => "file://Media/Manialinks/ShootMania/Common/RocketWhite.dds",
+	3 => "file://Media/Manialinks/ShootMania/Common/NucleusWhite.dds",
+	5 => "file://Media/Manialinks/ShootMania/Common/ArrowWhite.dds"
+]
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[][Integer] G_LibKillfeed_Notifications;
+declare Integer G_LibKillfeed_PrevNotificationCount;
+
+declare Text[Integer] G_LibKillfeed_WeaponsIcons;
+declare Text[] G_LibKillfeed_PreloadedTranslations;
+declare Boolean G_LibKillfeed_AlignLeft;
+declare Boolean G_LibKillfeed_AlignBottom;
+declare Vec3 G_LibKillfeed_WidgetPosn;
+declare Real G_LibKillfeed_SizeVertical;
+declare Real G_LibKillfeed_TextScale;
+declare Text G_LibKillfeed_TextFont;
+
+declare Integer G_LibKillfeed_PrevNbPlayers;
+declare Boolean G_LibKillfeed_IsMapSwitching;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the notices module
+ *
+ *	@return		The module manialink
+ */
+Text Private_CreateManialinkKillfeed() {
+	declare NoticeModels = "";
+	for (I, 0, C_LibKillfeed_MaxNbNotifications - 1)
+		NoticeModels ^= """<frameinstance modelid="FrameModel_Notice" id="Frame_Notice#{{{I}}}" hidden="1"/>""";
+	
+	declare SY = G_LibKillfeed_SizeVertical;
+	
+	return """
+<manialink version="2" name="LibKillfeed:Notices">
+<stylesheet>
+	<style
+		class="noticeText" halign="right" valign="center2" textsize="2" textcolor="FFF"
+		scale="{{{G_LibKillfeed_TextScale}}}" textfont="{{{G_LibKillfeed_TextFont}}}"
+	/>
+</stylesheet>
+
+<framemodel id="FrameModel_Notice">
+	<quad sizen="0 {{{SY}}}" halign="right" bgcolor="000" opacity=".625" id="Quad_NoticeBg"/>
+	<quad posn="0 -{{{SY/2}}} .1" sizen="{{{SY}}} {{{SY}}}" halign="right" valign="center" id="Quad_NoticeIcon"/>
+	<label posn="-1.5 -{{{SY/2}}}" class="noticeText" id="Label_PrimaryText"/>
+	<label posn="0 -{{{SY/2}}}" class="noticeText" id="Label_SecondaryText"/>
+	<label posn="0 -{{{SY/2}}}" class="noticeText" id="Label_ReplacementText"/>
+</framemodel>
+
+<frame id="Frame_NoticesWidget" posn="{{{G_LibKillfeed_WidgetPosn.X^" "^G_LibKillfeed_WidgetPosn.Y^" "^G_LibKillfeed_WidgetPosn.Z}}}">
+	<frame id="Frame_NoticesAnim">{{{NoticeModels}}}</frame>
+	<frame id="Frame_GhostsAnim">{{{NoticeModels}}}</frame>
+</frame>
+
+<label id="Label_GhostDebug"/>
+
+<script><!--
+/**
+ *	LibKillfeed: Notices
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_NoticeElementsSpacing {{{C_LibKillFeed_NoticeElementsSpacing}}}
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare CMlFrame[] G_NoticeModels;
+declare CMlFrame[] G_GhostsModels;
+declare Text[][Integer] G_CachedNotices;
+declare Integer[] G_GhostAnimsStartTimes;
+declare Text[][Integer] G_PrevGhostNoticesData;
+declare Integer G_NbGhostsInCurrentTick;
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+declare Frame_NoticesAnim <=> (Page.GetFirstChild("Frame_NoticesAnim") as CMlFrame);
+declare Frame_GhostsAnim <=> (Page.GetFirstChild("Frame_GhostsAnim") as CMlFrame);
+declare Label_GhostDebug <=> (Page.GetFirstChild("Label_GhostDebug") as CMlLabel);
+
+// ---------------------------------- //
+// Networking
+declare netread Text[][Integer] Net_LibKillfeed_Notifications for Teams[0];
+declare netread Integer Net_LibKillfeed_LastUpdateTime for Teams[0];
+
+declare LastUpdateTime = -1;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update notices
+if (LastUpdateTime != Net_LibKillfeed_LastUpdateTime) {
+	LastUpdateTime = Net_LibKillfeed_LastUpdateTime;
+	
+	// ---------------------------------- //
+	// Allows to animate newly displayed notices
+	declare NewNotices = Integer[];
+	foreach (Time => Notice in Net_LibKillfeed_Notifications) {
+		if (!G_CachedNotices.existskey(Time)) {
+			G_CachedNotices[Time] = Notice;
+			NewNotices.add(Time);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Display ghosts of the old notices
+	declare ToRemove = Integer[];
+	foreach (Time => Notice in G_CachedNotices) if (!Net_LibKillfeed_Notifications.existskey(Time)) ToRemove.add(Time);
+	foreach (Time in ToRemove) {
+		CreateGhost(G_CachedNotices[Time]);
+		declare Removed = G_CachedNotices.removekey(Time);
+	}
+	
+	// Set new notices values
+	SetNoticesValue(Net_LibKillfeed_Notifications, NewNotices, ToRemove.count);
+}
+
+// ---------------------------------- //
+// Let the ghost models follow main frame
+if (Frame_GhostsAnim.RelativePosition.Y != Frame_NoticesAnim.RelativePosition.Y)
+	Frame_GhostsAnim.RelativePosition.Y = Frame_NoticesAnim.RelativePosition.Y;
+
+foreach (Frame in G_GhostsModels) if (Frame.Visible) {
+	// ---------------------------------- //
+	// Ghosts animation
+	declare Quad_NoticeBg <=> (Frame.GetFirstChild("Quad_NoticeBg") as CMlQuad);
+	declare Quad_NoticeIcon <=> (Frame.GetFirstChild("Quad_NoticeIcon") as CMlQuad);
+	declare Label_PrimaryText <=> (Frame.GetFirstChild("Label_PrimaryText") as CMlLabel);
+	declare Label_SecondaryText <=> (Frame.GetFirstChild("Label_SecondaryText") as CMlLabel);
+	declare Label_ReplacementText <=> (Frame.GetFirstChild("Label_ReplacementText") as CMlLabel);
+	declare Opacity = Label_GhostDebug.Opacity;
+	
+	Quad_NoticeBg.Opacity = Opacity * .625;
+	Label_PrimaryText.Opacity = Opacity;
+	if (Quad_NoticeIcon.Visible) Quad_NoticeIcon.Opacity = Opacity;
+	if (Label_SecondaryText.Visible) Label_SecondaryText.Opacity = Opacity;
+	if (Label_ReplacementText.Visible) Label_ReplacementText.Opacity = Opacity;
+	
+	// ---------------------------------- //
+	// Hide ghosts with links
+	if (Label_PrimaryText.Opacity <= 0) Frame.Hide();
+}
+
+// Reset ghosts counter
+G_NbGhostsInCurrentTick = 0;
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+{{{Manialink::Animations(["EaseOutSine", "EaseInCirc", "EaseOutCirc"])}}}
+{{{Translations::InsertToManialink(G_LibKillfeed_PreloadedTranslations)}}}
+
+// ---------------------------------- //
+/** Remove color from nickname
+ *
+ *	@param	_Name		Input text to remove color
+ *
+ *	@return		Text without color format
+ */
+Text RemoveColor(Text _Name) {
+	declare NameObjects = TL::Split("$", _Name);
+	declare ColorCodeInitials = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b", "c", "d", "e", "f"];
+	declare NewObjects = Text[];
+	
+	foreach (I => Object in NameObjects) {
+		declare ExistsCode = False;
+		foreach (Initial in ColorCodeInitials) {
+			if (TL::Find(Initial, TL::SubString(Object, 0, 1), False, False)) ExistsCode = True;
+		}
+		if (ExistsCode) NewObjects.add(TL::SubString(Object, 3, TL::Length(Object)));
+		else if (I > 0) NewObjects.add("$"^Object);
+		else NewObjects.add(Object);
+	}
+	
+	declare FinalNick = "";
+	foreach (Object in NewObjects) FinalNick ^= Object;
+	return FinalNick;
+}
+
+// ---------------------------------- //
+/** Change color brightness
+ *
+ *	@param	_Color			Input color
+ *	@param	_Brightness		Target brightness
+ *
+ *	@return		New color
+ */
+Vec3 Brightness(Vec3 _Color, Real _Brightness) {
+	if (_Brightness == 1) return _Color;
+	if (_Brightness <= 0) return Vec3;
+	
+	declare Vec3 OutputColor;
+	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
+	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
+	return OutputColor;
+}
+
+// ---------------------------------- //
+/** Get color of the player
+ *
+ *	@param	_Login		Login of the player to get color
+ *
+ *	@return		Player color (if exists)
+ */
+Vec3 GetColor(Text _Login) {
+	declare Color = <1., 1., 1.>;
+	foreach (Player in Players) if (Player.User.Login == _Login) {
+		if (Player.CurrentClan > 0) Color = Brightness(Teams[Player.CurrentClan - 1].ColorPrimary, 2.);
+		// else Color = Brightness(Player.User.Color, 2.);
+	}
+	return Color;
+}
+
+// ---------------------------------- //
+/** Get name of the player
+ *
+ *	@param	_Login		Login of the player to get name
+ *
+ *	@return		Player nickname (if exists)
+ */
+Text GetNickname(Text _Login) {
+	if (_Login == "") return "";
+	foreach (Player in Players) if (Player.User.Login == _Login) {
+		declare Nickname = Player.User.Name;
+		if (Player.CurrentClan != 0) {
+			// Nickname = RemoveColor(Nickname);
+			Nickname = "$"^TL::ColorToText(GetColor(_Login))^Nickname;
+		}
+		return Nickname;
+	}
+	return _Login;
+}
+
+// ---------------------------------- //
+/** Compute label width
+ *
+ *	@param	_Label		Label to compute its width
+ *
+ *	@return		Total length of the label text
+ */
+Real ComputeWidth(CMlLabel _Label) {
+	if (_Label == Null || _Label.Value == "") return 0.;
+	return _Label.ComputeWidth(_Label.Value) * _Label.AbsoluteScale;
+}
+
+// ---------------------------------- //
+/** Configure notice model
+ *
+ *	@param	_Frame			Notice frame model
+ *	@param	_NoticeData		Data of the notice
+ *	@param	_Index			Id of the notice model
+ *	@param	_Show			Trigger show animation
+ */
+Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _Show) {
+	if (_Frame == Null || _NoticeData.count <= 0) return;
+	// ---------------------------------- //
+	// Load notice elements
+	declare Quad_NoticeBg	<=> (_Frame.GetFirstChild("Quad_NoticeBg") as CMlQuad);
+	declare Quad_NoticeIcon	<=> (_Frame.GetFirstChild("Quad_NoticeIcon") as CMlQuad);
+	declare Label_PrimaryText		<=> (_Frame.GetFirstChild("Label_PrimaryText") as CMlLabel);
+	declare Label_SecondaryText		<=> (_Frame.GetFirstChild("Label_SecondaryText") as CMlLabel);
+	declare Label_ReplacementText	<=> (_Frame.GetFirstChild("Label_ReplacementText") as CMlLabel);
+	declare TotalLength = C_NoticeElementsSpacing / 2;
+	
+	// Set frame visibility and position
+	_Frame.Show();
+	_Frame.RelativePosition.Y = _Index * (Quad_NoticeBg.Size.Y + .5);
+	
+	// ---------------------------------- //
+	// Obtain notice data
+	declare TextPrimary = "";
+	declare TextSecondary = "";
+	declare TextReplacement = "";
+	declare TextAssistant = "";
+	
+	if (_NoticeData.existskey(0) && _NoticeData[0] != "") TextPrimary = _NoticeData[0];
+	if (_NoticeData.existskey(1) && _NoticeData[1] != "") TextReplacement = _NoticeData[1];
+	if (_NoticeData.existskey(2) && _NoticeData[2] != "") TextSecondary = _NoticeData[2];
+	if (_NoticeData.existskey(3) && _NoticeData[3] != "") TextAssistant = _NoticeData[3];
+	
+	declare IsComposedTranslation = TextPrimary == "*LibTranslations*";
+	
+	// ---------------------------------- //
+	// Set primary notice text
+	Label_PrimaryText.Visible = TextPrimary != "";
+	Label_PrimaryText.SetText("");
+	
+	if (Label_PrimaryText.Visible) {
+		declare Text LabelText;
+		
+		// Prepare composed message
+		if (IsComposedTranslation) {
+			declare Composes = _NoticeData;
+			declare Removed = Composes.removekey(0);
+			LabelText = Translations_GetComposed(Composes);
+		}
+		
+		// Set nickname
+		else LabelText = GetNickname(TextPrimary);
+		
+		Label_PrimaryText.SetText(TL::GetTranslatedText(LabelText));
+		
+		TotalLength += C_NoticeElementsSpacing / 2;
+		Label_PrimaryText.RelativePosition.X = -TotalLength;
+		TotalLength += ComputeWidth(Label_PrimaryText) + C_NoticeElementsSpacing / 2;
+	}
+	
+	// ---------------------------------- //
+	// Set notice icon
+	Quad_NoticeIcon.Visible = Http.IsValidUrl(TextReplacement) && !IsComposedTranslation;
+	if (Quad_NoticeIcon.Visible) {
+		Quad_NoticeIcon.ImageUrl = TextReplacement;
+		
+		TotalLength += C_NoticeElementsSpacing / 2;
+		Quad_NoticeIcon.RelativePosition.X = -TotalLength;
+		TotalLength += Quad_NoticeIcon.Size.X + C_NoticeElementsSpacing / 2;
+	}
+	
+	// ---------------------------------- //
+	// Set notice replacement text
+	Label_ReplacementText.Visible = !Quad_NoticeIcon.Visible && TextReplacement != "" && !IsComposedTranslation;
+	Label_ReplacementText.SetText("");
+	
+	if (Label_ReplacementText.Visible) {
+		Label_ReplacementText.SetText(Translations_Get(TextReplacement));
+		
+		TotalLength += C_NoticeElementsSpacing / 2;
+		Label_ReplacementText.RelativePosition.X = -TotalLength;
+		TotalLength += ComputeWidth(Label_ReplacementText) + C_NoticeElementsSpacing / 2;
+	}
+	
+	// ---------------------------------- //
+	// Secondary notice text (mostly shooter name)
+	Label_SecondaryText.Visible = TextSecondary != "" && TextSecondary != TextPrimary && !IsComposedTranslation;
+	Label_SecondaryText.SetText("");
+	
+	if (Label_SecondaryText.Visible) {
+		declare Text LabelText;
+		
+		// Elimination with assistance
+		if (TextAssistant != "")
+			LabelText = TL::Compose(
+				"$fff$<%1$z$> + $<%2$z$>", GetNickname(TextSecondary), GetNickname(TextAssistant)
+			);
+		
+		// Solo elimination
+		else LabelText = GetNickname(TextSecondary);
+			
+		Label_SecondaryText.SetText(TL::GetTranslatedText(LabelText));
+		
+		TotalLength += C_NoticeElementsSpacing / 2;
+		Label_SecondaryText.RelativePosition.X = -TotalLength;
+		TotalLength += ComputeWidth(Label_SecondaryText) + C_NoticeElementsSpacing / 2;
+	}
+	
+	// ---------------------------------- //
+	// Set notice background size
+	TotalLength += C_NoticeElementsSpacing / 2;
+	Quad_NoticeBg.Size.X = TotalLength;
+	
+	// ---------------------------------- //
+	// Set notice background color
+	declare IsLocalUser =
+		TL::Find(LocalUser.Name, Label_PrimaryText.Value, False, False) ||
+		TL::Find(LocalUser.Name, Label_SecondaryText.Value, False, False);
+	
+	declare IsNewConnection =
+		TL::Find("joined the game", TextPrimary, False, False) ||
+		TL::Find("left the game", TextPrimary, False, False);
+	
+	if (IsNewConnection)
+		Quad_NoticeBg.BgColor = <0., .5, 0.>;
+	else if (IsLocalUser)
+		Quad_NoticeBg.BgColor = <.5, 0., 0.>;
+	else
+		Quad_NoticeBg.BgColor = Vec3;
+	
+	// ---------------------------------- //
+	// Align frame to the left edge
+	if ({{{G_LibKillfeed_AlignLeft}}}) _Frame.RelativePosition.X = TotalLength;
+	else _Frame.RelativePosition.X = 0.;
+	
+	// ---------------------------------- //
+	// New notice animation
+	if (_Show) {
+		declare EdgeDiff = 160. - ML::Abs({{{C_LibKillfeed_DefaultWidgetPosn.X}}});
+		declare TargetPosX = 0.;
+		
+		if ({{{G_LibKillfeed_AlignLeft}}}) {
+			_Frame.RelativePosition.X = -EdgeDiff;
+			TargetPosX = TotalLength;
+		}
+		else _Frame.RelativePosition.X = EdgeDiff + TotalLength;
+		
+		LibManialink_Anim(_Frame, "<frame posn=\""^TargetPosX^" "^_Frame.RelativePosition.Y^"\"/>", 250, "EaseOutCirc");
+	}
+}
+
+// ---------------------------------- //
+/** Configure all notices
+ *
+ *	@param	_Notices		Data of all the notices
+ *	@param	_NewNotices		Ids of the new notices to animate
+ *	@param	_GhostsCount	Amount of notices that will be hidden
+ */
+Void SetNoticesValue(Text[][Integer] _Notices, Integer[] _NewNotices, Integer _GhostsCount) {
+	declare Frame_NoticesAnim <=> (Page.GetFirstChild("Frame_NoticesAnim") as CMlFrame);
+	declare Negative = 1;
+	if ({{{G_LibKillfeed_AlignBottom}}}) Negative = -1;
+	
+	// ---------------------------------- //
+	// Load notice models for the first time
+	if (G_NoticeModels.count != {{{C_LibKillfeed_MaxNbNotifications}}}) {
+		G_NoticeModels.clear();
+		for (I, 0, {{{C_LibKillfeed_MaxNbNotifications - 1}}})
+			G_NoticeModels.add((Frame_NoticesAnim.GetFirstChild("Frame_Notice#"^I) as CMlFrame));
+	}
+	
+	// ---------------------------------- //
+	// Animate whole frame
+	declare NewPos = _GhostsCount * {{{SY + .5}}} * -Negative;
+	declare IsLower = (Frame_NoticesAnim.RelativePosition.Y > NewPos);
+	if ({{{G_LibKillfeed_AlignBottom}}}) IsLower = (Frame_NoticesAnim.RelativePosition.Y < NewPos);
+	
+	if (IsLower) {
+		LibManialink_AnimStop(Frame_NoticesAnim);
+		Frame_NoticesAnim.RelativePosition.Y = NewPos;
+		LibManialink_Anim(Frame_NoticesAnim, "<frame posn=\"0 0\"/>", 500, "EaseOutSine");
+	}
+	
+	// There is nothing to do without notices
+	foreach (Frame in G_NoticeModels) Frame.Hide();
+	if (_Notices.count <= 0) return;
+	
+	// ---------------------------------- //
+	// Setup notices
+	declare I = -1;
+	foreach (Time => NoticeData in _Notices) {
+		I += 1;
+		if (I < {{{C_LibKillfeed_MaxNbNotifications}}}) {
+			declare Frame <=> G_NoticeModels[I];
+			SetupNotice(Frame, NoticeData, I * -Negative, _NewNotices.exists(Time));
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Configure notice ghost model
+ *
+ *	@param	_NoticeData		Data of the notice
+ */
+Void CreateGhost(Text[] _NoticeData) {
+	declare Frame_GhostsAnim <=> (Page.GetFirstChild("Frame_GhostsAnim") as CMlFrame);
+	declare Negative = 1;
+	if ({{{G_LibKillfeed_AlignBottom}}}) Negative = -1;
+	
+	// ---------------------------------- //
+	// Load notice models for the first time
+	if (G_GhostsModels.count != {{{C_LibKillfeed_MaxNbNotifications}}}) {
+		G_GhostsModels.clear();
+		for (I, 0, {{{C_LibKillfeed_MaxNbNotifications - 1}}})
+			G_GhostsModels.add((Frame_GhostsAnim.GetFirstChild("Frame_Notice#"^I) as CMlFrame));
+	}
+	
+	foreach (Frame in G_GhostsModels) Frame.Hide();
+	
+	// Cache the ghost data
+	G_PrevGhostNoticesData[Now + G_NbGhostsInCurrentTick] = _NoticeData;
+	G_NbGhostsInCurrentTick += 1;
+	
+	// ---------------------------------- //
+	// Remove old ghosts
+	declare ToRemove = Integer[];
+	
+	// Time out
+	foreach (Time => Data in G_PrevGhostNoticesData) if (Now > Time + 250) ToRemove.add(Time);
+	
+	// Over 10
+	if (G_PrevGhostNoticesData.count > {{{C_LibKillfeed_MaxNbNotifications}}}) {
+		declare NbToRemove = G_PrevGhostNoticesData.count - {{{C_LibKillfeed_MaxNbNotifications}}};
+		declare I = 0;
+		
+		foreach (Time => Notification in G_PrevGhostNoticesData) {
+			I += 1;
+			if (I <= NbToRemove && !ToRemove.exists(Time)) ToRemove.add(Time);
+		}
+	}
+	
+	// Remove
+	foreach (Time in ToRemove) if (G_PrevGhostNoticesData.existskey(Time)) {
+		declare Removed = G_PrevGhostNoticesData.removekey(Time);
+	}
+	
+	// ---------------------------------- //
+	// Setup ghost models
+	declare I = -1;
+	foreach (Time => NoticeData in G_PrevGhostNoticesData) {
+		I += 1;
+		declare Frame <=> G_GhostsModels[I];
+		SetupNotice(Frame, NoticeData, (I + 1) * Negative, False);
+	}
+	
+	// ---------------------------------- //
+	// Animate notices ghosts
+	declare Label_GhostDebug <=> (Page.GetFirstChild("Label_GhostDebug") as CMlLabel);
+	Label_GhostDebug.Opacity = 1.;
+	LibManialink_AnimStop(Label_GhostDebug);
+	LibManialink_Anim(Label_GhostDebug, "<label opacity=\"0\"/>", 250, "EaseLinear");
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		yield;
+		LibManialink_AnimLoop();
+		+++Yield+++
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/// Update notices network data
+Void Private_UpdateNotices() {
+	declare netwrite Text[][Integer] Net_LibKillfeed_Notifications for Teams[0];
+	declare netwrite Integer Net_LibKillfeed_LastUpdateTime for Teams[0];
+	Net_LibKillfeed_Notifications = G_LibKillfeed_Notifications;
+	Net_LibKillfeed_LastUpdateTime = Now;
+}
+
+// ---------------------------------- //
+/** Send notice to all players
+ * 
+ *	@param	_NoticeData		Notice data
+ */
+Void Private_SendNotice(Text[] _NoticeData) {
+	declare I = 0;
+	while (G_LibKillfeed_Notifications.existskey(Now + I)) I += 1;
+	G_LibKillfeed_Notifications[Now + I] = _NoticeData;
+	Private_UpdateNotices();
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Set new killfeed position
+ * 
+ *	@param	_Position	Killfeed new position
+ */
+Void SetPosition(Vec3 _Position) { G_LibKillfeed_WidgetPosn = _Position; }
+
+// ---------------------------------- //
+/** Set new killfeed icons path
+ * 
+ *	@param	_IconsPath	Killfeed icons path
+ */
+Void SetWeaponsIcons(Text[Integer] _IconsPath) {
+	if (_IconsPath.count <= 0) return;
+	foreach (WeaponNum => IconURL in _IconsPath) G_LibKillfeed_WeaponsIcons[WeaponNum] = IconURL;
+}
+
+// ---------------------------------- //
+/** Set killfeed notice height
+ * 
+ *	@param	_SizeY		Notice item height
+ */
+Void SetNoticeHeight(Real _SizeY) {
+	if (_SizeY < C_LibKillfeed_MinimumSizeVertical) G_LibKillfeed_SizeVertical = C_LibKillfeed_MinimumSizeVertical;
+	else G_LibKillfeed_SizeVertical = _SizeY;
+}
+
+// ---------------------------------- //
+/** Set horizontal killfeed align
+ * 
+ *	@param	_AlignLeft	Set if killfeed is aligned left
+ */
+Void SetAlignLeft(Boolean _AlignLeft) { G_LibKillfeed_AlignLeft = _AlignLeft; }
+
+// ---------------------------------- //
+/** Set vertical killfeed align
+ * 
+ *	@param	_AlignBottom	Set if killfeed is aligned bottom
+ */
+Void SetAlignBottom(Boolean _AlignBottom) { G_LibKillfeed_AlignBottom = _AlignBottom; }
+
+// ---------------------------------- //
+/** Set killfeed notice text scale
+ * 
+ *	@param	_TextScale		Notice item text scale
+ */
+Void SetTextScale(Real _TextScale) {
+	if (_TextScale < C_LibKillfeed_MinimumTextScale) G_LibKillfeed_TextScale = C_LibKillfeed_MinimumTextScale;
+	else G_LibKillfeed_TextScale = _TextScale;
+}
+
+// ---------------------------------- //
+/** Set killfeed notice text font
+ * 
+ *	@param	_TextFont		Notice item text font
+ */
+Void SetTextFont(Text _TextFont) { G_LibKillfeed_TextFont = _TextFont; }
+
+// ---------------------------------- //
+/** Load translations
+ * 
+ *	@param	_Translations	Translations to add
+ */
+Void AddTranslations(Text[] _Translations) {
+	if (_Translations.count <= 0) return;
+	foreach (Sentence in _Translations) G_LibKillfeed_PreloadedTranslations.add(Sentence);
+}
+
+// ---------------------------------- //
+/** Send elimination notice
+ * 
+ *	@param	_PlayerLoginRight	Login of the player displayed on the right side
+ *	@param	_PlayerLoginLeft	Login of the player displayed on the left side
+ *	@param	_IconURL			URL of the notice icon, or an alternative text
+ *	@param	_AssistantLogin		Login of the player who assisted the elimination
+ */
+Void SendNotice(Text _PlayerLoginRight, Text _PlayerLoginLeft, Text _IconURL, Text _AssistantLogin) {
+	Private_SendNotice([_PlayerLoginRight, _IconURL, _PlayerLoginLeft, _AssistantLogin]);
+}
+
+// ---------------------------------- //
+/** Send simple text notice
+ * 
+ *	@param	_NoticeText		Notice message
+ */
+Void SendNotice(Text _NoticeText) {
+	if (_NoticeText == "") return;
+	Private_SendNotice([_NoticeText]);
+}
+
+// ---------------------------------- //
+/** Send composed notice message
+ * 
+ *	@param	_Composes	Parameters to compose
+ */
+Void SendNotice(Text[] _Composes) {
+	if (_Composes.count <= 0) return;
+	if (_Composes.count == 1) SendNotice(_Composes[0]);
+	
+	declare NoticeData = ["*LibTranslations*"];
+	foreach (I => Compose in _Composes) {
+		if (I > 5) break;
+		NoticeData.add(Compose);
+	}
+	Private_SendNotice(NoticeData);
+}
+
+// ---------------------------------- //
+/** Send notice on event armor empty
+ * 
+ *	@param	_Event				Event to proceed
+ *	@param	_EventAssistant		Player who assisted in eliminationg victim
+ */
+Void OnArmorEmpty(CSmModeEvent _Event, CSmPlayer _EventAssistant) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnArmorEmpty) return;
+	if (_Event.Victim == Null || _Event.Victim.IsBot) return;
+	
+	// ---------------------------------- //
+	// Get the shooter name
+	declare Text TextSecondary;
+	if (_Event.Shooter != Null) {
+		if (_Event.Shooter.IsBot) TextSecondary = "Bot";
+		else TextSecondary = _Event.Shooter.User.Login;
+	}
+	
+	// ---------------------------------- //
+	// Get the assistant name
+	declare Text TextAssistant;
+	if (_EventAssistant != Null) {
+		if (_EventAssistant.IsBot) TextAssistant = "Bot";
+		else TextAssistant = _EventAssistant.User.Login;
+	}
+	
+	// ---------------------------------- //
+	// Set notice weapon icon
+	declare Text IconURL;
+	if (G_LibKillfeed_WeaponsIcons.existskey(_Event.WeaponNum))
+		IconURL = G_LibKillfeed_WeaponsIcons[_Event.WeaponNum];
+	
+	// Send notice
+	SendNotice(_Event.Victim.Login, TextSecondary, IconURL, TextAssistant);
+}
+
+// ---------------------------------- //
+/** Send notice on event player added
+ * 
+ *	@param	_Event	Event to proceed
+ */
+Void OnPlayerAdded(CSmModeEvent _Event) {
+	if (
+		_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerAdded ||
+		_Event.Player == Null || _Event.Player.User == Null || G_LibKillfeed_IsMapSwitching
+	) return;
+	
+	SendNotice(TL::Compose(_("$0F0$<%1$> joined the game"), _Event.Player.User.Name^"$>$z"));
+}
+
+// ---------------------------------- //
+/** Send notice on event player removed
+ * 
+ *	@param	_Event	Event to proceed
+ */
+Void OnPlayerRemoved(CSmModeEvent _Event) {
+	if (
+		_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerRemoved ||
+		_Event.User == Null || G_LibKillfeed_IsMapSwitching
+	) return;
+	
+	SendNotice(TL::Compose(_("$0F0$<%1$> left the game"), _Event.User.Name^"$>$z"));
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	Layers::Detach("LibKillfeed:Notices");
+	Layers::Destroy("LibKillfeed:Notices");
+	UIManager.UIAll.OverlayHideNotices = False;
+	UIManager.UIAll.OverlayHideMapInfo = False;
+	
+	G_LibKillfeed_Notifications.clear();
+	G_LibKillfeed_PrevNotificationCount = -1;
+	G_LibKillfeed_PreloadedTranslations.clear();
+	G_LibKillfeed_WeaponsIcons = C_LibKillfeed_DefaultWeaponsIcons;
+	
+	SetPosition(C_LibKillfeed_DefaultWidgetPosn);
+	SetNoticeHeight(C_LibKillfeed_DefaultSizeVertical);
+	SetTextScale(C_LibKillfeed_DefaultTextScale);
+	SetTextFont("");
+	SetAlignLeft(False);
+	SetAlignBottom(False);
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	Layers::Create("LibKillfeed:Notices");
+	Layers::Attach("LibKillfeed:Notices");
+	UIManager.UIAll.OverlayHideNotices = True;
+	UIManager.UIAll.OverlayHideMapInfo = True;
+}
+
+// ---------------------------------- //
+/// Create killfeed layer
+Void Build() { Layers::Update("LibKillfeed:Notices", Private_CreateManialinkKillfeed()); }
+
+// ---------------------------------- //
+/// Loop
+Void Loop() {
+	// ---------------------------------- //
+	// Don't send join notice when map is switching
+	if (G_LibKillfeed_PrevNbPlayers != Players.count) {
+		G_LibKillfeed_IsMapSwitching = (
+			(G_LibKillfeed_PrevNbPlayers <= 0 && Players.count > 0) ||
+			(G_LibKillfeed_PrevNbPlayers > 0 && Players.count <= 0)
+		);
+		G_LibKillfeed_PrevNbPlayers = Players.count;
+	}
+	
+	// ---------------------------------- //
+	// Send join and leave messages
+	foreach (Event in PendingEvents) {
+		switch (Event.Type) {
+			case CSmModeEvent::EType::OnPlayerAdded : OnPlayerAdded(Event);
+			case CSmModeEvent::EType::OnPlayerRemoved : OnPlayerRemoved(Event);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Remove notifications that last for over 6 seconds
+	if (G_LibKillfeed_Notifications.count > 0) {
+		declare Integer[] ToRemove;
+		foreach (Time => Notification in G_LibKillfeed_Notifications)
+			if (Now >= Time + C_LibKillfeed_NotificationLifetime) ToRemove.add(Time);
+		
+		foreach (Time in ToRemove) if (G_LibKillfeed_Notifications.existskey(Time)) {
+			declare Removed = G_LibKillfeed_Notifications.removekey(Time);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Send new notifications to the interface
+	if (G_LibKillfeed_PrevNotificationCount != G_LibKillfeed_Notifications.count) {
+		// ---------------------------------- //
+		// Remove oldest notifications if there are over 10
+		if (G_LibKillfeed_Notifications.count > C_LibKillfeed_MaxNbNotifications) {
+			declare NbToRemove = G_LibKillfeed_Notifications.count - C_LibKillfeed_MaxNbNotifications;
+			declare Integer[] ToRemove;
+			declare I = 0;
+			
+			foreach (Time => Notification in G_LibKillfeed_Notifications) {
+				I += 1;
+				if (I <= NbToRemove) ToRemove.add(Time);
+			}
+			
+			foreach (Time in ToRemove) if (G_LibKillfeed_Notifications.existskey(Time)) {
+				declare Removed = G_LibKillfeed_Notifications.removekey(Time);
+			}
+		}
+		
+		G_LibKillfeed_PrevNotificationCount = G_LibKillfeed_Notifications.count;
+		Private_UpdateNotices();
+	}
+}

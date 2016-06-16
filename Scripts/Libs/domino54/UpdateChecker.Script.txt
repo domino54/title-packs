@@ -1,6 +1,6 @@
 // -------------------------------------- //
-//  UPDATE CHECKER by domino54            //
-//  script version: 2015-06-27            //
+//  LIBRARY UPDATE CHECKER by domino54    //
+//  script version: 2016-06-16            //
 // -------------------------------------- //
 
 /*
@@ -19,7 +19,7 @@
  *	</scripts>
  */
 
-#Const Version		"2015-06-27"
+#Const Version		"2016-06-16"
 #Const ScriptName	"UpdateChecker.Script.txt"
 
 #Include "TextLib" as TL
@@ -68,7 +68,8 @@ Text Private_GetLayerLibUpdateChecker() {
 	<label posn="0 0 1" halign="center" valign="center2" style="TextButtonNav" textcolor="000" id="Label_UpdatesAmount"/>
 </frame>
 
-<frame id="Frame_NotificationClip" posn="57"><frame id="Frame_UpdateNotification" posn="97">
+<frame id="Frame_NotificationClip" posn="57" clip="1" clipposn="44 0" clipsizen="97 50">
+<frame id="Frame_UpdateNotification" posn="97">
 	<quad posn="-3.5 2.5 -1" sizen="97" style="EnergyBar" substyle="EnergyBar" opacity=".8" id="Quad_WindowBackground"/>
 	<label posn="0 -1" valign="center2" style="TextValueSmallSm" textsize="1" id="Label_WindowTitle"/>
 	<label posn="0 -4" sizen="90 4" valign="center2" class="defaultFont" id="Label_WindowSubtitle"/>
@@ -76,11 +77,185 @@ Text Private_GetLayerLibUpdateChecker() {
 	<label posn="70 -8" halign="right" valign="center2" class="scriptList" textcolor="F00" id="Label_ScriptVersionsLocal"/>
 	<label posn="90 -8" halign="right" valign="center2" class="scriptList" textcolor="0F0" id="Label_ScriptVersionsOnline"/>
 	<label posn="0 -15" sizen="90 4" valign="center2" class="defaultFont" id="Label_Instructions"/>
-</frame></frame>
+</frame>
+</frame>
 
 <script><!--
+/**
+ *	{{{ScriptName}}}
+ *	{{{Version}}}
+ *	domino54
+ */
+
 #Include "MathLib" as ML
 #Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_UpdateNotification	<=> (Page.GetFirstChild("Frame_UpdateNotification")		as CMlFrame);
+declare Quad_WindowBackground		<=> (Page.GetFirstChild("Quad_WindowBackground")		as CMlQuad);
+declare Label_WindowTitle			<=> (Page.GetFirstChild("Label_WindowTitle")			as CMlLabel);
+declare Label_WindowSubtitle		<=> (Page.GetFirstChild("Label_WindowSubtitle")			as CMlLabel);
+declare Label_ScriptNames			<=> (Page.GetFirstChild("Label_ScriptNames")			as CMlLabel);
+declare Label_ScriptVersionsLocal	<=> (Page.GetFirstChild("Label_ScriptVersionsLocal")	as CMlLabel);
+declare Label_ScriptVersionsOnline	<=> (Page.GetFirstChild("Label_ScriptVersionsOnline")	as CMlLabel);
+declare Label_Instructions			<=> (Page.GetFirstChild("Label_Instructions")			as CMlLabel);
+declare Frame_UpdateIcon	<=> (Page.GetFirstChild("Frame_UpdateIcon")		as CMlFrame);
+declare Label_UpdatesAmount	<=> (Page.GetFirstChild("Label_UpdatesAmount")	as CMlLabel);
+
+// Set translations
+Label_WindowTitle.SetText("$t"^Translations_Get("Server update"));
+Label_WindowSubtitle.SetText(Translations_Get("Server scripts can be replaced with the versions below:"));
+Label_Instructions.SetText(Translations_Get("Download the latest scripts versions from the gamemode developer site."));
+
+// ---------------------------------- //
+// Net data
+declare netread Text[Text] Net_LibUpdateChecker_Local for Teams[0];
+declare netread Text[Text] Net_LibUpdateChecker_Online for Teams[0];
+declare netread Text Net_LibUpdateChecker_DownloadURL for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare Integer NbUpdatesAvailable;		///< Aumber of current available updates
+declare Boolean ShowNotification;		///< Show notification frame
+
+/// Update
+declare Boolean PrevShowNotification;
+declare Integer PrevOnlineScriptCount;
+***
+	
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	if (Event.ControlId == "Quad_UpdateButton") {
+		switch (Event.Type) {
+			case CMlEvent::Type::MouseOver : ShowNotification = True;
+			case CMlEvent::Type::MouseOut : ShowNotification = False;
+			case CMlEvent::Type::MouseClick : {
+				if (Http.IsValidUrl(Net_LibUpdateChecker_DownloadURL)) {
+					OpenLink(Net_LibUpdateChecker_DownloadURL, ::LinkType::ExternalBrowser);
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// New update available
+if (PrevOnlineScriptCount != Net_LibUpdateChecker_Online.count) {
+	PrevOnlineScriptCount = Net_LibUpdateChecker_Online.count;
+	NbUpdatesAvailable = 0;
+	
+	// Clear labels
+	Label_ScriptNames.SetText(Text);
+	Label_ScriptVersionsLocal.SetText(Text);
+	Label_ScriptVersionsOnline.SetText(Text);
+	
+	// ---------------------------------- //
+	// Compare versions
+	foreach (ScriptName => ScriptVersion in Net_LibUpdateChecker_Local) {
+		if (
+			!Net_LibUpdateChecker_Online.existskey(ScriptName) ||
+			IsNewest(ScriptVersion, Net_LibUpdateChecker_Online[ScriptName]) ||
+			Net_LibUpdateChecker_Online[ScriptName] == ScriptVersion
+		) continue;
+		
+		NbUpdatesAvailable += 1;
+		
+		// Go to the next line
+		if (Label_ScriptNames.Value != "") {
+			Label_ScriptNames.Value ^= "\n";
+			Label_ScriptVersionsLocal.Value ^= "\n";
+			Label_ScriptVersionsOnline.Value ^= "\n";
+		}
+		
+		// Set labels value
+		Label_ScriptNames.Value ^= ScriptName;
+		Label_ScriptVersionsLocal.Value ^= ScriptVersion;
+		Label_ScriptVersionsOnline.Value ^= Net_LibUpdateChecker_Online[ScriptName];
+	}
+	
+	// Modify notification size
+	Quad_WindowBackground.Size.Y = 15. + NbUpdatesAvailable * 3;
+	Frame_UpdateNotification.RelativePosition.Y = Quad_WindowBackground.Size.Y / 2 - 2.5;
+	Label_Instructions.RelativePosition.Y = -9. - NbUpdatesAvailable * 3;
+	
+	// Show icon
+	Frame_UpdateIcon.Visible = (NbUpdatesAvailable > 0);
+	Label_UpdatesAmount.SetText(TL::ToText(NbUpdatesAvailable));
+}
+
+// ---------------------------------- //
+// Show notification window
+if (PrevShowNotification != ShowNotification && NbUpdatesAvailable > 0) {
+	PrevShowNotification = ShowNotification;
+	
+	declare Real TargetOffset;
+	TargetOffset = 0.;
+	if (!ShowNotification) TargetOffset = 97.;
+	
+	declare Text TargetEasing;
+	TargetEasing = "EaseOutCirc";
+	if (!ShowNotification) TargetEasing = "EaseInCirc";
+	
+	LibManialink_Anim("<frame id=\"Frame_UpdateNotification\" posn=\""^TargetOffset^" "^Frame_UpdateNotification.RelativePosition.Y^"\"/>", 250, TargetEasing);
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Check if the given text is date format
+ *
+ *	@param	_Text	Text to check
+ *
+ *	@return		True, if the text is a date
+ */
+Boolean TextIsDate(Text _Text) {
+	if (_Text == "") return False;
+	declare SplitDate = TL::Split("-", _Text);
+	if (SplitDate.count < 3) return False;
+	
+	if (TL::Length(SplitDate[0]) != 4 || TL::Length(SplitDate[1]) != 2 || TL::Length(SplitDate[2]) != 2) return False;
+	return True;
+}
+
+// ---------------------------------- //
+/** Check if the local date is newest
+ *
+ *	@param	_LocalDate		Local script version
+ *	@param	_OnlineDate		Online script version
+ *
+ *	@return		True, if date is newest
+ */
+Boolean IsNewest(Text _LocalDate, Text _OnlineDate) {
+	if (!TextIsDate(_LocalDate) || !TextIsDate(_OnlineDate)) return False;
+	declare LocalDate = TL::Split("-", _LocalDate);
+	declare OnlineDate = TL::Split("-", _OnlineDate);
+	
+	declare IsNewestYear = TL::ToInteger(LocalDate[0]) > TL::ToInteger(OnlineDate[0]);
+	if (IsNewestYear) return True;
+	
+	declare IsNewestMonth = TL::ToInteger(LocalDate[1]) > TL::ToInteger(OnlineDate[1]);
+	if (IsNewestMonth) return True;
+	
+	declare IsNewestDay = TL::ToInteger(LocalDate[2]) > TL::ToInteger(OnlineDate[2]);
+	if (IsNewestDay) return True;
+	
+	return False;
+}
 
 {{{Manialink::Animations(["EaseInCirc", "EaseOutCirc"])}}}
 {{{Translations::InsertToManialink(["Server update", "Server scripts can be replaced with the versions below:", "Download the latest scripts versions from the gamemode developer site."])}}}
@@ -89,124 +264,11 @@ Text Private_GetLayerLibUpdateChecker() {
 // Main
 // ---------------------------------- //
 main() {
-	// ---------------------------------- //
-	// Load elements
-	declare Frame_UpdateNotification	<=> (Page.GetFirstChild("Frame_UpdateNotification")		as CMlFrame);
-	declare Quad_WindowBackground		<=> (Page.GetFirstChild("Quad_WindowBackground")		as CMlQuad);
-	declare Label_WindowTitle			<=> (Page.GetFirstChild("Label_WindowTitle")			as CMlLabel);
-	declare Label_WindowSubtitle		<=> (Page.GetFirstChild("Label_WindowSubtitle")			as CMlLabel);
-	declare Label_ScriptNames			<=> (Page.GetFirstChild("Label_ScriptNames")			as CMlLabel);
-	declare Label_ScriptVersionsLocal	<=> (Page.GetFirstChild("Label_ScriptVersionsLocal")	as CMlLabel);
-	declare Label_ScriptVersionsOnline	<=> (Page.GetFirstChild("Label_ScriptVersionsOnline")	as CMlLabel);
-	declare Label_Instructions			<=> (Page.GetFirstChild("Label_Instructions")			as CMlLabel);
-	// Icon
-	declare Frame_UpdateIcon	<=> (Page.GetFirstChild("Frame_UpdateIcon")		as CMlFrame);
-	declare Label_UpdatesAmount	<=> (Page.GetFirstChild("Label_UpdatesAmount")	as CMlLabel);
-	
-	// ---------------------------------- //
-	// Cut the frame
-	declare Frame_NotificationClip <=> (Page.GetFirstChild("Frame_NotificationClip") as CMlFrame);
-	Frame_NotificationClip.ClipWindowActive = True;
-	Frame_NotificationClip.ClipWindowSize = <97., 50.>;
-	Frame_NotificationClip.ClipWindowRelativePosition = <44., 0.>;
-	
-	// Translations
-	Label_WindowTitle.SetText("$t"^Translations_Get("Server update"));
-	Label_WindowSubtitle.SetText(Translations_Get("Server scripts can be replaced with the versions below:"));
-	Label_Instructions.SetText(Translations_Get("Download the latest scripts versions from the gamemode developer site."));
-	
-	// ---------------------------------- //
-	// Net data
-	declare netread Text[Text] Net_LibUpdateChecker_Local for Teams[0];
-	declare netread Text[Text] Net_LibUpdateChecker_Online for Teams[0];
-	declare netread Text Net_LibUpdateChecker_DownloadURL for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Integer NbUpdatesAvailable;		///< Aumber of current available updates
-	declare Boolean ShowNotification;		///< Show notification frame
-	declare Boolean PrevShowNotification;
-	declare Integer PrevOnlineScriptCount;	///< Previous amount of online script versions
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	+++Main+++
 	while (True) {
-		yield;
+		+++Yield+++
 		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Events management
-		foreach (Event in PendingEvents) {
-			if (Event.ControlId == "Quad_UpdateButton") {
-				switch (Event.Type) {
-					case CMlEvent::Type::MouseOver : ShowNotification = True;
-					case CMlEvent::Type::MouseOut : ShowNotification = False;
-					case CMlEvent::Type::MouseClick : {
-						if (Http.IsValidUrl(Net_LibUpdateChecker_DownloadURL)) {
-							OpenLink(Net_LibUpdateChecker_DownloadURL, ::LinkType::ExternalBrowser);
-						}
-					}
-				}
-			}
-		}
-		
-		// ---------------------------------- //
-		// New update available
-		if (PrevOnlineScriptCount != Net_LibUpdateChecker_Online.count) {
-			PrevOnlineScriptCount = Net_LibUpdateChecker_Online.count;
-			NbUpdatesAvailable = 0;
-			
-			// Clear labels
-			Label_ScriptNames.SetText(Text);
-			Label_ScriptVersionsLocal.SetText(Text);
-			Label_ScriptVersionsOnline.SetText(Text);
-			
-			// ---------------------------------- //
-			// Compare versions
-			foreach (ScriptName => ScriptVersion in Net_LibUpdateChecker_Local) {
-				if (Net_LibUpdateChecker_Online.existskey(ScriptName) && Net_LibUpdateChecker_Online[ScriptName] != ScriptVersion) {
-					NbUpdatesAvailable += 1;
-					
-					// Go to the next line
-					if (Label_ScriptNames.Value != "") {
-						Label_ScriptNames.Value ^= "\n";
-						Label_ScriptVersionsLocal.Value ^= "\n";
-						Label_ScriptVersionsOnline.Value ^= "\n";
-					}
-					
-					// Set labels value
-					Label_ScriptNames.Value ^= ScriptName;
-					Label_ScriptVersionsLocal.Value ^= ScriptVersion;
-					Label_ScriptVersionsOnline.Value ^= Net_LibUpdateChecker_Online[ScriptName];
-				}
-			}
-			
-			// Modify notification size
-			Quad_WindowBackground.Size.Y = 15. + NbUpdatesAvailable * 3;
-			Frame_UpdateNotification.RelativePosition.Y = Quad_WindowBackground.Size.Y / 2 - 2.5;
-			Label_Instructions.RelativePosition.Y = -9. - NbUpdatesAvailable * 3;
-			
-			// Show icon
-			Frame_UpdateIcon.Visible = (NbUpdatesAvailable > 0);
-			Label_UpdatesAmount.SetText(TL::ToText(NbUpdatesAvailable));
-		}
-		
-		// ---------------------------------- //
-		// Show notification window
-		if (PrevShowNotification != ShowNotification && NbUpdatesAvailable > 0) {
-			PrevShowNotification = ShowNotification;
-			
-			declare Real TargetOffset;
-			TargetOffset = 0.;
-			if (!ShowNotification) TargetOffset = 97.;
-			
-			declare Text TargetEasing;
-			TargetEasing = "EaseOutCirc";
-			if (!ShowNotification) TargetEasing = "EaseInCirc";
-			
-			LibManialink_Anim("<frame id=\"Frame_UpdateNotification\" posn=\""^TargetOffset^" "^Frame_UpdateNotification.RelativePosition.Y^"\"/>", 250, TargetEasing);
-		}
+		yield;
 	}
 }
 --></script>
@@ -320,18 +382,14 @@ Boolean Private_ReadOnlineVersions() {
  *
  *	@return		The version number of the script
  */
-Text GetScriptVersion() {
-	return Version;
-}
+Text GetScriptVersion() { return Version; }
 
 // ---------------------------------- //
 /** Return the name of the script
  *
  *	@return		The name of the script
  */
-Text GetScriptName() {
-	return ScriptName;
-}
+Text GetScriptName() { return ScriptName; }
 
 // ---------------------------------- //
 /// Unload library

@@ -1,0 +1,922 @@
+// -------------------------------------- //
+//  GALAXYTITLES MODE BASE by domino54    //
+//  script version: 2016-06-16            //
+// -------------------------------------- //
+
+/**
+ *	Base for the game modes in the GalaxyTitles title pack.
+ */
+
+#Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
+
+#Const BaseVersion		"2016-06-16"
+#Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
+
+#Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
+#Include "Libs/Nadeo/ShootMania/WarmUp2.Script.txt" as WarmUp2
+// Custom libraries
+#Include "Libs/domino54/Blacklist.Script.txt" as Blacklist
+#Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
+#Include "Libs/domino54/SentenceBank.Script.txt" as SentenceBank
+#Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
+#Include "Libs/domino54/TopScores.Script.txt" as TopScores
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+#Include "Libs/domino54/UpdateChecker.Script.txt" as UpdateChecker
+#Include "Libs/domino54/WebLayers.Script.txt" as WebLayers
+#Include "Libs/domino54/ShootMania/GalaxyTitles.Script.txt" as GalaxyTitles
+#Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
+#Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
+#Include "Libs/domino54/ShootMania/KillFeed.Script.txt" as KillFeed
+#Include "Libs/domino54/ShootMania/MiniMap.Script.txt" as MiniMap
+#Include "Libs/domino54/ShootMania/PauseMenu.Script.txt" as PauseMenu
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_ObjectsRespawnTime	15		as _("Items respawn time (0 = don't spawn)")
+#Setting S_ToadsRespawnTime		60		as _("Toads respawn time (0 = don't spawn)")
+#Setting S_ToadsSpawnRatio		.5		as _("Percentage amount of Toads to spawn on landmarks")
+#Setting S_UseComboWeapons		True	as _("Use Weapons pick-ups (if available on map)")
+#Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
+#Setting S_WarmUpDuration		300		as _("Warm up duration (sec.)")	///< Duration of the warm up round (0 = no warmup)
+#Setting S_NbPlayersPerTeamMax	0		as "<hidden>" //_("Maximum number of players per team (0: no max)")
+#Setting S_NbPlayersPerTeamMin	1		as "<hidden>" //_("Minumum number of players per team")
+#Setting S_CustomLayersURLs		""		as "<hidden>" ///< Try to load custom layers from an URL
+#Setting S_CustomBlacklistURL	""		as "<hidden>" ///< URL of the custom blacklist file
+#Setting S_KillFeedOffsetY		0.		as "<hidden>" ///< For server hosters: killfeed Y offset
+#Setting S_MusicPlaylistURL		""		as "<hidden>" ///< URL of the server custom music playlist file
+// Clublinks settings
+#Setting S_UsePlayerClublinks	True	as _("Use players clublinks")
+#Setting S_ForceClublinkTeam1	""		as "<hidden>"	///< Force the Clublink of team 1
+#Setting S_ForceClublinkTeam2	""		as "<hidden>"	///< Force the Clublink of team 2
+// Enable AFK management by default
+#Setting S_AutoManageAFK	True
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
+#Const C_DefaultMusicPlaylist "http://dominolink.aq.pl/music/playlist.xml"
+#Const C_DefaultKillfeedPosn	<159., 89., -5.>	///< Default position of the Killfeed layer
+#Const C_NoCollisionsDuration	6000	///< No collision duration at the beginning of the round
+
+#Const C_MaxDamage 100	///< Maximum damage amount infliged by weapons
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[Text] GT_LogScriptsVersions;	///< Scripts to log and check updates in the Update Checker library
+declare Text[] GT_KillfeedTranslations;		///< Translations to be loaded with the Killfeed library
+declare Text GT_SpawnScreenModeName;		///< Name of the mode displayed in the spawn screen
+declare Text GT_SpawnScreenModeType;		///< Spawn screen mode type (free for all, teams, cooperation)
+declare Text GT_SpawnScreenObjectives;		///< Rules of the game mode displayed in the spawn screen
+
+declare Boolean GT_UseNoCollisionsStart;	///< Use the no-collisions round start
+declare Boolean GT_UseAutoEndSequence;		///< Use the automatic End Map sequence
+declare Boolean GT_UseComboWeapons;			///< Use combo waepons
+declare Boolean GT_AutoManageOnHit;			///< Automatically manage OnHit events
+declare Boolean GT_AutoManageOnArmorEmpty;	///< Automatically manage OnArmorEmpty events
+declare Boolean GT_AutoManageOnNearMiss;	///< Automatically manage OnNearMiss events
+declare Boolean GT_AutoManageOnRespawn;		///< Automatically manage OnPlayerRequestRespawn event
+
+// ---------------------------------- //
+// Log scripts versions
+// ---------------------------------- //
+***UpdateChecker***
+***
+declare UC_ScriptsVersions = [
+	BaseScriptName => BaseVersion,
+	WarmUp2::GetScriptName()		=> WarmUp2::GetScriptVersion(),
+	Score::GetScriptName()			=> Score::GetScriptVersion(),
+	FakeUsers::GetScriptName()		=> FakeUsers::GetScriptVersion(),
+	GalaxyTitles::GetScriptName()	=> GalaxyTitles::GetScriptVersion(),
+	Interfancy::GetScriptName()		=> Interfancy::GetScriptVersion(),
+	Inventory::GetScriptName()		=> Inventory::GetScriptVersion(),
+	KillFeed::GetScriptName()		=> KillFeed::GetScriptVersion(),
+	MiniMap::GetScriptName()		=> MiniMap::GetScriptVersion(),
+	PauseMenu::GetScriptName()		=> PauseMenu::GetScriptVersion(),
+	SentenceBank::GetScriptName()	=> SentenceBank::GetScriptVersion(),
+	TopScores::GetScriptName()		=> TopScores::GetScriptVersion(),
+	Translations::GetScriptName()	=> Translations::GetScriptVersion(),
+	UpdateChecker::GetScriptName()	=> UpdateChecker::GetScriptVersion(),
+	WebLayers::GetScriptName()		=> WebLayers::GetScriptVersion()
+];
+
+foreach (ScriptName => ScriptVersion in GT_LogScriptsVersions) UC_ScriptsVersions[ScriptName] = ScriptVersion;
+UpdateChecker::SetAndLogScriptVersions(UC_ScriptsVersions);
+***
+
+// ---------------------------------- //
+// Initialize matchmaking lobby
+// ---------------------------------- //
+***LobbyStartServer***
+***
+MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
+	declare Formats = Integer[][];
+	for (I, S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1) if (I > 0) Formats.add([I, I]);
+	MM_SetProgressiveFormats(Formats);
+}
+***
+
+// ---------------------------------- //
+// Set the rules in the spawn screen
+// ---------------------------------- //
+***Rules***
+***
+SpawnScreen::ResetRulesSection();
+SpawnScreen::AddSubsection(_("Type"), GT_SpawnScreenModeType, 0.);
+SpawnScreen::AddSubsection(_("Objectives"), GT_SpawnScreenObjectives, 25.);
+
+SpawnScreen::SetModeName(GT_SpawnScreenModeName);
+SpawnScreen::CreatePrettyRules(GT_SpawnScreenModeName);
+SpawnScreen::CreateMapInfo();
+SpawnScreen::CreateScores("Score.Points + Score.RoundPoints");
+***
+
+// ---------------------------------- //
+// Set default scores table format
+// ---------------------------------- //
+***ScoresTable***
+***
+// ---------------------------------- //
+// Global settings
+ST2::SetSize(<164.5, 10.5>, <161., 60.5>, <160., 15.>);
+ST2::SetFormat(2, 8);
+ST2::SetTextScale(.875);
+ST2::SetBackgroundProperties(<0., 5.>, <200., 100.>);
+
+// ---------------------------------- //
+// Columns
+ST2::SetColWidth("LibST_Avatar", 2.5);
+ST2::SetColWidth("LibST_ManiaStars", 2.);
+ST2::SetColWidth("LibST_Tools", 1.5);
+ST2::SetColWidth("LibST_SMPoints", 4.);
+ST2::SetColWidth("LibST_SMRoundPoints", 4.);
+ST2::SetColLegend("LibST_SMPoints", _("Total"));
+ST2::DestroyCol("LibST_Tags");
+// Custom
+TopScores::AddCategory("Items", "Itm", 2.25, 70.);
+TopScores::AddCategory("Hit", "Hit", 2.25, 80.);
+
+// ---------------------------------- //
+// Teams mode
+ST2::SetTeamsMode(UseClans);
+if (UseClans) {
+	ST2::SetTeamImage(1, "file://Media/Manialinks/ShootMania/ScoresTable/teamversus-left.dds", <0., 3.5>, <100., 25.>);
+	ST2::SetTeamImage(2, "file://Media/Manialinks/ShootMania/ScoresTable/teamversus-right.dds", <0., 3.5>, <100., 25.>);
+}
+***
+
+// ---------------------------------- //
+// Initialize server
+// ---------------------------------- //
+***InitServer***
+***
+// Enable all options by default
+GT_UseNoCollisionsStart = True;
+GT_UseAutoEndSequence = True;
+GT_UseComboWeapons = True;
+GT_AutoManageOnHit = True;
+GT_AutoManageOnArmorEmpty = True;
+GT_AutoManageOnNearMiss = True;
+GT_AutoManageOnRespawn = True;
+
+// Variables
+declare Integer GT_NoCollisionsEndTime;
+***
+
+***StartServer***
+***
+// ---------------------------------- //
+// Set mode options
+MB_UseSectionRound = True;
+ForceNavMapsComputation = True;
+MB_UsePlayerClublinks = S_UsePlayerClublinks;
+MB_UseIntro = !MM_IsMatchServer();
+Replay_AutoStart = False;
+
+// Update rules
+---Rules---
+
+// ---------------------------------- //
+// Matchmaking mode
+declare IsRematch = False;	///< Do the players want a rematch?
+declare RematchNb = 0;		///< Number of consecutive rematch
+if (MM_IsMatchServer()) MM_Init([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+
+// ---------------------------------- //
+// Load warm-up
+WarmUp2::Load();
+WarmUp2::SetLayerPosition(<0., -58.>);
+
+// ---------------------------------- //
+// Load the Update Checker library
+UpdateChecker::Load();
+---UpdateChecker---
+
+// ---------------------------------- //
+// Create the scores table
+ST2::SetStyle("LibST_SMBaseSolo");
+ST2::SetStyle("LibST_SMBasePoints");
++++ScoresTable+++
+MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
+ST2::Build("SM");
+
+// ---------------------------------- //
+// Create custom interface
+Interfancy::LoadModules(["Gauges", "Countdown", "SpecInfo", "Crosshair", "ScoreSummary"]);
+Interfancy::SetModuleVisibility("ScoreSummary", UseClans && !UseForcedClans);
+PauseMenu::Load();
+StoragePlayer::Load(C_ImgBase, "Eurostile", "Eurostile_Bold");
+StoragePlayer::SetDefaultPlaylistURL(C_DefaultMusicPlaylist);
+
+SM::SetupDefaultVisibility();
+UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
+
+// ---------------------------------- //
+// Load killfeed library
+KillFeed::Load();
+KillFeed::SetPosition(C_DefaultKillfeedPosn + <0., S_KillFeedOffsetY, 0.>);
+KillFeed::AddTranslations(GT_KillfeedTranslations);
+KillFeed::SetTextFont("Eurostile");
+KillFeed::SetWeaponsIcons([
+	0 => C_ImgBase^"Icons/Shield.png", 1 => C_ImgBase^"Icons/Laser.png", 2 => C_ImgBase^"Icons/Rocket.png",
+	3 => C_ImgBase^"Icons/Nucleus.png", 5 => C_ImgBase^"Icons/Arrow.png"
+]);
+KillFeed::Build();
+
+// ---------------------------------- //
+// Load minimap
+MiniMap::Load();
+MiniMap::SetOpponentsVisibility(!MM_IsMatchServer());
+
+// ---------------------------------- //
+// Load GalaxyTitles library
+GalaxyTitles::Load();
+***
+
+// ---------------------------------- //
+// Update players clublinks
+// ---------------------------------- //
+***UpdateClublinks***
+***
+if (UseClans && !UseForcedClans) {
+	Clublink::ResetAll();
+	if (S_ForceClublinkTeam1 == "" && S_ForceClublinkTeam2 == "") Clublink::DefineTeamAuto();
+	else Clublink::DefineTeamFromUrl(S_ForceClublinkTeam1, S_ForceClublinkTeam2);
+}
+***
+
+// ---------------------------------- //
+// Map start
+// ---------------------------------- //
+***StartMap***
+***
+Score::MatchBegin(True);
+TopScores::MatchBegin();
+UpdateChecker::CheckUpdate();
+if (UseClans) GT_InitWarmUp();
+
+// ---------------------------------- //
+// Reset clan scores
+ClanScores[1] = 0;
+ClanScores[2] = 0;
+MM_SetScores([ClanScores[1], ClanScores[2]]);
+
+// ---------------------------------- //
+// Init bases
+foreach (MapLandmark in MapLandmarks) {
+	if (MapLandmark.Base == Null) continue;
+	MapLandmark.Base.Clan = 0;
+	MapLandmark.Base.IsActive = True;
+}
+
+// ---------------------------------- //
+// Wait players when using matchmaking
+if (MM_IsMatchServer()) {
+	if (!IsRematch) {
+		MM_MatchWait();
+		MM_VoteForNextMap(True);
+	}
+	else MM_WaitPlayers(15000);
+} else if (S_WarmUpDuration > 0 && S_NbPlayersPerTeamMax > 0) {
+	MB_CurrentSection = "WarmUp";
+	GT_DoWarmUp();
+	MB_CurrentSection = "StartMap";
+}
+IsRematch = False;
+
+// ---------------------------------- //
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
+***
+
+// ---------------------------------- //
+// Round start
+// ---------------------------------- //
+***StartRound***
+***
+Score::RoundBegin();
+TopScores::RoundBegin();
+Interfancy::ClearNotesData();
+MiniMap::Show();
+Replay_Start();
+
+GalaxyTitles::UseComboWeapons(S_UseComboWeapons && GT_UseComboWeapons);
+GalaxyTitles::Init();
+GalaxyTitles::InitToads(S_ToadsSpawnRatio);
+
+// Update the rules now, if a change occured in the settings
+---Rules---
+
+// No collisions at the beginning of the round
+UsePvPCollisions = !GT_UseNoCollisionsStart;
+if (!UsePvPCollisions) GT_NoCollisionsEndTime = StartTime + C_NoCollisionsDuration;
+
+---UpdateClublinks---
+***
+
+// ---------------------------------- //
+// Mode global loop
+// ---------------------------------- //
+***Yield***
+***
+FakeUsers::UpdateAmount(S_NbFakeUsers);
+WebLayers::Update(S_CustomLayersURLs);
+Blacklist::Loop(S_CustomBlacklistURL);
+StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
+Interfancy::UpdateTime();
+Message::Loop();
+KillFeed::Loop();
+***
+
+// ---------------------------------- //
+// Update clublinks on new player connection
+// ---------------------------------- //
+***OnNewPlayer***
+***
+---UpdateClublinks---
+***
+
+// ---------------------------------- //
+// Premade on armor empty event manager
+// ---------------------------------- //
+***PremadeOnArmorEmpty***
+***
+declare Ident[] GT_VictimShootHistory for Event.Victim;
+declare Ident GT_VictimLastShooter for Event.Victim;
+declare Integer GT_VictimLastHitTime for Event.Victim;
+declare Integer GT_LastFakeHitTime for Event.Victim;
+
+// ---------------------------------- //
+// Normal hit elimination
+if (Event.Shooter != Null) {
+	+++OnArmorEmpty+++
+	
+	// ---------------------------------- //
+	// Elimination assistance
+	declare CSmPlayer EventAssistant;
+	
+	// Get the elimination assistant
+	if (GT_VictimShootHistory.count > 0) for (I, 0, GT_VictimShootHistory.count - 1) {
+		declare PlayerId = GT_VictimShootHistory[GT_VictimShootHistory.count - 1 - I];
+		if (AllPlayers.existskey(PlayerId) && PlayerId != Event.Shooter.Id) {
+			EventAssistant = AllPlayers[PlayerId];
+			break;
+		}
+	}
+	
+	GT_VictimLastShooter = NullId;
+	GT_VictimShootHistory.clear();
+	GT_LastFakeHitTime = Now;
+	
+	if (GT_IsValidForCallbacks(Event)) XmlRpc::OnArmorEmpty(Event);
+	KillFeed::OnArmorEmpty(Event, EventAssistant);
+	PassOn(Event);
+}
+// ---------------------------------- //
+// Environmental elimination
+else {
+	// ---------------------------------- //
+	// Someone performed environmental elimination
+	if (
+		Now <= GT_VictimLastHitTime + 10000 &&
+		GT_VictimLastShooter != NullId && AllPlayers.existskey(GT_VictimLastShooter)
+	) {
+		declare Shooter = AllPlayers[GT_VictimLastShooter];
+		declare Points = Event.Victim.Armor / 100;
+		GT_VictimLastShooter = NullId;
+		
+		Score::AddPoints(Shooter, Points);
+		TopScores::AddPoints(Shooter.Score, "Hit", Points);
+		
+		RemovePlayerArmor(Event.Victim, Event.Victim.Armor, Shooter, Points);
+		Discard(Event);
+	}
+	// ---------------------------------- //
+	// Normal environmental elimination
+	else if (Now > GT_LastFakeHitTime + 500) {
+		Score::RemovePoints(Event.Victim, 1);
+		
+		+++OnArmorEmpty+++
+		
+		GT_VictimLastShooter = NullId;
+		GT_VictimShootHistory.clear();
+		
+		if (GT_IsValidForCallbacks(Event)) XmlRpc::OnArmorEmpty(Event);
+		KillFeed::OnArmorEmpty(Event, Null);
+		PassOn(Event);
+	}
+	else Discard(Event);
+}
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***PlayLoop***
+***
+// ---------------------------------- //
+// Extended events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On armor empty
+	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		if (GT_AutoManageOnArmorEmpty) {
+			---PremadeOnArmorEmpty---
+		} else {
+			+++CustomOnArmorEmpty+++
+		}
+	}
+	// ---------------------------------- //
+	// On hit
+	else if (Event.Type == CSmModeEvent::EType::OnHit) {
+		// ---------------------------------- //
+		// Automatic hit management
+		if (GT_AutoManageOnHit) {
+			// ---------------------------------- //
+			// Discard invalid events
+			if (Event.Shooter == Null || Event.Victim == Null || Event.Shooter == Event.Victim) Discard(Event);
+			
+			// ---------------------------------- //
+			// Teammate hit
+			else if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) Discard(Event);
+			
+			// ---------------------------------- //
+			// A bot has hit someone
+			else if (Event.Shooter.IsBot) {
+				if (Event.Victim.IsBot && Event.Victim.CurrentClan == 0) Discard(Event);
+				else PassOn(Event);
+			}
+			
+			// ---------------------------------- //
+			// Enemy hit
+			else {
+				// Reduce Laser damage
+				if (Event.Damage > C_MaxDamage) Event.Damage = C_MaxDamage;
+				
+				declare Points = ML::Min(Event.Damage, Event.Victim.Armor) / 100;
+				Score::AddPoints(Event.Shooter, Points);
+				TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
+				Event.ShooterPoints = Points;
+				
+				+++OnHit+++
+				
+				// ---------------------------------- //
+				// Environmental eliminations
+				declare Ident GT_VictimLastShooter for Event.Victim;
+				declare Integer GT_VictimLastHitTime for Event.Victim;
+				GT_VictimLastShooter = Event.Shooter.Id;
+				GT_VictimLastHitTime = Now;
+				
+				// ---------------------------------- //
+				// Elimination assists
+				declare Ident[] GT_VictimShootHistory for Event.Victim;
+				GT_VictimShootHistory.add(Event.Shooter.Id);
+				
+				if (GT_IsValidForCallbacks(Event)) XmlRpc::OnHit(Event);
+				PassOn(Event);
+			}
+		}
+		// ---------------------------------- //
+		// Manual event management
+		else {
+			+++OnHit+++
+		}
+	}
+	// ---------------------------------- //
+	// On shoot
+	else if (Event.Type == CSmModeEvent::EType::OnShoot) {
+		if (GT_IsValidForCallbacks(Event)) XmlRpc::OnShoot(Event);
+		+++OnShoot+++
+	}
+	// ---------------------------------- //
+	// On player request respawn
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		declare Ident[] GT_VictimShootHistory for Event.Player;
+		declare Ident GT_VictimLastShooter for Event.Player;
+		GT_VictimShootHistory.clear();
+		GT_VictimLastShooter = NullId;
+		
+		if (GT_AutoManageOnRespawn) {
+			Score::RemovePoints(Event.Player, 1);
+			+++OnPlayerRequestRespawn+++
+			if (GT_IsValidForCallbacks(Event)) XmlRpc::OnPlayerRequestRespawn(Event);
+			PassOn(Event);
+		}
+		else {
+			+++OnPlayerRequestRespawn+++
+		}
+	}
+	// ---------------------------------- //
+	// Player picked up item
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject) {
+		Discard(Event);
+		if (Event.Object == Null || Event.Player == Null || Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+		
+		// Pick up object handled by the mode base
+		if (GalaxyTitles::PickUpObject(Event, S_ObjectsRespawnTime * 1000)) continue;
+		
+		+++OnPlayerTouchesObject+++
+	}
+	// ---------------------------------- //
+	// On player switch weapon
+	else if (Event.Type == CSmModeEvent::EType::OnActionEvent) {
+		declare Switched = Inventory::SwitchWeapon(Event.Player, Event.ActionInput);
+		+++OnActionEvent+++
+	}
+	// ---------------------------------- //
+	// On player cycle weapon
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestActionChange) {
+		Inventory::ScrollWeapons(Event.Player, Event.ActionChange);
+		+++OnPlayerRequestActionChange+++
+	}
+	// ---------------------------------- //
+	// Near miss event
+	else if (Event.Type == CSmModeEvent::EType::OnNearMiss) {
+		// ---------------------------------- //
+		// Display near miss message
+		if (
+			GT_AutoManageOnNearMiss && !Event.Shooter.IsBot && Event.Victim != Null && Event.WeaponNum == 1 &&
+			(Event.Shooter.CurrentClan == 0 || Event.Shooter.CurrentClan != Event.Victim.CurrentClan)
+		) {
+			Interfancy::DisplayNearMiss(Event.Shooter, Event.MissDist);
+			if (GT_IsValidForCallbacks(Event)) XmlRpc::OnNearMiss(Event);
+		}
+		+++OnNearMiss+++
+	}
+	// ---------------------------------- //
+	// Update clublinks on player removal
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRemoved) {
+		---UpdateClublinks---
+	}
+}
+
+// ---------------------------------- //
+// Galaxy Titles features
+GT_UnspawnPlayersChangingClan();
+GalaxyTitles::ReloadBoost();
+GalaxyTitles::SpawnObjects(S_ObjectsRespawnTime > 0);
+GalaxyTitles::ToadsLoop(S_ToadsRespawnTime * 1000);
+
+// ---------------------------------- //
+// Stop the no-collisions phase
+if (GT_UseNoCollisionsStart && GT_NoCollisionsEndTime > 0 && GT_NoCollisionsEndTime <= Now) {
+	GT_NoCollisionsEndTime = -1;
+	UsePvPCollisions = True;
+}
+***
+
+// ---------------------------------- //
+// End round
+// ---------------------------------- //
+***EndRound***
+***
++++EndRoundBeforeSetScores+++
+Score::RoundEnd();
+TopScores::RoundEnd();
+MiniMap::Hide();
+
+StartTime = -1;
+EndTime = -1;
+
+Replay_Stop();
+***
+
+// ---------------------------------- //
+// End map
+// ---------------------------------- //
+***EndMap***
+***
++++EndMapBeforeCloseLadder+++
+// ---------------------------------- //
+// Force LadderClan to a value different than 0, can't win LP otherwise
+if (!UseClans) foreach (I => Score in Scores) Score.LadderClan = 1 + I % 2;
+
+Score::MatchEnd(True);
+TopScores::MatchEnd();
+GalaxyTitles::Init();
+
+// ---------------------------------- //
+// Set matchmaking match master
+declare MasterLogin = "";
+declare MasterPoints = 0;
+
+if (MM_IsMatchServer()) {
+	MM_SetLadderMatchId();
+	if (ClansNbPlayers[1] != 0 && ClansNbPlayers[2] != 0 && !MM_RestartMatchmaking && Scores.existskey(0)) {
+		MasterPoints = Scores[0].Points;
+		MasterLogin = Scores[0].User.Login;
+	}
+}
+
++++EndMapBeforePodium+++
+
+// ---------------------------------- //
+// End match sequence
+if (GT_UseAutoEndSequence) {
+	// ---------------------------------- //
+	// Set the map winner
+	declare Text WinnerName;
+	if (UseClans && !UseForcedClans) {
+		declare WinnerClan = 0;
+		foreach (Clan => Points in ClanScores)
+			if (Clan != 0 && Points > ClanScores[3 - Clan]) WinnerName = Teams[Clan - 1].ColorizedName;
+	}
+	else if (Scores.existskey(0)) WinnerName = Scores[0].User.Name;
+	
+	// ---------------------------------- //
+	// Display the round winner
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	
+	if (WinnerName == "") UIManager.UIAll.BigMessage = _("|Match|Draw");
+	else UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the match!"), WinnerName);
+	
+	MB_Sleep(6000);
+	
+	// ---------------------------------- //
+	// Podium
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+	while(!UIManager.UIAll.UISequenceIsCompleted) MB_Yield();
+	
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	UIManager.UIAll.BigMessage = "";
+}
+
+// ---------------------------------- //
+// Send match result and transfer players back to the lobby
+if (MM_IsMatchServer()) {
+	if (!MM_RestartMatchmaking && ClansNbPlayers[1] > 0 && ClansNbPlayers[2] > 0) {
+		if (MB_StopMatch) {
+			if (RematchNb < S_MatchmakingRematchNbMax) {
+				IsRematch = MM_VoteForRematch();
+				RematchNb += 1;
+			}
+			if (!IsRematch) {
+				RematchNb = 0;
+				MM_MatchEnd(MasterLogin);
+				MM_MatchToLobby();
+			}
+			else MM_VoteForNextMap(False);
+		}
+		else MM_VoteForNextMap(False);
+	} else {
+		RematchNb = 0;
+		MM_MatchEnd(MasterLogin);
+		MM_MatchToLobby();
+	}
+}
+***
+
+// ---------------------------------- //
+// Server end
+// ---------------------------------- //
+***EndServer***
+***
+UpdateChecker::Unload();
+GalaxyTitles::Unload();
+MiniMap::Unload();
+KillFeed::Unload();
+PauseMenu::Unload();
+StoragePlayer::Unload();
+
+SpawnScreen::DestroyRules();
+SpawnScreen::DestroyScores();
+SpawnScreen::DestroyMapInfo();
+WarmUp2::Unload();
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get the requested clan of a player
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		The requested clan of the player
+ */
+Integer GT_GetRequestedClan(CSmPlayer _Player) {
+	if (MM_IsMatchServer()) return MM_GetRequestedClan(_Player);
+	if (!UseClans || UseForcedClans) return 0;
+	else if (_Player != Null) return _Player.User.RequestedClan;
+	return 0;
+}
+
+// ---------------------------------- //
+/** Check if specific event is valid for sending XMLRPC callbacks
+ *
+ *	@param	_Event		The event to check
+ *
+ *	@return		True, if event can be sent via XMLRPC
+ */
+Boolean GT_IsValidForCallbacks(CSmModeEvent _Event) {
+	if (_Event == Null) return False;
+	declare EventPlayers = [_Event.Player, _Event.Shooter, _Event.Victim];
+	foreach (Player in EventPlayers) if (Player != Null && (Player.IsBot || Player.IsFakePlayer)) return False;
+	return True;
+}
+
+// ---------------------------------- //
+/// Unspawn the players requesting a clan change
+Void GT_UnspawnPlayersChangingClan() {
+	if (!UseClans || UseForcedClans) return;
+	foreach (Player in Players) {
+		if (
+			Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned &&
+			Player.CurrentClan != 0 && Player.CurrentClan != GT_GetRequestedClan(Player)
+		)
+			UnspawnPlayer(Player);
+	}
+}
+
+// ---------------------------------- //
+/** Check if the spawns of the players are limited to a specific list
+ *
+ *	@return		True if the player spawns are limited, False otherwise
+ */
+Boolean GT_SpawnIsLimited() {
+	if (!UseClans) return False;
+	if (WarmUp2::GroupExists("Clan1") && WarmUp2::GroupExists("Clan2")) return True;
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if a player is spawnable
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True if the player is spawnable, false otherwise
+ */
+Boolean GT_IsSpawnable(CSmPlayer _Player) {
+	if (_Player == Null || _Player.User.RequestsSpectate) return False;
+	if (!GT_SpawnIsLimited()) return True;
+	
+	if (WarmUp2::GetPlayerSlot(_Player) <= 0) return False;
+	for (I, 1, 2) if (_Player.CurrentClan == I && WarmUp2::GetPlayerGroup(_Player) == "Clan"^I) return True;
+	
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if a player is valid to be spawned in mode
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True if the player is valid, false otherwise
+ */
+Boolean GT_IsValidPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	
+	// Skip invalid player in matchmaking
+	if (MM_IsMatchServer() && !MM_PlayerIsValid(_Player)) return False;
+	
+	// ---------------------------------- //
+	// Set player clan
+	SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
+	if (GT_SpawnIsLimited()) {
+		WarmUp2::Clean();
+		if (_Player.CurrentClan != 0) WarmUp2::SetPlayerGroup(_Player, "Clan"^_Player.CurrentClan);
+		WarmUp2::Fill();
+	}
+	if (!GT_IsSpawnable(_Player)) return False;
+	return True;
+}
+
+// ---------------------------------- //
+/// Initialize the warm up properties
+Void GT_InitWarmUp() {
+	if (S_NbPlayersPerTeamMax > 0) {
+		if (WarmUp2::GroupExists("Clan1")) WarmUp2::SetSlotsNb("Clan1", S_NbPlayersPerTeamMax);
+		else WarmUp2::CreateGroup("Clan1", S_NbPlayersPerTeamMax);
+		if (WarmUp2::GroupExists("Clan2")) WarmUp2::SetSlotsNb("Clan2", S_NbPlayersPerTeamMax);
+		else WarmUp2::CreateGroup("Clan2", S_NbPlayersPerTeamMax);
+		WarmUp2::DisplayClanSelection(True);
+	} else {
+		WarmUp2::DestroyGroup("Clan1");
+		WarmUp2::DestroyGroup("Clan2");
+		WarmUp2::DisplayClanSelection(False);
+	}
+}
+
+// ---------------------------------- //
+/// Do the warm-up
+Void GT_DoWarmUp() {
+	XmlRpc::BeginWarmUp();
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::PhaseChange;
+	UIManager.UIAll.BigMessageSoundVariant = 0;
+	UIManager.UIAll.StatusMessage = _("Press F6 once you're ready.");
+	UIManager.UIAll.BigMessage = TL::Compose("$f90%1", _("Warm-up"));
+	
+	// ---------------------------------- //
+	// Synchronize players
+	Mode::Synchro_DoBarrier();
+	SM::UnspawnAllPlayers();
+	
+	// ---------------------------------- //
+	// Set players clan
+	if (UseClans) foreach (Player in AllPlayers) {
+		SetPlayerClan(Player, GT_GetRequestedClan(Player));
+		WarmUp2::SetPlayerGroup(Player, "Clan"^Player.CurrentClan);
+	}
+	
+	WarmUp2::Clean();
+	WarmUp2::Begin();
+	WarmUp2::Fill();
+	
+	// ---------------------------------- //
+	// Initialize warm-up
+	GalaxyTitles::InitObjects();
+	declare PrevWarmUpDuration = S_WarmUpDuration - 1;
+	declare Ident[] SpawnsList;
+	declare Ident LatestSpawnId;
+	
+	// ---------------------------------- //
+	// Warm-up sequence loop
+	while (!WarmUp2::Stop()) {
+		MB_Yield();
+		
+		// Let the server sleep if there are no players
+		if (PlayersNbTotal <= 0) continue;
+		
+		GalaxyTitles::SpawnObjects(True);
+		if (UseClans) GT_UnspawnPlayersChangingClan();
+		
+		// ---------------------------------- //
+		// Update warm-up duration
+		if (PrevWarmUpDuration != S_WarmUpDuration) {
+			PrevWarmUpDuration = S_WarmUpDuration;
+			
+			declare LongTimer = S_WarmUpDuration * 1000;
+			declare ShortTimer = 5000;
+			if (LongTimer <= 0) { LongTimer = 0; ShortTimer = 0; }
+			for (I, 1, 2) WarmUp2::SetGroupTimers("Clan"^I, [ShortTimer => [-1, S_NbPlayersPerTeamMin], LongTimer => [1, S_NbPlayersPerTeamMin]]);
+		}
+		
+		WarmUp2::Fill();
+		WarmUp2::Loop();
+		WarmUp2::ManageEvents();
+		
+		// ---------------------------------- //
+		// Spawn players
+		foreach (Player in Players) {
+			if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+				// ---------------------------------- //
+				// Set player clan
+				if (UseClans) SetPlayerClan(Player, GT_GetRequestedClan(Player));
+				
+				// ---------------------------------- //
+				// Select random spawn
+				if (SpawnsList.count == 0) foreach (MapLandmark in MapLandmarks_PlayerSpawn) SpawnsList.add(MapLandmark.Id);
+				
+				declare SpawnId = NullId;
+				while (True) {
+					SpawnId = SpawnsList[ML::Rand(0, SpawnsList.count - 1)];
+					if (SpawnId != LatestSpawnId) break;
+					if (SpawnsList.count == 1) break;
+				}
+				
+				LatestSpawnId = SpawnId;
+				SM::SpawnPlayer(Player, Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+				declare Removed = SpawnsList.remove(SpawnId);
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// End the warm-up
+	WarmUp2::End();
+	XmlRpc::EndWarmUp();
+	
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.StatusMessage = "";
+	UIManager.UIAll.BigMessage = "";
+	SM::UnspawnAllPlayers();
+	GalaxyTitles::InitObjects();
+}

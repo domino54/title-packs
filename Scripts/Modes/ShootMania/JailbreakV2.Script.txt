@@ -1,0 +1,1495 @@
+// -------------------------------------- //
+//  JAILBREAK V2 by domino54              //
+//  script version: 2016-06-23            //
+//  original author: Akbalder             //
+// -------------------------------------- //
+
+#Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
+
+#Const CompatibleMapTypes	"JailbreakArena JailbreakV2Arena"
+#Const Version		"2016-06-23"
+#Const ScriptName	"JailbreakV2.Script.txt"
+
+#Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_RoundsToWin		2		as _("Rounds to win")			///< Number of rounds to win a map
+#Setting S_RoundGapToWin	2		as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
+#Setting S_RoundsLimit		3		as _("Rounds limit")			///< Point limit on map
+#Setting S_TimeLimit		600 	as _("Time limit (seconds)")	///< Time limit (seconds)
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_JailStayOpenTime			750		///< Additional time to leave jail after teammates left the Goal
+#Const C_MissingPlayersInterval		1500	///< Time between each check of the missing players ids
+#Const C_TimeBeforeRoundEnds		1000	///< Time before round end sequence starts after passing end conditions
+#Const C_GateSectorSize		<7.5, 8., 7.5>	///< Size of the Gate sector
+#Const C_GateSectorOffset	<0., -.5, 0.>	///< Offset of the Gate sector
+
+// Interface
+#Const C_UIPlayersIconsPosition	<40., 87.5, 5.>
+#Const C_UIPlayersIconsSize		<4., 4.25>
+#Const C_UIPlayersIconsAmount	32
+#Const C_UIPlayersIconsNbInRow	8
+#Const C_UIJailedPlayersColor	<.25, .25, .25>
+
+#Const Description _("TYPE: Team versus Team\nOBJECTIVE: Eliminate your opponents to send them to jail. Release your teammates by standing on the Goal. First team to jail all opponents or have more free players after time ends wins.")
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident[] G_AllJailedPlayers;				///< List with Ids of all players in the jail
+declare Ident[][Integer] G_ClansFreePlayers;	///< Array with Ids of clans players outside the jail
+declare Ident[][Integer] G_ClansJailedPlayers;	///< Array with Ids of clans players in the jail
+
+declare CSmMapLandmark[Integer] G_ClanSpawnLandmarks;		///< Spawns in which teams are initially spawned
+declare CSmMapLandmark[Integer] G_ClanJailSpawnLandmarks;	///< Spawns in which jailed players appear
+declare CSmMapLandmark[Integer] G_ClanGoalLandmarks;		///< Goals used to open jails by teammates
+declare CSmMapLandmark[][Integer] G_ClanGateLandmarks;		///< Gates that are open with jail
+
+declare Integer[Integer] G_EscapeEndTime;	///< Time after which team jail becomes closed
+declare Integer G_RoundDelayedEndTime;		///< Additional play time after end conditions pass
+
+// ---------------------------------- //
+// Set the scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+TopScores::AddCategory("Release", "Rel", 2.25, 75.);
+ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
+***
+
+// ---------------------------------- //
+// Initialize server
+// ---------------------------------- //
+***InitServer***
+***
+// ---------------------------------- //
+// Set the mode options
+UseClans = True;
+GT_AutoManageOnArmorEmpty = False;
+GT_KillfeedTranslations = ["$<%1$> released $<%2$>"];
+GT_LogScriptsVersions = [
+	ScriptName => Version,
+	Map::GetScriptName() => Map::GetScriptVersion()
+];
+
+// ---------------------------------- //
+// Set the mode rules
+GT_SpawnScreenModeName = "Jailbreak v2";
+GT_SpawnScreenModeType = _("Team versus Team");
+GT_SpawnScreenObjectives = TL::Compose(
+	_("$<%11. $>Eliminate opponents to send them to the jail.\n$<%12. $>Players can escape from the jail, if at least one teammate stands on the Goal.\n$<%13. $>Team wins, if all opponents are in jail.\n$<%14. $>If the time limit is reached, team with more free players wins.\n$<%15. $>The first team to win %2 rounds wins the match."),
+	"$"^SpawnScreen::GetModeColor(),
+	TL::ToText(S_RoundsToWin)
+);
+
+// ---------------------------------- //
+// Register callbacks
+XmlRpc::RegisterCallback("Jailbreak_PlayerJailed", """
+* Data : An array with the logins of player just jailed and player who jailed them.
+* Example : ["JailedPlayerLogin", "ShooterLogin"]
+* Note : This callback is sent when a player goes to jail.
+""");
+XmlRpc::RegisterCallback("Jailbreak_PlayerReleased", """
+* Data : An array with the logins of player that escaped the jail and their releasers.
+* Example : ["ReleasedPlayerLogin", "ReleaserLogin1;ReleaserLogin2"]
+* Note : This callback is sent when a player leaves the jail.
+""");
+
+// ---------------------------------- //
+// Create custom interface
+Layers::Create("JailbreakInterface", CreateManialinkInterface());
+Layers::Create("JailbreakMarkers", CreateManialinkMarkers());
+Layers::SetType("JailbreakMarkers", CUILayer::EUILayerType::Markers);
+***
+
+// ---------------------------------- //
+// Map begin
+// ---------------------------------- //
+***InitMap***
+***
+// ---------------------------------- //
+// Check if the map is valid
+declare MapValidated = True;
+for (Order, 1, 2) {
+	if (Map::GetLandmarkPlayerSpawn("Spawn", Order) == Null) MapValidated = False;
+	if (Map::GetLandmarkPlayerSpawn("JailSpawn", Order) == Null) MapValidated = False;
+	if (Map::GetLandmarkGauge("Goal", Order) == Null) MapValidated = False;
+}
+if (GetLandmarksGate("Gate", 1).count != GetLandmarksGate("Gate", 2).count) MapValidated = False;
+
+// ---------------------------------- //
+// Skip map if not valid
+if (!MapValidated) {
+	Translations::SendChat("This map is not valid, moving to the next one.");
+	MB_Sleep(10000);
+	MB_StopMap = True;
+}
+***
+
+// ---------------------------------- //
+// Map start
+// ---------------------------------- //
+***StartMap***
+***
+ClearGlobalVariables();
+
+// Variables
+declare Integer NextMissingPlayersCheckTime;
+declare CurrentTimeLimit = S_TimeLimit;
+declare Integer PrevPlayersCount;
+declare Integer PrevSpectatorsCount;
+***
+
+// ---------------------------------- //
+// Round start
+// ---------------------------------- //
+***InitRound***
+***
+ClearGlobalVariables();
+ResetPlayersColors();
+
+// Clear markers
+UIManager.UIAll.MarkersXML = "";
+
+// ---------------------------------- //
+// Bind landmarks to teams
+declare BlueTeamSideOrder = MB_SectionRoundNb % 2 + 1;
+UI_SetBlueTeamLandmarksOrder(BlueTeamSideOrder);
+
+// Get spawns
+G_ClanSpawnLandmarks = [
+	1 => Map::GetLandmarkPlayerSpawn("Spawn", 3 - BlueTeamSideOrder),
+	2 => Map::GetLandmarkPlayerSpawn("Spawn", BlueTeamSideOrder)
+];
+
+// Get jail spawns
+G_ClanJailSpawnLandmarks = [
+	1 => Map::GetLandmarkPlayerSpawn("JailSpawn", BlueTeamSideOrder),
+	2 => Map::GetLandmarkPlayerSpawn("JailSpawn", 3 - BlueTeamSideOrder)
+];
+
+// Get poles
+G_ClanGoalLandmarks = [
+	1 => Map::GetLandmarkGauge("Goal", BlueTeamSideOrder),
+	2 => Map::GetLandmarkGauge("Goal", 3 - BlueTeamSideOrder)
+];
+
+// Get gates
+G_ClanGateLandmarks = [
+	1 => GetLandmarksGate("Gate", BlueTeamSideOrder),
+	2 => GetLandmarksGate("Gate", 3 - BlueTeamSideOrder)
+];
+
+// ---------------------------------- //
+// Update landmarks colors
+foreach (Clan => MapLandmark in G_ClanSpawnLandmarks) {
+	if (MapLandmark.Base == Null) continue;
+	MapLandmark.Base.Clan = Clan;
+	MapLandmark.Base.IsActive = True;
+}
+
+foreach (Clan => MapLandmark in G_ClanJailSpawnLandmarks) {
+	if (MapLandmark.Base == Null) continue;
+	MapLandmark.Base.Clan = Clan;
+	MapLandmark.Base.IsActive = True;
+}
+
+foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
+	if (MapLandmark == Null || MapLandmark.Gauge == Null) continue;
+	if (MapLandmark.Base != Null) {
+		MapLandmark.Base.Clan = Clan;
+		MapLandmark.Base.IsActive = True;
+	}
+	
+	MapLandmark.Gauge.Clan = Clan;
+	MapLandmark.Gauge.ValueReal = 1.;
+	MapLandmark.Gauge.Captured = True;
+	
+	// Create marker
+	UIManager.UIAll.MarkersXML ^= """<marker
+		pos="{{{MapLandmark.Position.X^" "^MapLandmark.Position.Y + 25^" "^MapLandmark.Position.Z}}}"
+		manialinkframeid="Frame_MarkerGoal#{{{Clan}}}"
+	/>""";
+}
+
+foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
+	foreach (MapLandmark in GateLandmarks) {
+		if (MapLandmark == Null || MapLandmark.Gate == Null || MapLandmark.Gauge == Null) continue;
+		if (MapLandmark.Base != Null) {
+			MapLandmark.Base.Clan = Clan;
+			MapLandmark.Base.IsActive = True;
+		}
+		
+		MapLandmark.Gauge.Clan = Clan;
+		MapLandmark.Gauge.Speed = 0;
+		MapLandmark.Gate.Automatic = False;
+		MapLandmark.Gate.ManualClosed = True;
+	}
+}
+
+ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
+
+// ---------------------------------- //
+// Wait for enough players to start the game
+WaitForPlayers(S_NbPlayersPerTeamMin);
+
+// Attach interface
+Layers::Attach("JailbreakInterface");
+Layers::Attach("JailbreakMarkers");
+
+// ---------------------------------- //
+// Create goals markers
+for (Clan, 1, 2) MiniMap::SetMarker("Goal#"^Clan, C_ImgBase^"Minimap/Goal.png", Teams[Clan - 1].ColorPrimary, G_ClanGoalLandmarks[Clan].Position);
+
+// ---------------------------------- //
+// New map sound
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+
+StartTime = Now + S_RespawnTime;
+if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
+else EndTime = -1;
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+***
+
+// ---------------------------------- //
+// On armor empty
+// ---------------------------------- //
+***OnArmorEmpty***
+***
+JailPlayer(Event.Victim, Event.Shooter);
+***
+
+// ---------------------------------- //
+// On player request respawn
+// ---------------------------------- //
+***OnPlayerRequestRespawn***
+***
+declare Boolean HasJustRespawned for Event.Player;
+HasJustRespawned = True;
+JailPlayer(Event.Player, Null);
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***PlayLoop***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On armor empty
+	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		// ---------------------------------- //
+		// Players allowed to escape can walk in the OffZone
+		declare Boolean PlayerIsAbleToEscape for Event.Victim;
+		if (
+			// 1st condition: Victim must have at least 1 Armor and be in jail
+			Event.Victim.Armor > 0 && G_AllJailedPlayers.exists(Event.Victim.Id) &&
+			
+			// 2nd condition: Victim can enter OffZone when jail is open
+			((G_EscapeEndTime.existskey(Event.Victim.CurrentClan) &&
+			Now <= G_EscapeEndTime[Event.Victim.CurrentClan]) ||
+			
+			// 3rd condition: Jail is closed, but Victim is still in OffZone
+			PlayerIsAbleToEscape)
+		) {
+			Discard(Event);
+		}
+		// ---------------------------------- //
+		// Normal events
+		else {
+			---PremadeOnArmorEmpty---
+		}
+	}
+	// ---------------------------------- //
+	// Player left the game
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRemoved) RemoveDisconnectedPlayers();
+}
+
+// ---------------------------------- //
+// Remove ids of players that left the game
+if (PrevPlayersCount != Players.count) {
+	PrevPlayersCount = Players.count;
+	RemoveDisconnectedPlayers();
+}
+if (PrevSpectatorsCount != Spectators.count) {
+	PrevSpectatorsCount = Spectators.count;
+	RemoveDisconnectedPlayers();
+}
+
+// ---------------------------------- //
+// Check if someone stands on the pole
+foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
+	if (MapLandmark == Null || MapLandmark.Sector == Null || MapLandmark.Sector.PlayersIds.count <= 0) continue;
+	declare SectorHasClanPlayer = False;
+	declare SectorHasEnemyPlayer = False;
+	
+	foreach (Id in MapLandmark.Sector.PlayersIds) {
+		if (AllPlayers.existskey(Id) && !IsInJail(AllPlayers[Id])) {
+			if (AllPlayers[Id].CurrentClan == Clan) SectorHasClanPlayer = True;
+			else SectorHasEnemyPlayer = True;
+		}
+	}
+	
+	if (SectorHasClanPlayer && !SectorHasEnemyPlayer) G_EscapeEndTime[Clan] = Now + C_JailStayOpenTime;
+}
+
+// ---------------------------------- //
+// Manage player functions
+foreach (Player in Players) {
+	// ---------------------------------- //
+	// Spawn players
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate && GT_IsValidPlayer(Player)) {
+		GT_InitPlayer(Player);
+		UpdateClansPlayersLists();
+		
+		// ---------------------------------- //
+		// Select player spawn
+		declare CSmMapPlayerSpawn PlayerSpawn;
+		if (IsInJail(Player))
+			PlayerSpawn <=> G_ClanJailSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
+		else
+			PlayerSpawn <=> G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
+		
+		// ---------------------------------- //
+		// Spawn player
+		SM::SpawnPlayer(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
+		Player.HasShield = !IsInJail(Player);
+	}
+	
+	// ---------------------------------- //
+	// Update lists when player changes their clan
+	declare PrevPlayerClan for Player = -1;
+	if (PrevPlayerClan != Player.CurrentClan) {
+		PrevPlayerClan = Player.CurrentClan;
+		UpdateClansPlayersLists();
+	}
+	
+	// ---------------------------------- //
+	// Set player free if is in their gate sector
+	declare Boolean HasJustRespawned for Player;
+	
+	if (IsInJail(Player) && Player.Armor > 0 && !HasJustRespawned &&
+		Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && IsInGateSector(Player))
+			ReleasePlayer(Player);
+	
+	HasJustRespawned = False;
+	
+	// ---------------------------------- //
+	// Event when player triggers OffZone surface
+	declare PlayerPrevIsInOffZone for Player = False;
+	if (PlayerPrevIsInOffZone != Player.IsInOffZone) {
+		// ---------------------------------- //
+		// Set player free if leaving OffZone
+		if (
+			IsInJail(Player) && Player.Armor > 0 &&
+			Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned
+		) {
+			if (!Player.IsInOffZone) ReleasePlayer(Player);
+		}
+		
+		// ---------------------------------- //
+		// Allow player to stay in OffZone if entered before jail closed
+		declare Boolean PlayerIsAbleToEscape for Player;
+		PlayerIsAbleToEscape =
+			Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned &&
+			G_AllJailedPlayers.exists(Player.Id) && Player.IsInOffZone &&
+			G_EscapeEndTime.existskey(Player.CurrentClan) &&
+			Now <= G_EscapeEndTime[Player.CurrentClan];
+		
+		PlayerPrevIsInOffZone = Player.IsInOffZone;
+	}
+}
+
+// ---------------------------------- //
+// Open gates if player allows teammates to escape
+foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
+	declare PlayersCanEscape = (G_EscapeEndTime.existskey(Clan) && Now < G_EscapeEndTime[Clan]);
+	foreach (GateLandmark in GateLandmarks) {
+		GateLandmark.Gate.ManualClosed = !PlayersCanEscape;
+		declare ValueReal = 0.;
+		if (GateLandmark.Gate.ManualClosed) ValueReal = 1.;
+		GateLandmark.Gauge.ValueReal = ValueReal;
+	}
+}
+
+// ---------------------------------- //
+// Update time limit
+if (CurrentTimeLimit != S_TimeLimit) {
+	CurrentTimeLimit = S_TimeLimit;
+	if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
+	else EndTime = -1;
+}
+
+// ---------------------------------- //
+// Victory conditions
+for (Clan, 1, 2) if (ClansNbPlayers[Clan] <= 0 || G_ClansFreePlayers[Clan].count <= 0) MB_StopRound = True;
+if (EndTime > 0 && Now > EndTime) MB_StopRound = True;
+***
+
+// ---------------------------------- //
+// Round end
+// ---------------------------------- //
+***EndRoundBeforeSetScores***
+***
+UpdateClansPlayersLists();
+Message::CleanBigMessages();
+
+// ---------------------------------- //
+// Victory sound
+if (EndTime > 0 && Now < EndTime && !MB_StopMap && !MatchEndRequested) {
+	UIManager.UIAll.SendNotice(
+		"", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default,
+		CUIConfig::EUISound::VictoryPoint, 0
+	);
+	MB_Sleep(1250);
+}
+
+SM::UnspawnAllPlayers();
+ResetPlayersColors();
+***
+
+***EndRound***
+***
+// ---------------------------------- //
+// Set the round winner
+declare RoundWinner = 0;
+if (!MB_StopMap && !MatchEndRequested) {
+	for (Clan, 1, 2) if (ClansNbPlayers[Clan] > 0 && ClansNbPlayers[3 - Clan] == 0) RoundWinner = Clan;
+	if (
+		RoundWinner == 0 && (G_ClansJailedPlayers[1].count > 0 || G_ClansJailedPlayers[2].count > 0) &&
+		G_ClansFreePlayers[1].count != G_ClansFreePlayers[2].count
+	)
+		for (Clan, 1, 2) if (G_ClansFreePlayers[Clan].count > G_ClansFreePlayers[3 - Clan].count) RoundWinner = Clan;
+}
+
+MB_Sleep(1000);
+
+Layers::Detach("JailbreakInterface");
+Layers::Detach("JailbreakMarkers");
+
+// Destroy goals markers
+for (Clan, 1, 2) MiniMap::DestroyMarker("Goal#"^Clan);
+
+// ---------------------------------- //
+// Show the winner
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+UIManager.UIAll.BigMessageSoundVariant = 0;
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+
+if (RoundWinner == 0) UIManager.UIAll.BigMessage = _("|Match|Draw");
+else UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the round!"), Teams[RoundWinner - 1].ColorizedName);
+
+// Add team points
+if (RoundWinner != 0) ClanScores[RoundWinner] += 1;
+MM_SetScores([ClanScores[1], ClanScores[2]]);
+
+MB_Sleep(5000);
+
+UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+UIManager.UIAll.BigMessage = "";
+
+// ---------------------------------- //
+// Map end conditions
+ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
+
+foreach (Clan => Points in ClanScores) {
+	if (Clan == 0) continue;
+	if (
+		Points >= S_RoundsLimit ||
+		(Points >= S_RoundsToWin && Points - ClanScores[3 - Clan] >= S_RoundGapToWin)
+	)
+		MB_StopMap = True;
+}
+***
+
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+***EndMap***
+***
+Message::CleanBigMessages();
+***
+
+// ---------------------------------- //
+// Server end
+// ---------------------------------- //
+***EndServer***
+***
+Layers::Destroy("JailbreakInterface");
+Layers::Destroy("JailbreakMarkers");
+XmlRpc::UnregisterCallback("Jailbreak_PlayerJailed");
+XmlRpc::UnregisterCallback("Jailbreak_PlayerReleased");
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get all Gate landmarks with specified attributes
+ *
+ *	@param	_Tag		Landmark tag
+ *	@param	_Order		Landmark order
+ *
+ *	@return		Gate landmarks with specific attributes
+ */
+CSmMapLandmark[] GetLandmarksGate(Text _Tag, Integer _Order) {
+	declare CSmMapLandmark[] GateLandmarks;
+	foreach (MapLandmark in MapLandmarks_Gate) {
+		if (MapLandmark.Tag == _Tag && MapLandmark.Order == _Order) GateLandmarks.add(MapLandmark);
+	}
+	return GateLandmarks;
+}
+
+// ---------------------------------- //
+/** Check if specific Player is in jail
+ *
+ *	@param	_Player		Player to check if is in the jail
+ *
+ *	@return		True, if Player is in the jail
+ */
+Boolean IsInJail(CSmPlayer _Player) {
+	return _Player != Null && G_AllJailedPlayers.exists(_Player.Id);
+}
+
+// ---------------------------------- //
+/** Check if Player is in their team Gate sector
+ *
+ *	@param	_Player		Player to check
+ *
+ *	@return		True, if Player stands on their Gate
+ */
+Boolean IsInGateSector(CSmPlayer _Player) {
+	if (_Player == Null || _Player.RequestsSpectate || _Player.CurrentClan == 0 ||
+		_Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned ||
+		!G_ClanGateLandmarks.existskey(_Player.CurrentClan) || G_ClanGateLandmarks[_Player.CurrentClan].count <= 0)
+		return False;
+	
+	declare IsInSector = False;
+	
+	foreach (MapLandmark in G_ClanGateLandmarks[_Player.CurrentClan]) {
+		declare SectorPosition = MapLandmark.Position + C_GateSectorOffset;
+		if (
+			ML::Abs(_Player.Position.X - SectorPosition.X) < C_GateSectorSize.X / 2 &&
+			ML::Abs(_Player.Position.Z - SectorPosition.Z) < C_GateSectorSize.Z / 2 &&
+			_Player.Position.Y - SectorPosition.Y < C_GateSectorSize.Y &&
+			_Player.Position.Y - SectorPosition.Y > 0
+		) {
+			IsInSector = True;
+		}
+	}
+	
+	return IsInSector;
+}
+
+// ---------------------------------- //
+/// Update the amount of players
+Void UpdateInterface() {
+	declare netwrite Integer Net_Jailbreak_SettingsUpdateTime for Teams[0];
+	declare netwrite Integer[Integer] Net_Jailbreak_ClansNbPlayersTotal for Teams[0];
+	declare netwrite Integer[Integer] Net_Jailbreak_ClansNbPlayersJail for Teams[0];
+	declare netwrite Text[] Net_Jailbreak_JailedPlayersLogins for Teams[0];
+	
+	Net_Jailbreak_SettingsUpdateTime = Now;
+	Net_Jailbreak_ClansNbPlayersTotal.clear();
+	Net_Jailbreak_ClansNbPlayersJail.clear();
+	Net_Jailbreak_JailedPlayersLogins.clear();
+	
+	for (Clan, 1, 2) {
+		Net_Jailbreak_ClansNbPlayersTotal[Clan] = G_ClansJailedPlayers[Clan].count + G_ClansFreePlayers[Clan].count;
+		Net_Jailbreak_ClansNbPlayersJail[Clan] = G_ClansJailedPlayers[Clan].count;
+	}
+	
+	foreach (Id in G_AllJailedPlayers) {
+		if (!AllPlayers.existskey(Id)) continue;
+		Net_Jailbreak_JailedPlayersLogins.add(AllPlayers[Id].Login);
+	}
+	
+	// ---------------------------------- //
+	// Update Goals gauges
+	foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
+		if (MapLandmark == Null || MapLandmark.Gauge == Null) continue;
+		declare TotalPlayers = G_ClansFreePlayers[Clan].count + G_ClansJailedPlayers[Clan].count;
+		if (TotalPlayers <= 0) MapLandmark.Gauge.ValueReal = 0.;
+		else MapLandmark.Gauge.ValueReal = ML::ToReal(G_ClansFreePlayers[Clan].count) / TotalPlayers;
+		MapLandmark.Gauge.Captured = MapLandmark.Gauge.ValueReal == 1.;
+	}
+}
+
+// ---------------------------------- //
+/// Remove ids of the players that left the game
+Void RemoveDisconnectedPlayers() {
+	declare Ident[] IdsToRemove;
+	for (Clan, 1, 2) {
+		foreach (PlayerId in G_ClansJailedPlayers[Clan]) {
+			if (!Players.existskey(PlayerId)) IdsToRemove.add(PlayerId);
+		}
+		foreach (PlayerId in G_ClansFreePlayers[Clan]) {
+			if (!Players.existskey(PlayerId)) IdsToRemove.add(PlayerId);
+		}
+		if (IdsToRemove.count > 0) {
+			foreach (PlayerId in IdsToRemove) {
+				declare Removed1 = G_ClansJailedPlayers[Clan].remove(PlayerId);
+				declare Removed2 = G_ClansFreePlayers[Clan].remove(PlayerId);
+			}
+			UpdateInterface();
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Update lists of teams players ids
+Void UpdateClansPlayersLists() {
+	RemoveDisconnectedPlayers();
+	
+	foreach (Player in Players) {
+		if (Player.CurrentClan == 0) continue;
+		declare DoInterfaceUpdate = False;
+		
+		// ---------------------------------- //
+		// Update jailed players ids array
+		if (IsInJail(Player)) {
+			if (!G_ClansJailedPlayers[Player.CurrentClan].exists(Player.Id)) {
+				G_ClansJailedPlayers[Player.CurrentClan].add(Player.Id);
+				DoInterfaceUpdate = True;
+			}
+			
+			if (G_ClansJailedPlayers[3 - Player.CurrentClan].exists(Player.Id)) {
+				declare Removed = G_ClansJailedPlayers[3 - Player.CurrentClan].remove(Player.Id);
+				DoInterfaceUpdate = True;
+			}
+			
+			for (I, 1, 2) if (G_ClansFreePlayers[Player.CurrentClan].exists(Player.Id)) {
+				declare Removed = G_ClansFreePlayers[Player.CurrentClan].remove(Player.Id);
+				DoInterfaceUpdate = True;
+			}
+		}
+		// ---------------------------------- //
+		// Update free players ids array
+		else {
+			if (!G_ClansFreePlayers[Player.CurrentClan].exists(Player.Id)) {
+				G_ClansFreePlayers[Player.CurrentClan].add(Player.Id);
+				DoInterfaceUpdate = True;
+			}
+			
+			if (G_ClansFreePlayers[3 - Player.CurrentClan].exists(Player.Id)) {
+				declare Removed = G_ClansFreePlayers[3 - Player.CurrentClan].remove(Player.Id);
+				DoInterfaceUpdate = True;
+			}
+			
+			for (I, 1, 2) if (G_ClansJailedPlayers[I].exists(Player.Id)) {
+				declare Removed = G_ClansJailedPlayers[I].remove(Player.Id);
+				DoInterfaceUpdate = True;
+			}
+		}
+		
+		// Update interface
+		if (DoInterfaceUpdate) UpdateInterface();
+	}
+}
+
+// ---------------------------------- //
+/** Send Player to the jail
+ *
+ *	@param	_Victim		Player to send to the jail
+ */
+Void JailPlayer(CSmPlayer _Victim, CSmPlayer _Shooter) {
+	if (_Victim == Null || !Players.exists(_Victim) || IsInJail(_Victim) || G_RoundDelayedEndTime > 0) return;
+	G_AllJailedPlayers.add(_Victim.Id);
+	ST2::SetPlayerColor(_Victim.Score, C_UIJailedPlayersColor);
+	
+	// ---------------------------------- //
+	// Notify last free player
+	if (
+		G_ClansFreePlayers.existskey(_Victim.CurrentClan) &&
+		G_ClansFreePlayers[_Victim.CurrentClan].count == 2
+	) {
+		declare CSmPlayer LastTeammate;
+		foreach (PlayerId in G_ClansFreePlayers[_Victim.CurrentClan])
+			if (PlayerId != _Victim.Id) LastTeammate = AllPlayers[PlayerId];
+		
+		// Send notification
+		if (LastTeammate != Null) Translations::SendStatusMessage(
+			LastTeammate, "You're the last free team member!",
+			4000, 1, CUIConfig::EUISound::Warning, 0
+		);
+	}
+	
+	// ---------------------------------- //
+	// Send callback
+	declare Text ShooterLogin;
+	if (_Shooter != Null && !_Shooter.IsBot && !_Shooter.IsFakePlayer) ShooterLogin = _Shooter.Login;
+	XmlRpc::SendCallbackArray("Jailbreak_PlayerJailed", [_Victim.Login, ShooterLogin]);
+	
+	// Update clans players lists
+	UpdateClansPlayersLists();
+}
+
+// ---------------------------------- //
+/** Release Player from the jail
+ *
+ *	@param	_Player		Player to release from the jail
+ */
+Void ReleasePlayer(CSmPlayer _Player) {
+	if (_Player == Null || !Players.exists(_Player) || !IsInJail(_Player)) return;
+	declare Removed = G_AllJailedPlayers.remove(_Player.Id);
+	_Player.HasShield = True;
+	ST2::SetPlayerColor(_Player.Score, <-1., -1., -1.>);
+	
+	// ---------------------------------- //
+	// Give points for releasing the player
+	declare CSmPlayer Releaser;
+	declare Text ReleasersLogins;
+	
+	foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
+		if (Clan != _Player.CurrentClan) continue;
+		
+		foreach (Id in MapLandmark.Sector.PlayersIds) {
+			declare Player <=> AllPlayers[Id];
+			if (Player == Null || Player.CurrentClan != Clan) continue;
+			if (Releaser == Null) Releaser <=> Player;
+			
+			Score::AddPoints(Player, 1);
+			TopScores::AddPoints(Player.Score, "Release", 1);
+			
+			// List logins for the callback
+			if (!Player.IsBot && !Player.IsFakePlayer) {
+				if (ReleasersLogins != "") ReleasersLogins ^= ";";
+				ReleasersLogins ^= Player.Login;
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Notify players
+	if (Releaser != Null) {
+		KillFeed::SendNotice(["$<%1$> released $<%2$>", Releaser.Name, _Player.Name]);
+		UIManager.UIAll.SendNotice(
+			"", CUIConfig::ENoticeLevel::Default,
+			Null, CUIConfig::EAvatarVariant::Default,
+			CUIConfig::EUISound::Notice, 0
+		);
+	}
+	
+	// ---------------------------------- //
+	// Send callback
+	XmlRpc::SendCallbackArray("Jailbreak_PlayerReleased", [_Player.Login, ReleasersLogins]);
+	
+	// Update clans players lists
+	UpdateClansPlayersLists();
+}
+
+// ---------------------------------- //
+/** Set blue team landmakrs order
+ *
+ *	@param	_Order		Blue side order
+ */
+Void UI_SetBlueTeamLandmarksOrder(Integer _Order) {
+	declare netwrite Integer Net_Jailbreak_BlueSideOrder for Teams[0];
+	Net_Jailbreak_BlueSideOrder = _Order;
+}
+
+// ---------------------------------- //
+/// Clear global variables
+Void ClearGlobalVariables() {
+	// Clear players list
+	G_AllJailedPlayers.clear();
+	G_ClansJailedPlayers = [1 => Ident[], 2 => Ident[]];
+	G_ClansFreePlayers = [1 => Ident[], 2 => Ident[]];
+	UpdateInterface();
+	UpdateClansPlayersLists();
+	
+	// Clear landmarks list
+	G_ClanSpawnLandmarks.clear();
+	G_ClanJailSpawnLandmarks.clear();
+	G_ClanGoalLandmarks.clear();
+	G_ClanGateLandmarks.clear();
+}
+
+// ---------------------------------- //
+/// Reset all players colors in the Scores Table
+Void ResetPlayersColors() {
+	foreach (Score in Scores) ST2::SetPlayerColor(Score, <-1., -1., -1.>);
+}
+
+// ---------------------------------- //
+/** Wait for enough players to play
+ *
+ *	@param	_MinimumNbPlayers	The number of players to wait in each clan before starting the map
+ */
+Void WaitForPlayers(Integer _MinimumNbPlayers) {
+	// ---------------------------------- //
+	// Initialize
+	declare OldSequence = UIManager.UIAll.UISequence;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	
+	declare HasWaited = False;
+	StartTime = Now;
+	
+	foreach (Player in AllPlayers) SetPlayerClan(Player, GT_GetRequestedClan(Player));
+	
+	// ---------------------------------- //
+	// Initialize objects
+	GalaxyTitles::UseComboWeapons(True);
+	GalaxyTitles::InitObjects();
+	MiniMap::Show();
+	
+	// ---------------------------------- //
+	// Waiting for players play loop
+	while (!ServerShutdownRequested && !MatchEndRequested) {
+		MB_Yield();
+		
+		// Let the server sleep if there's no players on it
+		if (PlayersNbTotal <= 0) continue;
+		
+		// Stop waiting if there are enough players to start the game
+		if (ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers) break;
+		
+		// ---------------------------------- //
+		// Display big message
+		if (!HasWaited) {
+			UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
+			UIManager.UIAll.BigMessage = _("Waiting for players in each team...");
+			HasWaited = True;
+		}
+		
+		GalaxyTitles::SpawnObjects(True);
+		GT_UnspawnPlayersChangingClan();
+		WarmUp2::ManageEvents();
+		
+		// ---------------------------------- //
+		// Spawn players
+		foreach (Player in Players) {
+			if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+				// ---------------------------------- //
+				// Initialize player
+				SetPlayerClan(Player, GT_GetRequestedClan(Player));
+				
+				Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
+				Player.StaminaMax = C_PlayerStaminaMax;
+				
+				// Spawn player
+				if (Player.CurrentClan == 0) continue;
+				SM::SpawnPlayer(Player, Player.CurrentClan, G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn, Now + S_RespawnTime);
+			}
+		}
+	}
+	
+	StartTime = -1;
+	
+	// ---------------------------------- //
+	// Player joined the game
+	if (HasWaited) {
+		SM::UnspawnAllPlayers();
+		GalaxyTitles::InitObjects();
+		if (!ServerShutdownRequested && !MatchEndRequested) {
+			Message::SendBigMessage(_("A new player joins the game."), 5000, 0, CUIConfig::EUISound::Default, 0);
+			MB_Sleep(5000);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Revert changes
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.UISequence = OldSequence;
+	MiniMap::Hide();
+	---UpdateClublinks---
+}
+
+// ---------------------------------- //
+/** Create manialink for the interface module
+ *
+ *	@return		The interface manialink
+ */
+Text CreateManialinkInterface() {
+	// ---------------------------------- //
+	// Create players icons
+	declare Icons = [1 => "", 2 => ""];
+	for (Clan, 1, 2) for (I, 0, C_UIPlayersIconsAmount - 1) {
+		declare PosX = (I % C_UIPlayersIconsNbInRow) * C_UIPlayersIconsSize.X;
+		declare PosY = (I / C_UIPlayersIconsNbInRow) * -C_UIPlayersIconsSize.Y;
+		if (Clan == 1) PosX *= -1;
+		Icons[Clan] ^= """<quad posn="{{{PosX^" "^PosY}}}" sizen="5 5" halign="center" valign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/DefendersLeft.dds" id="Quad_PlayerIcon{{{Clan^"#"^I}}}" hidden="1"/>""";
+	}
+	
+	// ---------------------------------- //
+	// Create manialink
+	return """
+<manialink version="2">
+<stylesheet>
+	<style class="EscapeMessage" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
+</stylesheet>
+
+<frame id="Frame_PlayersIcons" posn="0 {{{C_UIPlayersIconsPosition.Y^" "^C_UIPlayersIconsPosition.Z}}}">
+	<frame posn="{{{-ML::Abs(C_UIPlayersIconsPosition.X)}}}">{{{Icons[1]}}}</frame>
+	<frame posn="{{{ML::Abs(C_UIPlayersIconsPosition.X)}}}">{{{Icons[2]}}}</frame>
+</frame>
+
+<frame id="Frame_EscapeStatusMessage" posn="0 70 5">
+	<label class="EscapeMessage" id="Label_EscapeStatusMessage"/>
+	<label class="EscapeMessage" id="Label_EscapeStatusMessageGhost"/>
+</frame>
+
+<frame id="Frame_YouCanEscapeLabel" posn="0 62 5">
+	<label class="EscapeMessage" textsize="7" id="Label_YouCanEscapeLabel" opacity="0"/>
+</frame>
+
+<frame id="Frame_GaugeMessage" posn="0 -54 5">
+	<frame id="Frame_GaugeMessageAnim">
+		<quad posn="0 8 -.1" sizen="12 12" halign="center" valign="center" autoscale="0" id="Quad_CurLandmarkIcon"/>
+		<label class="EscapeMessage" id="Label_CurLandmarkMessage"/>
+		<gauge posn="0 -3 -.1" sizen="52 8" halign="center" valign="center" drawbg="0" id="Qauge_CurLandmarkValue" hidden="1"/>
+	</frame>
+</frame>
+
+<script><!--
+/**
+ *	Jailbreak: Interface by domino54
+ */
+
+#Include "TextLib" as TL
+
+#Const C_GoalIconsPath "file://Media/Manialinks/ShootMania/Common/"
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Label_EscapeStatusMessage		<=> (Page.GetFirstChild("Label_EscapeStatusMessage") as CMlLabel);
+declare Label_EscapeStatusMessageGhost	<=> (Page.GetFirstChild("Label_EscapeStatusMessageGhost") as CMlLabel);
+declare Label_YouCanEscapeLabel		<=> (Page.GetFirstChild("Label_YouCanEscapeLabel") as CMlLabel);
+declare Frame_GaugeMessageAnim		<=> (Page.GetFirstChild("Frame_GaugeMessageAnim") as CMlFrame);
+declare Qauge_CurLandmarkValue		<=> (Page.GetFirstChild("Qauge_CurLandmarkValue") as CMlGauge);
+declare Label_CurLandmarkMessage	<=> (Page.GetFirstChild("Label_CurLandmarkMessage") as CMlLabel);
+declare Quad_CurLandmarkIcon		<=> (Page.GetFirstChild("Quad_CurLandmarkIcon") as CMlQuad);
+
+declare Quad_PlayersIcons = [1 => CMlQuad[], 2 => CMlQuad[]];
+for (Clan, 1, 2) for (I, 0, {{{C_UIPlayersIconsAmount - 1}}})
+	Quad_PlayersIcons[Clan].add((Page.GetFirstChild("Quad_PlayerIcon"^Clan^"#"^I) as CMlQuad));
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_Jailbreak_SettingsUpdateTime for Teams[0];
+declare netread Integer[Integer] Net_Jailbreak_ClansNbPlayersTotal for Teams[0];
+declare netread Integer[Integer] Net_Jailbreak_ClansNbPlayersJail for Teams[0];
+declare netread Text[] Net_Jailbreak_JailedPlayersLogins for Teams[0];
+declare netread Integer Net_Jailbreak_BlueSideOrder for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare CSmMapLandmark[Integer] ClanGoalLandmarks;
+declare ClansCanEscape = [1 => False, 2 => False];
+declare GoalsStatusMessage = "";
+declare UpdateGoalsStatusMessage = True;
+declare GaugeMessageVisible = False;
+declare GUIPlayerCanEscape = False;
+declare GUIPlayerIsJailed = False;
+
+declare PrevClansCanEscape = Boolean[Integer];
+declare PrevGUIPlayerLogin = "";
+declare PrevGUIPlayerLandmark = NullId;
+declare PrevLandmarkGaugeValue = 0.;
+declare PrevLandmarkSectorPlayers = 0;
+declare PrevGaugeMessageVisible = False;
+declare PrevGUIPlayerCanEscape = False;
+declare PrevSettingsUpdateTime = -1;
+
+Label_YouCanEscapeLabel.SetText(Translations_Get("You can escape!"));
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdateTime != Net_Jailbreak_SettingsUpdateTime) {
+	PrevSettingsUpdateTime = Net_Jailbreak_SettingsUpdateTime;
+	
+	// ---------------------------------- //
+	// Get the amount of players
+	foreach (Clan => Quads in Quad_PlayersIcons) {
+		declare PlayersNbTotal = 0;
+		declare PlayersNbFree = 0;
+		if (Net_Jailbreak_ClansNbPlayersTotal.existskey(Clan))
+			PlayersNbTotal = Net_Jailbreak_ClansNbPlayersTotal[Clan];
+		if (Net_Jailbreak_ClansNbPlayersJail.existskey(Clan))
+			PlayersNbFree = PlayersNbTotal - Net_Jailbreak_ClansNbPlayersJail[Clan];
+		
+		// ---------------------------------- //
+		// Set Quads visibility
+		foreach (I => Quad in Quads) {
+			if (Quad == Null) continue;
+			Quad.Visible = I < PlayersNbTotal;
+			if (!Quad.Visible) continue;
+			
+			// ---------------------------------- //
+			// Set Quads color
+			declare Color = Brightness(Teams[Clan - 1].ColorPrimary, 1.5);
+			if (I >= PlayersNbFree) Color = {{{C_UIJailedPlayersColor}}};
+			Quad.Colorize = Color;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Get teams Goal landmarks
+	ClanGoalLandmarks.clear();
+	if (Net_Jailbreak_BlueSideOrder >= 1 && Net_Jailbreak_BlueSideOrder <= 2) {
+		ClanGoalLandmarks[1] <=> GetLandmarkGauge("Goal", Net_Jailbreak_BlueSideOrder);
+		ClanGoalLandmarks[2] <=> GetLandmarkGauge("Goal", 3 - Net_Jailbreak_BlueSideOrder);
+	}
+}
+
+// ---------------------------------- //
+// Check if someone is standing on Goals
+foreach (Clan => MapLandmark in ClanGoalLandmarks) {
+	if (MapLandmark == Null || MapLandmark.Sector == Null) continue;
+	declare SectorHasClanPlayer = False;
+	declare SectorHasEnemyPlayer = False;
+	
+	foreach (Id in MapLandmark.Sector.PlayersIds) {
+		if (Players.existskey(Id)) {
+			if (Players[Id].CurrentClan == Clan) SectorHasClanPlayer = True;
+			else SectorHasEnemyPlayer = True;
+		}
+	}
+	
+	ClansCanEscape[Clan] = SectorHasClanPlayer && !SectorHasEnemyPlayer;
+}
+
+// ---------------------------------- //
+// Update status message when someone can escape
+for (Clan, 1, 2) {
+	if (!PrevClansCanEscape.existskey(Clan) || PrevClansCanEscape[Clan] != ClansCanEscape[Clan]) {
+		PrevClansCanEscape[Clan] = ClansCanEscape[Clan];
+		UpdateGoalsStatusMessage = True;
+	}
+}
+
+// ---------------------------------- //
+// Update message on GUIPlayer change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerLogin != GUIPlayer.Login) {
+		PrevGUIPlayerLogin = GUIPlayer.Login;
+		UpdateGoalsStatusMessage = True;
+	}
+} else if (PrevGUIPlayerLogin != "") {
+	PrevGUIPlayerLogin = "";
+	UpdateGoalsStatusMessage = True;
+}
+
+// ---------------------------------- //
+// Update status message 
+if (UpdateGoalsStatusMessage) {
+	UpdateGoalsStatusMessage = False;
+	GUIPlayerCanEscape = False;
+	
+	// ---------------------------------- //
+	// Get the teams colors
+	declare Text[Integer] TeamsColors;
+	declare Text[Integer] TeamsNames;
+	foreach (I => Team in Teams) {
+		TeamsColors[I+1] = TL::ColorToText(Brightness(Team.ColorPrimary, 1.5));
+		TeamsNames[I+1] = "$"^TeamsColors[I+1]^Team.Name;
+	}
+	
+	// ---------------------------------- //
+	// Display message for spectators
+	if (GUIPlayer == Null || GUIPlayer.RequestsSpectate || GUIPlayer.CurrentClan == 0) {
+		if (ClansCanEscape[1]) {
+			// Both teams can escape
+			if (!ClansCanEscape[2]) GoalsStatusMessage = Translations_GetComposed(["$<%1$> can escape!", TeamsNames[1]]);
+			
+			// First team can escape
+			else GoalsStatusMessage = Translations_GetComposed(["$<%1$> and $<%2$> can escape!", TeamsNames[1], TeamsNames[2]]);
+		}
+		
+		// Second team can escape
+		else if (ClansCanEscape[2]) GoalsStatusMessage = Translations_GetComposed(["$<%1$> can escape!", TeamsNames[2]]);
+		
+		// Nobody can escape
+		else GoalsStatusMessage = "";
+	}
+	// ---------------------------------- //
+	// Display message for players
+	else {
+		// Get the colored
+		declare TextTeammates = "$"^TeamsColors[GUIPlayer.CurrentClan]^Translations_Get("Teammates");
+		declare TextOpponents = "$"^TeamsColors[3 -GUIPlayer.CurrentClan]^Translations_Get("Opponents");
+		
+		if (ClansCanEscape[GUIPlayer.CurrentClan]) {
+			// Teammates can escape
+			if (!ClansCanEscape[3 - GUIPlayer.CurrentClan]) GoalsStatusMessage = Translations_GetComposed(["$<%1$> can escape!", TextTeammates]);
+			
+			// Both teams can escape
+			else GoalsStatusMessage = Translations_GetComposed(["$<%1$> and $<%2$> can escape!", TextTeammates, TextOpponents]);
+			
+			GUIPlayerCanEscape = Net_Jailbreak_JailedPlayersLogins.exists(GUIPlayer.Login);
+		}
+		
+		// Opponents can escape
+		else if (ClansCanEscape[3 - GUIPlayer.CurrentClan]) GoalsStatusMessage = Translations_GetComposed(["$<%1$> can escape!", TextOpponents]);
+		
+		// Nobody can escape
+		else GoalsStatusMessage = "";
+	}
+	
+	// ---------------------------------- //
+	// Labels animation
+	Label_EscapeStatusMessageGhost.SetText(Label_EscapeStatusMessage.Value);
+	Label_EscapeStatusMessage.SetText(Translations_Get(GoalsStatusMessage));
+	
+	LibManialink_AnimStop(Label_EscapeStatusMessage);
+	LibManialink_AnimStop(Label_EscapeStatusMessageGhost);
+	
+	Label_EscapeStatusMessage.Opacity = 0.;
+	Label_EscapeStatusMessage.RelativePosition.Y = 2.;
+	Label_EscapeStatusMessageGhost.Opacity = 1.;
+	Label_EscapeStatusMessageGhost.RelativePosition.Y = 0.;
+	
+	declare PosX = Label_EscapeStatusMessage.RelativePosition.X;
+	LibManialink_Anim(Label_EscapeStatusMessage, "<label posn=\""^PosX^" 0\" opacity=\"1\"/>", 125, "EaseLinear");
+	LibManialink_Anim(Label_EscapeStatusMessageGhost, "<label posn=\""^PosX^" -2\" opacity=\"0\"/>", 125, "EaseLinear");
+}
+
+// ---------------------------------- //
+// Set player jail state
+if (GUIPlayer != Null && Net_Jailbreak_JailedPlayersLogins.exists(GUIPlayer.Login)) GUIPlayerIsJailed = True;
+else GUIPlayerIsJailed = False;
+
+// ---------------------------------- //
+// Update "You can escape" label
+if (PrevGUIPlayerCanEscape != (GUIPlayerCanEscape && GUIPlayerIsJailed)) {
+	PrevGUIPlayerCanEscape = GUIPlayerCanEscape && GUIPlayerIsJailed;
+	LibManialink_AnimStop(Label_YouCanEscapeLabel);
+	
+	declare PosX = Label_YouCanEscapeLabel.RelativePosition.X;
+	Label_YouCanEscapeLabel.RelativePosition.Y = 0.;
+	declare PosY = -2.;
+	declare Opacity = 0.;
+	
+	if (PrevGUIPlayerCanEscape) {
+		Label_YouCanEscapeLabel.RelativePosition.Y = -PosY;
+		PosY = 0.;
+		Opacity = 1.;
+	}
+	
+	LibManialink_Anim(Label_YouCanEscapeLabel, "<label posn=\""^PosX^" "^PosY^"\" opacity=\""^Opacity^"\"/>", 125, "EaseLinear");
+}
+
+// ---------------------------------- //
+// Gauge message when player is not null
+if (GUIPlayer != Null) {
+	declare PlayerLandmarkId = NullId;
+	declare LandmarkGaugeValue = 0.;
+	declare LandmarkSectorPlayers = 0;
+	
+	if (GUIPlayer.CapturedLandmark != Null) {
+		PlayerLandmarkId = GUIPlayer.CapturedLandmark.Id;
+		if (GUIPlayer.CapturedLandmark.Gauge != Null) LandmarkGaugeValue = GUIPlayer.CapturedLandmark.Gauge.ValueReal;
+		if (GUIPlayer.CapturedLandmark.Sector != Null) {
+			foreach (Id in GUIPlayer.CapturedLandmark.Sector.PlayersIds) {
+				declare Player <=> Players[Id];
+				if (Player != Null && Player.CurrentClan != GUIPlayer.CurrentClan) LandmarkSectorPlayers += 1;
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Update gauge message on landmark change or ratio change
+	if (
+		PrevGUIPlayerLandmark != PlayerLandmarkId ||
+		PrevLandmarkGaugeValue != LandmarkGaugeValue ||
+		PrevLandmarkSectorPlayers != LandmarkSectorPlayers
+	) {
+		PrevGUIPlayerLandmark = PlayerLandmarkId;
+		PrevLandmarkGaugeValue = LandmarkGaugeValue;
+		PrevLandmarkSectorPlayers = LandmarkSectorPlayers;
+		
+		// ---------------------------------- //
+		// Set message visibility
+		GaugeMessageVisible = ClanGoalLandmarks.exists(GUIPlayer.CapturedLandmark) && GUIPlayer.CapturedLandmark.Gauge != Null;
+		if (!GaugeMessageVisible) continue;
+		
+		// ---------------------------------- //
+		// Configure message
+		declare LandmarkClan = ClanGoalLandmarks.keyof(GUIPlayer.CapturedLandmark);
+		Qauge_CurLandmarkValue.Color = Teams[LandmarkClan - 1].ColorPrimary;
+		SetGaugeRatio(Qauge_CurLandmarkValue, GUIPlayer.CapturedLandmark.Gauge.ValueReal);
+		declare Message = "";
+		
+		// Landmark belongs to enemies
+		if (LandmarkClan != GUIPlayer.CurrentClan) {
+			Message = Translations_Get("Blocking enemy pole");
+			Quad_CurLandmarkIcon.ImageUrl = C_GoalIconsPath^"c_goal_shield.dds";
+		}
+		// Landmark is blocked by enemy
+		else if (LandmarkSectorPlayers > 0) {
+			Message = Translations_Get("Pole blocked by enemy");
+			Quad_CurLandmarkIcon.ImageUrl = C_GoalIconsPath^"c_goal_lock.dds";
+		}
+		// Teammates are free
+		else if (LandmarkGaugeValue >= 1) {
+			Message = Translations_Get("Teammates released!");
+			Quad_CurLandmarkIcon.ImageUrl = C_GoalIconsPath^"c_goal_captured.dds";
+		}
+		// Teammates are jailed
+		else {
+			Message = Translations_Get("Releasing teammates...");
+			Quad_CurLandmarkIcon.ImageUrl = C_GoalIconsPath^"c_goal_capture.dds";
+		}
+		
+		Label_CurLandmarkMessage.SetText(Message);
+	}
+	
+}
+// ---------------------------------- //
+// Hide gauge message
+else if (PrevGUIPlayerLandmark != NullId) {
+	PrevGUIPlayerLandmark = NullId;
+	GaugeMessageVisible = False;
+}
+
+// ---------------------------------- //
+// Change gauge message visibility
+if (PrevGaugeMessageVisible != GaugeMessageVisible) {
+	PrevGaugeMessageVisible = GaugeMessageVisible;
+	
+	LibManialink_AnimStop(Frame_GaugeMessageAnim);
+	LibManialink_AnimStop(Label_CurLandmarkMessage);
+	LibManialink_AnimStop(Quad_CurLandmarkIcon);
+	Qauge_CurLandmarkValue.Visible = GaugeMessageVisible;
+	
+	declare PositionY = -2.;
+	Frame_GaugeMessageAnim.RelativePosition.Y = 0.;
+	declare Opacity = 0.;
+	Label_CurLandmarkMessage.Opacity = 1.;
+	
+	if (GaugeMessageVisible) {
+		Frame_GaugeMessageAnim.RelativePosition.Y = -PositionY;
+		PositionY = 0.;
+		Label_CurLandmarkMessage.Opacity = 0.;
+		Opacity = 1.;
+	}
+	
+	LibManialink_Anim(Frame_GaugeMessageAnim, "<frame posn=\"0 "^PositionY^"\"/>", 125, "EaseLinear");
+	LibManialink_Anim(Label_CurLandmarkMessage, "<label opacity=\""^Opacity^"\"/>", 125, "EaseLinear");
+	LibManialink_Anim(Quad_CurLandmarkIcon, "<quad opacity=\""^Opacity^"\"/>", 125, "EaseLinear");
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Change color brightness
+ *
+ *	@param	_Color			Input color
+ *	@param	_Brightness		Target brightness
+ *
+ *	@return		New color
+ */
+Vec3 Brightness(Vec3 _Color, Real _Brightness) {
+	if (_Brightness == 1) return _Color;
+	if (_Brightness <= 0) return Vec3;
+	
+	declare Vec3 OutputColor;
+	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
+	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
+	return OutputColor;
+}
+
+// ---------------------------------- //
+/**	Get a landmark with a gauge from its tag and order
+ *
+ *	@param	_Tag		The tag of the gauge
+ *	@param	_Order		The order of the gauge
+ *
+ *	@return		The landmark if found, Null otherwise
+ */
+CSmMapLandmark GetLandmarkGauge(Text _Tag, Integer _Order) {
+	foreach (MapLandmark in MapLandmarks) {
+		if (MapLandmark.Gauge != Null && MapLandmark.Tag == _Tag && MapLandmark.Order == _Order) return MapLandmark;
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/** Set gauge ratio with value cut fix
+ *
+ *	@param	_Gauge		The gauge to set ratio
+ *	@param	_Ratio		Ratio to set
+ */
+Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
+	if (_Gauge == Null) return;
+	if (_Ratio <= 0.) {
+		_Gauge.Ratio = 0.;
+		return;
+	}
+	if (_Ratio >= 1.) {
+		_Gauge.Ratio = 1.;
+		return;
+	}
+	declare GaugeCutOff = 4 / _Gauge.Size.X;
+	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
+}
+
+{{{Translations::InsertToManialink(["$<%1$> can escape!", "$<%1$> and $<%2$> can escape!", "Teammates", "Opponents", "You can escape!", "Blocking enemy pole", "Pole blocked by enemy", "Teammates released!", "Releasing teammates..."])}}}
+{{{Manialink::Animations(["EaseLinear"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		+++Yield+++
+		LibManialink_AnimLoop();
+		yield;
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create manialink for the markers module
+ *
+ *	@return		The markers manialink
+ */
+Text CreateManialinkMarkers() {
+	declare Ratio = 9/16.;
+	return """
+<manialink version="2" name="Jailbreak:Markers">
+<framemodel id="FrameModel_GoalMarker">
+	<label halign="center" valign="center2" textsize="1" textemboss="1" textfont="Eurostile_Bold" id="Label_MarkerText"/>
+	<quad posn="0 2.5" sizen="{{{8 * Ratio}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon"/>
+</framemodel>
+
+<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#1"/>
+<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#2"/>
+
+<script><!--
+/**
+ *	Jailbreak: Markers
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_MarkersGoal = [
+	1 => (Page.GetFirstChild("Frame_MarkerGoal#1") as CMlFrame),
+	2 => (Page.GetFirstChild("Frame_MarkerGoal#2") as CMlFrame)
+];
+
+// ---------------------------------- //
+// Variables
+declare UpdateMarkers = True;
+
+declare PrevGUIPlayerLogin = "";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update markers on player change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerLogin != GUIPlayer.Login) {
+		PrevGUIPlayerLogin = GUIPlayer.Login;
+		UpdateMarkers = True;
+	}
+} else if (PrevGUIPlayerLogin != "") {
+	PrevGUIPlayerLogin = "";
+	UpdateMarkers = True;
+}
+
+// ---------------------------------- //
+// Update markers
+if (UpdateMarkers) {
+	UpdateMarkers = False;
+	foreach (Clan => Frame in Frame_MarkersGoal) {
+		// ---------------------------------- //
+		// Load marker elements
+		declare Label_MarkerText <=> (Frame.GetFirstChild("Label_MarkerText") as CMlLabel);
+		declare Quad_MarkerIcon <=> (Frame.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
+		
+		Quad_MarkerIcon.Colorize = Teams[Clan - 1].ColorPrimary;
+		Label_MarkerText.TextColor = Brightness(Quad_MarkerIcon.Colorize, 1.5);
+		
+		// ---------------------------------- //
+		// Set marker text
+		declare Text MarkerText;
+		
+		// There is no player
+		if (GUIPlayer == Null) MarkerText = Teams[Clan - 1].Name;
+		
+		// Teammates pole
+		else if (GUIPlayer.CurrentClan == Clan) MarkerText = Translations_Get("Teammates");
+		
+		// Opponents pole
+		else MarkerText = Translations_Get("Opponents");
+		
+		Label_MarkerText.SetText("$n$t"^MarkerText);
+	}
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Change color brightness
+ *
+ *	@param	_Color			Input color
+ *	@param	_Brightness		Target brightness
+ *
+ *	@return		New color
+ */
+Vec3 Brightness(Vec3 _Color, Real _Brightness) {
+	if (_Brightness == 1) return _Color;
+	if (_Brightness <= 0) return Vec3;
+	
+	declare Vec3 OutputColor;
+	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
+	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
+	return OutputColor;
+}
+
+{{{Translations::InsertToManialink(["Teammates", "Opponents"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		+++Yield+++
+		yield;
+	}
+}
+--></script>
+</manialink>""";
+}

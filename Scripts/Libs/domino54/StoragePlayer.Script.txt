@@ -1,12 +1,13 @@
 // -------------------------------------- //
 //  LIBRARY STORAGE PLAYER by domino54    //
-//  script version: 2016-06-16            //
+//  script version: 2016-06-23            //
 // -------------------------------------- //
 
-#Const Version		"2016-06-16"
+#Const Version		"2016-06-23"
 #Const ScriptName	"StoragePlayer.Script.txt"
 
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
 // Constants
@@ -67,14 +68,15 @@ Text Private_CreateManialinkMusicPlayer(Text _MediaBasePath, Text _ThinTextFont,
 	<frame id="Frame_WindowTitle" posn="50 -5 1">
 		<quad sizen="99 9" halign="center" valign="center" bgcolor="FFF"/>
 		<label
-			posn="0 0 .1" sizen="90" halign="center" valign="center2" style="TextButtonNav"
-			textsize="2" textcolor="000" textfont="{{{_ThickTextFont}}}" text="Storage Music Plugin" translate="1"
+			posn="-47 0 .1" sizen="90" halign="left" valign="center2" style="TextButtonNav"
+			textsize="2" textcolor="000" textfont="{{{_ThickTextFont}}}" id="Label_WindowTitleText"
 		/>
+		<quad posn="46 0 .1" sizen="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="Close" id="Quad_ButtonClose" ScriptEvents="1"/>
 	</frame>
 	
 	<!-- Custom playlist setup row -->
 	<frame id="Frame_CustomPlaylistEnter" posn="0 -12.5 1">
-		<label posn="2" class="bigInfo" textsize="1" text="Custom playlist URL:"/>
+		<label posn="2" class="bigInfo" textsize="1" id="Label_CustomPlaylist"/>
 		<entry
 			posn="98" sizen="60 3" halign="right" valign="center2" id="Entry_PlaylistLoadURL"
 			textsize="1" textcolor="CCC" textfont="{{{_ThinTextFont}}}"
@@ -272,7 +274,10 @@ declare PrevCustomPlaylistURL = Persistent_Storage_CustomPlaylistURL;
 
 // ---------------------------------- //
 // Initialize music plugin
+(Page.GetFirstChild("Label_WindowTitleText") as CMlLabel).SetText(Translations_Get("Storage Music Player"));
+(Page.GetFirstChild("Label_CustomPlaylist") as CMlLabel).SetText(Translations_Get("Custom playlist URL:"));
 Entry_PlaylistLoadURL.Value = Persistent_Storage_CustomPlaylistURL;
+
 JumpToLatestPlayPoint = True;
 StartNewRequest = True;
 G_Storage_ForceSongChange = True;
@@ -342,6 +347,9 @@ foreach (Event in PendingEvents) {
 				PagesNbCurrent = ML::Min(PagesNbCurrent + 1, PagesNbTotal);
 				UpdateSongsListFrame = True;
 			}
+			// ---------------------------------- //
+			// Close window
+			case "Quad_ButtonClose" : Persistent_Storage_InGameWindowVisible = False;
 		}
 	}
 	// ---------------------------------- //
@@ -365,9 +373,26 @@ foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// On key press
 	else if (Event.Type == CMlEvent::Type::KeyPress) {
-		// ---------------------------------- //
-		// Toggle music widget visibility
-		if (Event.KeyName == "F4") Persistent_Storage_InGameWindowVisible = !Persistent_Storage_InGameWindowVisible;
+		switch (Event.KeyName) {
+			// ---------------------------------- //
+			// Toggle music widget visibility
+			case "F4" : Persistent_Storage_InGameWindowVisible = !Persistent_Storage_InGameWindowVisible;
+			
+			// ---------------------------------- //
+			// Toggle play / pause
+			case "K" : Persistent_Storage_IsPlaying = !Persistent_Storage_IsPlaying;
+			
+			// ---------------------------------- //
+			// Go to the previous song
+			case "J" : {
+				if (G_Storage_CurrentSong != Null && G_Storage_CurrentSong.PlayCursor > 10)
+					G_Storage_CurrentSong.PlayCursor = 0.;
+				else PrevSong();
+			}
+			// ---------------------------------- //
+			// Go to the next song
+			case "L" : NextSong();
+		}
 	}
 }
 
@@ -437,6 +462,10 @@ if (G_Storage_PlaylistRequest != Null) {
 		declare PlaylistDocument = Xml.Create(G_Storage_PlaylistRequest.Result);
 		LoadPlaylist(PlaylistDocument);
 		Xml.Destroy(PlaylistDocument);
+		
+		// ---------------------------------- //
+		// Switch to a random song, unless player loads previous playlist
+		if (!JumpToLatestPlayPoint) Persistent_Storage_CurrentSongIndex = ML::Rand(0, G_Storage_PlaylistSongsCount - 1);
 		
 		UpdateSongsListFrame = True;
 		PagesNbCurrent = 1;
@@ -892,6 +921,8 @@ Void GoToSong(Integer _SongIndex) {
 	declare persistent Real Persistent_Storage_PreviousPlayPoint for LocalUser;
 	Persistent_Storage_PreviousPlayPoint = 0.;
 }
+
+{{{Translations::InsertToManialink(["Storage Music Player", "Custom playlist URL:"])}}}
 
 // ---------------------------------- //
 // Main

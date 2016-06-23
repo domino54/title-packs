@@ -1,0 +1,405 @@
+// -------------------------------------- //
+//  LIBRARY FANCY MESSAGES by domino54    //
+//  script version: 2016-06-23            //
+// -------------------------------------- //
+
+/**
+ *	This library replaces default big and status messages
+ *	with custom ones, that can be modified in terms of
+ *	position, text font and text size.
+ */
+
+#Const Version		"2016-06-23"
+#Const ScriptName	"FancyMessages.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibFancyMessages_BigMessagePosition		<0., 48., 0.>
+#Const C_LibFancyMessages_BigMessageTextSize		9
+#Const C_LibFancyMessages_StatusMessagePosition		<0., 56., 0.>
+#Const C_LibFancyMessages_StatusMessageTextSize		3
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the fancy messages module
+ *
+ *	@return		The fancy messages module manialink
+ */
+Text Private_CreateManialinkFancyMessages() {
+	return """
+<manialink version="2" name="LibFancyMessages">
+<stylesheet>
+	<style
+		class="Message" sizen="280" halign="center" valign="center2" style="TextRaceMessageBig" autonewline="1"
+		textemboss="1" textcolor="FFF" textsize="3"
+	/>
+</stylesheet>
+
+<!-- UI.BigMessage -->
+<frame id="Frame_BigMessage">
+	<label class="Message" id="Label_BigMessage"/>
+	<label posn="0 0 -1" class="Message" id="Label_BigMessageGhost"/>
+</frame>
+
+<!-- UI.StatusMessage -->
+<frame id="Frame_StatusMessage">
+	<label class="Message" textsize="3" id="Label_StatusMessage"/>
+	<label posn="0 0 -1" class="Message" id="Label_StatusMessageGhost"/>
+</frame>
+
+<script><!--
+/**
+ *	LibFancyMessages
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_BigMessage <=> (Page.GetFirstChild("Frame_BigMessage") as CMlFrame);
+declare Label_BigMessage <=> (Page.GetFirstChild("Label_BigMessage") as CMlLabel);
+declare Label_BigMessageGhost <=> (Page.GetFirstChild("Label_BigMessageGhost") as CMlLabel);
+declare Frame_StatusMessage <=> (Page.GetFirstChild("Frame_StatusMessage") as CMlFrame);
+declare Label_StatusMessage <=> (Page.GetFirstChild("Label_StatusMessage") as CMlLabel);
+declare Label_StatusMessageGhost <=> (Page.GetFirstChild("Label_StatusMessageGhost") as CMlLabel);
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibFancyMessages_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibFancyMessages_Settings for Teams[0];
+declare netread Text Net_LibFancyMessages_BigMessage for UI;
+declare netread Text Net_LibFancyMessages_BigMessageSound for UI;
+declare netread Integer Net_LibFancyMessages_BigMessageSoundVariant for UI;
+declare netread Text Net_LibFancyMessages_StatusMessage for UI;
+
+// Update
+declare PrevSettingsUpdate = -1;
+declare PrevBigMessageText = "";
+declare PrevStatusMessageText = "";
+
+// Disable original messages
+ClientUI.BigMessage = " ";
+ClientUI.StatusMessage = " ";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibFancyMessages_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibFancyMessages_SettingsUpdate;
+	foreach (SettingName => SettingValue in Net_LibFancyMessages_Settings) {
+		declare SplitSetting = TL::Split(":", SettingName);
+		if (SplitSetting.count < 2) continue;
+		declare CMlFrame Frame;
+		declare CMlLabel[] Labels;
+		
+		// ---------------------------------- //
+		// Get the target label and frame
+		switch (SplitSetting[0]) {
+			case "BigMessage" : {
+				Frame = Frame_BigMessage;
+				Labels = [Label_BigMessage, Label_BigMessageGhost];
+			}
+			case "StatusMessage" : {
+				Frame = Frame_StatusMessage;
+				Labels = [Label_StatusMessage, Label_StatusMessageGhost];
+			}
+		}
+		
+		// ---------------------------------- //
+		// Set message options
+		switch (SplitSetting[1]) {
+			case "Position" : {
+				declare SplitPosition = TL::Split(" ", SettingValue);
+				if (SplitPosition.count < 3) continue;
+				for (I, 0, 2) Frame.RelativePosition[I] = TL::ToReal(SplitPosition[I]);
+			}
+			case "TextFont" : foreach (Label in Labels) Label.TextFont = SettingValue;
+			case "TextSize" : foreach (Label in Labels) Label.TextSize = TL::ToInteger(SettingValue);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update displayed big message
+if (PrevBigMessageText != Net_LibFancyMessages_BigMessage) {
+	PrevBigMessageText = Net_LibFancyMessages_BigMessage;
+	
+	// ---------------------------------- //
+	// Set label text
+	Label_BigMessageGhost.SetText(Label_BigMessage.Value);
+	Label_BigMessage.SetText(Net_LibFancyMessages_BigMessage);
+	
+	// ---------------------------------- //
+	// Play big message sound
+	if (PrevBigMessageText != "")
+		PlayUiSound(GetSound(Net_LibFancyMessages_BigMessageSound), Net_LibFancyMessages_BigMessageSoundVariant, 1.);
+	
+	// ---------------------------------- //
+	// Create label animation
+	LibManialink_AnimStop(Label_BigMessage);
+	LibManialink_AnimStop(Label_BigMessageGhost);
+	
+	Label_BigMessage.Opacity = 0.;
+	Label_BigMessage.RelativePosition.Y = 3.;
+	Label_BigMessageGhost.Opacity = 1.;
+	Label_BigMessageGhost.RelativePosition.Y = 0.;
+	
+	LibManialink_Anim(Label_BigMessage, "<label posn=\"0 0\" opacity=\"1\"/>", 200, "EaseLinear");
+	LibManialink_Anim(Label_BigMessageGhost, "<label posn=\"0 -3\" opacity=\"0\"/>", 200, "EaseLinear");
+}
+
+// ---------------------------------- //
+// Update displayed status message
+if (PrevStatusMessageText != Net_LibFancyMessages_StatusMessage) {
+	PrevStatusMessageText = Net_LibFancyMessages_StatusMessage;
+	
+	// ---------------------------------- //
+	// Set label text
+	Label_StatusMessageGhost.SetText(Label_StatusMessage.Value);
+	Label_StatusMessage.SetText(Net_LibFancyMessages_StatusMessage);
+	
+	// ---------------------------------- //
+	// Create label animation
+	LibManialink_AnimStop(Label_StatusMessage);
+	LibManialink_AnimStop(Label_StatusMessageGhost);
+	
+	Label_StatusMessage.Opacity = 0.;
+	Label_StatusMessage.RelativePosition.Y = 3.;
+	Label_StatusMessageGhost.Opacity = 1.;
+	Label_StatusMessageGhost.RelativePosition.Y = 0.;
+	
+	LibManialink_Anim(Label_StatusMessage, "<label posn=\"0 0\" opacity=\"1\"/>", 200, "EaseLinear");
+	LibManialink_Anim(Label_StatusMessageGhost, "<label posn=\"0 -3\" opacity=\"0\"/>", 200, "EaseLinear");
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Retrieve interface sound enum from given text
+ *	/!\ CUIConfig::EUISound can't be net variable /!\
+ *
+ *	@param	_SoundName		Name of the sound to get
+ *
+ *	@return		Interface sound enum value
+ */
+::EUISound GetSound(Text _SoundName) {
+	if (_SoundName == "") return ::EUISound::Default;
+	declare TextSound = TL::Replace(_SoundName, "::EUISound::", "");
+	switch (TextSound) {
+		case "Default"	: return ::EUISound::PhaseChange;
+		case "Silence"	: return ::EUISound::Silence;
+		case "Notice"	: return ::EUISound::Notice;
+		case "Finish"	: return ::EUISound::Finish;
+		case "Record"	: return ::EUISound::Record;
+		case "Capture"	: return ::EUISound::Capture;
+		case "TimeOut"	: return ::EUISound::TimeOut;
+		case "Warning"	: return ::EUISound::Warning;
+		case "Bonus"	: return ::EUISound::Bonus;
+		case "Combo"	: return ::EUISound::Combo;
+		case "FirstHit"	: return ::EUISound::FirstHit;
+		case "TiePoint"	: return ::EUISound::TiePoint;
+		case "EndMatch"	: return ::EUISound::EndMatch;
+		case "EndRound"	: return ::EUISound::EndRound;
+		case "Custom1"	: return ::EUISound::Custom1;
+		case "Custom2"	: return ::EUISound::Custom2;
+		case "Custom3"	: return ::EUISound::Custom3;
+		case "Custom4"	: return ::EUISound::Custom4;
+		case "StartMatch"	: return ::EUISound::StartMatch;
+		case "StartRound"	: return ::EUISound::StartRound;
+		case "PhaseChange"	: return ::EUISound::PhaseChange;
+		case "VictoryPoint"	: return ::EUISound::VictoryPoint;
+		case "PlayerHit"	: return ::EUISound::PlayerHit;
+		case "Checkpoint"	: return ::EUISound::Checkpoint;
+		case "RankChange"	: return ::EUISound::RankChange;
+		case "TieBreakPoint"	: return ::EUISound::TieBreakPoint;
+		case "ScoreProgress"	: return ::EUISound::ScoreProgress;
+		case "PlayerEliminated"	: return ::EUISound::PlayerEliminated;
+		case "PlayersRemaining"	: return ::EUISound::PlayersRemaining;
+	}
+	return ::EUISound::Default;
+}
+
+{{{Manialink::Animations(["EaseLinear"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		+++Yield+++
+		LibManialink_AnimLoop();
+		yield;
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Update the settings for a module
+ *
+ *	@param	_Name		The name of the setting
+ *	@param	_Value		The value of the setting
+ */
+Void Private_SetModuleSetting(Text _Name, Text _Value) {
+	declare netwrite Net_LibFancyMessages_SettingsUpdate for Teams[0] = 0;
+	declare netwrite Net_LibFancyMessages_Settings for Teams[0] = Text[Text];
+	Net_LibFancyMessages_SettingsUpdate = Now;
+	Net_LibFancyMessages_Settings[_Name] = _Value;
+}
+
+// ---------------------------------- //
+/** Convert a Vec3 to a Text
+ *
+ *	@param	_Vec3	The Vec3 to convert
+ *
+ *	@return		The Text
+ */
+Text Private_Vec3ToText(Vec3 _Vec3) {
+	return _Vec3.X^" "^_Vec3.Y^" "^_Vec3.Z;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Format the big message label
+ *
+ *	@param	_Position	Position of the big message label
+ *	@param	_TextFont	Big message label font
+ *	@param	_TextSize	Size of the big message label text
+ */
+Void FormatBigMessage(Vec3 _Position, Text _TextFont, Integer _TextSize) {
+	if (_Position != <0., 0., 0.>) Private_SetModuleSetting("BigMessage:Position", Private_Vec3ToText(_Position));
+	Private_SetModuleSetting("BigMessage:TextFont", _TextFont);
+	if (_TextSize >= 0) Private_SetModuleSetting("BigMessage:TextSize", TL::ToText(_TextSize));
+}
+
+// ---------------------------------- //
+/** Format the status message label
+ *
+ *	@param	_Position	Position of the status message label
+ *	@param	_TextFont	Status message label font
+ *	@param	_TextSize	Size of the status message label text
+ */
+Void FormatStatusMessage(Vec3 _Position, Text _TextFont, Integer _TextSize) {
+	if (_Position != <0., 0., 0.>) Private_SetModuleSetting("StatusMessage:Position", Private_Vec3ToText(_Position));
+	Private_SetModuleSetting("StatusMessage:TextFont", _TextFont);
+	if (_TextSize >= 0) Private_SetModuleSetting("StatusMessage:TextSize", TL::ToText(_TextSize));
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	Layers::Detach("LibFancyMessages");
+	Layers::Destroy("LibFancyMessages");
+	
+	declare netwrite Integer Net_LibFancyMessages_SettingsUpdate for Teams[0];
+	declare netwrite Text[Text] Net_LibFancyMessages_Settings for Teams[0];
+	Net_LibFancyMessages_SettingsUpdate = -1;
+	Net_LibFancyMessages_Settings.clear();
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	Layers::Create("LibFancyMessages", Private_CreateManialinkFancyMessages());
+	Layers::Attach("LibFancyMessages");
+	
+	FormatBigMessage(C_LibFancyMessages_BigMessagePosition, "", C_LibFancyMessages_BigMessageTextSize);
+	FormatStatusMessage(C_LibFancyMessages_StatusMessagePosition, "", C_LibFancyMessages_StatusMessageTextSize);
+}
+
+// ---------------------------------- //
+/// Automatically manage library functions
+Void Loop() {
+	foreach (UI in UIManager.UI) {
+		if (UI == UIManager.UIAll) continue;
+		declare Text PrevBigMessage for UI;
+		declare Text PrevStatusMessage for UI;
+		
+		// ---------------------------------- //
+		// Update big message
+		declare BigMessage = UIManager.UIAll.BigMessage;
+		if (UI.BigMessage != "") BigMessage = UI.BigMessage;
+		
+		if (PrevBigMessage != BigMessage) {
+			// ---------------------------------- //
+			// Get the big message sound
+			declare Sound = UIManager.UIAll.BigMessageSound;
+			if (UI.BigMessageSound != CUIConfig::EUISound::Default) Sound = UI.BigMessageSound;
+			
+			// ---------------------------------- //
+			// Get the big message sound variant
+			declare SoundVariant = UIManager.UIAll.BigMessageSoundVariant;
+			if (UI.BigMessageSoundVariant != 0) SoundVariant = UI.BigMessageSoundVariant;
+			
+			// ---------------------------------- //
+			// Send new data to the interface
+			declare netwrite Text Net_LibFancyMessages_BigMessage for UI;
+			declare netwrite Text Net_LibFancyMessages_BigMessageSound for UI;
+			declare netwrite Integer Net_LibFancyMessages_BigMessageSoundVariant for UI;
+			
+			Net_LibFancyMessages_BigMessage = BigMessage;
+			Net_LibFancyMessages_BigMessageSound = ""^Sound;
+			Net_LibFancyMessages_BigMessageSoundVariant = SoundVariant;
+			
+			PrevBigMessage = BigMessage;
+		}
+		
+		// ---------------------------------- //
+		// Update status message
+		declare StatusMessage = UIManager.UIAll.StatusMessage;
+		if (UI.StatusMessage != "") BigMessage = UI.StatusMessage;
+		
+		if (PrevStatusMessage != StatusMessage) {
+			declare netwrite Text Net_LibFancyMessages_StatusMessage for UI;
+			Net_LibFancyMessages_StatusMessage = StatusMessage;
+			PrevStatusMessage = StatusMessage;
+		}
+	}
+}

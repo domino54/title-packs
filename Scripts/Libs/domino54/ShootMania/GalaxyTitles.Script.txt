@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-06-16            //
+//  script version: 2016-06-23            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-06-16"
+#Const Version		"2016-06-23"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -69,19 +69,6 @@ declare Text[] G_LibGalaxyTitles_MinimapMarkers;
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
-
-// ---------------------------------- //
-/** Trim ammo reload value between 0 and 10 to avoid runtime error
- *
- *	@param	_AmmoGain	Reload speed to trim
- *
- *	@return		Safe ammo reload value
- */
-Real Private_AdjustAmmoGain(Real _AmmoGain) {
-	if (_AmmoGain > 10) return 10.;
-	if (_AmmoGain < 0) return 0.;
-	return _AmmoGain;
-}
 
 // ---------------------------------- //
 /** Get the third team color
@@ -207,7 +194,7 @@ Void ReloadBoost() {
 		if (Now < LibGalaxyTitles_BoostEndTime) {
 			if (LibGalaxyTitles_PrevAmmoGain < 0.) {
 				LibGalaxyTitles_PrevAmmoGain = Player.AmmoGain;
-				Player.AmmoGain = Private_AdjustAmmoGain(Player.AmmoGain * LibGalaxyTitles_BoostMultipler);
+				Player.AmmoGain = ML::Clamp(Player.AmmoGain * LibGalaxyTitles_BoostMultipler, 0., 10.);
 			}
 			// ---------------------------------- //
 			// Player base reload speed changed during boost
@@ -217,13 +204,13 @@ Void ReloadBoost() {
 			) {
 				declare ReloadDelta = Player.AmmoGain - LibGalaxyTitles_PrevAmmoGain / LibGalaxyTitles_BoostMultipler;
 				LibGalaxyTitles_PrevAmmoGain += ReloadDelta;
-				Player.AmmoGain = Private_AdjustAmmoGain(LibGalaxyTitles_PrevAmmoGain * LibGalaxyTitles_BoostMultipler);
+				Player.AmmoGain = ML::Clamp(LibGalaxyTitles_PrevAmmoGain * LibGalaxyTitles_BoostMultipler, 0., 10.);
 			}
 		}
 		// ---------------------------------- //
 		// Reverse reload speed back to the old value
 		else if (LibGalaxyTitles_PrevAmmoGain >= 0) {
-			Player.AmmoGain = Private_AdjustAmmoGain(LibGalaxyTitles_PrevAmmoGain);
+			Player.AmmoGain = ML::Clamp(LibGalaxyTitles_PrevAmmoGain, 0., 10.);
 			LibGalaxyTitles_PrevAmmoGain = -1.;
 		}
 	}

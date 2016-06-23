@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-06-16            //
+//  script version: 2016-06-23            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-06-16"
+#Const BaseVersion		"2016-06-23"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -17,6 +17,7 @@
 // Custom libraries
 #Include "Libs/domino54/Blacklist.Script.txt" as Blacklist
 #Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
+#Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
 #Include "Libs/domino54/SentenceBank.Script.txt" as SentenceBank
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
@@ -39,6 +40,8 @@
 #Setting S_UseComboWeapons		True	as _("Use Weapons pick-ups (if available on map)")
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
 #Setting S_WarmUpDuration		300		as _("Warm up duration (sec.)")	///< Duration of the warm up round (0 = no warmup)
+#Setting S_PlayerArmorPoints	3		as _("Armor points")			///< Amount of players Armor points (1 min, 10 max)
+#Setting S_RespawnTime			3000	as "<hidden>"					///< Time before respawn
 #Setting S_NbPlayersPerTeamMax	0		as "<hidden>" //_("Maximum number of players per team (0: no max)")
 #Setting S_NbPlayersPerTeamMin	1		as "<hidden>" //_("Minumum number of players per team")
 #Setting S_CustomLayersURLs		""		as "<hidden>" ///< Try to load custom layers from an URL
@@ -56,11 +59,12 @@
 // Constants
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
-#Const C_DefaultMusicPlaylist "http://dominolink.aq.pl/music/playlist.xml"
+#Const C_DefaultMusicPlaylist "file://Media/Musics/Invasion/playlist.xml"
 #Const C_DefaultKillfeedPosn	<159., 89., -5.>	///< Default position of the Killfeed layer
 #Const C_NoCollisionsDuration	6000	///< No collision duration at the beginning of the round
 
-#Const C_MaxDamage 100	///< Maximum damage amount infliged by weapons
+#Const C_EventMaxDamage		100		///< Maximum damage amount inflicted by weapons
+#Const C_PlayerStaminaMax	1.25	///< Amount of player stamina
 
 // ---------------------------------- //
 // Global variables
@@ -89,6 +93,7 @@ declare UC_ScriptsVersions = [
 	WarmUp2::GetScriptName()		=> WarmUp2::GetScriptVersion(),
 	Score::GetScriptName()			=> Score::GetScriptVersion(),
 	FakeUsers::GetScriptName()		=> FakeUsers::GetScriptVersion(),
+	FancyMessages::GetScriptName()	=> FancyMessages::GetScriptVersion(),
 	GalaxyTitles::GetScriptName()	=> GalaxyTitles::GetScriptVersion(),
 	Interfancy::GetScriptName()		=> Interfancy::GetScriptVersion(),
 	Inventory::GetScriptName()		=> Inventory::GetScriptVersion(),
@@ -235,7 +240,7 @@ SM::SetupDefaultVisibility();
 UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
 
 // ---------------------------------- //
-// Load killfeed library
+// Load Killfeed library
 KillFeed::Load();
 KillFeed::SetPosition(C_DefaultKillfeedPosn + <0., S_KillFeedOffsetY, 0.>);
 KillFeed::AddTranslations(GT_KillfeedTranslations);
@@ -250,6 +255,12 @@ KillFeed::Build();
 // Load minimap
 MiniMap::Load();
 MiniMap::SetOpponentsVisibility(!MM_IsMatchServer());
+
+// ---------------------------------- //
+// Load Fancy Messages
+FancyMessages::Load();
+FancyMessages::FormatBigMessage(<0., 54., 0.>, "Eurostile_Bold", 8);
+FancyMessages::FormatStatusMessage(<0., 62., 0.>, "Eurostile_Bold", 3);
 
 // ---------------------------------- //
 // Load GalaxyTitles library
@@ -349,6 +360,7 @@ StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
 Interfancy::UpdateTime();
 Message::Loop();
 KillFeed::Loop();
+FancyMessages::Loop();
 ***
 
 // ---------------------------------- //
@@ -474,7 +486,7 @@ foreach (Event in PendingEvents) {
 			// Enemy hit
 			else {
 				// Reduce Laser damage
-				if (Event.Damage > C_MaxDamage) Event.Damage = C_MaxDamage;
+				if (Event.Damage > C_EventMaxDamage) Event.Damage = C_EventMaxDamage;
 				
 				declare Points = ML::Min(Event.Damage, Event.Victim.Armor) / 100;
 				Score::AddPoints(Event.Shooter, Points);
@@ -586,6 +598,9 @@ if (GT_UseNoCollisionsStart && GT_NoCollisionsEndTime > 0 && GT_NoCollisionsEndT
 	GT_NoCollisionsEndTime = -1;
 	UsePvPCollisions = True;
 }
+
+// Stop match if there's not enough players left in matchmaking
+if (MM_IsMatchServer() && MM_RestartMatchmaking) MB_StopMatch = True;
 ***
 
 // ---------------------------------- //
@@ -703,6 +718,7 @@ MiniMap::Unload();
 KillFeed::Unload();
 PauseMenu::Unload();
 StoragePlayer::Unload();
+FancyMessages::Unload();
 
 SpawnScreen::DestroyRules();
 SpawnScreen::DestroyScores();
@@ -809,6 +825,22 @@ Boolean GT_IsValidPlayer(CSmPlayer _Player) {
 }
 
 // ---------------------------------- //
+/** Initialize player to be spawned
+ *
+ *	@param	_Player		The player to initialize
+ */
+Void GT_InitPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	if (UseClans && !UseForcedClans) SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
+	GalaxyTitles::InitPlayer(_Player);
+	SetPlayerReloadAllWeapons(_Player, True);
+	
+	_Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
+	_Player.StaminaMax = C_PlayerStaminaMax;
+}
+
+// ---------------------------------- //
 /// Initialize the warm up properties
 Void GT_InitWarmUp() {
 	if (S_NbPlayersPerTeamMax > 0) {
@@ -853,6 +885,8 @@ Void GT_DoWarmUp() {
 	// ---------------------------------- //
 	// Initialize warm-up
 	GalaxyTitles::InitObjects();
+	MiniMap::Show();
+	
 	declare PrevWarmUpDuration = S_WarmUpDuration - 1;
 	declare Ident[] SpawnsList;
 	declare Ident LatestSpawnId;
@@ -891,6 +925,10 @@ Void GT_DoWarmUp() {
 				// Set player clan
 				if (UseClans) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 				
+				// Init player settings
+				Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
+				Player.StaminaMax = C_PlayerStaminaMax;
+				
 				// ---------------------------------- //
 				// Select random spawn
 				if (SpawnsList.count == 0) foreach (MapLandmark in MapLandmarks_PlayerSpawn) SpawnsList.add(MapLandmark.Id);
@@ -903,7 +941,7 @@ Void GT_DoWarmUp() {
 				}
 				
 				LatestSpawnId = SpawnId;
-				SM::SpawnPlayer(Player, Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+				SM::SpawnPlayer(Player, Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn, Now + S_RespawnTime);
 				declare Removed = SpawnsList.remove(SpawnId);
 			}
 		}
@@ -919,4 +957,5 @@ Void GT_DoWarmUp() {
 	UIManager.UIAll.BigMessage = "";
 	SM::UnspawnAllPlayers();
 	GalaxyTitles::InitObjects();
+	MiniMap::Hide();
 }

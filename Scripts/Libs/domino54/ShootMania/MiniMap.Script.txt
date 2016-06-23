@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2016-06-16            //
+//  script version: 2016-06-23            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2016-06-16"
+#Const Version		"2016-06-23"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "TextLib" as TL
@@ -114,6 +114,8 @@ Text Private_CreateManialinkMinimapWindow() {
 
 </frame>
 
+<label id="Label_Debug" scale="5"/>
+
 <script><!--
 /**
  *	{{{ScriptName}}}
@@ -122,6 +124,7 @@ Text Private_CreateManialinkMinimapWindow() {
  *	domino54
  */
 
+#Include "AnimLib" as AL
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
@@ -156,6 +159,7 @@ declare Frame_MinimapWindow <=> (Page.GetFirstChild("Frame_MinimapWindow") as CM
 declare Minimap_Main <=> (Page.GetFirstChild("Minimap_Main") as CMlMinimap);
 declare Quad_MarkerGUIPlayer <=> (Page.GetFirstChild("Quad_MarkerGUIPlayer") as CMlQuad);
 declare Frame_Markers <=> (Page.GetFirstChild("Frame_Markers") as CMlFrame);
+declare Label_Debug <=> (Page.GetFirstChild("Label_Debug") as CMlLabel);
 
 declare CMlFrame[] Frame_PlayerMarkers;
 for (I, 0, {{{C_LibMinimap_NbPlayersMarkers - 1}}})
@@ -210,6 +214,7 @@ declare PrevGUIPlayerLogin = "";
 declare PrevGUIPlayerClan = 0;
 declare PrevTeamsColors = [Vec3, Vec3];
 declare PrevSettingsUpdate = -1;
+declare PrevZoomState = 0;
 
 // ---------------------------------- //
 // Initialize manialink
@@ -313,14 +318,39 @@ if (Quad_MarkerGUIPlayer.Visible != IsPlayerSpawned) Quad_MarkerGUIPlayer.Visibl
 if (IsPlayerSpawned) {
 	if (!PositionsMatch(MinimapPosition, GUIPlayer.Position)) MinimapPosition = GUIPlayer.Position;
 	if (Minimap_Main.MapYaw != GUIPlayer.AimYaw) Minimap_Main.MapYaw = GUIPlayer.AimYaw;
-	if (GUIPlayer.IsOnTechLaser) Minimap_Main.ZoomFactor = C_MapZoomWhenSpawned / 2.;
-	else Minimap_Main.ZoomFactor = C_MapZoomWhenSpawned;
+	
+	// ---------------------------------- //
+	// Decreased zoom on laser and arrow pads
+	if (GUIPlayer.IsOnTechLaser || GUIPlayer.IsOnTechArrow) {
+		if (PrevZoomState != 2) {
+			PrevZoomState = 2;
+			LibManialink_AnimStop(Label_Debug);
+			LibManialink_Anim(Label_Debug, "<label scale=\""^C_MapZoomWhenSpawned / 2^"\"/>", 250, "EaseInOutSine");
+		}
+	}
+	// ---------------------------------- //
+	// Normal zoom
+	else if (PrevZoomState != 1) {
+		PrevZoomState = 1;
+		LibManialink_AnimStop(Label_Debug);
+		LibManialink_Anim(Label_Debug, "<label scale=\""^C_MapZoomWhenSpawned^"\"/>", 250, "EaseInOutSine");
+	}
+	
+	// Apply zoom
+	if (Minimap_Main.ZoomFactor != Label_Debug.RelativeScale) Minimap_Main.ZoomFactor = Label_Debug.RelativeScale;
 }
 // ---------------------------------- //
 // Compute weighted minimap position
 else {
 	if (Minimap_Main.MapYaw != 0) Minimap_Main.MapYaw = 0.;
 	CornersPositions = [Vec3, Vec3];
+	
+	// ---------------------------------- //
+	// Stop zoom animation
+	if (PrevZoomState != 0) {
+		PrevZoomState = 0;
+		LibManialink_AnimStop(Label_Debug);
+	}
 	
 	// ---------------------------------- //
 	// Get players at the corners
@@ -418,7 +448,7 @@ if (GUIPlayer != Null) {
 // ---------------------------------- //
 // Configure players markers
 NbPlayersDisplayed = 0;
-declare IsOverviewMode = !IsPlayerSpawned || GUIPlayer.IsOnTechLaser;
+declare IsOverviewMode = !IsPlayerSpawned || GUIPlayer.IsOnTechLaser || GUIPlayer.IsOnTechArrow;
 foreach (Player in Players) {
 	if (
 		Player == GUIPlayer || Player.RequestsSpectate || Player.Position == <0., 0., 0.> || (
@@ -520,7 +550,7 @@ foreach (I => Frame in Frame_PlayerMarkers) if (Frame.Visible && I > NbPlayersDi
 // Setup custom markers
 NbCustomDisplayed = 0;
 foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
-	if (IsPlayerSpawned && Distance2D(GUIPlayer.Position, Pos) > 60.) continue;
+	if (!IsOverviewMode && Distance2D(GUIPlayer.Position, Pos) > 60.) continue;
 	
 	declare ImageUrl = Net_LibMinimap_MarkersImages[MarkerId];
 	if (ImageUrl == "") continue;
@@ -529,9 +559,18 @@ foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
 	declare Player <=> GetPlayer(Net_LibMinimap_MarkersPlayer[MarkerId]);
 	if (Player != Null && Player == GUIPlayer) continue;
 	
+	// ---------------------------------- //
+	// Get marker position
 	declare Position = Pos;
 	if (Player != Null) Position = Player.Position;
 	if (ImageUrl == "" || Position == <0., 0., 0.>) continue;
+	
+	// ---------------------------------- //
+	// Get marker opacity
+	declare MarkerOpacity = 1.;
+	if (!IsOverviewMode) MarkerOpacity = GetMarkerFade(Distance2D(GUIPlayer.Position, Position), Real[]);
+	if (MarkerOpacity <= 0) continue;
+	
 	NbCustomDisplayed += 1;
 	
 	// ---------------------------------- //
@@ -539,6 +578,7 @@ foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
 	if (!Quad_CustomMarkers.existskey(NbCustomDisplayed - 1)) continue;
 	declare Quad <=> Quad_CustomMarkers[NbCustomDisplayed - 1];
 	if (!Quad.Visible) Quad.Show();
+	Quad.Opacity = MarkerOpacity;
 	
 	// ---------------------------------- //
 	// Set marker position
@@ -548,12 +588,12 @@ foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
 		declare ZIndex = -3;
 		if (Player != Null) ZIndex = 0;
 		
-		SetMarkerPosition(Quad, Minimap_Main, Position, ZIndex, False);
+		SetMarkerPosition(Quad, Minimap_Main, Position, ZIndex, True);
 		Quad.RelativeRotation = -Frame_Markers.RelativeRotation;
 	}
 	
 	// Set marker scale
-	Quad.RelativeScale = C_MarkerScales[!IsPlayerSpawned];
+	Quad.RelativeScale = C_MarkerScales[IsOverviewMode];
 	
 	// Set marker image and color
 	Quad.ImageUrl = ImageUrl;
@@ -613,15 +653,9 @@ Void SetMarkerPosition(CMlControl _Marker, CMlMinimap _Minimap, Vec3 _Position, 
 	
 	// ---------------------------------- //
 	// Fit marker to the map edge (to be re-worked)
-	/*
 	if (_FitToEdge) {
-		if (OutputPosition.X > 0) OutputPosition.X = 0.;
-		else if (OutputPosition.X < -_Minimap.Size.X) OutputPosition.X = -_Minimap.Size.X;
 		
-		if (OutputPosition.Y < 0) OutputPosition.Y = 0.;
-		else if (OutputPosition.Y > _Minimap.Size.Y) OutputPosition.Y = _Minimap.Size.Y;
 	}
-	*/
 	
 	// ---------------------------------- //
 	// Set marker position

@@ -1,0 +1,839 @@
+// -------------------------------------- //
+//  CONFIRMED by domino54                 //
+//  script version: 2016-06-23            //
+// -------------------------------------- //
+
+#Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
+
+#Const	CompatibleMapTypes	"MeleeArena TeamMeleeArena"
+#Const	Version				"2016-06-23"
+#Const	ScriptName			"Confirmed.Script.txt"
+
+#Include "Libs/Nadeo/Color.Script.txt" as Color
+#Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit	300 as _("Time limit (seconds)")	///< Time limit (seconds)
+#Setting S_PointsLimit	50	as _("Points limit")			///< First team to reach this number wins
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident[][Integer] G_ClanSpawnLandmarks;	///< Spawns in which teams are initially spawned
+declare Ident[][Integer] G_ClanAvailableSpawns;	///< List of yet available spawns
+declare Ident[Integer] G_ClanLatestSpawnId;		///< Ids of the latest spawns used
+declare Integer[Integer] G_ClanNbCoinsSpawned;	///< Total amount of coins laying on the ground
+declare Boolean G_IsTeamMeleeArena;
+declare Boolean G_IsOvertime;
+
+declare Ident[Vec3] G_ObjectsIds;
+
+// ---------------------------------- //
+// Adjust the scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+ST2::DestroyCol("LibST_SMRoundPoints");
+ST2::SetColWidth("LibST_SMPoints", 5.);
+ST2::SetColScript("LibST_SMPoints", """
+declare Score <=> (_Score as CSmScore);
+Label_Col.Value = TL::ToText(Score.RoundPoints + Score.Points);
+""");
+***
+
+// ---------------------------------- //
+// Server start
+// ---------------------------------- //
+***InitServer***
+***
+// ---------------------------------- //
+// Set mode options
+UseClans = True;
+GT_LogScriptsVersions = [
+	ScriptName => Version,
+	Color::GetScriptName()	=> Color::GetScriptVersion(),
+	Map::GetScriptName()	=> Map::GetScriptVersion()
+];
+
+// ---------------------------------- //
+// Set the rules in the SpawnScreen
+GT_SpawnScreenModeName = "Confirmed";
+GT_SpawnScreenModeType = _("Team versus Team");
+GT_SpawnScreenObjectives = TL::Compose(
+	_("$<%11. $>Eliminate your opponents to make them drop a coin.\n$<%12. $>Pick up opponents coins to score points for your team.\n$<%13. $>Pick up teammates coins to prevent opponents from getting points.\n$<%14. $>The first team to reach the points limit or team with the highest score at the end of the time limit wins the map."),
+	"$"^SpawnScreen::GetModeColor()
+);
+
+// ---------------------------------- //
+// Set the rules in the pause menu
+PauseMenu::SetModeRules("Confirmed", "Eliminate opponents to make them drop coins. Pick up these coins to score points for your team. First team to reach points limit wins.", "");
+
+// ---------------------------------- //
+// Create custom interface
+Layers::Create("ConfirmedInterface", CreateManialinkInterface());
+Interfancy::SetModuleVisibility("ScoreSummary", True);
+
+// ---------------------------------- //
+// Load objects
+for (I, 0, 12 - 1) {
+	declare ItemColor = Color::HsvToRgb(<ML::ToReal(I) / 12, 1., 1.>);
+	G_ObjectsIds[ItemColor] = ItemList_Add("SMCommon\\Coins\\Coin_"^TL::FormatInteger(I, 2)^".Item.Gbx");
+}
+***
+
+// ---------------------------------- //
+// Map begin
+// ---------------------------------- //
+***InitMap***
+***
+declare PrevPointsLimit = -1;
+G_IsTeamMeleeArena = TL::Find("TeamMeleeArena", Map.MapType, True, True);
+
+// ---------------------------------- //
+// Check if the map is valid
+declare MapValidated = True;
+switch (Map.MapType) {
+	case "MeleeArena" : if (MapLandmarks_PlayerSpawn.count <= 0) MapValidated = False;
+	case "TeamMeleeArena" : {
+		for (Clan, 1, 2) if (GetLandmarksPlayerSpawn("Spawn", Clan).count <= 0) MapValidated = False;
+		if (GetLandmarksPlayerSpawn("Spawn", 1).count != GetLandmarksPlayerSpawn("Spawn", 2).count) MapValidated = False;
+	}
+}
+
+// ---------------------------------- //
+// Skip map if not valid
+if (!MapValidated) {
+	Translations::SendChat("This map is not valid, moving to the next one.");
+	MB_Sleep(10000);
+	MB_StopMap = True;
+}
+***
+
+// ---------------------------------- //
+// Map start
+// ---------------------------------- //
+***StartMap***
+***
+// ---------------------------------- //
+// Variables
+G_ClanNbCoinsSpawned = [1 => 0, 2 => 0];
+UpdateCoinsAmount();
+G_IsOvertime = False;
+
+declare CurrentTimeLimit = S_TimeLimit;
+declare LeadClan = 0;
+declare PrevLeadClan = 0;
+
+// ---------------------------------- //
+// Bind landmarks to teams
+declare BlueTeamSideOrder = MB_SectionRoundNb % 2 + 1;
+
+// ---------------------------------- //
+// Get spawns
+for (Clan, 1, 2) G_ClanSpawnLandmarks[Clan] = GetLandmarksPlayerSpawn("Spawn", Clan);
+
+// ---------------------------------- //
+// Update landmarks colors
+foreach (Clan => LandmarksIds in G_ClanSpawnLandmarks) {
+	if (LandmarksIds.count <= 0) continue;
+	foreach (LandmarkId in LandmarksIds) {
+		if (!MapLandmarks.existskey(LandmarkId)) continue;
+		declare MapLandmark <=> MapLandmarks[LandmarkId];
+		MapLandmark.Base.Clan = Clan;
+		MapLandmark.Base.IsActive = True;
+	}
+}
+
+// ---------------------------------- //
+// Wait for enough players to start the game
+WaitForPlayers(S_NbPlayersPerTeamMin);
+
+// Attach interface
+Interfancy::SetModuleVisibility("ScoreSummary", True);
+Layers::Attach("ConfirmedInterface");
+
+// ---------------------------------- //
+// Update the players clublinks
+if (S_ForceClublinkTeam1 == "" && S_ForceClublinkTeam2 == "") Clublink::DefineTeamAuto();
+else Clublink::DefineTeamFromUrl(S_ForceClublinkTeam1, S_ForceClublinkTeam2);
+Clublink::SyncUpdate();
+
+// ---------------------------------- //
+// New map sound
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+
+StartTime = Now + S_RespawnTime;
+if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
+else EndTime = -1;
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+***
+
+// ---------------------------------- //
+// On armor empty event
+// ---------------------------------- //
+***OnArmorEmpty***
+***
+SpawnCoin(Event.Victim);
+***
+
+// ---------------------------------- //
+// On player request respawn
+// ---------------------------------- //
+***OnPlayerRequestRespawn***
+***
+SpawnCoin(Event.Victim);
+***
+
+// ---------------------------------- //
+// Player picked up object
+// ---------------------------------- //
+***OnPlayerTouchesObject***
+***
+PickUpCoin(Event);
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***PlayLoop***
+***
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) {
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate && GT_IsValidPlayer(Player)) {
+		GT_InitPlayer(Player);
+		Confirmed_SpawnPlayer(Player);
+	}
+}
+
+// ---------------------------------- //
+// Sound and notice if team is taking the lead
+if (ClanScores[1] > ClanScores[2]) LeadClan = 1;
+else if (ClanScores[2] > ClanScores[1]) LeadClan = 2;
+else LeadClan = 0;
+
+if (PrevLeadClan != LeadClan && LeadClan != 0) {
+	PrevLeadClan = LeadClan;
+	if (LeadClan > 0) Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 2, CUIConfig::EUISound::PhaseChange, 1);
+}
+
+// ---------------------------------- //
+// Server info change
+if (PrevPointsLimit != S_PointsLimit) {
+	PrevPointsLimit = S_PointsLimit;
+	ST2::SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+}
+
+// ---------------------------------- //
+// Update time limit
+if (!G_IsOvertime && CurrentTimeLimit != S_TimeLimit) {
+	CurrentTimeLimit = S_TimeLimit;
+	if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
+	else EndTime = -1;
+}
+
+// ---------------------------------- //
+// Victory conditions
+if (S_PointsLimit > 0) for (Clan, 1, 2) if (ClanScores[Clan] >= S_PointsLimit) MB_StopRound = True;
+if (EndTime > 0 && Now > EndTime) {
+	if (ClanScores[1] != ClanScores[2]) MB_StopRound = True;
+	else {
+		EndTime = -1;
+		G_IsOvertime = True;
+	}
+}
+if (G_IsOvertime && ClanScores[1] != ClanScores[2]) MB_StopRound = True;
+
+// Stop match if there's not enough players left in matchmaking
+if (MM_IsMatchServer() && MM_RestartMatchmaking) MB_StopMatch = True;
+***
+
+// ---------------------------------- //
+// Round end
+// ---------------------------------- //
+***EndRound***
+***
+MB_StopMap = True;
+***
+
+***EndMapBeforePodium***
+***
+SM::UnspawnAllPlayers();
+
+StartTime = -1;
+EndTime = -1;
+
+MB_Sleep(3000);
+
+Message::CleanBigMessages();
+Interfancy::SetModuleVisibility("ScoreSummary", False);
+Layers::Detach("ConfirmedInterface");
+***
+
+// ---------------------------------- //
+// Server end
+// ---------------------------------- //
+***EndServer***
+***
+Layers::Destroy("ConfirmedInterface");
+***
+
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get all Player Spawn landmarks with specified attributes
+ *
+ *	@param	_Tag		Landmark tag
+ *	@param	_Order		Landmark order
+ *
+ *	@return		Player Spawn landmarks with specific attributes
+ */
+Ident[] GetLandmarksPlayerSpawn(Text _Tag, Integer _Order) {
+	declare Ident[] PlayerSpawnLandmarks;
+	foreach (MapLandmark in MapLandmarks_PlayerSpawn) {
+		if (MapLandmark.Tag == _Tag && MapLandmark.Order == _Order) PlayerSpawnLandmarks.add(MapLandmark.Id);
+	}
+	return PlayerSpawnLandmarks;
+}
+
+// ---------------------------------- //
+/** Spawn a player
+ *
+ *	@param	_Player		The player to spawn
+ */
+Void Confirmed_SpawnPlayer(CSmPlayer _Player) {
+	if (_Player == Null || _Player.CurrentClan == 0) return;
+	declare SpawnClan = 0;
+	if (G_IsTeamMeleeArena) SpawnClan = _Player.CurrentClan;
+	
+	// ---------------------------------- //
+	// Fill the spawns lists
+	if (!G_ClanAvailableSpawns.existskey(SpawnClan)) G_ClanAvailableSpawns[SpawnClan] = Ident[];
+	
+	if (G_ClanAvailableSpawns[SpawnClan].count == 0) {
+		if (SpawnClan == 0) 
+			foreach (MapLandmark in MapLandmarks_PlayerSpawn)
+				G_ClanAvailableSpawns[SpawnClan].add(MapLandmark.Id);
+		else
+			foreach (MapLandmarkId in G_ClanSpawnLandmarks[SpawnClan])
+				G_ClanAvailableSpawns[SpawnClan].add(MapLandmarkId);
+	}
+	
+	// ---------------------------------- //
+	// Get new spawn
+	declare SpawnId = NullId;
+	while (True) {
+		SpawnId = G_ClanAvailableSpawns[SpawnClan][ML::Rand(0, G_ClanAvailableSpawns[SpawnClan].count - 1)];
+		if (!G_ClanLatestSpawnId.existskey(SpawnClan) || SpawnId != G_ClanLatestSpawnId[SpawnClan]) break;
+		if (G_ClanAvailableSpawns[SpawnClan].count == 1) break;
+	}
+	G_ClanLatestSpawnId[SpawnClan] = SpawnId;
+	
+	// ---------------------------------- //
+	// Spawn player
+	SM::SpawnPlayer(_Player, _Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn, Now + S_RespawnTime);
+	declare Removed = G_ClanAvailableSpawns[SpawnClan].remove(SpawnId);
+}
+
+// ---------------------------------- //
+/// Update amount of spawned coins
+Void UpdateCoinsAmount() {
+	declare netwrite Integer[Integer] Net_Confirmed_NbCoinsSpawned for Teams[0];
+	Net_Confirmed_NbCoinsSpawned = G_ClanNbCoinsSpawned;
+}
+
+// ---------------------------------- //
+/** Create coin in place of the player elimination
+ *
+ *	@param	_Player		The player that drops an item
+ */
+Void SpawnCoin(CSmPlayer _Player) {
+	if (_Player == Null || _Player.Position == <0., 0., 0.> || _Player.IsBot || _Player.CurrentClan == 0) return;
+	
+	// ---------------------------------- //
+	// Get the color of the object
+	declare Real[Vec3] ColorsDistances;
+	declare Vec3 ObjectColor;
+	foreach (Color => ObjectId in G_ObjectsIds)
+		ColorsDistances[Color] = ML::Distance(Teams[_Player.CurrentClan - 1].ColorPrimary, Color);
+	
+	ColorsDistances = ColorsDistances.sort();
+	foreach (Color => Distance in ColorsDistances) { ObjectColor = Color; break; }
+	if (!G_ObjectsIds.existskey(ObjectColor)) return;
+	
+	// ---------------------------------- //
+	// Create and configure object
+	declare Object = ObjectCreate(G_ObjectsIds[ObjectColor]);
+	
+	declare Text Tag for Object;
+	declare Text PlayerLogin for Object;
+	declare Integer PlayerClan for Object;
+	
+	Tag = "Coin";
+	PlayerLogin = _Player.User.Login;
+	PlayerClan = _Player.CurrentClan;
+	
+	// Increase items amount
+	if (G_ClanNbCoinsSpawned.existskey(_Player.CurrentClan)) G_ClanNbCoinsSpawned[_Player.CurrentClan] += 1;
+	UpdateCoinsAmount();
+	
+	// Spawn object
+	Object.SetPosition(_Player.Position + <0., .25, 0.>);
+}
+
+// ---------------------------------- //
+/** Pick up coin object
+ *
+ *	@param	_Player			The player who picked up object
+ *	@param	_ObjectLogin	Picked Object owner login
+ *	@param	_ObjectClan		Picked Object owner clan
+ */
+Void SendPickMessage(CSmPlayer _Player, Text _ObjectLogin, Integer _ObjectClan) {
+	if (_Player == Null || _Player.CurrentClan == 0 || _ObjectLogin == "" || _ObjectClan < 1 || _ObjectClan > 2) return;
+	declare netwrite Integer Net_Confirmed_MessageEndTime for Teams[0];
+	declare netwrite Text[] Net_Confirmed_MessagePlayersLogins for Teams[0];
+	declare netwrite Integer[] Net_Confirmed_MessagePlayersClans for Teams[0];
+	
+	Net_Confirmed_MessageEndTime = Now + 4000;
+	Net_Confirmed_MessagePlayersLogins = [_Player.User.Login, _ObjectLogin];
+	Net_Confirmed_MessagePlayersClans = [_Player.CurrentClan, _ObjectClan];
+}
+
+// ---------------------------------- //
+/** Pick up coin object
+ *
+ *	@param	_Player		The event to proceed
+ */
+Void PickUpCoin(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerTouchesObject) return;
+	if (
+		_Event.Object == Null || _Event.Player == Null || _Event.Player.IsBot || _Event.Player.CurrentClan == 0 ||
+		_Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned
+	) return;
+	
+	// ---------------------------------- //
+	// Accept only Coin items
+	declare Text Tag for _Event.Object;
+	if (Tag != "Coin") return;
+	
+	declare Text PlayerLogin for _Event.Object;
+	declare Integer PlayerClan for _Event.Object;
+	
+	// ---------------------------------- //
+	// Give points
+	declare Points = 1;
+	Score::AddPoints(_Event.Player, Points);
+	TopScores::AddPoints(_Event.Player.Score, "Items", Points);
+	if (_Event.Player.CurrentClan != PlayerClan) ClanScores[_Event.Player.CurrentClan] += Points;
+	
+	// Decrease items amount
+	if (G_ClanNbCoinsSpawned.existskey(PlayerClan)) G_ClanNbCoinsSpawned[PlayerClan] -= 1;
+	UpdateCoinsAmount();
+	
+	// Notify players
+	SendPickMessage(_Event.Player, PlayerLogin, PlayerClan);
+	
+	// ---------------------------------- //
+	// Play sound and notice if a team is close to win
+	if (_Event.Player.CurrentClan != PlayerClan) {
+		declare Gap = S_PointsLimit - ClanScores[_Event.Player.CurrentClan];
+		declare TeamName = Teams[_Event.Player.CurrentClan - 1].ColorizedName;
+		
+		if (Gap > 0 && Gap <= 3) {
+			declare Variant = 3 - Gap;
+			declare Msg = "";
+			if (Gap > 1) Msg = TL::Compose(_("$<%1$> is %2 points from victory!"), TeamName, TL::ToText(Gap));
+			else Msg = TL::Compose(_("$<%1$> is 1 point from victory!"), TeamName);
+			Message::SendBigMessage(Msg, 3000, 2, CUIConfig::EUISound::TieBreakPoint, Variant);
+		}
+		
+		// ---------------------------------- //
+		// Play final hit sound
+		if (Gap <= 0 || G_IsOvertime) {
+			Message::SendBigMessage(
+				TL::Compose(_("$<%1$> gets the final hit!"), TeamName),
+				3000, 3, CUIConfig::EUISound::VictoryPoint, 0
+			);
+		}
+	}
+	
+	// Destroy item
+	_Event.Object.SetUnspawned();
+	ObjectDestroy(_Event.Object);
+}
+
+// ---------------------------------- //
+/** Wait for enough players to play
+ *
+ *	@param	_MinimumNbPlayers	The number of players to wait in each clan before starting the map
+ */
+Void WaitForPlayers(Integer _MinimumNbPlayers) {
+	// ---------------------------------- //
+	// Initialize
+	declare OldSequence = UIManager.UIAll.UISequence;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+	
+	declare HasWaited = False;
+	StartTime = Now;
+	declare Ident[] SpawnsList;
+	declare Ident LatestSpawnId;
+	
+	foreach (Player in AllPlayers) SetPlayerClan(Player, GT_GetRequestedClan(Player));
+	
+	// ---------------------------------- //
+	// Initialize objects
+	GalaxyTitles::UseComboWeapons(True);
+	GalaxyTitles::InitObjects();
+	MiniMap::Show();
+	
+	// ---------------------------------- //
+	// Waiting for players play loop
+	while (!ServerShutdownRequested && !MatchEndRequested) {
+		MB_Yield();
+		
+		// Let the server sleep if there's no players on it
+		if (PlayersNbTotal <= 0) continue;
+		
+		// Stop waiting if there are enough players to start the game
+		if (ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers) break;
+		
+		// ---------------------------------- //
+		// Display big message
+		if (!HasWaited) {
+			UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
+			UIManager.UIAll.BigMessage = _("Waiting for players in each team...");
+			HasWaited = True;
+		}
+		
+		GalaxyTitles::SpawnObjects(True);
+		GT_UnspawnPlayersChangingClan();
+		WarmUp2::ManageEvents();
+		
+		// ---------------------------------- //
+		// Spawn players
+		foreach (Player in Players) {
+			if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+				// ---------------------------------- //
+				// Initialize player
+				SetPlayerClan(Player, GT_GetRequestedClan(Player));
+				
+				// Init player settings
+				Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints, 1, 10) * 100;
+				Player.StaminaMax = C_PlayerStaminaMax;
+				
+				// ---------------------------------- //
+				// Select random spawn
+				if (SpawnsList.count == 0) foreach (MapLandmark in MapLandmarks_PlayerSpawn) SpawnsList.add(MapLandmark.Id);
+				
+				declare SpawnId = NullId;
+				while (True) {
+					SpawnId = SpawnsList[ML::Rand(0, SpawnsList.count - 1)];
+					if (SpawnId != LatestSpawnId) break;
+					if (SpawnsList.count == 1) break;
+				}
+				
+				LatestSpawnId = SpawnId;
+				SM::SpawnPlayer(Player, Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+				declare Removed = SpawnsList.remove(SpawnId);
+			}
+		}
+	}
+	
+	StartTime = -1;
+	
+	// ---------------------------------- //
+	// Player joined the game
+	if (HasWaited) {
+		SM::UnspawnAllPlayers();
+		GalaxyTitles::InitObjects();
+		if (!ServerShutdownRequested && !MatchEndRequested) {
+			Message::SendBigMessage(_("A new player joins the game."), 5000, 0, CUIConfig::EUISound::Default, 0);
+			MB_Sleep(5000);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Revert changes
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.UISequence = OldSequence;
+	MiniMap::Hide();
+	---UpdateClublinks---
+}
+
+// ---------------------------------- //
+/** Create manialink for the interface module
+ *
+ *	@return		The interface manialink
+ */
+Text CreateManialinkInterface() {
+	return """
+<manialink version="2" name="Confirmed:Interface">
+<stylesheet>
+	<style class="ConfirmMessage" sizen="180" halign="center" valign="center2" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
+</stylesheet>
+
+<frame id="Frame_ConfirmMessage" posn="0 70 5">
+	<label class="ConfirmMessage" id="Label_ConfirmMessage"/>
+	<label class="ConfirmMessage" id="Label_ConfirmMessagePrev"/>
+</frame>
+
+<frame id="Frame_NbCoinsSpawned#1" posn="-4 80">
+	<quad sizen="5 5" halign="center" valign="center" style="Icons64x64_2" substyle="UnknownElimination"/>
+	<label posn="-3" class="ConfirmMessage" halign="right" id="Label_NbCoinsSpawned#1" text="0"/>
+</frame>
+
+<frame id="Frame_NbCoinsSpawned#2" posn="4 80">
+	<quad sizen="5 5" halign="center" valign="center" style="Icons64x64_2" substyle="UnknownElimination"/>
+	<label posn="3" class="ConfirmMessage" halign="left" id="Label_NbCoinsSpawned#2" text="0"/>
+</frame>
+
+<script><!--
+/**
+ *	Confirmed: Interface
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Label_ConfirmMessage <=> (Page.GetFirstChild("Label_ConfirmMessage") as CMlLabel);
+declare Label_ConfirmMessagePrev <=> (Page.GetFirstChild("Label_ConfirmMessagePrev") as CMlLabel);
+declare Label_NbCoinsSpawned = [
+	1 => (Page.GetFirstChild("Label_NbCoinsSpawned#1") as CMlLabel),
+	2 => (Page.GetFirstChild("Label_NbCoinsSpawned#2") as CMlLabel)
+];
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_Confirmed_MessageEndTime for Teams[0];
+declare netread Text[] Net_Confirmed_MessagePlayersLogins for Teams[0];
+declare netread Integer[] Net_Confirmed_MessagePlayersClans for Teams[0];
+declare netread Integer[Integer] Net_Confirmed_NbCoinsSpawned for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare UpdateMessage = False;
+declare LastPickerLogin = "";
+declare LastPickerClan = 0;
+declare LastCoinLogin = "";
+declare LastCoinClan = 0;
+declare CurrentConfirmMessage = "";
+declare NbCoinsSpawned = [1 => 0, 2 => 0];
+
+/// Update
+declare PrevMessageEndTime = -1;
+declare PrevConfirmMessage = "";
+declare PrevGUIPlayerLogin = "";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Play sound on new message
+if (PrevMessageEndTime != Net_Confirmed_MessageEndTime) {
+	PrevMessageEndTime = Net_Confirmed_MessageEndTime;
+	UpdateMessage = True;
+	
+	if (GameTime < Net_Confirmed_MessageEndTime) {
+		if (
+			Net_Confirmed_MessagePlayersLogins.count >= 2 &&
+			Net_Confirmed_MessagePlayersClans.count >= 2
+		) {
+			LastPickerLogin	= Net_Confirmed_MessagePlayersLogins[0];
+			LastCoinLogin	= Net_Confirmed_MessagePlayersLogins[1];
+			LastPickerClan	= Net_Confirmed_MessagePlayersClans[0];
+			LastCoinClan	= Net_Confirmed_MessagePlayersClans[1];
+		}
+		
+		// ---------------------------------- //
+		// Play sound 
+		if (LastPickerClan != 0 && LastCoinClan != 0) {
+			declare IsDenial = LastPickerClan == LastCoinClan;
+			declare IsOpponent = GUIPlayer != Null && GUIPlayer.CurrentClan != LastPickerClan;
+			
+			if (!IsDenial) {
+				if (!IsOpponent) PlayUiSound(::EUISound::Checkpoint, 0, 2.5);
+				else PlayUiSound(::EUISound::Checkpoint, 1, 2.5);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update GUIPlayer
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerLogin != GUIPlayer.Login) {
+		PrevGUIPlayerLogin = GUIPlayer.Login;
+		UpdateMessage = True;
+	}
+}
+// Reset player
+else if (PrevGUIPlayerLogin != "") {
+	PrevGUIPlayerLogin = "";
+	UpdateMessage = True;
+}
+
+// ---------------------------------- //
+// Set new message
+if (UpdateMessage) {
+	UpdateMessage = False;
+	declare PlayerPickerName = GetPlayerName(LastPickerLogin);
+	declare PlayerCoinName = GetPlayerName(LastCoinLogin);
+	
+	// ---------------------------------- //
+	// Elimination confirmed
+	if (LastPickerClan != LastCoinClan) {
+		// ---------------------------------- //
+		// Confirmed by GUIPlayer
+		if (LastPickerLogin == PrevGUIPlayerLogin) {
+			// Confirmed own elimination
+			if (LastCoinLogin == PrevGUIPlayerLogin)
+				CurrentConfirmMessage = Translations_Get("You have confirmed your elimination");
+			
+			// Confirmed someones elimination
+			else CurrentConfirmMessage = Translations_GetComposed(["You have confirmed $<%1$> elimination", PlayerCoinName]);
+		}
+		// ---------------------------------- //
+		// Confirmed by en enemy
+		else {
+			// Confirmed GUIPlayer elimination
+			if (LastCoinLogin == PrevGUIPlayerLogin)
+				CurrentConfirmMessage = Translations_GetComposed(["$<%1$> has confirmed your elimination", PlayerPickerName]);
+			
+			// Confirmed self elimination
+			else if (LastPickerLogin == LastCoinLogin)
+				CurrentConfirmMessage = Translations_GetComposed(["$<%1$> has confirmed their elimination", PlayerPickerName]);
+				
+			// Confirmed someones elimination
+			else CurrentConfirmMessage = Translations_GetComposed(["$<%1$> has confirmed $<%2$> elimination", PlayerPickerName, PlayerCoinName]);
+		}
+	}
+	// ---------------------------------- //
+	// Elimination denied
+	else {
+		// ---------------------------------- //
+		// Denied by GUIPlayer
+		if (LastPickerLogin == PrevGUIPlayerLogin) {
+			// Denied own elimination
+			if (LastCoinLogin == PrevGUIPlayerLogin)
+				CurrentConfirmMessage = Translations_Get("You have denied your elimination");
+			
+			// Denied someones elimination
+			else CurrentConfirmMessage = Translations_GetComposed(["You have denied $<%1$> elimination", PlayerCoinName]);
+		}
+		// ---------------------------------- //
+		// Denied by en enemy
+		else {
+			// Denied GUIPlayer elimination
+			if (LastCoinLogin == PrevGUIPlayerLogin)
+				CurrentConfirmMessage = Translations_GetComposed(["$<%1$> has denied your elimination", PlayerPickerName]);
+			
+			// Denied self elimination
+			else if (LastPickerLogin == LastCoinLogin)
+				CurrentConfirmMessage = Translations_GetComposed(["$<%1$> has denied their elimination", PlayerPickerName]);
+			
+			// Denied someones elimination
+			else CurrentConfirmMessage = Translations_GetComposed(["$<%1$> has denied $<%2$> elimination", PlayerPickerName, PlayerCoinName]);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Reset message
+if (GameTime > Net_Confirmed_MessageEndTime && CurrentConfirmMessage != "") CurrentConfirmMessage = "";
+
+// ---------------------------------- //
+// Update message
+if (PrevConfirmMessage != CurrentConfirmMessage) {
+	PrevConfirmMessage = CurrentConfirmMessage;
+	
+	// ---------------------------------- //
+	// Labels animation
+	Label_ConfirmMessagePrev.SetText(Label_ConfirmMessage.Value);
+	Label_ConfirmMessage.SetText(CurrentConfirmMessage);
+	
+	LibManialink_AnimStop(Label_ConfirmMessage);
+	LibManialink_AnimStop(Label_ConfirmMessagePrev);
+	
+	Label_ConfirmMessage.Opacity = 0.;
+	Label_ConfirmMessage.RelativePosition.Y = 2.;
+	Label_ConfirmMessagePrev.Opacity = 1.;
+	Label_ConfirmMessagePrev.RelativePosition.Y = 0.;
+	
+	declare PosX = Label_ConfirmMessage.RelativePosition.X;
+	LibManialink_Anim(Label_ConfirmMessage, "<label posn=\""^PosX^" 0\" opacity=\"1\"/>", 125, "EaseLinear");
+	LibManialink_Anim(Label_ConfirmMessagePrev, "<label posn=\""^PosX^" -2\" opacity=\"0\"/>", 125, "EaseLinear");
+}
+
+// ---------------------------------- //
+// Hide labels to hide links
+Label_ConfirmMessage.Visible = Label_ConfirmMessage.Opacity > 0.;
+Label_ConfirmMessagePrev.Visible = Label_ConfirmMessagePrev.Opacity > 0.;
+
+// Update amount of spawned coins
+for (Clan, 1, 2)
+	if (Net_Confirmed_NbCoinsSpawned.existskey(Clan) && NbCoinsSpawned[Clan] != Net_Confirmed_NbCoinsSpawned[Clan]) {
+		NbCoinsSpawned[Clan] = Net_Confirmed_NbCoinsSpawned[Clan];
+		Label_NbCoinsSpawned[Clan].SetText(TL::ToText(NbCoinsSpawned[Clan]));
+	}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get name of a player from their login
+ *
+ *	@param	_Login		Login of the player to get name
+ *
+ *	@return		The player name
+ */
+Text GetPlayerName(Text _Login) {
+	if (_Login == "") return "";
+	foreach (Player in Players) if (Player.User.Login == _Login) return Player.User.Name;
+	return _Login;
+}
+
+{{{Manialink::Animations(["EaseLinear"])}}}
+{{{Translations::InsertToManialink([
+	"You have confirmed your elimination",
+	"You have confirmed $<%1$> elimination",
+	"$<%1$> has confirmed your elimination",
+	"$<%1$> has confirmed their elimination",
+	"$<%1$> has confirmed $<%2$> elimination",
+	"You have denied your elimination",
+	"You have denied $<%1$> elimination",
+	"$<%1$> has denied your elimination",
+	"$<%1$> has denied their elimination",
+	"$<%1$> has denied $<%2$> elimination"
+])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		yield;
+		LibManialink_AnimLoop();
+		+++Yield+++
+	}
+}
+--></script>
+</manialink>""";
+}

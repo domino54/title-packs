@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY BLACKLIST by domino54         //
-//  script version: 2015-12-12            //
+//  script version: 2016-06-23            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
  *	reported and banned for bad behaviour.
  */
 
-#Const Version		"2015-12-12"
+#Const Version		"2016-06-23"
 #Const ScriptName	"Blacklist.Script.txt"
 
 #Include "Libs/domino54/Translations.Script.txt" as Translations
@@ -37,39 +37,22 @@ declare Integer G_LibBlacklist_NextRequestTime;		///< Time of the next blacklist
 declare CHttpRequest G_LibBlacklist_Request;		///< Blacklist document request
 declare Integer G_LibBlacklist_RequestStartTime;	///< Request start time
 declare Boolean G_LibBlacklist_PrevMapLoaded;		///< Previous loaded map status
+declare Text G_LibBlacklist_PrevURLSetting;			///< Previous URL specified in main loop
 
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
 
 // ---------------------------------- //
-// Public
+// Private
 // ---------------------------------- //
-
-// ---------------------------------- //
-/** Return the version number of the script
- *
- *	@return		The version number of the script
- */
-Text GetScriptVersion() {
-	return Version;
-}
-
-// ---------------------------------- //
-/** Return the name of the script
- *
- *	@return		The name of the script
- */
-Text GetScriptName() {
-	return ScriptName;
-}
 
 // ---------------------------------- //
 /** Update blacklist data from XML file
  *
  *	@param	_Result		Request result
  */
-Void UpdateBlacklistFromXML(Text _Result) {
+Void Private_UpdateBlacklistFromXML(Text _Result) {
 	if (_Result == "") return;
 	declare Document = Xml.Create(_Result);
 	if (Document == Null || Document.Root == Null || Document.Root.Name != "blacklist") return;
@@ -91,8 +74,49 @@ Void UpdateBlacklistFromXML(Text _Result) {
 }
 
 // ---------------------------------- //
-/// Library loop
-Void Loop() {
+/** Change blacklist file URL
+ *
+ *	@param	_URL	New blacklist file address
+ */
+Void Private_ChangeBlacklistURL(Text _URL) {
+	if (_URL == "" || !Http.IsValidUrl(_URL)) {
+		G_LibBlacklist_BlacklistURL = C_LibBlacklist_DefaultListURL;
+		return;
+	}
+	G_LibBlacklist_BlacklistURL = _URL;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Library loop
+ *
+ *	@param	_BlacklistURL		Blacklist file address
+ */
+Void Loop(Text _BlacklistURL) {
+	// ---------------------------------- //
+	// Update blacklist URL
+	if (G_LibBlacklist_PrevURLSetting != _BlacklistURL) {
+		G_LibBlacklist_PrevURLSetting = _BlacklistURL;
+		Private_ChangeBlacklistURL(_BlacklistURL);
+	}
+	
 	// ---------------------------------- //
 	// Update blacklist data
 	if (Now >= G_LibBlacklist_NextRequestTime) {
@@ -113,7 +137,7 @@ Void Loop() {
 		// ---------------------------------- //
 		// Request finished
 		if (G_LibBlacklist_Request.IsCompleted) {
-			UpdateBlacklistFromXML(G_LibBlacklist_Request.Result);
+			Private_UpdateBlacklistFromXML(G_LibBlacklist_Request.Result);
 			Http.Destroy(G_LibBlacklist_Request);
 			G_LibBlacklist_Request = Null;
 		}
@@ -159,11 +183,5 @@ Void Loop() {
 }
 
 // ---------------------------------- //
-/** Change blacklist file URL
- *
- *	@param	_URL		New address
- */
-Void ChangeBlacklistURL(Text _URL) {
-	if (_URL == "" || !Http.IsValidUrl(_URL)) return;
-	G_LibBlacklist_BlacklistURL = _URL;
-}
+/// Loop using default blacklist file
+Void Loop() { Loop(C_LibBlacklist_DefaultListURL); }

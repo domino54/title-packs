@@ -86,6 +86,28 @@ Text Translate(Text _Language, Text _Sentence) {
 }
 
 // ---------------------------------- //
+/** Return translation using custom Compose function
+ *
+ *	@param	_Language		The language sentences will be translated to
+ *	@param	_Arguments		The arguments for the compose function
+ *
+ *	@return		Translated sentence
+ */
+Text Translate(Text _Language, Text[] _Arguments) {
+	if (_Arguments.count <= 0 || _Language == "" || _Language == "en" || _Language == "en_GB") return "";
+	if (_Arguments.count == 1) return Translate(_Language, _Arguments[0]);
+	if (_Arguments[0] == "") return "";
+	declare Base = TL::GetTranslatedText(Translate(_Language, _Arguments[0]));
+	
+	foreach (I => Argument in _Arguments) {
+		if (I == 0) continue;
+		Base = TL::Replace(Base, "%"^I, TL::GetTranslatedText(Translate(_Language, Argument)));
+	}
+	
+	return Base;
+}
+
+// ---------------------------------- //
 /** Return translation using Compose function
  *
  *	@param	_Language		The language sentences will be translated to
@@ -98,23 +120,7 @@ Text Translate(Text _Language, Text _Sentence) {
 Text Compose(Text _Language, Text _Prefix, Text[] _Arguments, Text _Suffix) {
 	if (_Arguments.count <= 0) return _Prefix^_Suffix;
 	if (_Arguments.count == 1) return _Prefix^Translate(_Language, _Arguments[0])^_Suffix;
-	
-	// Translate all arguments
-	declare Text[] Args;
-	foreach (I => Argument in _Arguments) if (I <= 5) Args.add(Translate(_Language, Argument));
-	
-	// Attach prefix and suffix
-	Args[0] = _Prefix^Args[0]^_Suffix;
-	
-	// Compose arguments
-	switch (Args.count - 1) {
-		case 5 : return TL::Compose(Args[0], Args[1], Args[2], Args[3], Args[4], Args[5]);
-		case 4 : return TL::Compose(Args[0], Args[1], Args[2], Args[3], Args[4]);
-		case 3 : return TL::Compose(Args[0], Args[1], Args[2], Args[3]);
-		case 2 : return TL::Compose(Args[0], Args[1], Args[2]);
-		case 1 : return TL::Compose(Args[0], Args[1]);
-	}
-	return TL::Compose(Args[0]);
+	return _Prefix^Translate(_Language, _Arguments)^_Suffix;
 }
 
 // ---------------------------------- //
@@ -530,19 +536,19 @@ Text Translations_Get(Text _Sentence) {
 
 Text Translations_GetComposed(Text[] _Arguments) {
 	if (_Arguments.count == 1) return Translations_Get(_Arguments[0]);
+	declare Base = TL::GetTranslatedText(Translations_Get(_Arguments[0]));
+	if (Base == "") return "";
 	
-	declare Text[] Args;
-	foreach (I => Argument in _Arguments) if (I <= 5) Args.add(Translations_Get(Argument));
-	
-	switch (Args.count - 1) {
-		case 5 : return TL::Compose(Args[0], Args[1], Args[2], Args[3], Args[4], Args[5]);
-		case 4 : return TL::Compose(Args[0], Args[1], Args[2], Args[3], Args[4]);
-		case 3 : return TL::Compose(Args[0], Args[1], Args[2], Args[3]);
-		case 2 : return TL::Compose(Args[0], Args[1], Args[2]);
-		case 1 : return TL::Compose(Args[0], Args[1]);
+	foreach (I => Argument in _Arguments) {
+		if (I == 0) continue;
+		Base = TL::Replace(Base, "%"^I, TL::GetTranslatedText(Translations_Get(Argument)));
 	}
-	return TL::GetTranslatedText(TL::Compose(Args[0]));
+	
+	return Base;
 }
+
+Text Translate(Text _String) { return Translations_Get(_String); }
+Text Translate(Text[] _Arguments) { return Translations_GetComposed(_Arguments); }
 
 // ---------------------------------- //
 // Translations Stop

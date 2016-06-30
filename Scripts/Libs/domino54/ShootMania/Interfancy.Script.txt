@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2016-06-23            //
+//  script version: 2016-06-30            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2016-06-23"
+#Const	Version		"2016-06-30"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -526,9 +526,9 @@ foreach (Module in C_GaugesModules) {
 	// ---------------------------------- //
 	// Update information text
 	if (!PrevModuleInfoText.existskey(Module) || PrevModuleInfoText[Module] != ModuleInfoText[Module]) {
-		Label_ModuleInfoText[Module].SetText("$t"^Translations_Get(ModuleInfoText[Module]));
+		Label_ModuleInfoText[Module].SetText("$t"^Translate(ModuleInfoText[Module]));
 		if (PrevModuleInfoText.existskey(Module))
-			Label_ModuleInfoGhost[Module].SetText("$t"^Translations_Get(PrevModuleInfoText[Module]));
+			Label_ModuleInfoGhost[Module].SetText("$t"^Translate(PrevModuleInfoText[Module]));
 			
 		LibManialink_AnimStop(Label_ModuleInfoText[Module]);
 		LibManialink_AnimStop(Label_ModuleInfoGhost[Module]);
@@ -765,6 +765,8 @@ Text Private_CreateManialinkScoreSummary() {
 	<quad posn="10" class="bg" image="{{{C_ImgBase}}}UiScoreSummaryRight.png" id="Quad_SummaryBgRight"/>
 	<label posn="-13 -3" valign="center2" class="font" text="0" halign="right" id="Label_SummaryPtsLeft"/>
 	<label posn="13 -3" valign="center2" class="font" text="0" id="Label_SummaryPtsRight"/>
+	<label posn="-13 -7" valign="center2" class="font" textsize="2" halign="right" id="Label_SummaryRoundLeft" hidden="1"/>
+	<label posn="13 -7" valign="center2" class="font" textsize="2" id="Label_SummaryRoundRight" hidden="1"/>
 </frame>
 
 <script><!--
@@ -808,6 +810,8 @@ main() {
 	declare Quad_SummaryBgRight		<=> (Page.GetFirstChild("Quad_SummaryBgRight")		as CMlQuad);
 	declare Label_SummaryPtsLeft	<=> (Page.GetFirstChild("Label_SummaryPtsLeft")		as CMlLabel);
 	declare Label_SummaryPtsRight	<=> (Page.GetFirstChild("Label_SummaryPtsRight")	as CMlLabel);
+	declare Label_SummaryRoundLeft	<=> (Page.GetFirstChild("Label_SummaryRoundLeft")	as CMlLabel);
+	declare Label_SummaryRoundRight	<=> (Page.GetFirstChild("Label_SummaryRoundRight")	as CMlLabel);
 	
 	// ---------------------------------- //
 	// Netcode
@@ -818,11 +822,13 @@ main() {
 	// Variables
 	declare Boolean ScoreSummary_Display;
 	declare Boolean ShowScoreSummary;
+	declare ClanRoundScores = [1 => 0, 2 => 0];
 	
 	declare PrevSettingsUpdate = -1;
 	declare PrevShowScoreSummary = False;
 	declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
 	declare PrevClanScores = [1 => 0, 2 => 0];
+	declare PrevClanRoundScores = [1 => 0, 2 => 0];
 	
 	declare StartTime = Now;
 	
@@ -840,6 +846,10 @@ main() {
 			foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 				switch (SettingName) {
 					case "ScoreSummary_Display" : ScoreSummary_Display = (SettingValue == "True");
+					case "ScoreSummary_ShowRoundPoints" : {
+						Label_SummaryRoundLeft.Visible = SettingValue == "True";
+						Label_SummaryRoundRight.Visible = Label_SummaryRoundLeft.Visible;
+					}
 				}
 			}
 		}
@@ -868,6 +878,8 @@ main() {
 		
 		if (!ShowScoreSummary) continue;
 		
+		ClanRoundScores = [1 => UI.ScoreSummary_RoundPoints1, 2 => UI.ScoreSummary_RoundPoints2];
+		
 		// ---------------------------------- //
 		// Update teams colors
 		foreach (I => Team in Teams) if (PrevTeamsColors[I] != Team.ColorPrimary) {
@@ -880,29 +892,44 @@ main() {
 			Quad_SummaryBgRight.Colorize = Brightness(Teams[1].ColorPrimary, 1.5);
 		}
 		
-		// ---------------------------------- //
-		// Set scores
-		for (Clan, 1, 2) if (PrevClanScores[Clan] != ClanScores[Clan]) {
-			PrevClanScores[Clan] = ClanScores[Clan];
-			declare CMlLabel Label;
-			declare CMlQuad Quad;
-			
-			switch (Clan) {
-				case 1 : {
-					Label = Label_SummaryPtsLeft;
-					Quad = Quad_SummaryBgLeft;
+		for (Clan, 1, 2) {
+			// ---------------------------------- //
+			// Set scores
+			if (PrevClanScores[Clan] != ClanScores[Clan]) {
+				PrevClanScores[Clan] = ClanScores[Clan];
+				declare CMlLabel Label;
+				declare CMlQuad Quad;
+				
+				switch (Clan) {
+					case 1 : {
+						Label = Label_SummaryPtsLeft;
+						Quad = Quad_SummaryBgLeft;
+					}
+					case 2 : {
+						Label = Label_SummaryPtsRight;
+						Quad = Quad_SummaryBgRight;
+					}
 				}
-				case 2 : {
-					Label = Label_SummaryPtsRight;
-					Quad = Quad_SummaryBgRight;
-				}
+				
+				Label.SetText(TL::ToText(ClanScores[Clan]));
+				
+				Quad.Colorize = <1., 1., 1.>;
+				declare TargetColor = TL::ColorToText(Brightness(Teams[Clan - 1].ColorPrimary, 1.5));
+				LibManialink_Anim(Quad, "<quad colorize=\""^TargetColor^"\"/>", 250, "EaseLinear");
 			}
 			
-			Label.SetText(TL::ToText(ClanScores[Clan]));
-			
-			Quad.Colorize = <1., 1., 1.>;
-			declare TargetColor = TL::ColorToText(Brightness(Teams[Clan - 1].ColorPrimary, 1.5));
-			LibManialink_Anim(Quad, "<quad colorize=\""^TargetColor^"\"/>", 250, "EaseLinear");
+			// ---------------------------------- //
+			// Set round scores
+			if (PrevClanRoundScores[Clan] != ClanRoundScores[Clan]) {
+				PrevClanRoundScores[Clan] = ClanRoundScores[Clan];
+				
+				declare CMlLabel Label;
+				switch (Clan) {
+					case 1 : Label = Label_SummaryRoundLeft;
+					case 2 : Label = Label_SummaryRoundRight;
+				}
+				Label.SetText(TL::ToText(ML::Max(0, ClanRoundScores[Clan])));
+			}
 		}
 	}
 }
@@ -1463,7 +1490,7 @@ if (PrevCrosshairNoteTime != CrosshairNoteTime) {
 if (UpdateNote) {
 	UpdateNote = False;
 	if (PrevCrosshairNoteTime > 0 && Net_LibInterfancy_CrosshairNote.existskey(GUIPlayer.Login))
-		CrosshairNote = TL::GetTranslatedText(Translations_GetComposed(Net_LibInterfancy_CrosshairNote[GUIPlayer.Login]));
+		CrosshairNote = TL::GetTranslatedText(Translate(Net_LibInterfancy_CrosshairNote[GUIPlayer.Login]));
 	else
 		CrosshairNote = "";
 }
@@ -1486,6 +1513,9 @@ if (PrevCrosshairNote != CrosshairNote) {
 	LibManialink_Anim(Label_NearMissMessage, "<label posn=\"0 0\" opacity=\"1\"/>", 125, "EaseLinear");
 	LibManialink_Anim(Label_NearMissGhost, "<label posn=\"0 -2\" opacity=\"0\"/>", 125, "EaseLinear");
 }
+
+Label_NearMissMessage.Visible = Label_NearMissMessage.Opacity > 0;
+Label_NearMissGhost.Visible = Label_NearMissGhost.Opacity > 0;
 ***
 
 // ---------------------------------- //
@@ -1610,6 +1640,15 @@ Void SetGaugesSoundPath(Text[Text] _SoundsPath) {
  */
 Void SetBoostIconImage(Text _IconImage) {
 	Private_SetModuleSetting("Gauges_BoostIcon", _IconImage);
+}
+
+// ---------------------------------- //
+/** Set round points visibility in scores summary
+ *
+ *	@param	_Visible	Round points visibility
+ */
+Void SetRoundPointsVisibility(Boolean _Visible) {
+	Private_SetModuleSetting("ScoreSummary_ShowRoundPoints", TL::ToText(_Visible));
 }
 
 // ---------------------------------- //

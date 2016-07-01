@@ -1,0 +1,239 @@
+// -------------------------------------- //
+//  GOLDEN DUNK V2 ARENA by domino54      //
+//  script version: 2016-07-01            //
+//  original concept by Steeffeen         //
+// -------------------------------------- //
+
+#RequireContext CSmMapType
+
+#Const Version			"2016-07-01"
+#Const MapTypeVersion	1
+#Const ScriptName		"GoldenDunkV2Arena.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+// Custom libraries
+#Include "Libs/domino54/EditAnchors.Script.txt" as EditAnchors
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_Rules "$<%11.$> Place exactly one Spawn #1 and one Spawn #2.\n$<%12.$> Place one Checkpoint in the middle - here balls will be spawned.\n$<%13.$> Click the icon next to block properties button and edit hoop areas for both sides.\n$<%14.$> Hoop areas must be marked with OffZone as well.\n$<%15.$> You can optionally place Goal #1 and Goal #2 to let the players construct OffZone shield."
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Initialize the anchors
+Void InitAnchors() {
+	foreach (Anchor in AnchorData) {
+		if (Anchor.DefaultTag == "Spawn") {
+			Anchor.Tag = Anchor.DefaultTag;
+			if (Anchor.Order < 1 && Anchor.Order > 2) Anchor.Order = 1;
+		} else if (Anchor.DefaultTag == "Goal") {
+			if (Anchor.Tag != "Goal" && Anchor.Tag != "Checkpoint") Anchor.Tag = Anchor.DefaultTag;
+			if (Anchor.Tag == "Goal" && Anchor.Order < 1 && Anchor.Order > 2) Anchor.Order = 1;
+			if (Anchor.Tag == "Checkpoint" && Anchor.Order != 0) Anchor.Order = 0;
+		} else if (Anchor.DefaultTag == "Checkpoint") {
+			if (Anchor.Tag != "Checkpoint" && Anchor.Tag != "Checkpoint") Anchor.Tag = "Checkpoint";
+			if (Anchor.Tag == "Checkpoint" && Anchor.Order != 0) Anchor.Order = 0;
+			if (Anchor.Tag == "Goal" && Anchor.Order < 1 && Anchor.Order > 2) Anchor.Order = 1;
+		} else {
+			Anchor.Tag = Anchor.DefaultTag;
+			Anchor.Order = Anchor.DefaultOrder;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Check if the map is valid
+Void UpdateValidability() {
+	ValidationStatus = CSmMapType::ValidationStatus::NotValidable;
+	InitAnchors();
+	Anchor::UpdateAnchorCounts();
+	
+	// ---------------------------------- //
+	// Get the amount of Goals
+	declare ClansNbGoals = [1 => 0, 2 => 0];
+	foreach (Data in AnchorData)	
+		if (Data.Tag == "Goal" && ClansNbGoals.existskey(Data.Order)) ClansNbGoals[Data.Order] += 1;
+	
+	// ---------------------------------- //
+	// Check if map has exactly one landmark type per team
+	for (I, 1, 2)
+		if (!Anchor::HasExactlyOneAnchor("Spawn", I, TL::Compose(_("You must place exactly one Spawn #%1"), ""^I))) return;
+	
+	// ---------------------------------- //
+	// Check if map has exactly one checkpoint
+	if (!Anchor::HasExactlyOneAnchor("Checkpoint", 0, _("You must place exactly one Checkpoint"))) return;
+	
+	// ---------------------------------- //
+	// Goals amount doesn't match
+	if ((ClansNbGoals[1] > 0 || ClansNbGoals[2] > 0) && (ClansNbGoals[1] != 1 || ClansNbGoals[2] != 1)) {
+		ValidationStatus = CSmMapType::ValidationStatus::NotValidable;
+		ValidabilityRequirementsMessage = _("If your map is using Goals, you must place exactly one Goal #1 and Goal #2");
+		return;
+	}
+	
+	// ---------------------------------- //
+	// Check if the map has correct dunk positions
+	declare metadata MetaData_DunkPositions for Map = [1 => <0., 0., 0.>, 2 => <0., 0., 0.>];
+	for (I, 1, 2) for (J, 0, 1) if (MetaData_DunkPositions[I][J*2] <= 0 || MetaData_DunkPositions[I][J*2] > 47) {
+		ValidationStatus = CSmMapType::ValidationStatus::NotValidable;
+		ValidabilityRequirementsMessage = _("You must specify valid dunk areas positions");
+		return;
+	}
+	
+	// Map is valid
+	ValidationStatus = CSmMapType::ValidationStatus::Validated;	
+}
+
+
+// ---------------------------------- //
+/// Show the anchor edition manialink
+Void EditAnchorData(Ident _EditedAnchorDataId) {
+	if (_EditedAnchorDataId == NullId) return;
+	UpdateValidability();
+	EditAnchors::EditAnchor(_EditedAnchorDataId);
+	UpdateValidability();
+}
+
+Text CreateManialinkEditDunkLocations() {
+	return """
+<manialink version="2">
+<stylesheet>
+	<style class="font" valign="center2" textsize="1" textcolor="FFF"/>
+</stylesheet>
+<frame posn="-160 78">
+	<quad sizen="44 18" style="Bgs1InRace" substyle="BgWindow2"/>
+	<label posn="1 -3" class="font" text="Dunk areas positions"/>
+	<frame posn="0 -7">
+		<label posn="1" class="font" text="Side #1"/>
+		<label posn="22" class="font" halign="right" text="X:"/>
+		<label posn="34" class="font" halign="right" text="Z:"/>
+		<entry posn="23" sizen="8 3" class="font" default="0" id="Entry_Side1DunkX"/>
+		<entry posn="35" sizen="8 3" class="font" default="0" id="Entry_Side1DunkZ"/>
+	</frame>
+	<frame posn="0 -11">
+		<label posn="1" class="font" text="Side #2"/>
+		<label posn="22" class="font" halign="right" text="X:"/>
+		<label posn="34" class="font" halign="right" text="Z:"/>
+		<entry posn="23" sizen="8 3" class="font" default="0" id="Entry_Side2DunkX"/>
+		<entry posn="35" sizen="8 3" class="font" default="0" id="Entry_Side2DunkZ"/>
+	</frame>
+	<frame posn="0 -15">
+		<label posn="1" class="font" text="Cursor"/>
+		<label posn="22" class="font" halign="right" text="X:"/>
+		<label posn="34" class="font" halign="right" text="Z:"/>
+		<label posn="23" class="font" text="0" id="Label_CursorPositionX"/>
+		<label posn="35" class="font" text="0" id="Label_CursorPositionZ"/>
+	</frame>
+</frame>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	MapType::SetVersion(MapTypeVersion);
+	UpdateValidability();
+	CustomEditAnchorData = True;
+	
+	EditAnchors::SetRulesText(TL::Compose(C_Rules, "$o$070"));
+	EditAnchors::SetAvailableTags([
+		"Spawn" => ["Spawn #1", "Spawn #2"],
+		"Goal" => ["Goal #1", "Goal #2", "Checkpoint"],
+		"Checkpoint" => ["Checkpoint", "Goal #1", "Goal #2"]
+	]);
+	
+	// ---------------------------------- //
+	// Save additional data in the map file
+	declare metadata MetaData_DunkPositions for Map = [1 => <0., 0., 0.>, 2 => <0., 0., 0.>];
+	
+	// ---------------------------------- //
+	// Create layer for editing dunk locations
+	declare LayerEditDunkPositions = UILayerCreate();
+	LayerEditDunkPositions.ManialinkPage = CreateManialinkEditDunkLocations();
+	declare LayerPage <=> LayerEditDunkPositions.LocalPage;
+	yield;
+	
+	// ---------------------------------- //
+	// Load manialink elements
+	declare Label_CursorPositionX <=> (LayerPage.GetFirstChild("Label_CursorPositionX") as CMlLabel);
+	declare Label_CursorPositionZ <=> (LayerPage.GetFirstChild("Label_CursorPositionZ") as CMlLabel);
+	declare Entry_Side1DunkX <=> (LayerPage.GetFirstChild("Entry_Side1DunkX") as CMlEntry);
+	declare Entry_Side1DunkZ <=> (LayerPage.GetFirstChild("Entry_Side1DunkZ") as CMlEntry);
+	declare Entry_Side2DunkX <=> (LayerPage.GetFirstChild("Entry_Side2DunkX") as CMlEntry);
+	declare Entry_Side2DunkZ <=> (LayerPage.GetFirstChild("Entry_Side2DunkZ") as CMlEntry);
+	
+	// Init dunk positions
+	Entry_Side1DunkX.Value = TL::FormatReal(MetaData_DunkPositions[1].X, 0, True, True);
+	Entry_Side1DunkZ.Value = TL::FormatReal(MetaData_DunkPositions[1].Z, 0, True, True);
+	Entry_Side2DunkX.Value = TL::FormatReal(MetaData_DunkPositions[2].X, 0, True, True);
+	Entry_Side2DunkZ.Value = TL::FormatReal(MetaData_DunkPositions[2].Z, 0, True, True);
+	
+	declare PrevEntry_Side1DunkXValue = Entry_Side1DunkX.Value;
+	declare PrevEntry_Side1DunkZValue = Entry_Side1DunkZ.Value;
+	declare PrevEntry_Side2DunkXValue = Entry_Side2DunkX.Value;
+	declare PrevEntry_Side2DunkZValue = Entry_Side2DunkZ.Value;
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			switch (Event.Type) {
+				case CPluginEvent::Type::MapModified	: UpdateValidability();			
+				case CPluginEvent::Type::EditAnchor		: EditAnchorData(Event.EditedAnchorDataId);
+			}
+		}
+		
+		// ---------------------------------- //
+		// Display current position of the cursor
+		Label_CursorPositionX.Value = TL::ToText(CursorCoord.X);
+		Label_CursorPositionZ.Value = TL::ToText(CursorCoord.Z);
+		
+		// ---------------------------------- //
+		// Update Side 1 X position
+		if (PrevEntry_Side1DunkXValue != Entry_Side1DunkX.Value) {
+			MetaData_DunkPositions[1].X = TL::ToReal(Entry_Side1DunkX.Value);
+			Entry_Side1DunkX.Value = TL::FormatReal(MetaData_DunkPositions[1].X, 5, True, True);
+			PrevEntry_Side1DunkXValue = Entry_Side1DunkX.Value;
+			UpdateValidability();
+		}
+		
+		// ---------------------------------- //
+		// Update Side 1 Z position
+		if (PrevEntry_Side1DunkZValue != Entry_Side1DunkZ.Value) {
+			MetaData_DunkPositions[1].Z = TL::ToReal(Entry_Side1DunkZ.Value);
+			Entry_Side1DunkZ.Value = TL::FormatReal(MetaData_DunkPositions[1].Z, 5, True, True);
+			PrevEntry_Side1DunkZValue = Entry_Side1DunkZ.Value;
+			UpdateValidability();
+		}
+		
+		// ---------------------------------- //
+		// Update Side 2 X position
+		if (PrevEntry_Side2DunkXValue != Entry_Side2DunkX.Value) {
+			MetaData_DunkPositions[2].X = TL::ToReal(Entry_Side2DunkX.Value);
+			Entry_Side2DunkX.Value = TL::FormatReal(MetaData_DunkPositions[2].X, 5, True, True);
+			PrevEntry_Side1DunkXValue = Entry_Side1DunkX.Value;
+			UpdateValidability();
+		}
+		
+		// ---------------------------------- //
+		// Update Side 2 Z position
+		if (PrevEntry_Side2DunkZValue != Entry_Side2DunkZ.Value) {
+			MetaData_DunkPositions[2].Z = TL::ToReal(Entry_Side1DunkZ.Value);
+			Entry_Side2DunkZ.Value = TL::FormatReal(MetaData_DunkPositions[2].Z, 5, True, True);
+			PrevEntry_Side2DunkZValue = Entry_Side2DunkZ.Value;
+			UpdateValidability();
+		}
+	}
+}

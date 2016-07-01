@@ -1,0 +1,280 @@
+// -------------------------------------- //
+//  LIBRARY EDIT ANCHORS by domino54      //
+//  script version: 2016-07-01            //
+// -------------------------------------- //
+
+/**
+ *	Used in maptypes to easily create anchor edit manialinks.
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const Version		"2016-07-01"
+#Const ScriptName	"EditAnchors.Script.txt"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibEditAnchors_WindowWidth		70.
+#Const C_LibEditAnchors_WindowPosnX		124.
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text G_LibEditAnchors_Rules;
+declare Text[][Text] G_LibEditAnchors_AvailableTags;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Set the maptype rules
+ *
+ *	@param	_Rules		Rules of the anchors placement
+ */
+Void SetRulesText(Text _Rules) { G_LibEditAnchors_Rules = _Rules; }
+
+// ---------------------------------- //
+/** Set available tags for anchors
+ *
+ *	@param	_AvailableTags		Available tags for anchors
+ */
+Void SetAvailableTags(Text[][Text] _AvailableTags) { G_LibEditAnchors_AvailableTags = _AvailableTags; }
+
+// ---------------------------------- //
+/** Edit specific anchor data
+ *
+ *	@param	_AnchorId			Id of the anchor to edit
+ *	@param	_DefaultTag			Default tag of the anchor
+ *	@param	_AvailableTags		Available tags to set on anchor
+ */
+Void EditAnchor(Ident _AnchorId, Text _DefaultTag, Text[] _AvailableTags) {
+	if (_AnchorId == NullId || _DefaultTag == "" || !AnchorData.existskey(_AnchorId)) return;
+	
+	declare Anchor <=> AnchorData[_AnchorId];
+	declare Text TagsLabels;
+	
+	// ---------------------------------- //
+	// Get the currently choosen tag
+	declare SelectedTag = Anchor.Tag;
+	if (Anchor.Order > 0) SelectedTag ^= " #"^Anchor.Order;
+	
+	// ---------------------------------- //
+	// Selected anchor is not editable
+	if (_AvailableTags.count <= 0)
+		TagsLabels = """<label halign="center" valign="center2" textsize="2" textcolor="000" text="This anchor is not editable" translate="1"/>""";
+	
+	// ---------------------------------- //
+	// Show available tags to set
+	else foreach (I => Tag in _AvailableTags)
+		TagsLabels ^= """<label
+			posn="0 {{{I * -5}}}"
+			halign="center" valign="center2" style="TextButtonNav" textsize="3" textcolor="000"
+			text="{{{Tag}}}" class="Option" id="{{{I}}}" ScriptEvents="1"
+		/>""";
+	
+	// ---------------------------------- //
+	// Create anchor edit manialink
+	declare EditAnchorLayer <=> UILayerCreate();
+	
+	declare SelectTagHeight = ML::Max(1, _AvailableTags.count) * 5 + 12;
+	
+	EditAnchorLayer.ManialinkPage = """
+<manialink version="2" name="EditAnchors">
+<frame id="Frame_EditAnchor" posn="{{{C_LibEditAnchors_WindowPosnX}}} -90">
+	<frame id="Frame_SelectTag">
+		<quad
+			posn="0 2" sizen="{{{C_LibEditAnchors_WindowWidth + 4}}} 12" halign="center"
+			style="Bgs1InRace" substyle="BgTitle3_1" ScriptEvents="1"
+		/>
+		<label
+			posn="0 -4 1" halign="center" valign="center2"
+			style="TextTitle3" text="{{{TL::Compose("%1 %2", _("Edit"), _DefaultTag)}}}"
+		/>
+		<quad
+			posn="0 -9" sizen="{{{C_LibEditAnchors_WindowWidth}}} {{{SelectTagHeight}}}" halign="center"
+			style="Bgs1InRace" substyle="BgTitlePage" ScriptEvents="1"
+		/>
+		<frame posn="0 -14 1">{{{TagsLabels}}}</frame>
+		<label
+			posn="-15 -{{{SelectTagHeight+4}}}" halign="center" valign="center2"
+			style="CardButtonSmallS" id="Label_Confirm" translate="1" text="OK" ScriptEvents="1"
+		/>
+		<label
+			posn="15 -{{{SelectTagHeight+4}}}" halign="center" valign="center2"
+			style="CardButtonSmallS" id="Label_Cancel" translate="1" text="Cancel" ScriptEvents="1"
+		/>
+	</frame>
+	<frame id="Frame_Rules" posn="0 -{{{SelectTagHeight+14}}}" hidden="{{{G_LibEditAnchors_Rules == ""}}}">
+		<quad
+			posn="0 2" sizen="{{{C_LibEditAnchors_WindowWidth+4}}} 12" halign="center"
+			style="Bgs1InRace" substyle="BgTitle3_1" ScriptEvents="1"
+		/>
+		<label
+			posn="0 -4 1" halign="center" valign="center2"
+			style="TextTitle3" text="Rules" translate="1"
+		/>
+		<quad
+			posn="0 -9" sizen="{{{C_LibEditAnchors_WindowWidth}}}" halign="center"
+			style="Bgs1InRace" substyle="BgTitlePage" ScriptEvents="1" id="Quad_RulesBg"
+		/>
+		<label
+			posn="{{{-C_LibEditAnchors_WindowWidth/2+2}}} -11" sizen="{{{C_LibEditAnchors_WindowWidth-4}}}"
+			id="Label_Rules" text="{{{G_LibEditAnchors_Rules}}}" autonewline="1" textsize="1" textcolor="222"
+		/>
+	</frame>
+</frame>
+
+<script><!--
+/**
+ *	EditAnchors
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load interface elements
+	declare Frame_EditAnchor <=> (Page.GetFirstChild("Frame_EditAnchor") as CMlFrame);
+	declare Label_Confirm <=> (Page.GetFirstChild("Label_Confirm") as CMlLabel);
+	declare Label_Cancel <=> (Page.GetFirstChild("Label_Cancel") as CMlLabel);
+	declare Label_Rules <=> (Page.GetFirstChild("Label_Rules") as CMlLabel);
+	declare Quad_RulesBg <=> (Page.GetFirstChild("Quad_RulesBg") as CMlQuad);
+	
+	declare CMlLabel[] Label_Options;
+	for (I, 0, {{{_AvailableTags.count}}} - 1)
+		Label_Options.add((Page.GetFirstChild(TL::ToText(I)) as CMlLabel));
+	
+	// ---------------------------------- //
+	// Variables
+	declare Boolean CloseManialink for Page;
+	declare Integer SelectedOption for Page;
+	declare OptionBackup = SelectedOption;
+	declare PrevOption = -1;
+	
+	// ---------------------------------- //
+	// Initialize interface
+	yield;
+	Quad_RulesBg.Size.Y = Label_Rules.ValueLineCount * 3. + 3;
+	Frame_EditAnchor.RelativePosition.Y = (25 + Quad_RulesBg.Size.Y + {{{SelectTagHeight}}}) / 2;
+	
+	if ({{{_AvailableTags.count <= 0}}}) {
+		Label_Cancel.Hide();
+		Label_Confirm.RelativePosition.X = 0.;
+	}
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Manage events
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// Mouse click
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				// ---------------------------------- //
+				// Select option
+				if (Event.Control.HasClass("Option"))
+					SelectedOption = TL::ToInteger(Event.ControlId);
+				
+				// ---------------------------------- //
+				// Apply changes
+				else if (Event.ControlId == "Label_Confirm")
+					CloseManialink = True;
+				
+				// ---------------------------------- //
+				// Cancel changes
+				else if (Event.ControlId == "Label_Cancel") {
+					SelectedOption = OptionBackup;
+					CloseManialink = True;
+				}
+			}
+		}
+		
+		// ---------------------------------- //
+		// Update selected option
+		if (PrevOption != SelectedOption) {
+			PrevOption = SelectedOption;
+			foreach (I => Label in Label_Options) {
+				if (I == SelectedOption) Label.TextColor = <0., .5, 0.>;
+				else Label.TextColor = <0., 0., 0.>;
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+	
+	// ---------------------------------- //
+	// Communication between the manialink and the maptype
+	declare Boolean CloseManialink for EditAnchorLayer.LocalPage;
+	declare Integer SelectedOption for EditAnchorLayer.LocalPage;
+	CloseManialink = False;
+	SelectedOption = 0;
+	
+	if (_AvailableTags.exists(SelectedTag)) SelectedOption = _AvailableTags.keyof(SelectedTag);
+	
+	// ---------------------------------- //
+	// Pause script until user selectes an option in the manialink
+	while (!CloseManialink) yield;
+	
+	if (_AvailableTags.count <= 0 || !_AvailableTags.existskey(SelectedOption)) {
+		UILayerDestroy(EditAnchorLayer);
+		return;
+	}
+	
+	// ---------------------------------- //
+	// Update the anchor data
+	declare TagData = TL::Split(" #", _AvailableTags[SelectedOption]);
+	Anchor.Tag = _DefaultTag;
+	Anchor.Order = 0;
+	
+	if (TagData.existskey(0)) Anchor.Tag = TagData[0];
+	if (TagData.existskey(1)) Anchor.Order = TL::ToInteger(TagData[1]);
+	
+	// Destroy interface layer
+	UILayerDestroy(EditAnchorLayer);
+}
+
+// ---------------------------------- //
+/** Automatically create manialink from previously specified data
+ *
+ *	@param	_AnchorId	Anchor to edit
+ */
+Void EditAnchor(Ident _AnchorId) {
+	if (_AnchorId == NullId || !AnchorData.existskey(_AnchorId)) return;
+	declare Anchor <=> AnchorData[_AnchorId];
+	
+	declare Text[] AvailableTags;
+	if (G_LibEditAnchors_AvailableTags.existskey(Anchor.DefaultTag))
+		AvailableTags = G_LibEditAnchors_AvailableTags[Anchor.DefaultTag];
+	
+	EditAnchor(_AnchorId, Anchor.DefaultTag, AvailableTags);
+}

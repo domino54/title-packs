@@ -1,0 +1,345 @@
+// -------------------------------------- //
+//  LIBRARY STATISTICS by domino54        //
+//  script version: 2016-07-06            //
+// -------------------------------------- //
+
+/**
+ *	This library is used to track custom statistics.
+ *	(No shit Sherlock!)
+ */
+
+#Const Version		"2016-07-06"
+#Const ScriptName	"Statistics.Script.txt"
+
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibStatistics_DefaultTransportPeriod	10000
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Boolean G_LibStatistics_LibraryLoaded;		///< True, if the library was loaded properly
+declare Integer G_LibStatistics_NextTransportTime;	///< Time of the next statistics transport
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Increment a local temporary stat value of a user
+ *
+ *	@param	_User			The user to increment statistics
+ *	@param	_ValueName		Name of the statistics category to increment
+ *	@param	_ValueChange	Change of the category value
+ */
+Void Private_IncrementValue(CUser _User, Text _ValueName, Integer _ValueChange) {
+	if (!G_LibStatistics_LibraryLoaded) return;
+	if (_User == Null || _User.IsFakeUser || _ValueName == "" || _ValueChange == 0) return;
+	
+	declare Integer[Text] LibStatistics_Incrementations for _User;
+	if (!LibStatistics_Incrementations.existskey(_ValueName)) LibStatistics_Incrementations[_ValueName] = 0;
+	LibStatistics_Incrementations[_ValueName] += _ValueChange;
+}
+
+// ---------------------------------- //
+/** Check if the player is a real human
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True, if the player is human
+ */
+Boolean Private_IsValidPlayer(CPlayer _Player) {
+	if (_Player == Null || _Player.User == Null || _Player.User.IsFakeUser) return False;
+	return True;
+}
+
+// ---------------------------------- //
+/** Create manialink for the transport module
+ *
+ *	@return		Transport module manialink
+ */
+Text Private_CreateManialinkTransport() {
+	return """
+<manialink version="2" name="LibStatictics:Transport">
+<script><!--
+/**
+ *	LibStatictics: Transport
+ */
+
+#Const C_LibStatistics_UpdateSafeDelay	1000
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	wait(LocalUser != Null);
+	
+	// ---------------------------------- //
+	// Persistent settings
+	declare persistent Integer[Text] Persistent_LibStatistics_PlayerDataInteger for LocalUser;
+	declare persistent Integer Persistent_LibStatistics_PrevUpdateTime for LocalUser;
+	
+	// ---------------------------------- //
+	// Netcode
+	declare netread Integer Net_LibStatistics_ServerLastUpdateTime for Teams[0];
+	declare netread Integer[Text] Net_LibStatistics_Incrementations for UI;
+	
+	// ---------------------------------- //
+	// Variables
+	declare NextUpdateTime = -1;
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Trigger next statistics update
+		if (
+			Net_LibStatistics_ServerLastUpdateTime != 0 && Net_LibStatistics_Incrementations.count > 0 &&
+			Persistent_LibStatistics_PrevUpdateTime != Net_LibStatistics_ServerLastUpdateTime
+		) {
+			Persistent_LibStatistics_PrevUpdateTime = Net_LibStatistics_ServerLastUpdateTime;
+			NextUpdateTime = Now + C_LibStatistics_UpdateSafeDelay;
+		}
+		
+		// ---------------------------------- //
+		// Update statistics
+		if (NextUpdateTime > 0 && Now >= NextUpdateTime) {
+			NextUpdateTime = -1;
+			
+			foreach (CategoryName => ValueChange in Net_LibStatistics_Incrementations) {
+				if (!Persistent_LibStatistics_PlayerDataInteger.existskey(CategoryName))
+					Persistent_LibStatistics_PlayerDataInteger[CategoryName] = 0;
+				
+				Persistent_LibStatistics_PlayerDataInteger[CategoryName] += ValueChange;
+			}
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	G_LibStatistics_LibraryLoaded = False;
+	Layers::Detach("LibStatistics:Transport");
+	Layers::Destroy("LibStatistics:Transport");
+	
+	foreach (User in Users) {
+		declare Integer[Text] LibStatistics_Incrementations for User;
+		LibStatistics_Incrementations.clear();
+	}
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() {
+	Unload();
+	Layers::Create("LibStatistics:Transport", Private_CreateManialinkTransport());
+	Layers::Attach("LibStatistics:Transport");
+	G_LibStatistics_LibraryLoaded = True;
+}
+
+// ---------------------------------- //
+/** Library main loop
+ *
+ *	@param	_TransportPeriod	Time between each statictics change transport
+ */
+Void Loop(Integer _TransportPeriod) {
+	if (!G_LibStatistics_LibraryLoaded || Now < G_LibStatistics_NextTransportTime) return;
+	G_LibStatistics_NextTransportTime = Now + _TransportPeriod;
+	
+	// ---------------------------------- //
+	// Update last transport time
+	declare netwrite Integer Net_LibStatistics_ServerLastUpdateTime for Teams[0];
+	Net_LibStatistics_ServerLastUpdateTime = Now;
+	
+	// ---------------------------------- //
+	// Send updated statistics to all UIs
+	foreach (User in Users) {
+		if (User.IsFakeUser) continue;
+		declare UI <=> UIManager.GetUI(User);
+		if (UI == Null || UI == UIManager.UIAll) return;
+		
+		declare netwrite Integer[Text] Net_LibStatistics_Incrementations for UI;
+		declare Integer[Text] LibStatistics_Incrementations for User;
+		
+		Net_LibStatistics_Incrementations = LibStatistics_Incrementations;
+		LibStatistics_Incrementations.clear();
+	}
+}
+
+// ---------------------------------- //
+/// Library main loop
+Void Loop() {
+	Loop(C_LibStatistics_DefaultTransportPeriod);
+}
+
+// ---------------------------------- //
+/** Track an custom event
+ *
+ *	@param	_Player			The player to increment statistics
+ *	@param	_ValueName		Name of the statistics category to increment
+ *	@param	_ValueChange	Change of the category value
+ */
+Void TrackEvent(CPlayer _Player, Text _ValueName, Integer _ValueChange) {
+	if (_Player == Null || _Player.User == Null) return;
+	Private_IncrementValue(_Player.User, _ValueName, _ValueChange);
+}
+
+// ---------------------------------- //
+// ShootMania events management
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Track on shoot event
+ *
+ *	@param	_Event		The event to track
+ */
+Void OnShoot(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnShoot) return;
+	if (!Private_IsValidPlayer(_Event.Shooter)) return;
+	
+	// Get the name of target category
+	declare Text StatCategoryName;
+	switch (_Event.WeaponNum) {
+		case 1 : StatCategoryName = "ShootsLaser";
+		case 2 : StatCategoryName = "ShootsRocket";
+		case 3 : StatCategoryName = "ShootsNucleus";
+		case 5 : StatCategoryName = "ShootsArrow";
+		default : return;
+	}
+	
+	TrackEvent(_Event.Shooter, StatCategoryName, 1);
+}
+
+// ---------------------------------- //
+/** Track on shot deny event
+ *
+ *	@param	_Event		The event to track
+ */
+Void OnShotDeny(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnShotDeny) return;
+	if (!Private_IsValidPlayer(_Event.Shooter) || !Private_IsValidPlayer(_Event.Victim)) return;
+	
+	// Get the name of target category
+	declare Text StatCategoryName;
+	switch (_Event.VictimWeaponNum) {
+		case 2 : StatCategoryName = "DeniesRocket";
+		case 3 : StatCategoryName = "DeniesNucleus";
+		case 5 : StatCategoryName = "DeniesArrow";
+		default : return;
+	}
+	
+	TrackEvent(_Event.Shooter, StatCategoryName, 1);
+}
+
+// ---------------------------------- //
+/** Track on near miss event
+ *
+ *	@param	_Event		The event to track
+ */
+Void OnNearMiss(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnNearMiss) return;
+	if (!Private_IsValidPlayer(_Event.Shooter)) return;
+	
+	// Get the name of target category
+	declare Text StatCategoryName;
+	switch (_Event.WeaponNum) {
+		case 1 : StatCategoryName = "MissesLaser";
+		case 2 : StatCategoryName = "MissesRocket";
+		case 3 : StatCategoryName = "MissesNucleus";
+		case 5 : StatCategoryName = "MissesArrow";
+		default : return;
+	}
+	
+	TrackEvent(_Event.Shooter, StatCategoryName, 1);
+}
+
+// ---------------------------------- //
+/** Track on hit event
+ *
+ *	@param	_Event		The event to track
+ */
+Void OnHit(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnHit) return;
+	if (!Private_IsValidPlayer(_Event.Shooter)) return;
+	
+	// Track damage count statistics
+	TrackEvent(_Event.Shooter, "DamageInflicted", _Event.Damage);
+	if (Private_IsValidPlayer(_Event.Victim))
+		TrackEvent(_Event.Victim, "DamageTaken", _Event.Damage);
+	
+	// ---------------------------------- //
+	// Track shooter statistics
+	declare Text ShooterHitCategoryName;
+	switch (_Event.WeaponNum) {
+		case 1 : ShooterHitCategoryName = "HitsLaser";
+		case 2 : ShooterHitCategoryName = "HitsRocket";
+		case 3 : ShooterHitCategoryName = "HitsNucleus";
+		case 5 : ShooterHitCategoryName = "HitsArrow";
+	}
+	
+	if (ShooterHitCategoryName != "")
+		TrackEvent(_Event.Shooter, ShooterHitCategoryName, 1);
+}
+
+// ---------------------------------- //
+/** Track on armor empty event
+ *
+ *	@param	_Event		The event to track
+ */
+Void OnArmorEmpty(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnArmorEmpty) return;
+	
+	// ---------------------------------- //
+	// Track victim statistics
+	if (Private_IsValidPlayer(_Event.Victim)) {
+		TrackEvent(_Event.Victim, "EliminationsTaken", 1);
+		
+		declare Text VictimCategoryType;
+		if (_Event.Shooter == Null)
+			VictimCategoryType = "EliminatedByEnvironment";
+		else if (_Event.Shooter.IsBot || _Event.Shooter.IsFakePlayer)
+			VictimCategoryType = "EliminatedByBots";
+		else
+			VictimCategoryType = "EliminatedByPlayers";
+		
+		if (VictimCategoryType != "") TrackEvent(_Event.Victim, VictimCategoryType, 1);
+	}
+	else return;
+	
+	// ---------------------------------- //
+	// Track shooter statistics
+	if (Private_IsValidPlayer(_Event.Shooter))
+		TrackEvent(_Event.Victim, "EliminationsInflicted", 1);
+}

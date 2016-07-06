@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  CONFIRMED by domino54                 //
-//  script version: 2016-06-23            //
+//  script version: 2016-07-06            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const	CompatibleMapTypes	"MeleeArena TeamMeleeArena"
-#Const	Version				"2016-06-23"
+#Const	Version				"2016-07-06"
 #Const	ScriptName			"Confirmed.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -25,10 +25,10 @@ declare Ident[][Integer] G_ClanSpawnLandmarks;	///< Spawns in which teams are in
 declare Ident[][Integer] G_ClanAvailableSpawns;	///< List of yet available spawns
 declare Ident[Integer] G_ClanLatestSpawnId;		///< Ids of the latest spawns used
 declare Integer[Integer] G_ClanNbCoinsSpawned;	///< Total amount of coins laying on the ground
-declare Boolean G_IsTeamMeleeArena;
-declare Boolean G_IsOvertime;
+declare Boolean G_IsTeamMeleeArena;	///< True, if current map is in type of TeamMeleeArena
+declare Boolean G_IsOvertime;		///< True, if the game is in the overtime mode
 
-declare Ident[Vec3] G_ObjectsIds;
+declare Ident[Vec3] G_ObjectsIds;	///< Ids of the objects used by the mode
 
 // ---------------------------------- //
 // Adjust the scores table
@@ -280,7 +280,6 @@ Layers::Detach("ConfirmedInterface");
 Layers::Destroy("ConfirmedInterface");
 ***
 
-
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
@@ -437,6 +436,12 @@ Void PickUpCoin(CSmModeEvent _Event) {
 	
 	// Notify players
 	SendPickMessage(_Event.Player, PlayerLogin, PlayerClan);
+	
+	// ---------------------------------- //
+	// Track player statistics
+	declare StatisticsCategory = "EliminationsDenied";
+	if (_Event.Player.CurrentClan != PlayerClan) StatisticsCategory = "EliminationsConfirmed";
+	Statistics::TrackEvent(_Event.Player, StatisticsCategory, 1);
 	
 	// ---------------------------------- //
 	// Play sound and notice if a team is close to win

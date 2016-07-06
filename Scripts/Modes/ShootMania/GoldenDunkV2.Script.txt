@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2016-07-01            //
+//  script version: 2016-07-06            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const	CompatibleMapTypes	"GoldenDunkV2Arena"
-#Const	Version				"2016-07-01"
+#Const	Version				"2016-07-06"
 #Const	ScriptName			"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -117,12 +117,12 @@ if (
 
 // ---------------------------------- //
 // Check if map metadata is valid	
-declare metadata MetaData_DunkPositions for Map = [1 => <0., 0., 0.>, 2 => <0., 0., 0.>];
+declare metadata Vec3[Integer] MetaData_DunkPositions for Map;
 for (Order, 1, 2) {
 	if (MetaData_DunkPositions.existskey(Order)) {
-		for (I, 0, 1) {
-			if (MetaData_DunkPositions[Order][I*2] <= 0 || MetaData_DunkPositions[Order][I*2] > 47) MapValidated = False;
-		}
+		for (I, 0, 1)
+			if (MetaData_DunkPositions[Order][I*2] <= 0 || MetaData_DunkPositions[Order][I*2] > 47)
+				MapValidated = False;
 	}
 	else MapValidated = False;
 }
@@ -155,6 +155,11 @@ G_IsOvertime = False;
 G_NbBallsTotal = 0;
 for (I, 0, 2) ClanScores[I] = 0;
 Net_GoldenDunk_IsOvertime = False;
+
+// Reset round scores
+for (I, 1, 2) ClanRoundScores[I] = 0;
+UIManager.UIAll.ScoreSummary_RoundPoints1 = 0;
+UIManager.UIAll.ScoreSummary_RoundPoints2 = 0;
 
 // Clear markers
 UIManager.UIAll.MarkersXML = "";
@@ -365,7 +370,7 @@ foreach (Player in Players) {
 	) {
 		GiveBall(Player.Id);
 		UpdateMarkers();
-		Translations::SendBigMessage(Player, "You've picked up the ball!", 3000, 1, CUIConfig::EUISound::PhaseChange, 0);
+		Translations::SendBigMessage(Player, "You've picked up a ball!", 3000, 1, CUIConfig::EUISound::PhaseChange, 0);
 	}
 	
 	// ---------------------------------- //
@@ -700,7 +705,7 @@ Void UpdateMarkers() {
 	// Create markers for dropped balls
 	foreach (SpawnTime => Object in G_DroppedBalls) {
 		if (Object == Null) continue;
-		Net_GoldenDunk_MarkersInformation.add(TL::ToText(SpawnTime + C_DroppedBallLifetime));
+		Net_GoldenDunk_MarkersInformation.add("time:"^SpawnTime + C_DroppedBallLifetime);
 		I += 1;
 		
 		// ---------------------------------- //
@@ -798,7 +803,7 @@ Boolean PickUpBall(CSmPlayer _Player, CSmObject _Object) {
 	
 	GiveBall(_Player.Id);
 	UpdateMarkers();
-	Translations::SendBigMessage(_Player, "You've picked up the ball!", 3000, 1, CUIConfig::EUISound::PhaseChange, 0);
+	Translations::SendBigMessage(_Player, "You've picked up a ball!", 3000, 1, CUIConfig::EUISound::PhaseChange, 0);
 	
 	// ---------------------------------- //
 	// Destroy object (unspawning the object gives a quiet sound)
@@ -851,6 +856,7 @@ Void ScoreBall(CSmPlayer _Player) {
 	ClanScores[_Player.CurrentClan] += 2;
 	Score::AddPoints(_Player, 1);
 	TopScores::AddPoints(_Player.Score, "Capture", 1);
+	Statistics::TrackEvent(_Player, "BallsScored", 1);
 	
 	// ---------------------------------- //
 	// Message all players
@@ -1551,7 +1557,9 @@ foreach (I => Frame in Frame_BallsMarkers) {
 	// ---------------------------------- //
 	// Obtain the marker information
 	declare MarkerData = Net_GoldenDunk_MarkersInformation[I];
-	declare UnspawnTime = TL::ToInteger(MarkerData);
+	declare Integer UnspawnTime;
+	if (TL::SubText(MarkerData, 0, 5) == "time:")
+		UnspawnTime = TL::ToInteger(TL::Replace(MarkerData, "time:", ""));
 	
 	/**
 	 *	Hide marker if ball is carried by the current player

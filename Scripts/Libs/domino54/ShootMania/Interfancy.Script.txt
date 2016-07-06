@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2016-06-30            //
+//  script version: 2016-07-06            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2016-06-30"
+#Const	Version		"2016-07-06"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -1776,4 +1776,34 @@ Void UnloadModule(Text _ModuleId) {
 		Layers::Destroy(_ModuleId);
 		SetModuleVisibility(_ModuleId, True);
 	}
+}
+
+// ---------------------------------- //
+/// Unload the library
+Void Unload() {
+	foreach (ModuleId in G_LibInterfancy_ModulesLoaded) UnloadModule(ModuleId);		
+	
+	declare netwrite Net_LibInterfancy_SettingsUpdate for Teams[0] = 0;
+	declare netwrite Net_LibInterfancy_Settings for Teams[0] = Text[Text];
+	Net_LibInterfancy_SettingsUpdate = 0;
+	Net_LibInterfancy_Settings.clear();
+	
+	G_LibInterfancy_ModulesLoaded.clear();
+	G_LibInterfancy_ModuleVisibility.clear();
+	G_LibInterfancy_PrevStartTime = -1;
+	G_LibInterfancy_PrevEndTime = -1;
+}
+
+// ---------------------------------- //
+/// Load the library
+Void Load() { Unload(); }
+
+// ---------------------------------- //
+/** (Overload) Load the library with some modules
+ *
+ *	@param	_AutoLoadModules	A list of modules to load with the library
+ */
+Void Load(Text[] _AutoLoadModules) {
+	Load();
+	LoadModules(_AutoLoadModules);
 }

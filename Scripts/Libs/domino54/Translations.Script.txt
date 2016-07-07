@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY TRANSLATIONS by domino54      //
-//  script version: 2016-06-16            //
+//  script version: 2016-07-07            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Chat messages MUST be prefixed.
  */
 
-#Const Version		"2016-06-16"
+#Const Version		"2016-07-07"
 #Const ScriptName	"Translations.Script.txt"
 
 #Include "TextLib" as TL
@@ -94,21 +94,21 @@ Text Translate(Text _Language, Text _Sentence) {
  *	@return		Translated sentence
  */
 Text Translate(Text _Language, Text[] _Arguments) {
-	if (_Arguments.count <= 0 || _Language == "" || _Language == "en" || _Language == "en_GB") return "";
-	if (_Arguments.count == 1) return Translate(_Language, _Arguments[0]);
+	if (_Arguments.count <= 0) return "";
 	if (_Arguments[0] == "") return "";
-	declare Base = TL::GetTranslatedText(Translate(_Language, _Arguments[0]));
 	
+	declare Base = Translate(_Language, _Arguments[0]);
 	foreach (I => Argument in _Arguments) {
 		if (I == 0) continue;
-		Base = TL::Replace(Base, "%"^I, TL::GetTranslatedText(Translate(_Language, Argument)));
+		Base = TL::Replace(Base, "%"^I, Translate(_Language, Argument));
 	}
-	
 	return Base;
 }
 
 // ---------------------------------- //
 /** Return translation using Compose function
+ *
+ *	@deprecated		Use Translate() function instead
  *
  *	@param	_Language		The language sentences will be translated to
  *	@param	_Prefix			Text to attach before basic argument
@@ -156,7 +156,7 @@ Void Private_SetComposedMessage(CPlayer _Player, Text[] _Arguments, Text _Type) 
 	declare UI <=> UIManager.GetUI(_Player);
 	if (UI == Null) return;
 	
-	declare TranslatedMessage = Compose(_Player.User.Language, "", _Arguments, "");
+	declare TranslatedMessage = Translate(_Player.User.Language, _Arguments);
 	
 	switch (_Type) {
 		case "big" : UI.BigMessage = TranslatedMessage;
@@ -210,7 +210,7 @@ Void SendChat(CPlayer _Player, Text[] _Arguments) {
 	if (G_LibTranslations_ChatPrefix == "") G_LibTranslations_ChatPrefix = C_LibTranslations_DefaultChatPrefix;
 	
 	declare UI <=> UIManager.GetUI(_Player);
-	if (UI != Null) UI.SendChat(Compose(_Player.User.Language, G_LibTranslations_ChatPrefix, _Arguments, ""));
+	if (UI != Null) UI.SendChat(G_LibTranslations_ChatPrefix^Translate(_Player.User.Language, _Arguments));
 }
 
 // ---------------------------------- //
@@ -389,7 +389,7 @@ Void SendNotice(CPlayer _Player, Text[] _Arguments, CUIConfig::ENoticeLevel _Lev
 	if (_Arguments.count <= 0 || _Player == Null || _Player.User == Null || _Player.User.IsFakeUser) return;
 	
 	declare UI <=> UIManager.GetUI(_Player);
-	if (UI != Null) UI.SendNotice(Compose(_Player.User.Language, "", _Arguments, ""), _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
+	if (UI != Null) UI.SendNotice(Translate(_Player.User.Language, _Arguments), _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
 }
 
 // ---------------------------------- //
@@ -571,7 +571,7 @@ Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConf
 
 Void SendBigMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendBigMessage(_Player, Compose(_Player.User.Language, "", _Arguments, ""), _Duration, _Priority, _Sound, _SoundVariant);
+	Message::SendBigMessage(_Player, Translate(_Player.User.Language, _Arguments), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
 Void SendBigMessage(Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
@@ -589,7 +589,7 @@ Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority, CUIC
 
 Void SendStatusMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendStatusMessage(_Player, Compose(_Player.User.Language, "", _Arguments, ""), _Duration, _Priority, _Sound, _SoundVariant);
+	Message::SendStatusMessage(_Player, Translate(_Player.User.Language, _Arguments), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
 Void SendStatusMessage(Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
@@ -607,7 +607,7 @@ Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority) {
 
 Void SendBigMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendBigMessage(_Player, Compose(_Player.User.Language, "", _Arguments, ""), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	Message::SendBigMessage(_Player, Translate(_Player.User.Language, _Arguments), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }
 
 Void SendBigMessage(Text[] _Arguments, Integer _Duration, Integer _Priority) {
@@ -625,7 +625,7 @@ Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority) {
 
 Void SendStatusMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendStatusMessage(_Player, Compose(_Player.User.Language, "", _Arguments, ""), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	Message::SendStatusMessage(_Player, Translate(_Player.User.Language, _Arguments), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }
 
 Void SendStatusMessage(Text[] _Arguments, Integer _Duration, Integer _Priority) {

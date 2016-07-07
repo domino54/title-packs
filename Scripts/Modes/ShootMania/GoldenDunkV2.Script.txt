@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2016-07-06            //
+//  script version: 2016-07-07            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const	CompatibleMapTypes	"GoldenDunkV2Arena"
-#Const	Version				"2016-07-06"
+#Const	Version				"2016-07-07"
 #Const	ScriptName			"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -25,7 +25,7 @@
 // Constants
 // ---------------------------------- //
 #Const C_HoopAreaRadius			6.		///< Radius of the hoop area
-#Const C_GoalPostLoadingTime	30000	///< For how long players have to stand on goal to capture it
+#Const C_GoalPostLoadingTime	25000	///< For how long players have to stand on goal to capture it
 #Const C_GoalShieldMinRatio		.75		///< Minimum percentage goal energy required to activate shield
 #Const C_NbPlayersPerNextBall	4		///< Amount of additional players required to spawn a next ball
 #Const C_MaxNbBallsTotal		10		///< Overall maximum amount of balls
@@ -59,7 +59,7 @@ TopScores::AddCategory("Capture", "Cap", 2.25, 75.);
 // ---------------------------------- //
 // Server start
 // ---------------------------------- //
-***InitServer***
+***StartServer***
 ***
 // ---------------------------------- //
 // Set mode options
@@ -137,6 +137,18 @@ if (!MapValidated) {
 ***
 
 // ---------------------------------- //
+// Map start
+// ---------------------------------- //
+***StartMap***
+***
+// ---------------------------------- //
+// Reset round scores
+for (I, 1, 2) ClanRoundScores[I] = 0;
+UIManager.UIAll.ScoreSummary_RoundPoints1 = 0;
+UIManager.UIAll.ScoreSummary_RoundPoints2 = 0;
+***
+
+// ---------------------------------- //
 // Round start
 // ---------------------------------- //
 ***InitRound***
@@ -155,11 +167,6 @@ G_IsOvertime = False;
 G_NbBallsTotal = 0;
 for (I, 0, 2) ClanScores[I] = 0;
 Net_GoldenDunk_IsOvertime = False;
-
-// Reset round scores
-for (I, 1, 2) ClanRoundScores[I] = 0;
-UIManager.UIAll.ScoreSummary_RoundPoints1 = 0;
-UIManager.UIAll.ScoreSummary_RoundPoints2 = 0;
 
 // Clear markers
 UIManager.UIAll.MarkersXML = "";
@@ -1000,7 +1007,7 @@ Text CreateManialinkInterface() {
 	<frame posn="-.05 0 1" clip="1" clipposn="4" clipsizen="8 16">
 		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeL" hidden="1"/>
 	</frame>
-	<frame posn=".05 0 1" clip="1" clipposn="-4" clipsizen="8 16">
+	<frame posn="0 0 1" clip="1" clipposn="-4" clipsizen="8 16">
 		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeR" hidden="1" rot="180"/>
 	</frame>
 	<quad posn="0 1.25 2" sizen="6 6" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_Emblem"/>
@@ -1144,7 +1151,7 @@ foreach (I => MapLandmark in ClanGoalLandmarks) {
 		// Set ratio
 		Quad_GaugeL.RelativeRotation = ML::Clamp(MapLandmark.Gauge.ValueReal * 360., 0., 180.);
 		Quad_GaugeR.RelativeRotation = 180 + ML::Clamp((MapLandmark.Gauge.ValueReal - .5) * 360., 0., 180.);
-		Quad_GaugeL.Visible = Quad_GaugeL.RelativeRotation > 1.25;
+		Quad_GaugeL.Visible = Quad_GaugeL.RelativeRotation > 1.5;
 		Quad_GaugeR.Visible = Quad_GaugeR.RelativeRotation > 180;
 		
 		// ---------------------------------- //

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY STATISTICS by domino54        //
-//  script version: 2016-07-06            //
+//  script version: 2016-07-09            //
 // -------------------------------------- //
 
 /**
@@ -8,7 +8,7 @@
  *	(No shit Sherlock!)
  */
 
-#Const Version		"2016-07-06"
+#Const Version		"2016-07-09"
 #Const ScriptName	"Statistics.Script.txt"
 
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
@@ -104,7 +104,7 @@ main() {
 		// ---------------------------------- //
 		// Trigger next statistics update
 		if (
-			Net_LibStatistics_ServerLastUpdateTime != 0 && Net_LibStatistics_Incrementations.count > 0 &&
+			Net_LibStatistics_ServerLastUpdateTime != 0 &&
 			Persistent_LibStatistics_PrevUpdateTime != Net_LibStatistics_ServerLastUpdateTime
 		) {
 			Persistent_LibStatistics_PrevUpdateTime = Net_LibStatistics_ServerLastUpdateTime;
@@ -185,13 +185,13 @@ Void Loop(Integer _TransportPeriod) {
 	
 	// ---------------------------------- //
 	// Send updated statistics to all UIs
-	foreach (User in Users) {
-		if (User.IsFakeUser) continue;
-		declare UI <=> UIManager.GetUI(User);
+	foreach (Player in AllPlayers) {
+		if (Player.User == Null || Player.User.IsFakeUser) continue;
+		declare UI <=> UIManager.GetUI(Player);
 		if (UI == Null || UI == UIManager.UIAll) return;
 		
 		declare netwrite Integer[Text] Net_LibStatistics_Incrementations for UI;
-		declare Integer[Text] LibStatistics_Incrementations for User;
+		declare Integer[Text] LibStatistics_Incrementations for Player.User;
 		
 		Net_LibStatistics_Incrementations = LibStatistics_Incrementations;
 		LibStatistics_Incrementations.clear();
@@ -341,5 +341,16 @@ Void OnArmorEmpty(CSmModeEvent _Event) {
 	// ---------------------------------- //
 	// Track shooter statistics
 	if (Private_IsValidPlayer(_Event.Shooter))
-		TrackEvent(_Event.Victim, "EliminationsInflicted", 1);
+		TrackEvent(_Event.Shooter, "EliminationsInflicted", 1);
+}
+
+// ---------------------------------- //
+/** Track on player request respawn event
+ *
+ *	@param	_Event		The event to track
+ */
+Void OnPlayerRequestRespawn(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerRequestRespawn) return;
+	if (!Private_IsValidPlayer(_Event.Player)) return;
+	TrackEvent(_Event.Player, "RespawnsRequested", 1);
 }

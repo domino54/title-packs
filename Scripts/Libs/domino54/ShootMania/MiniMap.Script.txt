@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2016-06-23            //
+//  script version: 2016-07-14            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2016-06-23"
+#Const Version		"2016-07-14"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "TextLib" as TL
@@ -136,7 +136,7 @@ Text Private_CreateManialinkMinimapWindow() {
 #Const C_MapWeightedSizeOffset	12.
 
 #Const C_MarkerScales [False => 1., True => .75]
-#Const C_MarkerTunnelsOpacity	.5
+#Const C_MarkerTunnelsOpacity	{{{1/3.}}}
 #Const C_MarkersDistances [
 	"Teammates"	=> [32., 48.],
 	"Enemies"	=> [26., 42.]
@@ -183,6 +183,9 @@ declare netread Vec3[Text] Net_LibMinimap_CustomMarkers for Teams[0];
 declare netread Text[Text] Net_LibMinimap_MarkersImages for Teams[0];
 declare netread Vec3[Text] Net_LibMinimap_MarkersColors for Teams[0];
 declare netread Text[Text] Net_LibMinimap_MarkersPlayer for Teams[0];
+
+/// Players colours
+declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -439,8 +442,16 @@ if (GUIPlayer != Null) {
 	if (UpdateGUIPlayerColor) {
 		UpdateGUIPlayerColor = False;
 		
+		// Use the player favourite color
 		declare Color = GUIPlayer.User.Color;
+		
+		// Use the current clan colour
 		if (GUIPlayer.CurrentClan != 0) Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+		
+		// Use the colour forced by the Interfancy library
+		else if (Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login))
+			Color = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
+		
 		Quad_MarkerGUIPlayer.Colorize = Color;
 	}
 }
@@ -488,7 +499,7 @@ foreach (Player in Players) {
 	}
 	
 	// Half-transparent markers for players undergound
-	if ((GUIPlayer != Null && GUIPlayer.IsUnderground) != Player.IsUnderground) MarkerOpacity *= C_MarkerTunnelsOpacity;
+	if (GUIPlayer != Null && GUIPlayer.IsUnderground != Player.IsUnderground) MarkerOpacity *= C_MarkerTunnelsOpacity;
 	
 	// ---------------------------------- //
 	// Load frame elements
@@ -529,10 +540,19 @@ foreach (Player in Players) {
 	if (Quad_MarkerCone.Visible) Quad_MarkerCone.RelativeRotation = RadToDeg(-Player.AimYaw) - Frame.RelativeRotation;
 	
 	// ---------------------------------- //
-	// Set marker icon color
+	// Set marker icon colour
 	declare MarkerColor = Player.User.Color;
-	if (Player.CurrentClan != 0) MarkerColor = Teams[Player.CurrentClan - 1].ColorPrimary;
+	
+	// Use current player clan colour
+	if (Player.CurrentClan > 0) MarkerColor = Teams[Player.CurrentClan - 1].ColorPrimary;
+	
+	// Set the bot colour
 	else if (Player.IsBot) MarkerColor = BotsColor;
+	
+	// Use the colour forced bu Interfancy library
+	else if (Net_LibInterfancy_ForcedColors.existskey(Player.User.Login))
+		MarkerColor = Net_LibInterfancy_ForcedColors[Player.User.Login];
+	
 	Quad_MarkerIcon.Colorize = MarkerColor;
 	
 	// ---------------------------------- //
@@ -550,12 +570,9 @@ foreach (I => Frame in Frame_PlayerMarkers) if (Frame.Visible && I > NbPlayersDi
 // Setup custom markers
 NbCustomDisplayed = 0;
 foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
-	if (!IsOverviewMode && Distance2D(GUIPlayer.Position, Pos) > 60.) continue;
-	
 	declare ImageUrl = Net_LibMinimap_MarkersImages[MarkerId];
 	if (ImageUrl == "") continue;
 	
-	declare Colorize = Net_LibMinimap_MarkersColors[MarkerId];
 	declare Player <=> GetPlayer(Net_LibMinimap_MarkersPlayer[MarkerId]);
 	if (Player != Null && Player == GUIPlayer) continue;
 	
@@ -565,12 +582,18 @@ foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
 	if (Player != Null) Position = Player.Position;
 	if (ImageUrl == "" || Position == <0., 0., 0.>) continue;
 	
+	if (!IsOverviewMode && Distance2D(GUIPlayer.Position, Position) > 60.) continue;
+	
 	// ---------------------------------- //
 	// Get marker opacity
 	declare MarkerOpacity = 1.;
 	if (!IsOverviewMode) MarkerOpacity = GetMarkerFade(Distance2D(GUIPlayer.Position, Position), Real[]);
-	if (MarkerOpacity <= 0) continue;
 	
+	// Half-transparent markers for players undergound
+	if (Player != Null && GUIPlayer != Null && GUIPlayer.IsUnderground != Player.IsUnderground)
+		MarkerOpacity *= C_MarkerTunnelsOpacity;
+	
+	if (MarkerOpacity <= 0) continue;
 	NbCustomDisplayed += 1;
 	
 	// ---------------------------------- //
@@ -597,6 +620,7 @@ foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
 	
 	// Set marker image and color
 	Quad.ImageUrl = ImageUrl;
+	declare Colorize = Net_LibMinimap_MarkersColors[MarkerId];
 	if (Colorize != <0., 0., 0.>) Quad.Colorize = Colorize;
 	else Quad.Colorize = <1., 1., 1.>;
 }

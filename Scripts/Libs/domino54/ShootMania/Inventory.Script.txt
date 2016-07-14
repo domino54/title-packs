@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2016-06-16            //
+//  script version: 2016-07-13            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2016-06-16"
+#Const Version		"2016-07-13"
 #Const ScriptName	"Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -162,6 +162,9 @@ for (I, 0, {{{C_LibInventory_UINbItemsDisplayed - 1}}})
 declare netread Integer Net_LibInventory_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInventory_Settings for Teams[0];
 
+/// Players colours
+declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
+
 /// Players data
 declare netread Integer[Text] Net_LibInventory_PlayerUpdate for Teams[0];
 declare netread Text[][Text] Net_LibInventory_PlayerItems for Teams[0];
@@ -195,6 +198,7 @@ declare PrevInterfaceVisible = False;
 declare PrevPlayerLogin = "";
 declare PrevPlayerClan = -1;
 declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
+declare PrevForcedColor = Vec3;
 ***
 
 // ---------------------------------- //
@@ -473,9 +477,19 @@ if (InterfaceVisible) {
 	}
 	
 	// ---------------------------------- //
-	// Update colors on team colrr change
+	// Update colors on team color change
 	for (I, 0, 1) if (PrevTeamsColors[I] != Teams[I].ColorPrimary) {
 		PrevTeamsColors[I] = Teams[I].ColorPrimary;
+		UpdateColor = True;
+	}
+	
+	// ---------------------------------- //
+	// Update colors on forced color change
+	if (
+		Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login) &&
+		Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login] != PrevForcedColor
+	) {
+		PrevForcedColor = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
 		UpdateColor = True;
 	}
 	
@@ -484,8 +498,15 @@ if (InterfaceVisible) {
 	if (UpdateColor) {
 		UpdateColor = False;
 		
+		// Use the player favourite colour
 		declare Color = GUIPlayer.User.Color;
+		
+		// Use the current clan colour
 		if (GUIPlayer.CurrentClan != 0) Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+		
+		// Use the forced colour
+		else if (Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login))
+			Color = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
 		
 		foreach (I => Frame in Frame_InventoryItems) {
 			declare Quad_ItemIsCurWeapon <=> (Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad);

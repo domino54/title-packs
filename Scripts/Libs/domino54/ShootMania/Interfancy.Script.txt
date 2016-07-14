@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2016-07-09            //
+//  script version: 2016-07-14            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2016-07-09"
+#Const	Version		"2016-07-14"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -239,6 +239,9 @@ declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 declare netread Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
 
+/// Players colors
+declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
+
 /// Classes
 declare netread Text[] Net_LibInterfancy_AvailableClasses for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_ClassesImages for Teams[0];
@@ -323,10 +326,17 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 }
 
 // ---------------------------------- //
-// Update interface color
+// Update interface colour
 if (GUIPlayer != Null) {
-	if (GUIPlayer.CurrentClan == 0) InterfaceColor = GUIPlayer.User.Color;
-	else InterfaceColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+	// Use the colour of current clan
+	if (GUIPlayer.CurrentClan > 0) InterfaceColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+	
+	// Use colour forced by the mode
+	else if (Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.Login))
+		InterfaceColor = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
+	
+	// Use the player favourite colour
+	else InterfaceColor = GUIPlayer.User.Color;
 }
 
 // ---------------------------------- //
@@ -1147,6 +1157,9 @@ declare Label_PlayerZone <=> (Page.GetFirstChild("Label_PlayerZone") as CMlLabel
 declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 
+/// Players colors
+declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
+
 // ---------------------------------- //
 // Variables
 declare SpecInfo_Display = True;
@@ -1205,9 +1218,16 @@ if (PrevGUIPlayerLogin != GUIPlayer.Login) {
 	Label_PlayerName.SetText(PlayerName);
 	
 	// ---------------------------------- //
-	// Update color
+	// Update colour
 	declare Color = GUIPlayer.User.Color;
-	if (GUIPlayer.CurrentClan != 0) Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+	
+	// Use the player clan colour
+	if (GUIPlayer.CurrentClan > 0) Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+	
+	// Use forced colour
+	else if (Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login))
+		Color = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
+	
 	Quad_PlayerColor.Colorize = Color;
 	
 	// ---------------------------------- //
@@ -1733,6 +1753,38 @@ Void SetPlayerReloadData(CSmPlayer _Player, Integer _StartTime, Integer _Duratio
 Void ResetReloadData() {
 	declare netwrite Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
 	Net_LibInterfancy_ReloadData.clear();
+}
+
+// ---------------------------------- //
+/** Force interface colour for a player
+ *
+ *	@param	_Player		The player to force colour
+ *	@param	_Color		The colour to force
+ */
+Void ForceColor(CSmPlayer _Player, Vec3 _Color) {
+	if (_Player == Null) return;
+	
+	declare Color = _Color;
+	for (I, 0, 2) Color[I] = ML::Clamp(Color[I], 0., 1.);
+	_Player.ForceColor;
+	
+	declare netwrite Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
+	Net_LibInterfancy_ForcedColors[_Player.User.Login] = Color;
+}
+
+// ---------------------------------- //
+/// Reset forced colours array
+Void ClearColorsData() {
+	declare netwrite Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
+	Net_LibInterfancy_ForcedColors.clear();
+}
+
+// ---------------------------------- //
+/// Reset all library net data
+Void ClearData() {
+	ClearNotesData();
+	ResetReloadData();
+	ClearColorsData();
 }
 
 // ---------------------------------- //

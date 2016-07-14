@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-07-09            //
+//  script version: 2016-07-14            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-07-09"
+#Const BaseVersion		"2016-07-14"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -31,6 +31,7 @@
 #Include "Libs/domino54/ShootMania/Killfeed.Script.txt" as KillFeed
 #Include "Libs/domino54/ShootMania/MiniMap.Script.txt" as MiniMap
 #Include "Libs/domino54/ShootMania/PauseMenu.Script.txt" as PauseMenu
+#Include "Libs/domino54/ShootMania/Streaks.Script.txt" as Streaks
 
 // ---------------------------------- //
 // Settings
@@ -104,6 +105,7 @@ declare UC_ScriptsVersions = [
 	PauseMenu::GetScriptName()		=> PauseMenu::GetScriptVersion(),
 	SentenceBank::GetScriptName()	=> SentenceBank::GetScriptVersion(),
 	Statistics::GetScriptName()		=> Statistics::GetScriptVersion(),
+	Streaks::GetScriptName()		=> Streaks::GetScriptVersion(),
 	TopScores::GetScriptName()		=> TopScores::GetScriptVersion(),
 	Translations::GetScriptName()	=> Translations::GetScriptVersion(),
 	UpdateChecker::GetScriptName()	=> UpdateChecker::GetScriptVersion(),
@@ -236,13 +238,20 @@ ST2::Build("SM");
 Interfancy::Load(["Gauges", "Countdown", "SpecInfo", "Crosshair", "ScoreSummary"]);
 Interfancy::SetModuleVisibility("ScoreSummary", UseClans && !UseForcedClans);
 PauseMenu::Load();
-StoragePlayer::Load(C_ImgBase, "Eurostile", "Eurostile_Bold");
-StoragePlayer::SetDefaultPlaylistURL(C_DefaultMusicPlaylist);
-Statistics::Load();
-
 SM::SetupDefaultVisibility();
+
 UIManager.UIAll.OverlayHide321Go = True;
 UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
+
+// ---------------------------------- //
+// Load the Storage Music Player
+StoragePlayer::Load(C_ImgBase, "Eurostile", "Eurostile_Bold");
+StoragePlayer::SetDefaultPlaylistURL(C_DefaultMusicPlaylist);
+
+// ---------------------------------- //
+// Load Statistics and Streaks
+Statistics::Load();
+Streaks::Load();
 
 // ---------------------------------- //
 // Load Killfeed library
@@ -292,6 +301,7 @@ if (UseClans && !UseForcedClans) {
 Score::MatchBegin(True);
 TopScores::MatchBegin();
 UpdateChecker::CheckUpdate();
+Interfancy::ClearData();
 if (UseClans) GT_InitWarmUp();
 
 // ---------------------------------- //
@@ -335,7 +345,6 @@ if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 ***
 Score::RoundBegin();
 TopScores::RoundBegin();
-Interfancy::ClearNotesData();
 MiniMap::Show();
 Replay_Start();
 
@@ -367,6 +376,7 @@ Message::Loop();
 KillFeed::Loop();
 FancyMessages::Loop();
 Statistics::Loop();
+Streaks::Loop();
 ***
 
 // ---------------------------------- //
@@ -411,6 +421,7 @@ if (Event.Shooter != Null) {
 	
 	if (GT_IsValidForCallbacks(Event)) XmlRpc::OnArmorEmpty(Event);
 	KillFeed::OnArmorEmpty(Event, EventAssistant);
+	Streaks::OnArmorEmpty(Event);
 	
 	// Statistics tracking
 	Statistics::OnArmorEmpty(Event);
@@ -734,12 +745,13 @@ if (MM_IsMatchServer()) {
 UpdateChecker::Unload();
 GalaxyTitles::Unload();
 Interfancy::Unload();
-MiniMap::Unload();
 KillFeed::Unload();
+MiniMap::Unload();
 PauseMenu::Unload();
-StoragePlayer::Unload();
-FancyMessages::Unload();
 Statistics::Unload();
+StoragePlayer::Unload();
+Streaks::Unload();
+FancyMessages::Unload();
 
 SpawnScreen::DestroyRules();
 SpawnScreen::DestroyScores();
@@ -855,6 +867,7 @@ Void GT_InitPlayer(CSmPlayer _Player) {
 	
 	if (UseClans && !UseForcedClans) SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
 	GalaxyTitles::InitPlayer(_Player);
+	Interfancy::ForceColor(_Player, _Player.User.Color);
 	SetPlayerReloadAllWeapons(_Player, True);
 	
 	_Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;

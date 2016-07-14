@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-07-09            //
+//  script version: 2016-07-14            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-07-09"
+#Const Version		"2016-07-14"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -65,6 +65,7 @@ declare Integer G_LibGalaxyTitles_ToadsArmorMax;
 declare Boolean G_LibGalaxyTitles_UseComboWeapons;
 declare Boolean G_LibGalaxyTitles_WeaponItemsAvailable;
 declare Text[] G_LibGalaxyTitles_MinimapMarkers;
+declare Vec3[Integer] G_LibGalaxyTitles_PrevTeamsColors;
 
 // ---------------------------------- //
 // Functions
@@ -355,9 +356,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 
 // ---------------------------------- //
 /// Spawn objects on landmarks
-Void SpawnObjects() {
-	SpawnObjects(True);
-}
+Void SpawnObjects() { SpawnObjects(True); }
 
 // ---------------------------------- //
 /** Pick up object
@@ -749,6 +748,17 @@ Void ToadsLoop(Integer _ToadsRespawnTime) {
 			)
 				BotPlayer.Driver.ForcedTarget = Null;
 		}
+	}
+	
+	// ---------------------------------- //
+	// Update Toads colour on team colour change
+	foreach (I => Team in Teams) if (
+		!G_LibGalaxyTitles_PrevTeamsColors.existskey(I) ||
+		G_LibGalaxyTitles_PrevTeamsColors[I] != Team.ColorPrimary
+	) {
+		G_LibGalaxyTitles_PrevTeamsColors[I] = Team.ColorPrimary;
+		declare NewToadsColor = Private_GetThirdClanColor(Teams[0].ColorPrimary, Teams[1].ColorPrimary);
+		foreach (BotPlayer in BotPlayers) BotPlayer.ForceColor = NewToadsColor;
 	}
 }
 

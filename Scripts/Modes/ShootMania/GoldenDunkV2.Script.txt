@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2016-07-07            //
+//  script version: 2016-07-18            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const	CompatibleMapTypes	"GoldenDunkV2Arena"
-#Const	Version				"2016-07-07"
+#Const	Version				"2016-07-18"
 #Const	ScriptName			"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -206,6 +206,9 @@ foreach (Clan => MapLandmark in G_ClanSpawnLandmarks) {
 	MapLandmark.Base.Clan = Clan;
 	MapLandmark.Base.IsActive = True;
 }
+
+// Fill the checkpoint gauge
+if (G_CentralCheckpointLandmark.Gauge != Null) G_CentralCheckpointLandmark.Gauge.ValueReal = 1.;
 
 // ---------------------------------- //
 // Update landmarks colors
@@ -458,8 +461,13 @@ if (ClanScores[1] > ClanScores[2]) LeadClan = 1;
 else if (ClanScores[2] > ClanScores[1]) LeadClan = 2;
 else LeadClan = 0;
 
-if (PrevLeadClan != LeadClan && LeadClan != 0 && !G_IsOvertime) {
+if (PrevLeadClan != LeadClan && !G_IsOvertime) {
 	PrevLeadClan = LeadClan;
+	
+	// Colorize the central checkpoint
+	if (G_CentralCheckpointLandmark.Base != Null) G_CentralCheckpointLandmark.Base.Clan = LeadClan;
+	if (G_CentralCheckpointLandmark.Gauge != Null) G_CentralCheckpointLandmark.Gauge.Clan = LeadClan;
+	
 	if (LeadClan > 0) Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 2, CUIConfig::EUISound::PhaseChange, 1);
 }
 

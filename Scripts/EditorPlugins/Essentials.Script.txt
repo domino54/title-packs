@@ -1,0 +1,480 @@
+// -------------------------------------- //
+//  ESSENTIALS EDITOR PLUGIN by domino54  //
+//  script version: 2016-07-20            //
+// -------------------------------------- //
+
+/**
+ *	This big editor plugin:
+ *	-	Automatically enables Ghost Blocks and Air Mapping after opening editor
+ *	-	Adds switch between Normal / Ghost modes on mouse wheel button
+ *	-	Enables automatic switch to underground mode, depending on selected block
+ *	-	Reminds user to palce podium block
+ *	-	Enables automatic map save feature
+ *	-	Allows to upgrade terrain to HD quality with oene click
+ *	-	Displays current cursor coordinates and camera direction
+ */
+
+#RequireContext CEditorPlugin
+
+#Const	Version		"2016-07-20"
+#Const	ScriptName	"Essentials.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_HDTerrainModels	["DecoTerrainHD"]
+#Const C_AutoSavePeriod		20000
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Create interface layer
+declare EssentialsLayer = UILayerCreate();
+EssentialsLayer.ManialinkPage = CreateLayerEssentials();
+EssentialsLayer.Type = CUILayer::EUILayerType::EditorPlugin;
+declare Page <=> EssentialsLayer.LocalPage;
+
+// ---------------------------------- //
+// Persistent settings
+declare persistent Persistent_Essentials_EnableMixMapping for LocalUser = True;
+declare persistent Persistent_Essentials_AutoUnderground for LocalUser = True;
+declare persistent Persistent_Essentials_EnableAutoSave for LocalUser = True;
+
+// ---------------------------------- //
+// Get the HD terrain block
+declare CBlockModel HDTerrainBlock;
+foreach (Block in BlockModels) if (C_HDTerrainModels.exists(Block.Name)) HDTerrainBlock = Block;
+
+// ---------------------------------- //
+// Variables
+declare MapPodiumsCount for Page = GetPodiumsAmount();
+declare Real CameraRotation for Page;
+declare Int3 CursorPosition for Page;
+declare NextAutoSave = Now + C_AutoSavePeriod;
+
+/// Update
+declare PrevPlaceMode = PlaceMode;
+declare CBlockModel PrevCursorBlockModel;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Custom layer event
+	if (Event.Type == CEditorPluginEvent::Type::LayerCustomEvent) {
+		switch (Event.CustomEventType) {
+			// ---------------------------------- //
+			// Switch Ghost Blocks mode
+			case "SwitchGhostBlocks" : {
+				// ---------------------------------- //
+				// Change mode to Ghost Blocks
+				if (PlaceMode != ::PlaceMode::GhostBlock) {
+					PrevPlaceMode = PlaceMode;
+					PlaceMode = ::PlaceMode::GhostBlock;
+				}
+				// ---------------------------------- //
+				// Return to previous mode
+				else {
+					if (PrevPlaceMode == ::PlaceMode::Unknown) PlaceMode = ::PlaceMode::Block;
+					else PlaceMode = PrevPlaceMode;
+				}
+			}
+			// ---------------------------------- //
+			// Replace terrain with HD mountain block
+			case "PlaceHDTerrain" : {
+				if (HDTerrainBlock == Null) continue;
+				
+				declare Int3[] BlocksToReplace;
+				foreach (Block in Blocks) if (Block.BlockModel.IsTerrain) BlocksToReplace.add(Block.Coord);
+				foreach (Position in BlocksToReplace) PlaceBlock(HDTerrainBlock, Position, ::CardinalDirections::North);
+			}
+		}
+	}
+	// ---------------------------------- //
+	// Custom layer event
+	else if (Event.Type == CEditorPluginEvent::Type::MapModified) {
+		// ---------------------------------- //
+		// Update the amount of podiums
+		MapPodiumsCount = GetPodiumsAmount();
+	}
+}
+
+// ---------------------------------- //
+// Enable air mapping and ghost blocks
+EnableAirMapping = Persistent_Essentials_EnableMixMapping;
+EnableMixMapping = Persistent_Essentials_EnableMixMapping;
+
+// ---------------------------------- //
+// Switch Underground Mode depending on selected block
+if (PrevCursorBlockModel != CursorBlockModel) {
+	PrevCursorBlockModel = CursorBlockModel;
+	
+	if (Persistent_Essentials_AutoUnderground) {
+		UndergroundMode = CursorBlockModel.VariantAir != Null && CursorBlockModel.VariantAir.IsAllUnderground;
+	}
+}
+
+// ---------------------------------- //
+// Automatically save map between some time
+if (Persistent_Essentials_EnableAutoSave && Now >= NextAutoSave) {
+	AutoSave();
+	NextAutoSave = Now + C_AutoSavePeriod;
+}
+
+// ---------------------------------- //
+// Revert normal block mode, if user disabled ghost blocks and is still in this mode
+if (!Persistent_Essentials_EnableMixMapping && PlaceMode == ::PlaceMode::GhostBlock) PlaceMode = ::PlaceMode::Block;
+
+// ---------------------------------- //
+// Update camera rotation
+if (CameraRotation != CameraHAngle) CameraRotation = CameraHAngle;
+
+// ---------------------------------- //
+// Update cursor position
+if (CursorPosition != CursorCoord) CursorPosition = CursorCoord;
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get the amount of podiums on the map
+ *
+ *	@return		Number of podiums on map
+ */
+Integer GetPodiumsAmount() {
+	declare Podiums = 0;
+	foreach (Block in Blocks) if (TL::Find("Podium", Block.BlockModel.Name, False, False)) Podiums += 1;
+	return Podiums;
+}
+
+// ---------------------------------- //
+/** Create manialink for the Essentials plugin
+ *
+ *	@return		Essentials plugin layer
+ */
+Text CreateLayerEssentials() {
+	return """
+<manialink version="2" name="EssentialsManialink">
+<stylesheet>
+	<style class="CoordVal" halign="center" valign="center2" style="TextValueSmallSm" textsize="2" textcolor="FFF"/>
+	<style class="CoordDes" halign="center" valign="center2" style="TextValueSmallSm" scale=".5" textcolor="888"/>
+	<style class="Check" sizen="3.5 3.5" halign="center" valign="center" style="Icons64x64_1" substyle="Check"/>
+</stylesheet>
+
+<!-- Help tooltip -->
+<label
+	posn="90 -88" sizen="46" halign="center" valign="bottom" style="TrackerText" autonewline="1"
+	id="Label_MouseHoverTooltip" hidden="1"
+/>
+
+<!-- Main widget frame -->
+<frame id="Frame_EssentialsWidget" posn="129 62">
+	<!-- Backgrounds -->
+	<quad
+		posn="30 0 -1" sizen="30 8" halign="right" valign="center"
+		bgcolor="000" opacity=".75" id="Quad_WindowBackground" ScriptEvents="1"
+	/>
+	<quad
+		posn="30 0 -2" sizen="30 8" halign="right" valign="center"
+		style="Bgs1" substyle="BgDialogBlur" opacity="0" id="Quad_WindowBgBlur"
+	/>
+	<quad
+		posn="32.5 0 -3" sizen="70 26" scale=".5" halign="right" valign="center"
+		style="Bgs1InRace" substyle="BgButtonShadow" id="Quad_WindowBgShadow"
+	/>
+	
+	<!-- Map editor block position -->
+	<label posn="8 1.25" class="CoordVal" text="0" id="Label_CursorCoordX"/>
+	<label posn="14 1.25" class="CoordVal" text="0" id="Label_CursorCoordY"/>
+	<label posn="20 1.25" class="CoordVal" text="0" id="Label_CursorCoordZ"/>
+	
+	<label posn="8 -2" class="CoordDes" text="X"/>
+	<label posn="14 -2" class="CoordDes" text="Y"/>
+	<label posn="20 -2" class="CoordDes" text="Z"/>
+	
+	<!-- Map editor camera direction -->
+	<frame id="Frame_DirectionArrow" posn="26" scale=".625">
+		<quad
+			sizen="8 8" halign="center" valign="center" image="file://Media/Manialinks/Common/Disc.dds" colorize="666"
+			data-tooltip="Camera direction" ScriptEvents="1"
+		/>
+		<quad posn="-1 0 1" sizen="5.5 4" valign="center" style="Icons64x64_1" substyle="ArrowRed"/>
+		<quad posn="1 0 1" sizen="5.5 4" valign="center" rot="180" style="Icons64x64_1" substyle="ArrowGreen" colorize="000"/>
+	</frame>
+	
+	<!-- Hidden options menu -->
+	<frame clip="1" clipposn="-20" clipsizen="48 8"><frame id="Frame_AditionalIcons" posn="0">
+		<quad
+			posn="3" sizen="6 6" halign="center" valign="center"
+			style="UIConstruction_Buttons" substyle="Quit" colorize="888" id="Quad_IconCog"
+		/>
+		<quad
+			posn="10 .5" sizen="8 8" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstruction_Buttons2" substyle="GhostBlocks"
+			data-tooltip="Enable Ghost Blocks and Air Mapping" id="Quad_GhostBlocks"
+		/>
+		<quad
+			posn="18 .25" sizen="7 7" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstruction_Buttons" substyle="Underground" styleselected="1"
+			data-tooltip="Automatically switch to the underground mode" id="Quad_AutoUnderground"
+		/>
+		<quad
+			posn="26" sizen="7 7" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstructionBullet_Buttons" substyle="AnimMode"
+			data-tooltip="Remind to place podium" id="Quad_RemindPodiums"
+		/>
+		<quad
+			posn="34" sizen="7 7" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstruction_Buttons" substyle="Save"
+			data-tooltip="Enable auto-save" id="Quad_EnableAutoSave"
+		/>
+		<quad
+			posn="42" sizen="7 7" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstructionBullet_Buttons" substyle="ExplosionMode"
+			data-tooltip="Update terrain to HD quality" id="Quad_PlaceHDTerrain"
+		/>
+		<quad posn="12 -2 1" class="Check" id="Check_GhostBlocks"/>
+		<quad posn="20 -2 1" class="Check" id="Check_AutoUnderground"/>
+		<quad posn="28 -2 1" class="Check" id="Check_RemindPodiums"/>
+		<quad posn="36 -2 1" class="Check" id="Check_AutoSave"/>
+	</frame></frame>
+</frame>
+
+<!-- Frame reminding podium placement -->
+<frame id="Frame_MissingPodium" posn="155 -84 10">
+	<quad sizen="10 10" halign="center" valign="center" bgcolor="000"/>
+	<quad
+		posn="0 0 1" sizen="10 10" halign="center" valign="center" id="Quad_MissingPodium"
+		style="UIConstruction_Buttons" substyle="Validate" colorize="F8D"
+		data-tooltip="$F00You have to place exactly one podium!" ScriptEvents="1"
+	/>
+</frame>
+
+<script><!--
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Widget animation elements
+declare Frame_AditionalIcons <=> (Page.GetFirstChild("Frame_AditionalIcons") as CMlFrame);
+declare Quad_WindowBackground <=> (Page.GetFirstChild("Quad_WindowBackground") as CMlQuad);
+declare Quad_WindowBgBlur <=> (Page.GetFirstChild("Quad_WindowBgBlur") as CMlQuad);
+declare Quad_WindowBgShadow <=> (Page.GetFirstChild("Quad_WindowBgShadow") as CMlQuad);
+declare Quad_IconCog <=> (Page.GetFirstChild("Quad_IconCog") as CMlQuad);
+
+// ---------------------------------- //
+// Cursor coordinates display
+declare Frame_DirectionArrow <=> (Page.GetFirstChild("Frame_DirectionArrow") as CMlFrame);
+declare Label_CursorCoords = [
+	(Page.GetFirstChild("Label_CursorCoordX") as CMlLabel),
+	(Page.GetFirstChild("Label_CursorCoordY") as CMlLabel),
+	(Page.GetFirstChild("Label_CursorCoordZ") as CMlLabel)
+];
+
+// ---------------------------------- //
+// Settings checks
+declare Check_GhostBlocks <=> (Page.GetFirstChild("Check_GhostBlocks") as CMlQuad);
+declare Check_AutoUnderground <=> (Page.GetFirstChild("Check_AutoUnderground") as CMlQuad);
+declare Check_RemindPodiums <=> (Page.GetFirstChild("Check_RemindPodiums") as CMlQuad);
+declare Check_AutoSave <=> (Page.GetFirstChild("Check_AutoSave") as CMlQuad);
+
+// ---------------------------------- //
+// Help tooltip
+declare Label_MouseHoverTooltip <=> (Page.GetFirstChild("Label_MouseHoverTooltip") as CMlLabel);
+
+// ---------------------------------- //
+// Missing podium reminder
+declare Frame_MissingPodium <=> (Page.GetFirstChild("Frame_MissingPodium") as CMlFrame);
+
+// ---------------------------------- //
+// Persistent settings
+declare persistent Persistent_Essentials_EnableMixMapping for LocalUser = True;
+declare persistent Persistent_Essentials_AutoUnderground for LocalUser = True;
+declare persistent Persistent_Essentials_RemindPodiums for LocalUser = True;
+declare persistent Persistent_Essentials_EnableAutoSave for LocalUser = True;
+
+// ---------------------------------- //
+// Variables
+declare Integer MapPodiumsCount for Page;
+declare Real CameraRotation for Page;
+declare Int3 CursorPosition for Page;
+declare FrameVisible = False;
+
+/// Update
+declare PrevFrameVisible = False;
+declare PrevMouseMiddleButton = False;
+declare Int3 PrevCursorPosition;
+
+// ---------------------------------- //
+// Init checks state
+Check_GhostBlocks.StyleSelected = Persistent_Essentials_EnableMixMapping;
+Check_AutoUnderground.StyleSelected = Persistent_Essentials_AutoUnderground;
+Check_RemindPodiums.StyleSelected = Persistent_Essentials_RemindPodiums;
+Check_AutoSave.StyleSelected = Persistent_Essentials_EnableAutoSave;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		switch (Event.ControlId) {
+			// ---------------------------------- //
+			// Enable Ghost Blocks and Air Mapping
+			case "Quad_GhostBlocks" : {
+				Persistent_Essentials_EnableMixMapping = !Persistent_Essentials_EnableMixMapping;
+				Check_GhostBlocks.StyleSelected = Persistent_Essentials_EnableMixMapping;
+			}
+			// ---------------------------------- //
+			// Enable automatic underground mode
+			case "Quad_AutoUnderground" : {
+				Persistent_Essentials_AutoUnderground = !Persistent_Essentials_AutoUnderground;
+				Check_AutoUnderground.StyleSelected = Persistent_Essentials_AutoUnderground;
+			}
+			// ---------------------------------- //
+			// Enable podium placement reminder
+			case "Quad_RemindPodiums" : {
+				Persistent_Essentials_RemindPodiums = !Persistent_Essentials_RemindPodiums;
+				Check_RemindPodiums.StyleSelected = Persistent_Essentials_RemindPodiums;
+			}
+			// ---------------------------------- //
+			// Enable auto save
+			case "Quad_EnableAutoSave" : {
+				Persistent_Essentials_EnableAutoSave = !Persistent_Essentials_EnableAutoSave;
+				Check_AutoSave.StyleSelected = Persistent_Essentials_EnableAutoSave;
+			}
+			// ---------------------------------- //
+			// Place HD terrain
+			case "Quad_PlaceHDTerrain" : SendCustomEvent("PlaceHDTerrain", Text[]);
+		}
+	}
+	// ---------------------------------- //
+	// On mouse out
+	else if (Event.Type == CMlEvent::Type::MouseOut) {
+		FrameVisible = False;
+		Label_MouseHoverTooltip.Hide();
+	}
+	// ---------------------------------- //
+	// On mouse over
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		if (Event.ControlId != "Quad_MissingPodium") FrameVisible = True;
+		Label_MouseHoverTooltip.Value = Event.Control.DataAttributeGet("tooltip");
+		Label_MouseHoverTooltip.Show();
+	}
+}
+
+// ---------------------------------- //
+// Trigger event on mouse wheel press
+if (PrevMouseMiddleButton != MouseMiddleButton) {
+	PrevMouseMiddleButton = MouseMiddleButton;
+	if (MouseMiddleButton && Persistent_Essentials_EnableMixMapping) SendCustomEvent("SwitchGhostBlocks", Text[]);
+}
+
+// ---------------------------------- //
+// Set cursor position and direction rose
+if (PrevCursorPosition != CursorPosition) {
+	PrevCursorPosition = CursorPosition;
+	for (I, 0, 2) Label_CursorCoords[I].Value = TL::ToText(CursorPosition[I]);
+}
+Frame_DirectionArrow.RelativeRotation = RadToDeg(CameraRotation) - 90;
+
+// ---------------------------------- //
+// Set podium reminder visibility
+Frame_MissingPodium.Visible = Persistent_Essentials_RemindPodiums && MapPodiumsCount != 1;
+
+// ---------------------------------- //
+// Update advanced options visibility
+if (PrevFrameVisible != FrameVisible) {
+	PrevFrameVisible = FrameVisible;
+	
+	LibManialink_AnimStop(Frame_AditionalIcons);
+	LibManialink_AnimStop(Quad_WindowBackground);
+	LibManialink_AnimStop(Quad_WindowBgBlur);
+	LibManialink_AnimStop(Quad_WindowBgShadow);
+	
+	declare PositionX = 0.;
+	declare Easing = "EaseInSine";
+	declare SizeX = 30.;
+	declare Rotation = 0.;
+	
+	if (FrameVisible) {
+		PositionX -= 42.;
+		Easing = "EaseOutSine";
+		SizeX += 42.;
+		Rotation = 180.;
+	}
+	
+	LibManialink_Anim(Frame_AditionalIcons, "<frame posn="^PositionX^"/>", 250, Easing);
+	LibManialink_Anim(Quad_WindowBackground, "<quad sizen='"^SizeX^" 8'/>", 250, Easing);
+	LibManialink_Anim(Quad_WindowBgBlur, "<quad sizen='"^SizeX^" 8'/>", 250, Easing);
+	LibManialink_Anim(Quad_WindowBgShadow, "<quad sizen='"^SizeX * 2 + 10^" 26'/>", 250, Easing);
+	Quad_IconCog.RelativeRotation = Rotation;
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Convert radians to degree
+ *
+ *	@param	_Rad	Angle in radians
+ *
+ *	@return		Angle in degree
+ */
+Real RadToDeg(Real _Rad) { return _Rad / ML::PI() * 180; }
+
+{{{Manialink::Animations(["EaseOutSine", "EaseInSine"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		+++Yield+++
+		LibManialink_AnimLoop();
+		yield;
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		+++Yield+++
+		yield;
+	}
+}

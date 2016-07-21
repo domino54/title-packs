@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2016-07-06            //
+//  script version: 2016-07-21            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"JailbreakArena JailbreakV2Arena"
-#Const Version		"2016-07-06"
+#Const Version		"2016-07-21"
 #Const ScriptName	"JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -414,6 +414,8 @@ foreach (Player in Players) {
 // ---------------------------------- //
 // Open gates if player allows teammates to escape
 foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
+	if (GateLandmarks.count <= 0) continue;
+	
 	declare PlayersCanEscape = (G_EscapeEndTime.existskey(Clan) && Now < G_EscapeEndTime[Clan]);
 	foreach (GateLandmark in GateLandmarks) {
 		GateLandmark.Gate.ManualClosed = !PlayersCanEscape;
@@ -580,6 +582,7 @@ Boolean IsInGateSector(CSmPlayer _Player) {
 	declare IsInSector = False;
 	
 	foreach (MapLandmark in G_ClanGateLandmarks[_Player.CurrentClan]) {
+		if (MapLandmark == Null) continue;
 		declare SectorPosition = MapLandmark.Position + C_GateSectorOffset;
 		if (
 			ML::Abs(_Player.Position.X - SectorPosition.X) < C_GateSectorSize.X / 2 &&
@@ -845,7 +848,6 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	
 	// ---------------------------------- //
 	// Initialize objects
-	GalaxyTitles::UseComboWeapons(True);
 	GalaxyTitles::InitObjects();
 	MiniMap::Show();
 	
@@ -868,7 +870,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 			HasWaited = True;
 		}
 		
-		GalaxyTitles::SpawnObjects(True);
+		GalaxyTitles::SpawnObjects();
 		GT_UnspawnPlayersChangingClan();
 		WarmUp2::ManageEvents();
 		
@@ -896,7 +898,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	// Player joined the game
 	if (HasWaited) {
 		SM::UnspawnAllPlayers();
-		GalaxyTitles::InitObjects();
+		GalaxyTitles::ResetAll();
 		if (!ServerShutdownRequested && !MatchEndRequested) {
 			Message::SendBigMessage(_("A new player joins the game."), 5000, 0, CUIConfig::EUISound::Default, 0);
 			MB_Sleep(5000);

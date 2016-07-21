@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-07-14            //
+//  script version: 2016-07-21            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-07-14"
+#Const BaseVersion		"2016-07-21"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -36,16 +36,17 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_ObjectsRespawnTime	15		as _("Items respawn time (0 = don't spawn)")
-#Setting S_ToadsRespawnTime		60		as _("Toads respawn time (0 = don't spawn)")
-#Setting S_ToadsSpawnRatio		.5		as _("Percentage amount of Toads to spawn on landmarks")
 #Setting S_UseComboWeapons		True	as _("Use Weapons pick-ups (if available on map)")
+#Setting S_PlayerArmorPoints	3		as _("Amount of players Armor points (1 min, 10 max)")
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
-#Setting S_WarmUpDuration		300		as _("Warm up duration (sec.)")	///< Duration of the warm up round (0 = no warmup)
-#Setting S_PlayerArmorPoints	3		as _("Armor points")			///< Amount of players Armor points (1 min, 10 max)
-#Setting S_RespawnTime			3000	as "<hidden>"					///< Time before respawn
-#Setting S_NbPlayersPerTeamMax	0		as "<hidden>" //_("Maximum number of players per team (0: no max)")
-#Setting S_NbPlayersPerTeamMin	1		as "<hidden>" //_("Minumum number of players per team")
+#Setting S_ObjectsRespawnTime	15		as "<hidden>" //_("Items respawn time (0 = don't spawn)")
+#Setting S_ToadsRespawnTime		60		as "<hidden>" //_("Toads respawn time (0 = don't spawn)")
+#Setting S_ToadsSpawnRatio		.5		as "<hidden>" //_("Percentage amount of Toads to spawn on landmarks")
+#Setting S_WeaponsDropLifetime	5		as "<hidden>" ///< Duration before bropped weapons reappear on landmarks
+#Setting S_WarmUpDuration		300		as "<hidden>" ///< Duration of the warm up round (0 = no warmup)
+#Setting S_RespawnTime			3000	as "<hidden>" ///< Time before respawn
+#Setting S_NbPlayersPerTeamMax	0		as "<hidden>" ///< Maximum number of players per team (0: no max)
+#Setting S_NbPlayersPerTeamMin	1		as "<hidden>" ///< Minumum number of players per team
 #Setting S_CustomLayersURLs		""		as "<hidden>" ///< Try to load custom layers from an URL
 #Setting S_CustomBlacklistURL	""		as "<hidden>" ///< URL of the custom blacklist file
 #Setting S_KillFeedOffsetY		0.		as "<hidden>" ///< For server hosters: killfeed Y offset
@@ -78,9 +79,13 @@ declare Text GT_SpawnScreenModeName;		///< Name of the mode displayed in the spa
 declare Text GT_SpawnScreenModeType;		///< Spawn screen mode type (free for all, teams, cooperation)
 declare Text GT_SpawnScreenObjectives;		///< Rules of the game mode displayed in the spawn screen
 
+// ---------------------------------- //
+// Developer settings
+// ---------------------------------- //
 declare Boolean GT_UseNoCollisionsStart;	///< Use the no-collisions round start
 declare Boolean GT_UseAutoEndSequence;		///< Use the automatic End Map sequence
 declare Boolean GT_UseComboWeapons;			///< Use combo waepons
+declare Boolean GT_UseRandomToads;			///< Spawn Toads on random bot path landmarks
 declare Boolean GT_AutoManageOnHit;			///< Automatically manage OnHit events
 declare Boolean GT_AutoManageOnArmorEmpty;	///< Automatically manage OnArmorEmpty events
 declare Boolean GT_AutoManageOnNearMiss;	///< Automatically manage OnNearMiss events
@@ -187,6 +192,7 @@ if (UseClans) {
 GT_UseNoCollisionsStart = True;
 GT_UseAutoEndSequence = True;
 GT_UseComboWeapons = True;
+GT_UseRandomToads = True;
 GT_AutoManageOnHit = True;
 GT_AutoManageOnArmorEmpty = True;
 GT_AutoManageOnNearMiss = True;
@@ -302,6 +308,9 @@ Score::MatchBegin(True);
 TopScores::MatchBegin();
 UpdateChecker::CheckUpdate();
 Interfancy::ClearData();
+GalaxyTitles::ResetAll();
+
+// Warm-up
 if (UseClans) GT_InitWarmUp();
 
 // ---------------------------------- //
@@ -348,9 +357,12 @@ TopScores::RoundBegin();
 MiniMap::Show();
 Replay_Start();
 
-GalaxyTitles::UseComboWeapons(S_UseComboWeapons && GT_UseComboWeapons);
-GalaxyTitles::Init();
-GalaxyTitles::InitToads(S_ToadsSpawnRatio);
+// ---------------------------------- //
+// Init GalaxyTitles functions
+declare ToadsSpawnRatio = 0.;
+if (GT_UseRandomToads) ToadsSpawnRatio = S_ToadsSpawnRatio;
+GalaxyTitles::Init(S_UseComboWeapons && GT_UseComboWeapons, ToadsSpawnRatio);
+GalaxyTitles::SetDroppedWeaponsLifetime(S_WeaponsDropLifetime);
 
 // Update the rules now, if a change occured in the settings
 ---Rules---
@@ -568,13 +580,17 @@ foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// Player picked up item
 	else if (Event.Type == CSmModeEvent::EType::OnPlayerTouchesObject) {
-		Discard(Event);
-		if (Event.Object == Null || Event.Player == Null || Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+		if (Event.Object == Null || Event.Player == Null || Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) {
+			Discard(Event);
+			continue;
+		}
 		
 		// Pick up object handled by the mode base
 		if (GalaxyTitles::PickUpObject(Event, S_ObjectsRespawnTime * 1000)) continue;
 		
 		+++OnPlayerTouchesObject+++
+		
+		Discard(Event);
 	}
 	// ---------------------------------- //
 	// On player switch weapon
@@ -618,9 +634,7 @@ foreach (Event in PendingEvents) {
 // ---------------------------------- //
 // Galaxy Titles features
 GT_UnspawnPlayersChangingClan();
-GalaxyTitles::ReloadBoost();
-GalaxyTitles::SpawnObjects(S_ObjectsRespawnTime > 0);
-GalaxyTitles::ToadsLoop(S_ToadsRespawnTime * 1000);
+GalaxyTitles::Loop(S_ObjectsRespawnTime > 0, S_ToadsRespawnTime * 1000);
 
 // ---------------------------------- //
 // Stop the no-collisions phase
@@ -642,6 +656,7 @@ if (MM_IsMatchServer() && MM_RestartMatchmaking) MB_StopMatch = True;
 Score::RoundEnd();
 TopScores::RoundEnd();
 MiniMap::Hide();
+GalaxyTitles::ResetAll();
 
 StartTime = -1;
 EndTime = -1;
@@ -661,7 +676,7 @@ if (!UseClans) foreach (I => Score in Scores) Score.LadderClan = 1 + I % 2;
 
 Score::MatchEnd(True);
 TopScores::MatchEnd();
-GalaxyTitles::Init();
+GalaxyTitles::ResetAll();
 
 // ---------------------------------- //
 // Set matchmaking match master
@@ -933,7 +948,7 @@ Void GT_DoWarmUp() {
 		// Let the server sleep if there are no players
 		if (PlayersNbTotal <= 0) continue;
 		
-		GalaxyTitles::SpawnObjects(True);
+		GalaxyTitles::SpawnObjects();
 		if (UseClans) GT_UnspawnPlayersChangingClan();
 		
 		// ---------------------------------- //
@@ -990,6 +1005,6 @@ Void GT_DoWarmUp() {
 	UIManager.UIAll.StatusMessage = "";
 	UIManager.UIAll.BigMessage = "";
 	SM::UnspawnAllPlayers();
-	GalaxyTitles::InitObjects();
+	GalaxyTitles::ResetAll();
 	MiniMap::Hide();
 }

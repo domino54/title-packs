@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2016-07-18            //
+//  script version: 2016-07-21            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const	CompatibleMapTypes	"GoldenDunkV2Arena"
-#Const	Version				"2016-07-18"
+#Const	Version				"2016-07-21"
 #Const	ScriptName			"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -30,6 +30,7 @@
 #Const C_NbPlayersPerNextBall	4		///< Amount of additional players required to spawn a next ball
 #Const C_MaxNbBallsTotal		10		///< Overall maximum amount of balls
 #Const C_DroppedBallLifetime	5000	///< Duratin for how long ball can stay dropped on the ground
+#Const C_BallRepickDuration		3000	///< Time before dropped ball can be picked up by the same player again
 
 // ---------------------------------- //
 // Global variables
@@ -331,6 +332,13 @@ foreach (Event in PendingEvents) {
 			---PremadeOnArmorEmpty---
 		}
 	}
+	// ---------------------------------- //
+	// On player request action
+	else if (Event.Type == CSmModeEvent::EType::OnActionEvent) {
+		// ---------------------------------- //
+		// Drop carried ball
+		if (Event.ActionInput == CSmModeEvent::EActionInput::Consumable2) DropBall(Event.Player);
+	}
 }
 
 // ---------------------------------- //
@@ -365,7 +373,17 @@ foreach (Player in Players) {
 	// Spawn players
 	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate && GT_IsValidPlayer(Player)) {
 		GT_InitPlayer(Player);
-		SM::SpawnPlayer(Player, Player.CurrentClan, G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn, Now + S_RespawnTime);
+		
+		// Add ball to the inventory
+		Inventory::CreateItemSlot(Player, "Ball", CSmModeEvent::EActionInput::Consumable2, 0, C_ImgBase^"Icons/Ball.png");
+		
+		// Clear forbidden items
+		declare Integer[Ident] ForbiddenItems for Player;
+		ForbiddenItems.clear();
+		
+		// Spawn player
+		declare PlayerSpawn <=> G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
+		SM::SpawnPlayer(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
 	}
 	
 	// ---------------------------------- //
@@ -779,6 +797,7 @@ Boolean IsCarryingBall(CSmPlayer _Player) {
 Void GiveBall(Ident _PlayerId) {
 	if (!G_BallCarriersIds.exists(_PlayerId)) G_BallCarriersIds.add(_PlayerId);
 	G_NbBallsTotal = G_BallCarriersIds.count + G_DroppedBalls.count;
+	if (AllPlayers.existskey(_PlayerId)) Inventory::SetItemAmount(AllPlayers[_PlayerId], "Ball", 1);
 }
 
 // ---------------------------------- //
@@ -789,6 +808,7 @@ Void GiveBall(Ident _PlayerId) {
 Void RemoveBall(Ident _PlayerId) {
 	declare Removed = G_BallCarriersIds.remove(_PlayerId);
 	G_NbBallsTotal = G_BallCarriersIds.count + G_DroppedBalls.count;
+	if (AllPlayers.existskey(_PlayerId)) Inventory::SetItemAmount(AllPlayers[_PlayerId], "Ball", 0);
 }
 
 // ---------------------------------- //
@@ -811,9 +831,15 @@ Boolean PickUpBall(CSmPlayer _Player, CSmObject _Object) {
 	if (Tag != "Ball") return False;
 	
 	// ---------------------------------- //
+	// Pick up only if item is not forbidden
+	declare Integer[Ident] ForbiddenItems for _Player;
+	if (ForbiddenItems.existskey(_Object.Id) && Now < ForbiddenItems[_Object.Id] + C_BallRepickDuration) return False;
+	declare Removed = ForbiddenItems.removekey(_Object.Id);
+	
+	// ---------------------------------- //
 	// Remove ball from dropped balls array and give it to a player
 	if (G_DroppedBalls.exists(_Object)) {
-		declare Removed = G_DroppedBalls.remove(_Object);
+		Removed = G_DroppedBalls.remove(_Object);
 	}
 	
 	GiveBall(_Player.Id);
@@ -849,6 +875,11 @@ Void DropBall(CSmPlayer _Player) {
 	// Set object tag
 	declare Text Tag for G_DroppedBalls[SpawnTime];
 	Tag = "Ball";
+	
+	// ---------------------------------- //
+	// Prevent player from picking up item
+	declare Integer[Ident] ForbiddenItems for _Player;
+	ForbiddenItems[G_DroppedBalls[SpawnTime].Id] = SpawnTime;
 	
 	// Update markers
 	UpdateMarkers();
@@ -929,7 +960,6 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	
 	// ---------------------------------- //
 	// Initialize objects
-	GalaxyTitles::UseComboWeapons(True);
 	GalaxyTitles::InitObjects();
 	MiniMap::Show();
 	
@@ -952,7 +982,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 			HasWaited = True;
 		}
 		
-		GalaxyTitles::SpawnObjects(True);
+		GalaxyTitles::SpawnObjects();
 		GT_UnspawnPlayersChangingClan();
 		WarmUp2::ManageEvents();
 		
@@ -979,7 +1009,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	// Player joined the game
 	if (HasWaited) {
 		SM::UnspawnAllPlayers();
-		GalaxyTitles::InitObjects();
+		GalaxyTitles::ResetAll();
 		if (!ServerShutdownRequested && !MatchEndRequested) {
 			Message::SendBigMessage(_("A new player joins the game."), 5000, 0, CUIConfig::EUISound::Default, 0);
 			MB_Sleep(5000);

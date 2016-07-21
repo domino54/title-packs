@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  ESSENTIALS EDITOR PLUGIN by domino54  //
-//  script version: 2016-07-20            //
+//  script version: 2016-07-21            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
 
 #RequireContext CEditorPlugin
 
-#Const	Version		"2016-07-20"
+#Const	Version		"2016-07-21"
 #Const	ScriptName	"Essentials.Script.txt"
 
 #Include "TextLib" as TL
@@ -25,7 +25,7 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_HDTerrainModels	["DecoTerrainHD"]
+#Const C_HDTerrainModels	["DecoTerrainHD", "Cliff8HD"]
 #Const C_AutoSavePeriod		20000
 
 // ---------------------------------- //
@@ -60,7 +60,7 @@ declare NextAutoSave = Now + C_AutoSavePeriod;
 
 /// Update
 declare PrevPlaceMode = PlaceMode;
-declare CBlockModel PrevCursorBlockModel;
+declare PrevCursorBlockModelId = NullId;
 ***
 
 // ---------------------------------- //
@@ -118,12 +118,15 @@ EnableMixMapping = Persistent_Essentials_EnableMixMapping;
 
 // ---------------------------------- //
 // Switch Underground Mode depending on selected block
-if (PrevCursorBlockModel != CursorBlockModel) {
-	PrevCursorBlockModel = CursorBlockModel;
+if (CursorBlockModel == Null || PrevCursorBlockModelId != CursorBlockModel.Id) {
+	if (CursorBlockModel != Null) PrevCursorBlockModelId = CursorBlockModel.Id;
+	else PrevCursorBlockModelId = NullId;
 	
-	if (Persistent_Essentials_AutoUnderground) {
-		UndergroundMode = CursorBlockModel.VariantAir != Null && CursorBlockModel.VariantAir.IsAllUnderground;
-	}
+	if (Persistent_Essentials_AutoUnderground)
+		UndergroundMode =
+			CursorBlockModel != Null &&
+			CursorBlockModel.VariantAir != Null &&
+			CursorBlockModel.VariantAir.IsAllUnderground;
 }
 
 // ---------------------------------- //

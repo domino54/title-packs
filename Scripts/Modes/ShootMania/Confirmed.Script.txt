@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  CONFIRMED by domino54                 //
-//  script version: 2016-07-21            //
+//  script version: 2016-07-25            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const	CompatibleMapTypes	"MeleeArena TeamMeleeArena"
-#Const	Version				"2016-07-21"
+#Const	Version				"2016-07-25"
 #Const	ScriptName			"Confirmed.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -194,7 +194,7 @@ SpawnCoin(Event.Player);
 // ---------------------------------- //
 ***OnPlayerTouchesObject***
 ***
-PickUpCoin(Event);
+if (PickUpCoin(Event)) continue;
 ***
 
 // ---------------------------------- //
@@ -410,18 +410,21 @@ Void SendPickMessage(CSmPlayer _Player, Text _ObjectLogin, Integer _ObjectClan) 
 /** Pick up coin object
  *
  *	@param	_Player		The event to proceed
+ *
+ *	@return		True, if the object is handled by the game mode
  */
-Void PickUpCoin(CSmModeEvent _Event) {
-	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerTouchesObject) return;
+Boolean PickUpCoin(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerTouchesObject) return False;
 	if (
 		_Event.Object == Null || _Event.Player == Null || _Event.Player.IsBot || _Event.Player.CurrentClan == 0 ||
 		_Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned
-	) return;
+	) return False;
 	
 	// ---------------------------------- //
 	// Accept only Coin items
 	declare Text Tag for _Event.Object;
-	if (Tag != "Coin") return;
+	if (Tag != "Coin") return False;
+	Discard(_Event);
 	
 	declare Text PlayerLogin for _Event.Object;
 	declare Integer PlayerClan for _Event.Object;
@@ -473,6 +476,7 @@ Void PickUpCoin(CSmModeEvent _Event) {
 	// Destroy item
 	_Event.Object.SetUnspawned();
 	ObjectDestroy(_Event.Object);
+	return True;
 }
 
 // ---------------------------------- //

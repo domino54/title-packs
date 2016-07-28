@@ -1,14 +1,14 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2016-07-21            //
+//  script version: 2016-07-28            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
-#Const	CompatibleMapTypes	"GoldenDunkV2Arena"
-#Const	Version				"2016-07-21"
-#Const	ScriptName			"GoldenDunkV2.Script.txt"
+#Const CompatibleMapTypes "GoldenDunkV2Arena"
+#Const Version		"2016-07-28"
+#Const ScriptName	"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
 
@@ -18,19 +18,21 @@
 #Setting S_RoundsToWin		2	as _("Rounds to win")			///< Number of rounds to win a map
 #Setting S_RoundGapToWin	2	as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
 #Setting S_RoundsLimit		3	as _("Rounds limit")			///< Point limit on map
-#Setting S_TimeLimit	300		as _("Time limit (seconds)")	///< Time limit (seconds)
+#Setting S_TimeLimit	240		as _("Time limit (seconds)")	///< Time limit (seconds)
 #Setting S_MaxNbBalls	0		as _("Force a specific number of balls (0 = dynamic count)")	///< Max balls spwned
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
 #Const C_HoopAreaRadius			6.		///< Radius of the hoop area
-#Const C_GoalPostLoadingTime	25000	///< For how long players have to stand on goal to capture it
+#Const C_GoalPostLoadingTime	20000	///< For how long players have to stand on goal to capture it
 #Const C_GoalShieldMinRatio		.75		///< Minimum percentage goal energy required to activate shield
+#Const C_GoalPostCaptureCoef	2		///< Team pole capture speed multipler
+#Const C_GoalPostDecaptureCoef	1		///< Enemy pole decpture speed multipler
 #Const C_NbPlayersPerNextBall	4		///< Amount of additional players required to spawn a next ball
 #Const C_MaxNbBallsTotal		10		///< Overall maximum amount of balls
 #Const C_DroppedBallLifetime	5000	///< Duratin for how long ball can stay dropped on the ground
-#Const C_BallRepickDuration		3000	///< Time before dropped ball can be picked up by the same player again
+#Const C_BallRepickDistance		3.		///< Distance to travel before ball can be picked up by the same player again
 
 // ---------------------------------- //
 // Global variables
@@ -80,7 +82,7 @@ GT_LogScriptsVersions = [
 GT_SpawnScreenModeName = "Golden Dunk v2";
 GT_SpawnScreenModeType = _("Team versus Team");
 GT_SpawnScreenObjectives = TL::Compose(
-	_("$<%11. $>Pick up balls from the checkpoint in the middle of map.\n$<%12. $>Take the ball to enemy hoop zrea to score 2 points for your team.\n$<%13. $>Dropped balls will disappear after 5 seconds.\n$<%14. $>If the map features Poles, capture your team Pole to be immune to OffZone.\n$<%15. $>Team, which has more points when time ends, wins the round."),
+	_("$<%11. $>Pick up balls from the checkpoint in the middle of map.\n$<%12. $>Take the ball to enemy hoop area to score 2 points for your team.\n$<%13. $>Dropped balls will disappear after 5 seconds.\n$<%14. $>If the map features Poles, capture your team Pole to be immune to OffZone.\n$<%15. $>Team, which has more points when time ends, wins the round."),
 	"$"^SpawnScreen::GetModeColor()
 );
 
@@ -160,12 +162,12 @@ declare Integer PrevLeadClan;
 declare CSmObject CentralBall;
 declare Integer[] BallsToUnspawn;
 declare Vec3[Ident] LastKnownBallsPositions;
+declare Integer PrevMaxBalls;
 declare PrevCheckpointBallVisible = False;
 
-LeadClan = 0;
-PrevLeadClan = 0;
 G_IsOvertime = False;
 G_NbBallsTotal = 0;
+PrevMaxBalls = G_NbBallsMax;
 for (I, 0, 2) ClanScores[I] = 0;
 Net_GoldenDunk_IsOvertime = False;
 
@@ -220,7 +222,7 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 	
 	MapLandmark.Gauge.Clan = Clan;
 	MapLandmark.Gauge.Value = 0;
-	MapLandmark.Gauge.Max = C_GoalPostLoadingTime;
+	MapLandmark.Gauge.Max = C_GoalPostLoadingTime * ML::Max(C_GoalPostCaptureCoef, C_GoalPostDecaptureCoef);
 	
 	declare Real PrevRatio for MapLandmark;
 	PrevRatio = 0.;
@@ -271,7 +273,7 @@ DropBall(Event.Player);
 // ---------------------------------- //
 ***OnPlayerTouchesObject***
 ***
-if (PickUpBall(Event.Player, Event.Object)) continue;
+if (PickUpBall(Event)) continue;
 ***
 
 // ---------------------------------- //
@@ -282,6 +284,11 @@ if (PickUpBall(Event.Player, Event.Object)) continue;
 // ---------------------------------- //
 // Update maximum amount of balls
 G_NbBallsMax = GetMaxNbBalls();
+
+if (PrevMaxBalls != G_NbBallsMax) {
+	PrevMaxBalls = G_NbBallsMax;
+	UpdateMarkers();
+}
 
 // ---------------------------------- //
 // Remove ball carriers that left the game
@@ -368,6 +375,7 @@ if (PrevCheckpointBallVisible != (G_NbBallsTotal < G_NbBallsMax)) {
 // Manage player functions
 foreach (Player in Players) {
 	declare Boolean JustRespawned for Player;
+	declare Vec3[] ForbiddenPositions for Player;
 	
 	// ---------------------------------- //
 	// Spawn players
@@ -378,8 +386,7 @@ foreach (Player in Players) {
 		Inventory::CreateItemSlot(Player, "Ball", CSmModeEvent::EActionInput::Consumable2, 0, C_ImgBase^"Icons/Ball.png");
 		
 		// Clear forbidden items
-		declare Integer[Ident] ForbiddenItems for Player;
-		ForbiddenItems.clear();
+		ForbiddenPositions.clear();
 		
 		// Spawn player
 		declare PlayerSpawn <=> G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
@@ -407,6 +414,23 @@ foreach (Player in Players) {
 		LastKnownBallsPositions[Player.Id] = Player.Position;
 	
 	if (JustRespawned) JustRespawned = False;
+	
+	// ---------------------------------- //
+	// Let the player pick up balls they dropped if moved
+	if (ForbiddenPositions.count > 0) {
+		declare Vec3[] PositionsToRemove;
+		
+		// Check if player has moved from the drop position
+		foreach (Position in ForbiddenPositions)
+			if (ML::Distance(Player.Position, Position) >= C_BallRepickDistance) PositionsToRemove.add(Position);
+		
+		// Remove object position if moved enough
+		while (PositionsToRemove.count > 0) {
+			declare Boolean Removed;
+			Removed = ForbiddenPositions.remove(PositionsToRemove[0]);
+			Removed = PositionsToRemove.removekey(0);
+		}
+	}
 }
 
 // ---------------------------------- //
@@ -428,8 +452,8 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 	if ((SectorNbTeammates == 0 && SectorNbOpponents == 0) || (SectorNbTeammates > 0 && SectorNbOpponents > 0))
 		MapLandmark.Gauge.Speed = 0;
 	
-	else if (SectorNbTeammates > 0) MapLandmark.Gauge.Speed = SectorNbTeammates;
-	else if (SectorNbOpponents > 0) MapLandmark.Gauge.Speed = -SectorNbOpponents;
+	else if (SectorNbTeammates > 0) MapLandmark.Gauge.Speed = SectorNbTeammates * C_GoalPostCaptureCoef;
+	else if (SectorNbOpponents > 0) MapLandmark.Gauge.Speed = -SectorNbOpponents * C_GoalPostDecaptureCoef;
 	
 	// ---------------------------------- //
 	// Show notice when clan captures / decaptures a pole
@@ -528,7 +552,16 @@ Message::CleanBigMessages();
 G_NbBallsTotal = 0;
 G_BallCarriersIds.clear();
 G_DroppedBalls.clear();
+CentralBall = Null;
 Net_GoldenDunk_IsOvertime = False;
+ObjectDestroyAll();
+
+// ---------------------------------- //
+// Prevent poles from self-capturing
+foreach (MapLandmark in G_ClanGoalLandmarks) {
+	if (MapLandmark == Null || MapLandmark.Gauge == Null) continue;
+	MapLandmark.Gauge.Speed = 0;
+}
 
 // ---------------------------------- //
 // Set the round winner
@@ -571,8 +604,6 @@ UIManager.UIAll.BigMessage = "";
 
 // ---------------------------------- //
 // Map end conditions
-ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
-
 foreach (Clan => Points in ClanRoundScores) {
 	if (Clan == 0) continue;
 	if (
@@ -648,6 +679,10 @@ Void UpdateMarkers() {
 	}
 	
 	// ---------------------------------- //
+	// Set footer text
+	ST2::SetFooterText(TL::Compose(_("Total balls: %1"), TL::ToText(G_NbBallsMax)));
+	
+	// ---------------------------------- //
 	// Create marker for central checkpoint
 	if (G_CentralCheckpointLandmark != Null) {
 		// ---------------------------------- //
@@ -660,11 +695,11 @@ Void UpdateMarkers() {
 		
 		// ---------------------------------- //
 		// World marker
-		declare Pos = G_CentralCheckpointLandmark.Position + <0., .25, 0.>;
+		declare Pos = G_CentralCheckpointLandmark.Position;
 		UIManager.UIAll.MarkersXML ^= """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerCheckpoint#1"
-				minimapvisibility="Never"
+				visibility="WhenInFrustum" minimapvisibility="Never" box="1 1 1"
 			/>
 		""";
 	}
@@ -684,7 +719,7 @@ Void UpdateMarkers() {
 		UIManager.UIAll.MarkersXML ^= """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerHoop#{{{Clan}}}"
-				minimapvisibility="Never"
+				visibility="WhenInFrustum" minimapvisibility="Never"
 			/>
 		""";
 	}
@@ -704,7 +739,7 @@ Void UpdateMarkers() {
 		UIManager.UIAll.MarkersXML ^= """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerGoal#{{{Clan}}}"
-				minimapvisibility="Never"
+				visibility="WhenInFrustum" minimapvisibility="Never"
 			/>
 		""";
 	}
@@ -730,7 +765,10 @@ Void UpdateMarkers() {
 		// ---------------------------------- //
 		// World marker
 		UIManager.UIAll.MarkersXML ^= """
-			<marker playerid="{{{PlayerId}}}" manialinkframeid="Frame_BallMarker#{{{I}}}" minimapvisibility="Never"/>
+			<marker
+				playerid="{{{PlayerId}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
+				visibility="WhenInFrustum" minimapvisibility="Never" box="1 2 1"
+			/>
 		""";
 	}
 	
@@ -753,7 +791,7 @@ Void UpdateMarkers() {
 		UIManager.UIAll.MarkersXML ^= """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
-				minimapvisibility="Never" box=".5 .5 .5"
+				visibility="WhenInFrustum" minimapvisibility="Never" box="0 .75 0"
 			/>
 		""";
 	}
@@ -814,42 +852,42 @@ Void RemoveBall(Ident _PlayerId) {
 // ---------------------------------- //
 /** Pick up a ball object
  *
- *	@param	_Player		The player who picked up object
- *	@param	_Ocject		The object that has been picked up
+ *	@param	Event		The event to proceed
  *
- *	@return		True, if the item has been picked up correctly
+ *	@return		True, if the item is hanndled by the game mode
  */
-Boolean PickUpBall(CSmPlayer _Player, CSmObject _Object) {
-	if (
-		_Player == Null || _Player.IsBot || _Object == Null ||
-		IsCarryingBall(_Player) || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned
-	) return False;
+Boolean PickUpBall(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerTouchesObject) return False;
 	
 	// ---------------------------------- //
 	// Pick up only ball objects
-	declare Text Tag for _Object;
+	declare Text Tag for _Event.Object;
 	if (Tag != "Ball") return False;
+	
+	Discard(_Event);
+	
+	// Return if the player already has a ball
+	if (IsCarryingBall(_Event.Player)) return True;
 	
 	// ---------------------------------- //
 	// Pick up only if item is not forbidden
-	declare Integer[Ident] ForbiddenItems for _Player;
-	if (ForbiddenItems.existskey(_Object.Id) && Now < ForbiddenItems[_Object.Id] + C_BallRepickDuration) return False;
-	declare Removed = ForbiddenItems.removekey(_Object.Id);
+	declare Vec3[] ForbiddenPositions for _Event.Player;
+	if (ForbiddenPositions.exists(_Event.Object.Position)) return True;
 	
 	// ---------------------------------- //
 	// Remove ball from dropped balls array and give it to a player
-	if (G_DroppedBalls.exists(_Object)) {
-		Removed = G_DroppedBalls.remove(_Object);
+	if (G_DroppedBalls.exists(_Event.Object)) {
+		declare Removed = G_DroppedBalls.remove(_Event.Object);
 	}
 	
-	GiveBall(_Player.Id);
+	GiveBall(_Event.Player.Id);
 	UpdateMarkers();
-	Translations::SendBigMessage(_Player, "You've picked up a ball!", 3000, 1, CUIConfig::EUISound::PhaseChange, 0);
+	Translations::SendBigMessage(_Event.Player, "You've picked up a ball!", 3000, 1, CUIConfig::EUISound::PhaseChange, 0);
 	
 	// ---------------------------------- //
 	// Destroy object (unspawning the object gives a quiet sound)
-	_Object.SetUnspawned();
-	ObjectDestroy(_Object);
+	_Event.Object.SetUnspawned();
+	ObjectDestroy(_Event.Object);
 	return True;
 }
 
@@ -861,6 +899,7 @@ Boolean PickUpBall(CSmPlayer _Player, CSmObject _Object) {
 Void DropBall(CSmPlayer _Player) {
 	if (_Player == Null || !IsCarryingBall(_Player)) return;
 	RemoveBall(_Player.Id);
+	UpdateMarkers();
 	
 	if (G_NbBallsTotal >= G_NbBallsMax) return;
 	
@@ -878,10 +917,10 @@ Void DropBall(CSmPlayer _Player) {
 	
 	// ---------------------------------- //
 	// Prevent player from picking up item
-	declare Integer[Ident] ForbiddenItems for _Player;
-	ForbiddenItems[G_DroppedBalls[SpawnTime].Id] = SpawnTime;
+	declare Vec3[] ForbiddenPositions for _Player;
+	ForbiddenPositions.add(G_DroppedBalls[SpawnTime].Position);
 	
-	// Update markers
+	// Update markers again (required)
 	UpdateMarkers();
 }
 
@@ -1050,6 +1089,10 @@ Text CreateManialinkInterface() {
 	</frame>
 	<quad posn="0 1.25 2" sizen="6 6" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_Emblem"/>
 	<label posn="0 -2.75 2" class="EscapeMessage" textsize="2" text="0%" id="Label_Ratio"/>
+	<quad
+		posn="0 0 -1" sizen="14 14" halign="center" valign="center"
+		image="file://Media/Manialinks/Common/disc.dds" colorize="FFF" opacity="0" id="Quad_CaptureAlert"
+	/>
 </framemodel>
 
 <frame id="Frame_GaugeMessage" posn="0 -54 5">
@@ -1172,7 +1215,7 @@ foreach (I => Team in Teams) {
 // Manage goals
 foreach (I => MapLandmark in ClanGoalLandmarks) {
 	declare Frame = Frame_PolesGauges[I];
-	Frame.Visible = MapLandmark != Null && MapLandmark.Gauge != Null;
+	Frame.Visible = MapLandmark != Null && MapLandmark.Gauge != Null && MapLandmark.Sector != Null;
 	if (!Frame.Visible) continue;
 	
 	// ---------------------------------- //
@@ -1206,6 +1249,58 @@ foreach (I => MapLandmark in ClanGoalLandmarks) {
 		Quad_GaugeR.ImageUrl = Quad_GaugeL.ImageUrl;
 		Quad_Emblem.Substyle = "#"^Emblem;
 		Label_Ratio.Value = ML::FloorInteger(MapLandmark.Gauge.ValueReal * 100)^"%";
+	}
+	
+	// ---------------------------------- //
+	// Display warning on capture
+	declare GaugeSpeed = 0;
+	declare PrevGaugeSpeed for MapLandmark = 0;
+	declare TeammatesAmount = 0;
+	declare OpponentsAmount = 0;
+	
+	// Get the amount of players
+	foreach (PlayerId in MapLandmark.Sector.PlayersIds) {
+		if (!Players.existskey(PlayerId)) continue;
+		declare Player <=> Players[PlayerId];
+		
+		if (Player.CurrentClan == MapLandmark.Gauge.Clan) TeammatesAmount += 1;
+		else OpponentsAmount += 1;
+	}
+	
+	// Get the gauge speed
+	if (
+		(TeammatesAmount > 0) != (OpponentsAmount > 0) &&
+		MapLandmark.Gauge.ValueReal > 0 && MapLandmark.Gauge.ValueReal < 1
+	) {
+		if (TeammatesAmount > 0) GaugeSpeed = TeammatesAmount;
+		if (OpponentsAmount > 0) GaugeSpeed = -OpponentsAmount;
+	}
+	
+	// ---------------------------------- //
+	// Show warning animation
+	if (PrevGaugeSpeed != GaugeSpeed) {
+		PrevGaugeSpeed = GaugeSpeed;
+		
+		if (GaugeSpeed != 0) {
+			declare Quad_CaptureAlert <=> (Frame.GetFirstChild("Quad_CaptureAlert") as CMlQuad);
+			LibManialink_AnimStop(Quad_CaptureAlert);
+			
+			declare Color = <1., 1., 1.>;
+			if (GUIPlayer != Null && GUIPlayer.CurrentClan != 0) {
+				if (
+					(GaugeSpeed < 0 && MapLandmark.Gauge.Clan == GUIPlayer.CurrentClan) ||
+					(GaugeSpeed > 0 && MapLandmark.Gauge.Clan != GUIPlayer.CurrentClan)
+				)
+					Color = <1., 0., 0.>;
+			}
+			else if (GaugeSpeed < 0) Color = <1., 0., 0.>;
+			
+			Quad_CaptureAlert.Colorize = Color;
+			Quad_CaptureAlert.RelativeScale = 1.;
+			Quad_CaptureAlert.Opacity = .75;
+			
+			LibManialink_Anim(Quad_CaptureAlert, "<quad scale=1.75 opacity=0 />", 1500, "EaseOutCirc");
+		}
 	}
 }
 
@@ -1477,7 +1572,7 @@ Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
 }
 
 {{{Translations::InsertToManialink(["Pole blocked by enemy", "Shield is destroyed!", "Destroying enemy Shield...", "Shield is loaded!", "Loading Shield..."])}}}
-{{{Manialink::Animations(["EaseLinear", "EaseInOutSine"])}}}
+{{{Manialink::Animations(["EaseLinear", "EaseInOutSine", "EaseOutCirc"])}}}
 
 // ---------------------------------- //
 // Main

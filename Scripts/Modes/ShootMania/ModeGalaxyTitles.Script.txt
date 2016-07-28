@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-07-25            //
+//  script version: 2016-07-28            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-07-25"
+#Const BaseVersion		"2016-07-28"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -39,10 +39,11 @@
 #Setting S_UseComboWeapons		True	as _("Use Weapons pick-ups (if available on map)")
 #Setting S_PlayerArmorPoints	3		as _("Amount of players Armor points (1 min, 10 max)")
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
+#Setting S_UseAutoBalance		False	as _("Balance teams on round start")
 #Setting S_ObjectsRespawnTime	15		as "<hidden>" //_("Items respawn time (0 = don't spawn)")
 #Setting S_ToadsRespawnTime		60		as "<hidden>" //_("Toads respawn time (0 = don't spawn)")
 #Setting S_ToadsSpawnRatio		.5		as "<hidden>" //_("Percentage amount of Toads to spawn on landmarks")
-#Setting S_WeaponsDropLifetime	5		as "<hidden>" ///< Duration before bropped weapons reappear on landmarks
+#Setting S_WeaponsDropLifetime	0		as "<hidden>" ///< Duration before bropped weapons reappear on landmarks
 #Setting S_WarmUpDuration		300		as "<hidden>" ///< Duration of the warm up round (0 = no warmup)
 #Setting S_RespawnTime			3000	as "<hidden>" ///< Time before respawn
 #Setting S_NbPlayersPerTeamMax	0		as "<hidden>" ///< Maximum number of players per team (0: no max)
@@ -210,7 +211,6 @@ MB_UseSectionRound = True;
 ForceNavMapsComputation = True;
 MB_UsePlayerClublinks = S_UsePlayerClublinks;
 MB_UseIntro = !MM_IsMatchServer();
-Replay_AutoStart = False;
 
 // Update rules
 ---Rules---
@@ -355,7 +355,11 @@ if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 Score::RoundBegin();
 TopScores::RoundBegin();
 MiniMap::Show();
-Replay_Start();
+
+// ---------------------------------- //
+// Init players clans
+GT_AutoBalance();
+foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 
 // ---------------------------------- //
 // Init GalaxyTitles functions
@@ -660,8 +664,6 @@ GalaxyTitles::ResetAll();
 
 StartTime = -1;
 EndTime = -1;
-
-Replay_Stop();
 ***
 
 // ---------------------------------- //
@@ -786,10 +788,28 @@ WarmUp2::Unload();
  *	@return		The requested clan of the player
  */
 Integer GT_GetRequestedClan(CSmPlayer _Player) {
+	if (_Player == Null || !UseClans || UseForcedClans) return 0;
+	
+	// Get the clan in matchmaking
 	if (MM_IsMatchServer()) return MM_GetRequestedClan(_Player);
-	if (!UseClans || UseForcedClans) return 0;
-	else if (_Player != Null) return _Player.User.RequestedClan;
-	return 0;
+	
+	// Get the clan from automatic team balance
+	if (S_UseAutoBalance) {
+		declare Integer GT_AutoBalanceClan for _Player;
+		if (GT_AutoBalanceClan >= 1 && GT_AutoBalanceClan <= 2) return GT_AutoBalanceClan;
+	}
+	
+	// Get the user requested clan
+	return _Player.User.RequestedClan;
+}
+
+// ---------------------------------- //
+/// Teams balance based on players total points
+Void GT_AutoBalance() {
+	foreach (I => Player in Players) {
+		declare Integer GT_AutoBalanceClan for Player;
+		GT_AutoBalanceClan = I % 2 + 1;
+	}
 }
 
 // ---------------------------------- //

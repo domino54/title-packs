@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY UPDATE CHECKER by domino54    //
-//  script version: 2016-06-16            //
+//  script version: 2016-09-25            //
 // -------------------------------------- //
 
 /*
@@ -19,7 +19,7 @@
  *	</scripts>
  */
 
-#Const Version		"2016-06-16"
+#Const Version		"2016-09-25"
 #Const ScriptName	"UpdateChecker.Script.txt"
 
 #Include "TextLib" as TL
@@ -109,9 +109,9 @@ declare Frame_UpdateIcon	<=> (Page.GetFirstChild("Frame_UpdateIcon")		as CMlFram
 declare Label_UpdatesAmount	<=> (Page.GetFirstChild("Label_UpdatesAmount")	as CMlLabel);
 
 // Set translations
-Label_WindowTitle.SetText("$t"^Translations_Get("Server update"));
-Label_WindowSubtitle.SetText(Translations_Get("Server scripts can be replaced with the versions below:"));
-Label_Instructions.SetText(Translations_Get("Download the latest scripts versions from the gamemode developer site."));
+Label_WindowTitle.SetText("$t"^Translate("Server update"));
+Label_WindowSubtitle.SetText(Translate("Server scripts can be replaced with the versions below:"));
+Label_Instructions.SetText(Translate("Download the latest scripts versions from the gamemode developer site."));
 
 // ---------------------------------- //
 // Net data
@@ -166,7 +166,7 @@ if (PrevOnlineScriptCount != Net_LibUpdateChecker_Online.count) {
 	foreach (ScriptName => ScriptVersion in Net_LibUpdateChecker_Local) {
 		if (
 			!Net_LibUpdateChecker_Online.existskey(ScriptName) ||
-			IsNewest(ScriptVersion, Net_LibUpdateChecker_Online[ScriptName]) ||
+			!IsLocalScriptOutdated(ScriptVersion, Net_LibUpdateChecker_Online[ScriptName]) ||
 			Net_LibUpdateChecker_Online[ScriptName] == ScriptVersion
 		) continue;
 		
@@ -227,9 +227,85 @@ Boolean TextIsDate(Text _Text) {
 	if (_Text == "") return False;
 	declare SplitDate = TL::Split("-", _Text);
 	if (SplitDate.count < 3) return False;
-	
-	if (TL::Length(SplitDate[0]) != 4 || TL::Length(SplitDate[1]) != 2 || TL::Length(SplitDate[2]) != 2) return False;
+	return TL::Length(SplitDate[0]) == 4 && TL::Length(SplitDate[1]) == 2 && TL::Length(SplitDate[2]) == 2;
+}
+
+// ---------------------------------- //
+/** Check if the given year is leap year
+ *
+ *	@param	_Year	The year to check
+ *
+ *	@return		True, if it's a leap year
+ */
+Boolean IsLeapYear(Integer _Year) {
+	if (_Year % 4 != 0) return False;
+	else if (_Year % 100 != 0) return True;
+	else if (_Year % 400 != 0) return False;
 	return True;
+}
+
+// ---------------------------------- //
+/** Generate the Unix timestamp of given time
+ *
+ *	@param	_Date	The date to convert
+ *
+ *	@return		Unix timestamp
+ */
+Integer GetUnixTime(Text _Date) {
+	declare UnixTimestamp = 0;
+	declare SplitDateText = TL::Split(" ", _Date);
+	if (SplitDateText.count < 2) return -1;
+	
+	// ---------------------------------- //
+	// Time
+	declare SplitTime = TL::Split(":", SplitDateText[1]);
+	if (SplitTime.count < 3) return -1;
+	
+	for (I, 0, 2) {
+		declare ToAdd = TL::ToInteger(SplitTime[I]);
+		switch (I) {
+			case 1 : ToAdd *= 60;
+			case 0 : ToAdd *= 3600;
+		}
+		UnixTimestamp += ToAdd;
+	}
+	
+	// ---------------------------------- //
+	// Date
+	declare SplitDate = TL::Split("-", SplitDateText[0]);
+	if (SplitDate.count < 3) return -1;
+	
+	declare Year = TL::ToInteger(SplitDate[0]);
+	declare Month = TL::ToInteger(SplitDate[1]);
+	declare Day = TL::ToInteger(SplitDate[2]);
+	declare TotalDays = 0;
+	
+	// ---------------------------------- //
+	// Compute total amount of days in completely passed years
+	if (Year > 1970) for (I, 1970, Year - 1) {
+		TotalDays += 365;
+		if (IsLeapYear(I)) TotalDays += 1;
+	}
+	
+	// ---------------------------------- //
+	// Get the amount of days in completely passed months
+	declare LongMonths = [1, 3, 5, 7, 8, 10, 12];
+	if (Month > 1) for (I, 1, Month - 1) {
+		if (LongMonths.exists(I)) { TotalDays += 31; continue; }
+		if (I != 2) { TotalDays += 30; continue; }
+		TotalDays += 28;
+		if (IsLeapYear(Year)) TotalDays += 1;
+	}
+	
+	// ---------------------------------- //
+	// Get the amount of seconds passed in current month
+	if (Day > 1) TotalDays += Day - 1;
+	
+	// ---------------------------------- //
+	// Increment amount of seconds passed since 01/01/1970
+	UnixTimestamp += TotalDays * 86400;
+	
+	return UnixTimestamp;	
 }
 
 // ---------------------------------- //
@@ -240,21 +316,11 @@ Boolean TextIsDate(Text _Text) {
  *
  *	@return		True, if date is newest
  */
-Boolean IsNewest(Text _LocalDate, Text _OnlineDate) {
+Boolean IsLocalScriptOutdated(Text _LocalDate, Text _OnlineDate) {
 	if (!TextIsDate(_LocalDate) || !TextIsDate(_OnlineDate)) return False;
-	declare LocalDate = TL::Split("-", _LocalDate);
-	declare OnlineDate = TL::Split("-", _OnlineDate);
-	
-	declare IsNewestYear = TL::ToInteger(LocalDate[0]) > TL::ToInteger(OnlineDate[0]);
-	if (IsNewestYear) return True;
-	
-	declare IsNewestMonth = TL::ToInteger(LocalDate[1]) > TL::ToInteger(OnlineDate[1]);
-	if (IsNewestMonth) return True;
-	
-	declare IsNewestDay = TL::ToInteger(LocalDate[2]) > TL::ToInteger(OnlineDate[2]);
-	if (IsNewestDay) return True;
-	
-	return False;
+	declare LocalDate = GetUnixTime(TL::SubText(_LocalDate, 0, 10)^" 0:00:00");
+	declare OnlineDate = GetUnixTime(TL::SubText(_OnlineDate, 0, 10)^" 0:00:00");
+	return OnlineDate > LocalDate;
 }
 
 {{{Manialink::Animations(["EaseInCirc", "EaseOutCirc"])}}}

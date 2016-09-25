@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2016-07-14            //
+//  script version: 2016-09-25            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2016-07-14"
+#Const	Version		"2016-09-25"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -294,12 +294,13 @@ ModuleIcon["Armor"] = G_IconsTextures["Armor"];
 // Update settings
 if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	PrevSettingsUpdate = Net_LibInterfancy_SettingsUpdate;
+	
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
 			case "Gauges_Display"	: Gauges_Display	= SettingValue == "True";
-			case "DisplayArmor"		: DisplayArmor		= SettingValue == "True";
-			case "DisplayAmmo"		: DisplayAmmo		= SettingValue == "True";
-			case "DisplayStamina"	: DisplayStamina	= SettingValue == "True";
+			case "Armor_Display"	: DisplayArmor		= SettingValue == "True";
+			case "Ammo_Display"		: DisplayAmmo		= SettingValue == "True";
+			case "Stamina_Display"	: DisplayStamina	= SettingValue == "True";
 			case "Gauges_TextFont" : {
 				foreach (Module in C_GaugesModules) {
 					if (Module != "Stamina") Label_ModuleCounter[Module].TextFont = SettingValue;
@@ -853,6 +854,7 @@ main() {
 		// Update settings
 		if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 			PrevSettingsUpdate = Net_LibInterfancy_SettingsUpdate;
+			
 			foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 				switch (SettingName) {
 					case "ScoreSummary_Display" : ScoreSummary_Display = (SettingValue == "True");
@@ -961,7 +963,7 @@ Text Private_CreateManialinkCountdown() {
 
 <script><!--
 /**
- *	LibInterfancy:	Countdown
+ *	LibInterfancy: Countdown
  */
 
 #Include "MathLib" as ML
@@ -1002,6 +1004,7 @@ declare PrevTick = -1;
 // Update settings
 if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	PrevSettingsUpdate = Net_LibInterfancy_SettingsUpdate;
+	
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
 			case "Countdown_Display" : Countdown_Display = SettingValue == "True";
@@ -1180,6 +1183,7 @@ declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
 // Update settings
 if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	PrevSettingsUpdate = Net_LibInterfancy_SettingsUpdate;
+	
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
 			case "SpecInfo_Display" : SpecInfo_Display = SettingValue == "True";
@@ -1394,6 +1398,7 @@ foreach (Event in PendingEvents) {
 // Update settings
 if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	PrevSettingsUpdate = Net_LibInterfancy_SettingsUpdate;
+	
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
 			case "Gauges_TextFont" : {
@@ -1409,7 +1414,8 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 ClientUI.OverlayHideCrosshair = !Crosshair_Display || Persistent_LibInterfancy_UseCustomCrosshair;
 Frame_Crosshair.Visible =
 	ClientUI.OverlayHideCrosshair && GUIPlayer != Null && !GUIPlayer.IsOnTechNoWeapon && !GUIPlayer.IsInWater &&
-	GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0;
+	GUIPlayer.Position != <0., 0., 0.> && GameTime >= GUIPlayer.StartTime - 1500 &&
+	GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0;
 
 // ---------------------------------- //
 // Update GUIPlayer
@@ -1589,11 +1595,9 @@ Void SetModuleVisibility(Text _ModuleName, Boolean _Display) {
 		switch (_ModuleName) {
 			case "Gauges"		: UIManager.UIAll.OverlayHideGauges = True;
 			case "Countdown"	: UIManager.UIAll.OverlayHideCountdown = True;
-			// case "Crosshair"	: UIManager.UIAll.OverlayHideCrosshair = True;
 			case "SpecInfo"		: UIManager.UIAll.OverlayHideSpectatorInfos = True;
 			case "321Go"		: UIManager.UIAll.OverlayHide321Go = True;
 		}
-		Private_SetModuleSetting(_ModuleName^"_Display", TL::ToText(_Display));
 	} else {
 		switch (_ModuleName) {
 			case "Gauges"		: UIManager.UIAll.OverlayHideGauges = !_Display;
@@ -1604,6 +1608,7 @@ Void SetModuleVisibility(Text _ModuleName, Boolean _Display) {
 		}
 	}
 	G_LibInterfancy_ModuleVisibility[_ModuleName] = _Display;
+	Private_SetModuleSetting(_ModuleName^"_Display", TL::ToText(_Display));
 }
 
 // ---------------------------------- //
@@ -1766,7 +1771,7 @@ Void ForceColor(CSmPlayer _Player, Vec3 _Color) {
 	
 	declare Color = _Color;
 	for (I, 0, 2) Color[I] = ML::Clamp(Color[I], 0., 1.);
-	_Player.ForceColor;
+	_Player.ForceColor = _Color;
 	
 	declare netwrite Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
 	Net_LibInterfancy_ForcedColors[_Player.User.Login] = Color;

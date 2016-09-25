@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  OFFZONE LIB by domino54               //
-//  script version: 2015-12-12            //
+//  script version: 2016-09-25            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	for free from domino54's GitHub repository.
  */
 
-#Const Version		"2015-12-12"
+#Const Version		"2016-09-25"
 #Const ScriptName	"OffZone.Script.txt"
 
 #Include "MathLib" as ML
@@ -22,6 +22,7 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
+#Const C_PlayerPositionFixOffset	<0., .01, 0.>	///< Offset added to the position
 
 /// Size of the block in each environment
 #Const C_LibOffZone_ColBlockDimensions [
@@ -32,9 +33,9 @@
 
 /// Y index of the block in position 0 in each environment
 #Const C_LibOffZone_ColGroundCoordY [
-	"Canyon" => 11,
+	"Canyon" => 15,
 	"Stadium" => 9,
-	"Valley" => 9
+	"Valley" => 5
 ]
 
 // ---------------------------------- //
@@ -63,10 +64,14 @@ declare Boolean G_LibOffZone_DisableBorders; ///< Disable event when Player driv
  */
 Int3 Private_GetPlayerBlockCoords(Vec3 _Position) {
 	if (!G_LibOffZone_IsLoaded) return Int3;
+	declare Position = _Position;
+	Position.Y += (G_LibOffZone_ColGroundCoordY - 1) * G_LibOffZone_ColBlockDimensions.Y;
 	
 	declare Int3 BlockCoords;
-	for (I, 0, 2) BlockCoords[I] = ML::FloorInteger(_Position[I] / G_LibOffZone_ColBlockDimensions[I]);
-	BlockCoords.Y += G_LibOffZone_ColGroundCoordY - 1;
+	for (I, 0, 2) BlockCoords[I] = ML::FloorInteger(
+		(Position[I] + C_PlayerPositionFixOffset[I]) / G_LibOffZone_ColBlockDimensions[I]
+	);
+	log(_Position);
 	return BlockCoords;
 }
 

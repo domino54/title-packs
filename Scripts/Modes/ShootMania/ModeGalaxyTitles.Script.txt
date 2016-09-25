@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-07-28            //
+//  script version: 2016-09-25            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-07-28"
+#Const BaseVersion		"2016-09-25"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -85,12 +85,13 @@ declare Text GT_SpawnScreenObjectives;		///< Rules of the game mode displayed in
 // ---------------------------------- //
 declare Boolean GT_UseNoCollisionsStart;	///< Use the no-collisions round start
 declare Boolean GT_UseAutoEndSequence;		///< Use the automatic End Map sequence
-declare Boolean GT_UseComboWeapons;			///< Use combo waepons
+declare Boolean GT_UseComboWeapons;			///< Use Combo weapon items
 declare Boolean GT_UseRandomToads;			///< Spawn Toads on random bot path landmarks
 declare Boolean GT_AutoManageOnHit;			///< Automatically manage OnHit events
 declare Boolean GT_AutoManageOnArmorEmpty;	///< Automatically manage OnArmorEmpty events
 declare Boolean GT_AutoManageOnNearMiss;	///< Automatically manage OnNearMiss events
 declare Boolean GT_AutoManageOnRespawn;		///< Automatically manage OnPlayerRequestRespawn event
+declare Boolean GT_AllowMatchmakingMode;	///< Defines if the mode can use matchmaking feature
 
 // ---------------------------------- //
 // Log scripts versions
@@ -189,7 +190,12 @@ if (UseClans) {
 // ---------------------------------- //
 ***InitServer***
 ***
-// Enable all options by default
+/**
+ *	Enable all options by default
+ *
+ *	If you wish to disable these features, do it in the ***InitServer***
+ *	label of your game mode!
+ */
 GT_UseNoCollisionsStart = True;
 GT_UseAutoEndSequence = True;
 GT_UseComboWeapons = True;
@@ -198,6 +204,7 @@ GT_AutoManageOnHit = True;
 GT_AutoManageOnArmorEmpty = True;
 GT_AutoManageOnNearMiss = True;
 GT_AutoManageOnRespawn = True;
+GT_AllowMatchmakingMode = True;
 
 // Variables
 declare Integer GT_NoCollisionsEndTime;
@@ -207,10 +214,15 @@ declare Integer GT_NoCollisionsEndTime;
 ***
 // ---------------------------------- //
 // Set mode options
+UseClans = False;
 MB_UseSectionRound = True;
 ForceNavMapsComputation = True;
 MB_UsePlayerClublinks = S_UsePlayerClublinks;
 MB_UseIntro = !MM_IsMatchServer();
+
+// ---------------------------------- //
+// Stop the script if server is in matchmaking mode and mode doesn't support it
+assert(!(MM_IsMatchmakingServer() && !GT_AllowMatchmakingMode), "This game mode does not support matchmaking mode!");
 
 // Update rules
 ---Rules---
@@ -593,8 +605,6 @@ foreach (Event in PendingEvents) {
 		if (GalaxyTitles::PickUpObject(Event, S_ObjectsRespawnTime * 1000)) continue;
 		
 		+++OnPlayerTouchesObject+++
-		
-		Discard(Event);
 	}
 	// ---------------------------------- //
 	// On player switch weapon

@@ -1,0 +1,456 @@
+// -------------------------------------- //
+//  LIBRARY MULTICLANS by domino54        //
+//  script version: 2016-09-25            //
+// -------------------------------------- //
+
+/**
+ *	This library is used to provide extended functions
+ *	for game modes using multiple clans.
+ */
+
+#Include "MathLib" as ML
+
+#Const	Version		"2016-09-25"
+#Const	ScriptName	"MultiClans.Script.txt"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibMultiClans_MaxNbTeams	10		///< Maximum amount of clans handled by the library
+
+/// Default names of the clans
+#Const C_LibMultiClans_DefaultTeamsNames [
+	"Blue", "Red", "Green", "Yellow", "Purple",
+	"Cyan", "Orange", "Pink", "Turquoise", "White"
+]
+
+/// Default colors of the clans
+#Const C_LibMultiClans_DefaultTeamsColors [
+	<0., 0., 1.>, <1., 0., 0.>, <0., 1., 0.>, <1., 1., 0.>, <.75, 0., 1.>,
+	<0., 1., 1.>, <1., .625, 0.>, <1., .5, .75>, <0., 1., .625>, <1., 1., 1.>
+]
+
+// ---------------------------------- //
+// Global varaibles
+// ---------------------------------- //
+declare Text[Integer] G_LibMultiClans_TeamsNames;	///< Names of all teams
+declare Vec3[Integer] G_LibMultiClans_TeamsColors;	///< Colors of all teams
+
+declare Integer[Integer] G_LibMultiClans_ClansMatchPoints;	///< Match points of all clans
+declare Integer[Integer] G_LibMultiClans_ClansRoundPoints;	///< Round points of all clans
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Get total amount of clans available
+ *
+ *	@return		Total amount of clans
+ */
+Integer GetClansNbMax() { return C_LibMultiClans_MaxNbTeams; }
+
+// ---------------------------------- //
+/** Change clan of a player
+ *
+ *	@param	_Player		The player to chaneg clan
+ *	@param	_Clan		The clan to move player in
+ */
+Void SetPlayerClan(CPlayer _Player, Integer _Clan) {
+	if (_Player == Null) return;
+	
+	declare TargetClan = ML::Max(0, _Clan);
+	if (TargetClan > C_LibMultiClans_MaxNbTeams) TargetClan = 0;
+	
+	declare Integer LibMultiClans_PlayerClan for _Player;
+	LibMultiClans_PlayerClan = TargetClan;
+}
+
+// ---------------------------------- //
+/** Get the clan of a player
+ *
+ *	@param	_Player		The player to get clan
+ *
+ *	@return		Clan of the player
+ */
+Integer GetPlayerClan(CPlayer _Player) {
+	if (_Player == Null) return 0;
+	declare Integer LibMultiClans_PlayerClan for _Player;
+	return LibMultiClans_PlayerClan;
+}
+
+// ---------------------------------- //
+/** Set the name of a clan
+ *
+ *	@param	_Clan	The clan to set name
+ *	@param	_Name	The name to set
+ */
+Void SetClanName(Integer _Clan, Text _Name) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return;
+	
+	if (_Name != "") G_LibMultiClans_TeamsNames[_Clan] = _Name;
+	
+	else if (G_LibMultiClans_TeamsNames.existskey(_Clan)) {	
+		declare Removed = G_LibMultiClans_TeamsNames.removekey(_Clan);
+	}
+}
+
+// ---------------------------------- //
+/** Reset the name of a clan
+ *
+ *	@param	_Clan	The clan to reset name
+ */
+Void ResetClanName(Integer _Clan) { SetClanName(_Clan, ""); }
+
+// ---------------------------------- //
+/** Get the name of a clan
+ *
+ *	@param	_Clan	The clan to get name
+ *
+ *	@return		Name of the clan
+ */
+Text GetClanName(Integer _Clan) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return "";
+	
+	if (G_LibMultiClans_TeamsNames.existskey(_Clan)) return G_LibMultiClans_TeamsNames[_Clan];
+	if (C_LibMultiClans_DefaultTeamsNames.existskey(_Clan - 1)) return C_LibMultiClans_DefaultTeamsNames[_Clan - 1];
+	return "Team #"^_Clan;
+}
+
+// ---------------------------------- //
+/// Reset names of all clans
+Void ResetClansNames() {
+	for (Clan, 1, C_LibMultiClans_MaxNbTeams) ResetClanName(Clan);
+}
+
+// ---------------------------------- //
+/** Set the color of a clan
+ *
+ *	@param	_Clan	The clan to set color
+ *	@param	_Color	The color to set
+ */
+Void SetClanColor(Integer _Clan, Vec3 _Color) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return;
+	
+	if (_Color != <0., 0., 0.>) G_LibMultiClans_TeamsColors[_Clan] = _Color;
+	
+	else if (G_LibMultiClans_TeamsColors.existskey(_Clan)) {	
+		declare Removed = G_LibMultiClans_TeamsColors.removekey(_Clan);
+	}
+}
+
+// ---------------------------------- //
+/** Reset the color of a clan
+ *
+ *	@param	_Clan	The clan to reset color
+ */
+Void ResetClanColor(Integer _Clan) { SetClanColor(_Clan, Vec3); }
+
+// ---------------------------------- //
+/** Get the color of a clan
+ *
+ *	@param	_Clan	The clan to get color
+ *
+ *	@return		Color of the clan
+ */
+Vec3 GetClanColor(Integer _Clan) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return Vec3;
+	
+	if (G_LibMultiClans_TeamsColors.existskey(_Clan)) return G_LibMultiClans_TeamsColors[_Clan];
+	if (C_LibMultiClans_DefaultTeamsColors.existskey(_Clan - 1)) return C_LibMultiClans_DefaultTeamsColors[_Clan - 1];
+	return Vec3;
+}
+
+// ---------------------------------- //
+/// Reset colors of all clans
+Void ResetClansColors() {
+	for (Clan, 1, C_LibMultiClans_MaxNbTeams) ResetClanColor(Clan);
+}
+
+// ---------------------------------- //
+/** Set match points of a clan
+ *
+ *	@param	_Clan		The clan to set points
+ *	@param	_Points		Amount of points to set
+ */
+Void SetClanPoints(Integer _Clan, Integer _Points) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return;
+	G_LibMultiClans_ClansMatchPoints[_Clan] = _Points;
+}
+
+// ---------------------------------- //
+/** Get match points of a clan
+ *
+ *	@param	_Clan	The clan to get points
+ *
+ *	@return		Amount of points of a clan
+ */
+Integer GetClanPoints(Integer _Clan) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return 0;
+	if (!G_LibMultiClans_ClansMatchPoints.existskey(_Clan)) return 0;
+	return G_LibMultiClans_ClansMatchPoints[_Clan];
+}
+
+// ---------------------------------- //
+/** Give match points to a clan
+ *
+ *	@param	_Clan		The clan to add points
+ *	@param	_Points		Amount of points to add
+ */
+Void AddClanPoints(Integer _Clan, Integer _Points) {
+	SetClanPoints(_Clan, GetClanPoints(_Clan) + _Points);
+}
+
+// ---------------------------------- //
+/** Remove match points from a clan
+ *
+ *	@param	_Clan		The clan to reomve points
+ *	@param	_Points		Amount of points to remove
+ */
+Void RemoveClanPoints(Integer _Clan, Integer _Points) {
+	AddClanPoints(_Clan, -_Points);
+}
+
+// ---------------------------------- //
+/** Get the list of all clans match points
+ *
+ *	@return		Amount of match points of every clan
+ */
+Integer[Integer] GetClansPoints() {
+	declare Integer[Integer] ClansPoints;
+	for (Clan, 1, C_LibMultiClans_MaxNbTeams) {
+		declare ClanPoints = GetClanPoints(Clan);
+		if (ClanPoints != 0) ClansPoints[Clan] = ClanPoints;
+	}
+	return ClansPoints;
+}
+
+// ---------------------------------- //
+/// Reset match points of all clans
+Void ResetClansPoints() {
+	for (Clan, 1, C_LibMultiClans_MaxNbTeams) SetClanPoints(Clan, 0);
+}
+
+// ---------------------------------- //
+/** Set round points of a clan
+ *
+ *	@param	_Clan		The clan to set points
+ *	@param	_Points		Amount of points to set
+ */
+Void SetClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return;
+	G_LibMultiClans_ClansRoundPoints[_Clan] = _RoundPoints;
+}
+
+// ---------------------------------- //
+/** Get round points of a clan
+ *
+ *	@param	_Clan	The clan to get points
+ *
+ *	@return		Amount of points of a clan
+ */
+Integer GetClanRoundPoints(Integer _Clan) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return 0;
+	if (!G_LibMultiClans_ClansRoundPoints.existskey(_Clan)) return 0;
+	return G_LibMultiClans_ClansRoundPoints[_Clan];
+}
+
+// ---------------------------------- //
+/** Give round points to a clan
+ *
+ *	@param	_Clan		The clan to add points
+ *	@param	_Points		Amount of points to add
+ */
+Void AddClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	SetClanRoundPoints(_Clan, GetClanRoundPoints(_Clan) + _RoundPoints);
+}
+
+// ---------------------------------- //
+/** Remove round points from a clan
+ *
+ *	@param	_Clan		The clan to reomve points
+ *	@param	_Points		Amount of points to remove
+ */
+Void RemoveClanRoundPoints(Integer _Clan, Integer _RoundPoints) {
+	AddClanRoundPoints(_Clan, -_RoundPoints);
+}
+
+// ---------------------------------- //
+/** Get the list of all clans round points
+ *
+ *	@return		Amount of round points of every clan
+ */
+Integer[Integer] GetClansRoundPoints() {
+	declare Integer[Integer] ClansRoundPoints;
+	for (Clan, 1, C_LibMultiClans_MaxNbTeams) {
+		declare ClanRoundPoints = GetClanRoundPoints(Clan);
+		if (ClanRoundPoints != 0) ClansRoundPoints[Clan] = ClanRoundPoints;
+	}
+	return ClansRoundPoints;
+}
+
+// ---------------------------------- //
+/// Reset round points of all clans
+Void ResetClansRoundPoints() {
+	for (Clan, 1, C_LibMultiClans_MaxNbTeams) SetClanRoundPoints(Clan, 0);
+}
+
+// ---------------------------------- //
+/// Reset all kind of points of all clans
+Void ResetClansScores() {
+	ResetClansPoints();
+	ResetClansRoundPoints();
+}
+
+// ---------------------------------- //
+/** Reset name, color and scores of a clan
+ *
+ *	@param	_Clan	The clan to reset completely
+ */
+Void ResetClan(Integer _Clan) {
+	ResetClanName(_Clan);
+	ResetClanColor(_Clan);
+	SetClanPoints(_Clan, 0);
+	SetClanRoundPoints(_Clan, 0);
+}
+
+// ---------------------------------- //
+/// Reset all clans names, colors and scores
+Void ResetClans() {
+	for (Clan, 1, C_LibMultiClans_MaxNbTeams) ResetClan(Clan);
+}
+
+// ---------------------------------- //
+/** Get the amount of players in a specific clan
+ *
+ *	@param	_Clan	The clan to get players
+ *
+ *	@return		The amount of players in the clan
+ */
+Integer GetClanNbPlayers(Integer _Clan) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) if (GetPlayerClan(Player) == _Clan) Count += 1;
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the list of clans with at least one player in
+ *
+ *	@return		All clans with at least one player
+ */
+Integer[] GetActiveClans() {
+	declare Integer[] ActiveClans;
+	foreach (Player in AllPlayers) {
+		declare PlayerClan = GetPlayerClan(Player);
+		if (PlayerClan > 0 && !ActiveClans.exists(PlayerClan)) ActiveClans.add(PlayerClan);
+	}
+	return ActiveClans;
+}
+
+// ---------------------------------- //
+/** Get the order of all clans in their ranking
+ *
+ *	@return		Ranking order of the clans
+ */
+Integer[] GetClansRankingOrder() {
+	// ---------------------------------- //
+	// Get every single clan active in the match
+	declare AvailableClans = GetActiveClans();
+	declare ClansPoints = GetClansPoints();
+	declare ClansRoundPoints = GetClansRoundPoints();
+	declare SortByRoundPoints = False;
+	
+	foreach (Clan => RoundPoints in ClansRoundPoints) {
+		if (RoundPoints != 0 && !AvailableClans.existskey(Clan)) {
+			AvailableClans.add(Clan);
+			SortByRoundPoints = True;
+		}
+	}
+	
+	foreach (Clan => Points in ClansPoints) {
+		if (Points != 0 && !AvailableClans.existskey(Clan)) {
+			AvailableClans.add(Clan);
+			SortByRoundPoints = False;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Sort all clans by their amount of points
+	declare Integer[Integer] ClansOrder;
+	foreach (Clan in AvailableClans) {
+		if (SortByRoundPoints) ClansOrder[Clan] = -GetClanRoundPoints(Clan);
+		else  ClansOrder[Clan] = -GetClanPoints(Clan);
+	}
+	ClansOrder = ClansOrder.sort();
+	
+	// ---------------------------------- //
+	// Return the list of clans
+	declare Integer[] OutputClans;
+	foreach (Clan => Points in ClansOrder) OutputClans.add(Clan);
+	return OutputClans;
+}
+
+// ---------------------------------- //
+/** Get the position of a clan in clans ranking
+ *
+ *	@param	_Clan	The clan to get position
+ *
+ *	@return		Ranking position of the clan
+ */
+Integer GetClanPosition(Integer _Clan) {
+	declare ClansOrder = GetClansRankingOrder();
+	if (ClansOrder.exists(_Clan)) return ClansOrder.keyof(_Clan);
+	return -1;
+}
+
+// ---------------------------------- //
+/** Get the amount of racing players in a clan
+ *
+ *	@param	_Clan	The clan to get players
+ *
+ *	@return		Amount of racing players in the clan
+ */
+Integer GetClanNbPlayersRacing(Integer _Clan) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) {
+		if (!(Player is CTmPlayer)) return 0;
+		declare TmPlayer = (Player as CTmPlayer);
+		if (TmPlayer.IsSpawned && TmPlayer.RaceStartTime >= 0 && GetPlayerClan(Player) == _Clan) Count += 1;
+	}
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the amount of waiting players in a clan
+ *
+ *	@param	_Clan	The clan to get players
+ *
+ *	@return		Amount of waiting players in the clan
+ */
+Integer GetClanNbPlayersWaiting(Integer _Clan) {
+	declare Count = 0;
+	foreach (Player in AllPlayers) {
+		if (!(Player is CTmPlayer)) return 0;
+		declare TmPlayer = (Player as CTmPlayer);
+		if (!Player.IsSpawned && Player.RaceStartTime <= 0 && GetPlayerClan(Player) == _Clan) Count += 1;
+	}
+	return Count;
+}

@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  INVASION INTERFACE LIB by domino54    //
-//  script version: 2015-10-31            //
+//  script version: 2016-09-25            //
 // -------------------------------------- //
 
-#Const Version		"2015-10-31"
+#Const Version		"2016-09-25"
 #Const ScriptName	"InvasionUI.Script.txt"
 
 #Include "TextLib" as TL
@@ -16,26 +16,26 @@
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
 
+#Const C_LibInvasionUI_ScoreZeroes		6	///< Number of total characters in score label
+#Const C_LibInvasionUI_MaxBossesBars	10	///< Maxinum amount of bosses bars displayed under timer
+
 /// List of all available modules
 #Const C_AvailableModules [
-	"Countdown", "PoleGauge", "ToadsArmor", "Score", "ScoreSummary", "MedalScore",
-	"Evolution", "ReloadGauge", "GoldMarker", "WeaponBonus", "Performance", "SoloScore",
-	"BossHealth"
+	"CountdownInfo", "PoleGauge", "ToadsArmor", "Score", "MedalScore", "Evolution",
+	"GoldMarker", "CustomWeaponBar", "ToadsCounter", "SoloScore", "BossHealth"
 ]
 
 /// Modules positions
 #Const C_LibInvasionUI_CountdownPos		<0., 90., 5.>
-#Const C_LibInvasionUI_PoleGaugePos 	<160., -90., 5.>
-#Const C_LibInvasionUI_ToadsArmorPos	<155., -72., 3.>
-#Const C_LibInvasionUI_ScorePos			<-159., 77., 5.>
-#Const C_LibInvasionUI_ScoreSummaryPos	<0., 90., 4.>
-#Const C_LibInvasionUI_MedalScorePos	<-160.5, 85.5, 5.>
-#Const C_LibInvasionUI_EvolutionPos		<-159.5, 60., 5.>
-#Const C_LibInvasionUI_ReloadGaugePos	<-34., -77., 5.>
-#Const C_LibInvasionUI_WeaponBonusPos	<0., -60., 5.>
-#Const C_LibInvasionUI_PerformancePos	<-160., -90., 5.>
+#Const C_LibInvasionUI_PoleGaugePos 	<-160., 90., 5.>
+#Const C_LibInvasionUI_ToadsArmorPos	<155., -74., 3.>
+#Const C_LibInvasionUI_ScorePos			<-159., 72.5, 5.>
+#Const C_LibInvasionUI_MedalScorePos	<160., 85.5, 5.>
+#Const C_LibInvasionUI_EvolutionPos		<-159.5, 55., 5.>
+#Const C_LibInvasionUI_WeaponBarPos		<0., -68., 5.>
+#Const C_LibInvasionUI_ToadsCounterPos	<-160., -90., 5.>
 #Const C_LibInvasionUI_SoloScorePos		<0., 0., 5.>
-#Const C_LibInvasionUI_BossHealthPos	<0., 77., 5.>
+#Const C_LibInvasionUI_BossHealthPos	<0., 77.75, 5.>
 
 // ---------------------------------- //
 // Global variables
@@ -75,156 +75,114 @@ Void Private_SetModuleSetting(Text _Name, Text _Value) {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the countdown module
+/** Create the manialink for the countdown info module
  *
  *	@return		The manialink
  */
-Text Private_CreateMLCountdown() {
+Text Private_CreateMLCountdownInfo() {
 	return """
-<manialink version="2" name="LibInvasionUI:Countdown">
+<manialink version="2" name="LibInvasionUI:CountdownInfo">
 <stylesheet>
-	<style id="Label_CountdownInfo" textsize="1" textfont="Eurostile" textcolor="FFF"/>
-	<style id="Label_Countdown" textfont="Eurostile" textemboss="1" textcolor="FB0"/>
+	<style id="Label_CountdownInfo" textsize="1" textfont="Eurostile_Bold" textcolor="FFF"/>
 </stylesheet>
 
-<frame id="Frame_Countdown" posn="{{{C_LibInvasionUI_CountdownPos.X^" "^C_LibInvasionUI_CountdownPos.Y + 15^" "^C_LibInvasionUI_CountdownPos.Z}}}">
-	<quad posn="0 0 1" sizen="30 15" halign="center" image="{{{C_ImgBase}}}UiTimerBg.png" id="Quad_Countdown" colorize="000"/>
-	<label posn="0 -2 1" sizen="27 3" halign="center" valign="center2" id="Label_CountdownInfo"/>
-	<label posn="0 -7.25 2" halign="center" valign="center2" id="Label_Countdown" text="0:00"/>
+<frame id="Frame_CountdownInfo" posn="{{{C_LibInvasionUI_CountdownPos.X^" "^C_LibInvasionUI_CountdownPos.Y^" "^C_LibInvasionUI_CountdownPos.Z}}}">
+	<label posn="0 -8.5" halign="center" valign="center2" textprefix="$t$s" id="Label_CountdownInfo"/>
 </frame>
 
 <script><!--
 /**
- *	LibInvasionUI: Countdown
+ *	LibInvasionUI: CountdownInfo
  */
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const C_FrameHideaway	15.
-
-{{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
-{{{Translations::InsertToManialink(["1 wave to Invasion", "Invasion mode!", "Preparation time", "%1 waves to Invasion"])}}}
-
-// ---------------------------------- //
-/** Convert time into text
- *
- *	@param	_Time	Time to convert
- *
- *	@return			Time converted to text
- */
-Text TimeToText(Integer _Time) {
-	declare AbsTime = ML::Abs(_Time);
-	if (_Time < 0) AbsTime += 1000;
-	
-	declare Seconds = (AbsTime / 1000) % 60;
-	declare Minutes = (AbsTime / 60000) % 60;
-	declare Hours = (AbsTime / 3600000);
-	
-	declare Time = "";
-	if (Hours > 0) Time = Hours^":"^TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2);
-	else Time = Minutes^":"^TL::FormatInteger(Seconds, 2);
-	return Time;
-}
-
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_CountdownInfo <=> (Page.GetFirstChild("Frame_CountdownInfo") as CMlFrame);
+declare Label_CountdownInfo <=> (Page.GetFirstChild("Label_CountdownInfo") as CMlLabel);
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayInterface = False;
+declare StartTime = -1;
+declare WavesToInvasion = -1;
+
+declare PrevSettingsUpdate = -1;
+declare PrevWavesToInvasion = -2;
+declare PrevCountdownColor = Vec3;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface" : DisplayInterface = SettingValue == "True";
+			case "WavesToInvasion" : WavesToInvasion = TL::ToInteger(SettingValue);
+			case "StartTime" : StartTime = TL::ToInteger(SettingValue);
+		}
+	}
+}
+
+Frame_CountdownInfo.Visible = DisplayInterface && StartTime > 0;
+
+if (!Frame_CountdownInfo.Visible) continue;
+
+// ---------------------------------- //
+// Update information
+if (PrevWavesToInvasion != WavesToInvasion) {
+	PrevWavesToInvasion = WavesToInvasion;
+	
+	declare Text CountdownInfo;
+	switch (WavesToInvasion) {
+		case 1 : CountdownInfo = "1 wave to Invasion";
+		case 0 : CountdownInfo = "Invasion mode!";
+		case -1 : CountdownInfo = "Preparation time";
+		default : CountdownInfo = "%1 waves to Invasion";
+	}
+	
+	Label_CountdownInfo.SetText(Translate([CountdownInfo, TL::ToText(WavesToInvasion)]));
+}
+***
+
+// ---------------------------------- //
+/** Compute width of the label text
+ *
+ *	@param	_Label	Label to check text length
+ *
+ *	@return		Width of the label text
+ */
+Real ComputeWidth(CMlLabel _Label) {
+	if (_Label == Null) return 0.;
+	return _Label.ComputeWidth(_Label.Value) * _Label.RelativeScale;
+}
+
+{{{Translations::InsertToManialink(["1 wave to Invasion", "Invasion mode!", "Preparation time", "%1 waves to Invasion"])}}}
+
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Label_CountdownInfo	<=> (Page.GetFirstChild("Label_CountdownInfo")	as CMlLabel);
-	declare Label_Countdown		<=> (Page.GetFirstChild("Label_Countdown")		as CMlLabel);
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Boolean ShowCountdown;
-	declare Integer StartTime;
-	declare Integer WavesToInvasion = -1;
-	declare Vec3 CountdownColor;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowCountdown = False;
-	declare PrevWavesToInvasion = -2;
-	declare PrevCountdownColor = Vec3;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
-		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface"	: DisplayInterface = (SettingValue == "True");
-					case "StartTime"		: StartTime = TL::ToInteger(SettingValue);
-					case "WavesToInvasion"	: WavesToInvasion = TL::ToInteger(SettingValue);
-					case "CountdownColor"	: {
-						declare SplitSetting = TL::Split(" ", SettingValue);
-						if (SplitSetting.count == 3) for (I, 0, 2) CountdownColor[I] = TL::ToReal(SplitSetting[I]);
-					}
-				}
-			}
-		}
-		
-		ShowCountdown = (DisplayInterface && StartTime > 0);
-		
-		// ---------------------------------- //
-		// Set countdown visibility
-		if (PrevShowCountdown != ShowCountdown) {
-			PrevShowCountdown = ShowCountdown;
-			
-			declare TargetPosition = <{{{0.^", "^90.^", "^5.}}}>;
-			declare TargetEasing = "EaseOutCirc";
-			
-			if (!ShowCountdown) {
-				TargetPosition.Y += C_FrameHideaway;
-				TargetEasing = "EaseInCirc";
-			}
-			
-			LibManialink_Anim("<frame id=\"Frame_Countdown\" posn=\""^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"\"/>", 250, TargetEasing);
-		}
-		
-		if (!ShowCountdown) continue;
-		
-		// ---------------------------------- //
-		// Display current time
-		declare GCurrentTime = GameTime - StartTime;
-		Label_Countdown.Value = TimeToText(GCurrentTime);
-		
-		// ---------------------------------- //
-		// Update information
-		if (PrevWavesToInvasion != WavesToInvasion) {
-			PrevWavesToInvasion = WavesToInvasion;
-			
-			declare Text CountdownInfo;
-			switch (WavesToInvasion) {
-				case 1 : CountdownInfo = "1 wave to Invasion";
-				case 0 : CountdownInfo = "Invasion mode!";
-				case -1 : CountdownInfo = "Preparation time";
-				default : CountdownInfo = "%1 waves to Invasion";
-			}
-			
-			Label_CountdownInfo.SetText(Translations_GetComposed([CountdownInfo, TL::ToText(WavesToInvasion)]));
-		}
-		
-		// ---------------------------------- //
-		// Update color
-		if (PrevCountdownColor != CountdownColor) {
-			PrevCountdownColor = CountdownColor;
-			LibManialink_Anim("<quad id=\"Quad_Countdown\" colorize=\""^TL::ColorToText(CountdownColor)^"\"/>", 500, "EaseInOutSine");
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -241,16 +199,16 @@ Text Private_CreateMLPoleGauge() {
 <manialink version="2" name="LibInvasionUI:PoleGauge">
 <stylesheet>
 	<style id="Label_GaugeInfo" textsize="1" textfont="Eurostile_Bold" textcolor="888" textprefix="$t"/>
-	<style id="Label_NbToadsReached" textsize="4" textfont="Eurostile_Bold" textemboss="1" textcolor="FFF"/>
+	<style id="Label_ToadsReached" textsize="4" textfont="Eurostile_Bold" textemboss="1" textcolor="FFF"/>
 	<style id="Label_NbPoleLimit" textsize="2" textfont="Eurostile_Bold" textemboss="1" textcolor="888"/>
 </stylesheet>
 
-<frame id="Frame_PoleGauge" posn="{{{C_LibInvasionUI_PoleGaugePos.X + 70^" "^C_LibInvasionUI_PoleGaugePos.Y^" "^C_LibInvasionUI_PoleGaugePos.Z}}}">
-	<quad posn="-3 9" sizen="0 7" halign="right" bgcolor="DF0" id="Quad_PoleGaugeBar"/>
-	<quad posn="0 0 1" sizen="70 14" halign="right" valign="bottom" image="{{{C_ImgBase}}}UiPoleCaptureFg.png"/>
-	<label posn="-3 10.85 2" sizen="36 2" halign="right" valign="center2" id="Label_GaugeInfo"/>
-	<label posn="-4 6 2" halign="right" valign="center2" id="Label_NbToadsReached" text="0"/>
-	<label posn="-66 6 2" valign="center2" id="Label_NbPoleLimit" text="0"/>
+<frame id="Frame_PoleGauge" posn="{{{C_LibInvasionUI_PoleGaugePos.X - 70^" "^C_LibInvasionUI_PoleGaugePos.Y^" "^C_LibInvasionUI_PoleGaugePos.Z}}}">
+	<quad posn="3 -3" sizen="0 7" bgcolor="0F0" id="Quad_PoleGaugeBar"/>
+	<quad posn="0 0 1" sizen="70 14" rot="180" halign="right" valign="bottom" image="{{{C_ImgBase}}}UiPoleCaptureFg.png"/>
+	<label posn="3 -10.85 2" sizen="36 2" valign="center2" id="Label_GaugeInfo"/>
+	<label posn="4 -5.75 2" valign="center2" id="Label_ToadsReached" text="0"/>
+	<label posn="66 -5.75 2" valign="center2" halign="right" id="Label_NbPoleLimit" text="0"/>
 </frame>
 
 <script><!--
@@ -261,117 +219,169 @@ Text Private_CreateMLPoleGauge() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const C_FrameHideaway	70.
+#Const C_FrameHideaway	-70.
 #Const C_GaugeQuadSize	<64., 7.>
-
-{{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
-{{{Translations::InsertToManialink(["Toads reached pole"])}}}
+#Const C_GaugeColors	[0. => <0., 1., 0.>, .5 => <1., 1., 0.>, 1. => <1., 0., 0.>]
 
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_PoleGauge		<=> (Page.GetFirstChild("Frame_PoleGauge")		as CMlFrame);
+declare Quad_PoleGaugeBar	<=> (Page.GetFirstChild("Quad_PoleGaugeBar")	as CMlQuad);
+declare Label_ToadsReached	<=> (Page.GetFirstChild("Label_ToadsReached")	as CMlLabel);
+declare Label_NbPoleLimit	<=> (Page.GetFirstChild("Label_NbPoleLimit")	as CMlLabel);
+
+Translate("Label_GaugeInfo", "Toads reached pole");
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayInterface = False;
+declare ShowGaugeBar = False;
+declare PoleLimit = 0;
+declare NbToadsReachedPole = 0;
+declare AnimateGaugeBar = True;
+
+declare PrevSettingsUpdate = -1;
+declare PrevShowGaugeBar = False;
+declare PrevPoleLimit = -1;
+declare PrevNbToadsReachedPole = -1;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface" : DisplayInterface = SettingValue == "True";
+			case "PoleLimit" : PoleLimit = TL::ToInteger(SettingValue);
+			case "NbToadsReachedPole" : NbToadsReachedPole = ML::Clamp(TL::ToInteger(SettingValue), 0, PoleLimit);
+		}
+	}
+}
+
+ShowGaugeBar = DisplayInterface && PoleLimit > 0;
+
+// ---------------------------------- //
+// Set gauge visibility
+if (PrevShowGaugeBar != ShowGaugeBar) {
+	PrevShowGaugeBar = ShowGaugeBar;
+	
+	declare TargetPosition = Frame_PoleGauge.RelativePosition;
+	TargetPosition.X = {{{C_LibInvasionUI_PoleGaugePos.X}}};
+	declare TargetEasing = "EaseOutCirc";
+	
+	if (!ShowGaugeBar) {
+		TargetPosition.X += C_FrameHideaway;
+		TargetEasing = "EaseInCirc";
+		NbToadsReachedPole = 0;
+	}
+	
+	LibManialink_Anim(
+		Frame_PoleGauge,
+		"<frame posn='"^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"'/>",
+		250, TargetEasing
+	);
+}
+
+if (!ShowGaugeBar) continue;
+
+// ---------------------------------- //
+// Update pole limit
+if (PrevPoleLimit != PoleLimit) {
+	PrevPoleLimit = PoleLimit;
+	
+	Label_NbPoleLimit.SetText(TL::ToText(PoleLimit));
+	AnimateGaugeBar = True;
+}
+
+// ---------------------------------- //
+// Update Toads reached pole amount
+if (PrevNbToadsReachedPole != NbToadsReachedPole) {
+	PrevNbToadsReachedPole = NbToadsReachedPole;
+	
+	Label_ToadsReached.SetText(TL::ToText(NbToadsReachedPole));
+	AnimateGaugeBar = True;
+}
+
+// ---------------------------------- //
+// Animate gauge bar
+if (AnimateGaugeBar) {
+	AnimateGaugeBar = False;
+	
+	declare GaugeRatio = 0.;
+	if (PoleLimit > 0) GaugeRatio = ML::Clamp(ML::ToReal(NbToadsReachedPole) / PoleLimit, 0., 1.);
+	declare GaugeColor = TL::ColorToText(ColorTransition(GaugeRatio, C_GaugeColors));
+	
+	LibManialink_Anim(
+		Quad_PoleGaugeBar,
+		"<quad sizen='"^C_GaugeQuadSize.X * GaugeRatio^" "^C_GaugeQuadSize.Y^"' bgcolor="^GaugeColor^"/>",
+		250, "EaseInOutSine"
+	);
+}
+***
+
+// ---------------------------------- //
+/** Get the color depending on a ratio
+ *
+ *	@param	_Ratio			The ratio of the color
+ *	@param	_ColorRatios	List of the colors for each ratio
+ *
+ *	@return		The Blend color according to the ratio
+ */
+Vec3 ColorTransition(Real _Ratio, Vec3[Real] _ColorRatios) {
+	if (_ColorRatios.count <= 0) return <0., 0., 0.>;
+	if (_ColorRatios.count == 1) foreach (Color in _ColorRatios) return Color;
+	if (_ColorRatios.existskey(_Ratio)) return _ColorRatios[_Ratio];
+	
+	// Sort all colors ratios in ascending order
+	declare Real[] SortedRatios;
+	foreach (Ratio => Color in _ColorRatios) SortedRatios.add(Ratio);
+	SortedRatios = SortedRatios.sort();
+	
+	// Get the lowest color ratio
+	declare MinimumRatio = SortedRatios[0];
+	foreach (Ratio in SortedRatios) if (Ratio > MinimumRatio && Ratio < _Ratio) MinimumRatio = Ratio;
+	
+	// Get the highest color ratio
+	declare MaximumRatio = SortedRatios[SortedRatios.count - 1];
+	foreach (Ratio in SortedRatios) if (Ratio < MaximumRatio && Ratio > _Ratio) MaximumRatio = Ratio;
+	
+	// Get the colors blend properties
+	declare BlendRatio = (_Ratio - MinimumRatio) / (MaximumRatio - MinimumRatio);
+	declare MinimumColor = _ColorRatios[MinimumRatio];
+	declare MaximumColor = _ColorRatios[MaximumRatio];
+	
+	// Compute the final color
+	declare Vec3 OutputColor;
+	for (I, 0, 2) OutputColor[I] = MinimumColor[I] + (MaximumColor[I] - MinimumColor[I]) * BlendRatio;
+	return OutputColor;
+}
+
+{{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
+{{{Translations::InsertToManialink(["Toads reached pole"])}}}
+
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_PoleGauge			<=> (Page.GetFirstChild("Frame_PoleGauge")		as CMlFrame);
-	declare Quad_PoleGaugeBar		<=> (Page.GetFirstChild("Quad_PoleGaugeBar")	as CMlQuad);
-	declare Label_NbToadsReached	<=> (Page.GetFirstChild("Label_NbToadsReached")	as CMlLabel);
-	declare Label_NbPoleLimit		<=> (Page.GetFirstChild("Label_NbPoleLimit")	as CMlLabel);
-	declare Label_GaugeInfo			<=> (Page.GetFirstChild("Label_GaugeInfo")		as CMlLabel);
-	Label_GaugeInfo.SetText(Translations_Get("Toads reached pole"));
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Boolean ShowGaugeBar;
-	declare Integer PoleLimit;
-	declare Integer NbToadsReachedPole;
-	
-	declare AnimateGaugeBar = True;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowGaugeBar = False;
-	declare PrevPoleLimit = -1;
-	declare PrevNbToadsReachedPole = -1;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface"		: DisplayInterface = (SettingValue == "True");
-					case "PoleLimit"			: PoleLimit = TL::ToInteger(SettingValue);
-					case "NbToadsReachedPole"	: {
-						NbToadsReachedPole = TL::ToInteger(SettingValue);
-						if (NbToadsReachedPole < 0) NbToadsReachedPole = 0;
-						if (NbToadsReachedPole > PoleLimit) NbToadsReachedPole = PoleLimit;
-					}
-				}
-			}
-		}
-		
-		ShowGaugeBar = (DisplayInterface && PoleLimit > 0);
-		if (!ShowGaugeBar) NbToadsReachedPole = 0;
-		
-		// ---------------------------------- //
-		// Set gauge visibility
-		if (PrevShowGaugeBar != ShowGaugeBar) {
-			PrevShowGaugeBar = ShowGaugeBar;
-			
-			declare TargetPosition = Frame_PoleGauge.RelativePosition;
-			TargetPosition.X = {{{C_LibInvasionUI_PoleGaugePos.X}}};
-			declare TargetEasing = "EaseOutCirc";
-			
-			if (!ShowGaugeBar) {
-				TargetPosition.X += C_FrameHideaway;
-				TargetEasing = "EaseInCirc";
-			}
-			
-			LibManialink_Anim("<frame id=\"Frame_PoleGauge\" posn=\""^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"\"/>", 250, TargetEasing);
-		}
-		
-		if (!ShowGaugeBar) continue;
-		
-		// ---------------------------------- //
-		// Update pole limit
-		if (PrevPoleLimit != PoleLimit) {
-			PrevPoleLimit = PoleLimit;
-			Label_NbPoleLimit.SetText(TL::ToText(PoleLimit));
-			AnimateGaugeBar = True;
-		}
-		
-		// ---------------------------------- //
-		// Update Toads reached pole amount
-		if (PrevNbToadsReachedPole != NbToadsReachedPole) {
-			PrevNbToadsReachedPole = NbToadsReachedPole;
-			Label_NbToadsReached.SetText(TL::ToText(NbToadsReachedPole));
-			AnimateGaugeBar = True;
-		}
-		
-		// ---------------------------------- //
-		// Animate gauge bar
-		if (AnimateGaugeBar) {
-			AnimateGaugeBar = False;
-			
-			declare GaugeRatio = 0.;
-			if (PoleLimit > 0) GaugeRatio = ML::ToReal(NbToadsReachedPole) / PoleLimit;
-			if (GaugeRatio > 1) GaugeRatio = 1.;
-			
-			LibManialink_Anim("<quad id=\"Quad_PoleGaugeBar\" sizen=\""^C_GaugeQuadSize.X * GaugeRatio^" "^C_GaugeQuadSize.Y^"\"/>", 250, "EaseInOutSine");
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -379,7 +389,7 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the Toads armor module
+/** Create the manialink for the Toads Armor module
  *
  *	@return		The manialink
  */
@@ -403,85 +413,102 @@ Text Private_CreateMLToadsArmor() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-{{{Manialink::Animations(["EaseInOutCirc", "EaseOutBack", "EaseInBack"])}}}
-
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_ToadsArmor <=> (Page.GetFirstChild("Frame_ToadsArmor") as CMlFrame);
+declare Label_ToadsArmor <=> (Page.GetFirstChild("Label_ToadsArmor") as CMlLabel);
+declare Quad_ToadsArmor <=> (Page.GetFirstChild("Quad_ToadsArmor") as CMlQuad);
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayInterface = False;
+declare ShowToadsArmor = False;
+declare ToadsArmor = 0;
+
+declare PrevSettingsUpdate = -1;
+declare PrevShowToadsArmor = False;
+declare PrevToadsArmor = -1;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***	
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface" : DisplayInterface = SettingValue == "True";
+			case "ToadsArmor" : ToadsArmor = TL::ToInteger(SettingValue);
+		}
+	}
+}
+
+ShowToadsArmor = DisplayInterface && ToadsArmor > 0;
+
+// ---------------------------------- //
+// Set Toads Armor icon visibility
+if (PrevShowToadsArmor != ShowToadsArmor) {
+	PrevShowToadsArmor = ShowToadsArmor;
+	
+	declare TargetScale = 1.;
+	declare TargetEasing = "EaseOutBack";
+	
+	if (!ShowToadsArmor) {
+		TargetScale = 0.;
+		TargetEasing = "EaseInBack";
+	}
+	
+	LibManialink_Anim(Frame_ToadsArmor, "<frame scale="^TargetScale^" />", 500, TargetEasing);
+}
+
+if (!ShowToadsArmor) continue;
+
+// ---------------------------------- //
+// Update Toads Armor points
+if (PrevToadsArmor != ToadsArmor) {
+	Label_ToadsArmor.SetText(TL::ToText(ToadsArmor / 100));
+	
+	if (PrevToadsArmor > 0 && ToadsArmor > 0) {
+		declare Color = LocalUser.Color;
+		if (GUIPlayer != Null) {
+			if (!Teams.existskey(GUIPlayer.CurrentClan - 1)) Color = GUIPlayer.User.Color;
+			else Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+		}
+		
+		LibManialink_Anim(Frame_ToadsArmor, "<frame scale=3 />", 750, "EaseInOutCirc");
+		LibManialink_AnimChain(Frame_ToadsArmor, "<frame scale=1 />", 750, "EaseInOutCirc");
+		
+		LibManialink_Anim(Quad_ToadsArmor, "<frame colorize="^TL::ColorToText(Color)^" />", 750, "EaseInOutCirc");
+		LibManialink_AnimChain(Quad_ToadsArmor, "<frame colorize=777 />", 750, "EaseInOutCirc");
+	}
+	
+	PrevToadsArmor = ToadsArmor;
+}
+***
+
+{{{Manialink::Animations(["EaseInOutCirc", "EaseOutBack", "EaseInBack"])}}}
+
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Label_ToadsArmor <=> (Page.GetFirstChild("Label_ToadsArmor") as CMlLabel);
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Boolean ShowToadsArmor;
-	declare Integer ToadsArmor;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowToadsArmor = False;
-	declare PrevToadsArmor = -1;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface"	: DisplayInterface = (SettingValue == "True");
-					case "ToadsArmor"		: ToadsArmor = TL::ToInteger(SettingValue);
-				}
-			}
-		}
-		
-		ShowToadsArmor = (DisplayInterface && ToadsArmor > 0);
-		
-		// ---------------------------------- //
-		// Set Toads armor icon visibility
-		if (PrevShowToadsArmor != ShowToadsArmor) {
-			PrevShowToadsArmor = ShowToadsArmor;
-			
-			declare TargetScale = 1.;
-			declare TargetEasing = "EaseOutBack";
-			
-			if (!ShowToadsArmor) {
-				TargetScale = 0.;
-				TargetEasing = "EaseInBack";
-			}
-			
-			LibManialink_Anim("<frame id=\"Frame_ToadsArmor\" scale=\""^TargetScale^"\"/>", 500, TargetEasing);
-		}
-		
-		if (!ShowToadsArmor) continue;
-		
-		// ---------------------------------- //
-		// Update Toads armor points
-		if (PrevToadsArmor != ToadsArmor) {
-			Label_ToadsArmor.SetText(TL::ToText(ToadsArmor / 100));
-			
-			if (PrevToadsArmor > 0 && ToadsArmor > 0) {
-				LibManialink_Anim("<frame id=\"Frame_ToadsArmor\" scale=\"3\"/>", 750, "EaseInOutCirc");
-				LibManialink_AnimChain("<frame id=\"Frame_ToadsArmor\" scale=\"1\"/>", 750, "EaseInOutCirc");
-				
-				LibManialink_Anim("<frame id=\"Quad_ToadsArmor\" colorize=\"DF0\"/>", 750, "EaseInOutCirc");
-				LibManialink_AnimChain("<frame id=\"Quad_ToadsArmor\" colorize=\"777\"/>", 750, "EaseInOutCirc");
-			}
-			
-			PrevToadsArmor = ToadsArmor;
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -515,248 +542,140 @@ Text Private_CreateMLScore() {
 
 #Const C_FrameHideaway	-50.
 
-{{{Manialink::Animations(["EaseInCirc", "EaseOutCirc"])}}}
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_Score <=> (Page.GetFirstChild("Frame_Score") as CMlFrame);
+declare Label_Score <=> (Page.GetFirstChild("Label_Score") as CMlLabel);
+declare Frame_ScoreAnim <=> (Page.GetFirstChild("Frame_ScoreAnim") as CMlFrame);
 
 // ---------------------------------- //
-/** Get score with zeros
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayInterface = False;
+declare TimeScoreCounting = False;
+declare ShowScore = False;
+declare StartTime = -1;
+declare NbPoints = 0;
+declare TimePoints = 0;
+
+declare PrevSettingsUpdate = -1;
+declare PrevShowScore = False;
+declare PrevPlayerLogin = "";
+declare PrevNbPoints = 0;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface" : DisplayInterface = SettingValue == "True";
+			case "TimeScoreCounting" : TimeScoreCounting = SettingValue == "True";
+			case "StartTime" : StartTime = TL::ToInteger(SettingValue);
+		}
+	}
+}
+
+ShowScore = (DisplayInterface && ((GUIPlayer != Null && GUIPlayer.Score != Null) || !IsSpectatorMode));
+
+// ---------------------------------- //
+// Set score label visibility
+if (PrevShowScore != ShowScore) {
+	PrevShowScore = ShowScore;
+	
+	declare TargetPosition = Frame_Score.RelativePosition;
+	TargetPosition.X = {{{C_LibInvasionUI_ScorePos.X}}};
+	declare TargetEasing = "EaseOutCirc";
+	
+	if (!ShowScore) {
+		TargetPosition.X += C_FrameHideaway;
+		TargetEasing = "EaseInCirc";
+	}
+	
+	LibManialink_Anim(Frame_Score, "<frame posn='"^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"'/>", 250, TargetEasing);
+}
+
+if (!ShowScore) continue;
+
+// ---------------------------------- //
+// Update current player score
+if (GUIPlayer != Null && GUIPlayer.Score != Null) {
+	NbPoints = GUIPlayer.Score.Points;
+	
+	if (PrevNbPoints != NbPoints) {
+		PrevNbPoints = NbPoints;
+		
+		// Do animation
+		if (PrevPlayerLogin == GUIPlayer.User.Login) {
+			LibManialink_Anim(Frame_ScoreAnim, "<frame scale=1.1 />", 125, "EaseLinear");
+			LibManialink_AnimInsert(Frame_ScoreAnim, "<frame scale=1 />", 125, 125, "EaseLinear");
+		}
+	}
+	
+	PrevPlayerLogin = GUIPlayer.User.Login;
+}
+// ---------------------------------- //
+// Reset score
+else if (!IsSpectatorMode) {
+	PrevPlayerLogin = "";
+	PrevNbPoints = 0;
+}
+
+// ---------------------------------- //
+// Set points
+if (TimeScoreCounting) TimePoints = ((GameTime - StartTime) / 1000) * 10;
+Label_Score.Value = GetScoreLabel(NbPoints * 10 + TimePoints);
+***
+
+// ---------------------------------- //
+/** Get the score text with zeroes
  *
  *	@param	_Points		Score points
  *
  *	@return		Score text string
  */
 Text GetScoreLabel(Integer _Points) {
-	declare Text TextScore;
+	declare Zeroes = {{{C_LibInvasionUI_ScoreZeroes}}};
 	
-	if (_Points > 0) {
-		declare Integer NbZero = 5 - ML::FloorInteger(((ML::Ln(_Points*1.)/ML::Ln(10.))+1.));
-		for (I, 0, NbZero) TextScore ^= "0";
-		TextScore ^= "$FFF"^_Points;
+	if (_Points <= 0) {
+		declare Text TextScore;
+		for (I, 0, Zeroes - 1) TextScore ^= "0";
+		return TextScore;
 	}
-	else TextScore = "000000";
+	
+	declare TextScore = TL::ToText(_Points);
+	declare Length = TL::Length(TextScore);
+	
+	TextScore = "$FFF"^TextScore;
+	if (Length < Zeroes) for (I, Length, Zeroes - 1) TextScore = "0"^TextScore;
 	
 	return TextScore;
 }
 
-// ---------------------------------- //
-// Main
-// ---------------------------------- //
-main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_Score <=> (Page.GetFirstChild("Frame_Score") as CMlFrame);
-	declare Label_Score <=> (Page.GetFirstChild("Label_Score") as CMlLabel);
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Integer StartTime;
-	declare Boolean TickingSoloScore;
-	declare Boolean ShowScore;
-	declare Integer NbPoints;
-	declare Integer TimePoints;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowScore = False;
-	declare PrevPlayerLogin = "";
-	declare PrevNbPoints = 0;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
-	while (True) {
-		yield;
-		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface"	: DisplayInterface = (SettingValue == "True");
-					case "StartTime"		: StartTime = TL::ToInteger(SettingValue);
-					case "TickingSoloScore"	: TickingSoloScore = (SettingValue == "True");
-				}
-			}
-		}
-		
-		ShowScore = (DisplayInterface && ((GUIPlayer != Null && GUIPlayer.Score != Null) || !IsSpectatorMode));
-		
-		// ---------------------------------- //
-		// Set score label visibility
-		if (PrevShowScore != ShowScore) {
-			PrevShowScore = ShowScore;
-			
-			declare TargetPosition = Frame_Score.RelativePosition;
-			TargetPosition.X = {{{C_LibInvasionUI_ScorePos.X}}};
-			declare TargetEasing = "EaseOutCirc";
-			
-			if (!ShowScore) {
-				TargetPosition.X += C_FrameHideaway;
-				TargetEasing = "EaseInCirc";
-			}
-			
-			LibManialink_Anim(
-				"<frame id=\"Frame_Score\" posn=\""^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"\"/>",
-				250, TargetEasing
-			);
-		}
-		
-		if (!ShowScore) continue;
-		
-		// ---------------------------------- //
-		// Update current player score
-		if (GUIPlayer != Null && GUIPlayer.Score != Null) {
-			NbPoints = GUIPlayer.Score.Points;
-			
-			if (PrevNbPoints != NbPoints) {
-				PrevNbPoints = NbPoints;
-				
-				// Do animation
-				if (PrevPlayerLogin == GUIPlayer.User.Login) {
-					LibManialink_Anim("<frame id=\"Frame_ScoreAnim\" scale=\"1.1\"/>", 125, "EaseLinear");
-					LibManialink_AnimInsert("<frame id=\"Frame_ScoreAnim\" scale=\"1\"/>", 125, 125, "EaseLinear");
-				}
-			}
-			
-			PrevPlayerLogin = GUIPlayer.User.Login;
-		}
-		// ---------------------------------- //
-		// Reset score
-		else if (!IsSpectatorMode) {
-			PrevPlayerLogin = "";
-			PrevNbPoints = 0;
-		}
-		
-		// ---------------------------------- //
-		// Set points
-		if (TickingSoloScore) TimePoints = ((GameTime - StartTime) / 1000) * 10;
-		Label_Score.SetText(GetScoreLabel(NbPoints * 10 + TimePoints));
-	}
-}
---></script>
-</manialink>""";
-}
-
-// ---------------------------------- //
-/** Create the manialink for the score summary module
- *
- *	@return		The manialink
- */
-Text Private_CreateMLScoreSummary() {
-	return """
-<manialink version="2" name="LibInvasionUI:ScoreSummary">
-<stylesheet>
-	<style class="bg" sizen="30 10" colorize="00F"/>
-	<style class="font" textsize="4" textfont="Eurostile_Bold" textemboss="1" textcolor="FFF"/>
-</stylesheet>
-
-<frame id="Frame_ScoreSummary" posn="{{{C_LibInvasionUI_ScoreSummaryPos.X^" "^C_LibInvasionUI_ScoreSummaryPos.Y + 15^" "^C_LibInvasionUI_ScoreSummaryPos.Z}}}">
-	<quad posn="-15" class="bg" image="{{{C_ImgBase}}}UiScoreSummaryLeft.png" halign="right" id="Quad_SummaryBgLeft"/>
-	<quad posn="15" class="bg" image="{{{C_ImgBase}}}UiScoreSummaryRight.png" id="Quad_SummaryBgRight"/>
-	<label posn="-18 -3" valign="center2" class="font" text="0" halign="right" id="Label_SummaryPtsLeft"/>
-	<label posn="18 -3" valign="center2" class="font" text="0" id="Label_SummaryPtsRight"/>
-</frame>
-
-<script><!--
-/**
- *	LibInvasionUI: ScoreSummary
- */
-
-#Include "MathLib" as ML
-#Include "TextLib" as TL
-
-#Const C_FrameHideaway	15.
-
 {{{Manialink::Animations(["EaseInCirc", "EaseOutCirc"])}}}
 
-// ---------------------------------- //
-// Main
-// ---------------------------------- //
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_ScoreSummary		<=> (Page.GetFirstChild("Frame_ScoreSummary")		as CMlFrame);
-	declare Quad_SummaryBgLeft		<=> (Page.GetFirstChild("Quad_SummaryBgLeft")		as CMlQuad);
-	declare Quad_SummaryBgRight		<=> (Page.GetFirstChild("Quad_SummaryBgRight")		as CMlQuad);
-	declare Label_SummaryPtsLeft	<=> (Page.GetFirstChild("Label_SummaryPtsLeft")		as CMlLabel);
-	declare Label_SummaryPtsRight	<=> (Page.GetFirstChild("Label_SummaryPtsRight")	as CMlLabel);
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Boolean ShowScoreSummary;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowScoreSummary = False;
-	declare PrevTeamsColors = Vec3[];
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface" : DisplayInterface = (SettingValue == "True");
-				}
-			}
-		}
-		
-		ShowScoreSummary = (DisplayInterface && UseClans);
-		
-		// ---------------------------------- //
-		// Set score summary visibility
-		if (PrevShowScoreSummary != ShowScoreSummary) {
-			PrevShowScoreSummary = ShowScoreSummary;
-			
-			declare TargetPosition = Frame_ScoreSummary.RelativePosition;
-			TargetPosition.Y = {{{C_LibInvasionUI_ScoreSummaryPos.Y}}};
-			declare TargetEasing = "EaseOutCirc";
-			
-			if (!ShowScoreSummary) {
-				TargetPosition.Y += C_FrameHideaway;
-				TargetEasing = "EaseInCirc";
-			}
-			
-			LibManialink_Anim(
-				"<frame id=\"Frame_ScoreSummary\" posn=\""^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"\"/>",
-				250, TargetEasing
-			);
-		}
-		
-		if (!ShowScoreSummary) continue;
-		
-		// ---------------------------------- //
-		// Update teams colors
-		foreach (I => Team in Teams) {
-			if (!PrevTeamsColors.existskey(I)) PrevTeamsColors.add(Team.ColorPrimary);
-			if (PrevTeamsColors[I] != Team.ColorPrimary) PrevTeamsColors[I] = Team.ColorPrimary;
-			
-			Quad_SummaryBgLeft.Colorize = Teams[0].ColorPrimary;
-			Quad_SummaryBgRight.Colorize = Teams[1].ColorPrimary;
-		}
-		
-		// ---------------------------------- //
-		// Set scores
-		Label_SummaryPtsLeft.Value = TL::ToText(ClanScores[1] * 10);
-		Label_SummaryPtsRight.Value = TL::ToText(ClanScores[2] * 10);
+		---Yield---
 	}
 }
 --></script>
@@ -772,18 +691,20 @@ Text Private_CreateMLMedalScore() {
 	return """
 <manialink version="2" name="LibInvasionUI:MedalScore">
 <stylesheet>
-	<style id="Label_TargetPoints" textsize="2" textfont="Eurostile" textcolor="999"/>
+	<style id="Label_TargetPoints" scale=".75" textfont="Eurostile_Bold" textcolor="999"/>
 	<style class="medal" posn="0 0 1" sizen="20 10" valign="center" opacity="0"/>
 </stylesheet>
 
-<frame id="Frame_MedalScore" posn="{{{C_LibInvasionUI_MedalScorePos.X - 80^" "^C_LibInvasionUI_MedalScorePos.Y^" "^C_LibInvasionUI_MedalScorePos.Z}}}">
-	<quad sizen="80 10" valign="center" image="{{{C_ImgBase}}}MedalScoreFg.png"/>
-	<label posn="73 0 2" sizen="11 3" halign="center" valign="center2" text="????" id="Label_TargetPoints"/>
-	<quad posn="17 0 -1" sizen="50 4" valign="center" bgcolor="000" id="Quad_ProgressGauge"/>
-	<quad class="medal"image="{{{C_ImgBase}}}MedalScoreBronze.dds" id="Quad_MedalBronze"/>
-	<quad class="medal" image="{{{C_ImgBase}}}MedalScoreSilver.dds" id="Quad_MedalSilver"/>
-	<quad class="medal" image="{{{C_ImgBase}}}MedalScoreGold.dds" id="Quad_MedalGold"/>
-	<quad class="medal" image="{{{C_ImgBase}}}MedalScoreNadeo.dds" id="Quad_MedalAuthor"/>
+<frame id="Frame_MedalScore" posn="{{{C_LibInvasionUI_MedalScorePos.X + 80^" "^C_LibInvasionUI_MedalScorePos.Y^" "^C_LibInvasionUI_MedalScorePos.Z}}}">
+	<frame posn="-80">
+		<quad sizen="80 10" valign="center" image="{{{C_ImgBase}}}MedalScoreFg.png"/>
+		<label posn="73 0 2" halign="center" valign="center2" text="????" id="Label_TargetPoints"/>
+		<quad posn="17 0 -1" sizen="50 4" valign="center" bgcolor="000" id="Quad_ProgressGauge"/>
+		<quad class="medal" image="{{{C_ImgBase}}}MedalScoreBronze.dds" id="Quad_MedalBronze"/>
+		<quad class="medal" image="{{{C_ImgBase}}}MedalScoreSilver.dds" id="Quad_MedalSilver"/>
+		<quad class="medal" image="{{{C_ImgBase}}}MedalScoreGold.dds" id="Quad_MedalGold"/>
+		<quad class="medal" image="{{{C_ImgBase}}}MedalScoreNadeo.dds" id="Quad_MedalAuthor"/>
+	</frame>
 </frame>
 
 <script><!--
@@ -794,161 +715,173 @@ Text Private_CreateMLMedalScore() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const C_FrameHideaway	-80.
+#Const C_FrameHideaway	80.
 #Const C_MedalColors	[<1., .6, .2>, <.85, .85, .85>, <1., .9, 0.>, <.8, 1., 0.>, <.8, 1., 0.>]
-
-{{{Manialink::Functions(["AnimRepeat"])}}}
-{{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
 
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
+***Main***
+***	
+// ---------------------------------- //
+// Load interface elements
+declare Frame_MedalScore	<=> (Page.GetFirstChild("Frame_MedalScore")		as CMlFrame);
+declare Quad_ProgressGauge	<=> (Page.GetFirstChild("Quad_ProgressGauge")	as CMlQuad);
+declare Label_TargetPoints	<=> (Page.GetFirstChild("Label_TargetPoints")	as CMlLabel);
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayInterface = False;
+declare TimeScoreCounting = False;
+declare ShowMedalScore = False;
+declare StartTime = -1;
+declare IsSoloMode = False;
+declare CurrentMedal = 0;
+
+declare TargetScore = 0;
+declare TotalPoints = 0.;
+declare TimePoints = 0.;
+
+declare PrevSettingsUpdate = -1;
+declare PrevShowMedalScore = False;
+declare PrevMedal = -1;
+
+// ---------------------------------- //
+// Check map records
+declare ObjectiveBronze	= TL::ToInteger(Map.ObjectiveTextBronze);
+declare ObjectiveSilver	= TL::ToInteger(Map.ObjectiveTextSilver);
+declare ObjectiveGold	= TL::ToInteger(Map.ObjectiveTextGold);
+declare ObjectiveAuthor	= TL::ToInteger(Map.ObjectiveTextAuthor);
+
+declare MapHasValidRecords = (
+	ObjectiveBronze > 0 &&
+	ObjectiveSilver > 0 &&
+	ObjectiveGold > 0 &&
+	ObjectiveAuthor > 0 &&
+	ObjectiveBronze < ObjectiveSilver &&
+	ObjectiveSilver < ObjectiveGold &&
+	ObjectiveGold < ObjectiveAuthor
+);
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***		
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface"	: DisplayInterface = SettingValue == "True";
+			case "TimeScoreCounting"	: TimeScoreCounting = SettingValue == "True";
+			case "StartTime" : StartTime = TL::ToInteger(SettingValue);
+			case "IsSoloMode" : IsSoloMode = SettingValue == "True";
+		}
+	}
+}
+
+ShowMedalScore = InputPlayer != Null && MapHasValidRecords && IsSoloMode && DisplayInterface;
+
+// ---------------------------------- //
+// Set score label visibility
+if (PrevShowMedalScore != ShowMedalScore) {
+	PrevShowMedalScore = ShowMedalScore;
+	
+	declare TargetPosition = Frame_MedalScore.RelativePosition;
+	TargetPosition.X = {{{C_LibInvasionUI_MedalScorePos.X}}};
+	declare TargetEasing = "EaseOutCirc";
+	
+	if (!ShowMedalScore) {
+		TargetPosition.X += C_FrameHideaway;
+		TargetEasing = "EaseInCirc";
+	}
+	
+	LibManialink_Anim(Frame_MedalScore, "<frame posn='"^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"'/>", 250, TargetEasing);
+}
+
+if (!ShowMedalScore) continue;
+
+// ---------------------------------- //
+// Set points
+if (TimeScoreCounting) TimePoints = ((GameTime - StartTime) / 1000.) * 10.;
+TotalPoints = TimePoints + InputPlayer.Score.Points * 10;
+if (TotalPoints < 0) TotalPoints = 0.;
+
+// ---------------------------------- //
+// Update current medal
+if (TotalPoints >= ObjectiveAuthor) CurrentMedal = 4;
+else if (TotalPoints >= ObjectiveGold) CurrentMedal = 3;
+else if (TotalPoints >= ObjectiveSilver) CurrentMedal = 2;
+else if (TotalPoints >= ObjectiveBronze) CurrentMedal = 1;
+else CurrentMedal = 0;
+
+// ---------------------------------- //
+// Gauge bar
+switch (CurrentMedal) {
+	case 4 : TargetScore = ObjectiveAuthor;
+	case 3 : TargetScore = ObjectiveAuthor;
+	case 2 : TargetScore = ObjectiveGold;
+	case 1 : TargetScore = ObjectiveSilver;
+	case 0 : TargetScore = ObjectiveBronze;
+}
+
+Quad_ProgressGauge.Size.X = 50. * ML::Clamp(TotalPoints / TargetScore, 0., 1.);
+
+// ---------------------------------- //
+// Animate icons and update requirements
+while (PrevMedal < CurrentMedal) {
+	PrevMedal += 1;
+	
+	// ---------------------------------- //
+	// Update score requirements
+	Label_TargetPoints.SetText(TL::ToText(TargetScore));
+	
+	// ---------------------------------- //
+	// Update currently fought for medal color
+	if (C_MedalColors.existskey(CurrentMedal))
+		Quad_ProgressGauge.BgColor = C_MedalColors[CurrentMedal];
+	
+	// ---------------------------------- //
+	// Do blink animation
+	declare Text QuadId;
+	switch (PrevMedal) {
+		case 1 : QuadId = "Quad_MedalBronze";
+		case 2 : QuadId = "Quad_MedalSilver";
+		case 3 : QuadId = "Quad_MedalGold";
+		case 4 : QuadId = "Quad_MedalAuthor";
+	}
+	
+	if (QuadId != "") {
+		LibManialink_AnimRepeatStart(250, 20);
+		LibManialink_Anim("<quad id='"^QuadId^"' opacity=0 />", 125, "EaseInOutSine");
+		LibManialink_AnimInsert("<quad id='"^QuadId^"' opacity=1 />", 125, 125, "EaseInOutSine");
+		LibManialink_AnimRepeatEnd();
+		
+		// Play sound notification
+		Audio.PlaySoundEvent(CAudioManager::ELibSound::Victory, CurrentMedal - 1, -5.);
+	}
+}
+***
+
+{{{Manialink::Functions(["AnimRepeat"])}}}
+{{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
+
 main() {
 	wait(Map != Null && InputPlayer != Null);
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_MedalScore	<=> (Page.GetFirstChild("Frame_MedalScore")		as CMlFrame);
-	declare Quad_ProgressGauge	<=> (Page.GetFirstChild("Quad_ProgressGauge")	as CMlQuad);
-	declare Label_TargetPoints	<=> (Page.GetFirstChild("Label_TargetPoints")	as CMlLabel);
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Integer StartTime;
-	declare Boolean TickingSoloScore;
-	declare Boolean IsSoloMode;
-	declare Boolean ShowMedalScore;
-	declare Integer CurrentMedal;
-	
-	declare Real TotalPoints;
-	declare Real TimePoints;
-	declare Integer TargetScore;
-	declare Real GaugeRatio;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowMedalScore = False;
-	declare PrevMedal = -1;
-	
-	// ---------------------------------- //
-	// Check map records
-	declare ObjectiveBronze	= TL::ToInteger(Map.ObjectiveTextBronze);
-	declare ObjectiveSilver	= TL::ToInteger(Map.ObjectiveTextSilver);
-	declare ObjectiveGold	= TL::ToInteger(Map.ObjectiveTextGold);
-	declare ObjectiveAuthor	= TL::ToInteger(Map.ObjectiveTextAuthor);
-	
-	declare MapHasValidRecords = (
-		ObjectiveBronze > 0 && ObjectiveSilver > 0 && ObjectiveGold > 0 && ObjectiveAuthor > 0 &&
-		ObjectiveBronze < ObjectiveSilver && ObjectiveSilver < ObjectiveGold && ObjectiveGold < ObjectiveAuthor
-	);
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface"	: DisplayInterface = (SettingValue == "True");
-					case "StartTime"		: StartTime = TL::ToInteger(SettingValue);
-					case "TickingSoloScore"	: TickingSoloScore = (SettingValue == "True");
-					case "IsSoloMode"		: IsSoloMode = (SettingValue == "True");
-				}
-			}
-		}
-		
-		ShowMedalScore = (InputPlayer != Null && MapHasValidRecords && IsSoloMode && DisplayInterface);
-		
-		// ---------------------------------- //
-		// Set score label visibility
-		if (PrevShowMedalScore != ShowMedalScore) {
-			PrevShowMedalScore = ShowMedalScore;
-			
-			declare TargetPosition = Frame_MedalScore.RelativePosition;
-			TargetPosition.X = {{{C_LibInvasionUI_MedalScorePos.X}}};
-			declare TargetEasing = "EaseOutCirc";
-			
-			if (!ShowMedalScore) {
-				TargetPosition.X += C_FrameHideaway;
-				TargetEasing = "EaseInCirc";
-			}
-			
-			LibManialink_Anim(
-				"<frame id=\"Frame_MedalScore\" posn=\""^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"\"/>",
-				250, TargetEasing
-			);
-		}
-		
-		if (!ShowMedalScore) continue;
-		
-		// ---------------------------------- //
-		// Set points
-		if (TickingSoloScore) TimePoints = ((GameTime - StartTime) / 1000.) * 10.;
-		TotalPoints = TimePoints + InputPlayer.Score.Points * 10;
-		if (TotalPoints < 0.) TotalPoints = 0.;
-		
-		// ---------------------------------- //
-		// Update current medal
-		if (TotalPoints >= ObjectiveAuthor) CurrentMedal = 4;
-		else if (TotalPoints >= ObjectiveGold) CurrentMedal = 3;
-		else if (TotalPoints >= ObjectiveSilver) CurrentMedal = 2;
-		else if (TotalPoints >= ObjectiveBronze) CurrentMedal = 1;
-		else CurrentMedal = 0;
-		
-		// ---------------------------------- //
-		// Gauge bar
-		switch (CurrentMedal) {
-			case 4 : TargetScore = ObjectiveAuthor;
-			case 3 : TargetScore = ObjectiveAuthor;
-			case 2 : TargetScore = ObjectiveGold;
-			case 1 : TargetScore = ObjectiveSilver;
-			case 0 : TargetScore = ObjectiveBronze;
-		}
-		if (TargetScore > 0) GaugeRatio = TotalPoints / TargetScore;
-		if (GaugeRatio > 1.) GaugeRatio = 1.;
-		else if (GaugeRatio < 0.) GaugeRatio = 0.;
-		
-		Quad_ProgressGauge.Size.X = 50. * GaugeRatio;
-		if (CurrentMedal >= 0 && CurrentMedal <= 4) Quad_ProgressGauge.BgColor = C_MedalColors[CurrentMedal];
-		
-		// ---------------------------------- //
-		// Animate icons and update requirements
-		if (PrevMedal < CurrentMedal) {
-			PrevMedal += 1;
-			
-			if (PrevMedal >= 1) {
-				// ---------------------------------- //
-				// Do blink animation
-				declare Text QuadId;
-				switch (PrevMedal) {
-					case 1 : QuadId = "Quad_MedalBronze";
-					case 2 : QuadId = "Quad_MedalSilver";
-					case 3 : QuadId = "Quad_MedalGold";
-					case 4 : QuadId = "Quad_MedalAuthor";
-				}
-				LibManialink_AnimRepeatStart(250, 20);
-				LibManialink_Anim("<quad id=\""^QuadId^"\" opacity=\"0\"/>", 125, "EaseInOutSine");
-				LibManialink_AnimInsert("<quad id=\""^QuadId^"\" opacity=\"1\"/>", 125, 125, "EaseInOutSine");
-				LibManialink_AnimRepeatEnd();
-				
-				// Play sound notification
-				Audio.PlaySoundEvent(CAudioManager::ELibSound::Victory, CurrentMedal - 1, 0.);
-			}
-			
-			// ---------------------------------- //
-			// Update score requirements
-			Label_TargetPoints.SetText(TL::ToText(TargetScore));
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -956,7 +889,7 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the evolution module
+/** Create the manialink for the Evolution progress module
  *
  *	@return		The manialink
  */
@@ -967,13 +900,13 @@ Text Private_CreateMLEvolution() {
 	<style class="font" textsize="2" textfont="Eurostile_Bold" textemboss="1" textcolor="FFF" textprefix="$T"/>
 </stylesheet>
 
-<frame id="Frame_Evolution" posn="{{{C_LibInvasionUI_EvolutionPos.X - 25^" "^C_LibInvasionUI_EvolutionPos.Y^" "^C_LibInvasionUI_EvolutionPos.Z}}}">
+<frame id="Frame_Evolution" posn="{{{C_LibInvasionUI_EvolutionPos.X - 30^" "^C_LibInvasionUI_EvolutionPos.Y^" "^C_LibInvasionUI_EvolutionPos.Z}}}">
 	<quad sizen="20 20" valign="center" image="{{{C_ImgBase}}}UiEvolutionBg.png"/>
-	<quad posn="3.5 -9 -1" sizen="2.25 0" rot="180" bgcolor="FFF" id="Quad_EvoGauge"/>
-	<label posn="4.5 6.5 1" sizen="20 3" valign="center2" class="font" id="Label_Title" text="Evolution"/>
-	<label posn="4.5 2 1" valign="center2" class="font" textsize="6" id="Label_EvoLevel" text="1"/>
-	<label posn="4.5 -3.5 1" valign="center2" class="font" textcolor="888" id="Label_EvoPointsCur" text="0"/>
-	<label posn="4.5 -6.5 1" valign="center2" class="font" textcolor="888" id="Label_EvoPointsNext" text="/4"/>
+	<quad posn="3.5 -9 -1" sizen="2.25 0" rot="180" bgcolor="FFF" id="Label_EvoProgressGauge"/>
+	<label posn="4.625 6.5 1" sizen="20 3" valign="center2" class="font" id="Label_EvoFrameTitleText" text="Evolution"/>
+	<label posn="4.5 1.75 1" valign="center2" class="font" textsize="6" id="Label_EvoCurrentLevel" text="1"/>
+	<label posn="4.5 -3.5 1" valign="center2" class="font" textcolor="888" id="Label_EvoCurrentPoints" text="0"/>
+	<label posn="4.5 -6.5 1" valign="center2" class="font" textcolor="888" id="Label_EvoTargetPoints" text="/4"/>
 </frame>
 
 <script><!--
@@ -986,149 +919,179 @@ Text Private_CreateMLEvolution() {
 
 #Const C_FrameHideaway	-30.
 
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_Evolution <=> (Page.GetFirstChild("Frame_Evolution") as CMlFrame);
+declare Label_EvoCurrentLevel	<=> (Page.GetFirstChild("Label_EvoCurrentLevel")	as CMlLabel);
+declare Label_EvoCurrentPoints	<=> (Page.GetFirstChild("Label_EvoCurrentPoints")	as CMlLabel);
+declare Label_EvoTargetPoints	<=> (Page.GetFirstChild("Label_EvoTargetPoints")	as CMlLabel);
+declare Label_EvoProgressGauge	<=> (Page.GetFirstChild("Label_EvoProgressGauge")	as CMlQuad);
+
+// Translations
+Translate("Label_EvoFrameTitleText", "Evolution");
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+declare netread Int3[Text] Net_LibInvasionUI_PlayerEvolutionData for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayInterface = False;
+declare ShowEvolution = False;
+declare UseEvolution = False;
+declare GUIColor = <1., 1., 1.>;
+declare AnimGauge = True;
+
+declare PlayerEvoLevel = 0;
+declare PlayerEvoPointsCur = 0;
+declare PlayerEvoPointsNext = 0;
+
+declare PrevSettingsUpdate = -1;
+declare PrevShowEvolution = False;
+declare PrevPlayerEvoLevel = 1;
+declare PrevPlayerEvoPointsCur = 0;
+declare PrevPlayerEvoPointsNext = 4;
+declare PrevGUIColor = Vec3;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***		
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface" : DisplayInterface = SettingValue == "True";
+			case "UseEvolution" : UseEvolution = SettingValue == "True";
+		}
+	}
+}
+
+ShowEvolution = DisplayInterface && UseEvolution && (GUIPlayer != Null || !IsSpectatorMode);
+
+// ---------------------------------- //
+// Set Evolution widget visibility
+if (PrevShowEvolution != ShowEvolution) {
+	PrevShowEvolution = ShowEvolution;
+	
+	declare TargetPosition = Frame_Evolution.RelativePosition;
+	TargetPosition.X = {{{C_LibInvasionUI_EvolutionPos.X}}};
+	declare TargetEasing = "EaseOutCirc";
+	
+	if (!ShowEvolution) {
+		TargetPosition.X += C_FrameHideaway;
+		TargetEasing = "EaseInCirc";
+	}
+	
+	LibManialink_Anim(Frame_Evolution, "<frame posn='"^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"'/>", 250, TargetEasing);
+}
+
+if (!ShowEvolution) continue;
+
+// ---------------------------------- //
+// Obtain Evolution data
+if (GUIPlayer != Null && Net_LibInvasionUI_PlayerEvolutionData.existskey(GUIPlayer.Login)) {
+	PlayerEvoLevel		= Net_LibInvasionUI_PlayerEvolutionData[GUIPlayer.Login].X;
+	PlayerEvoPointsCur	= Net_LibInvasionUI_PlayerEvolutionData[GUIPlayer.Login].Y;
+	PlayerEvoPointsNext	= Net_LibInvasionUI_PlayerEvolutionData[GUIPlayer.Login].Z;
+}
+
+// ---------------------------------- //
+// Update player level
+if (PrevPlayerEvoLevel != PlayerEvoLevel) {
+	PrevPlayerEvoLevel = PlayerEvoLevel;
+	
+	Label_EvoCurrentLevel.SetText(TL::ToText(PlayerEvoLevel));
+	Label_EvoCurrentLevel.RelativeScale = 0.;
+	LibManialink_Anim(Label_EvoCurrentLevel, "<label scale=1 />", 375, "EaseOutCirc");
+}
+
+// ---------------------------------- //
+// Update player current points
+if (PrevPlayerEvoPointsCur != PlayerEvoPointsCur) {
+	PrevPlayerEvoPointsCur = PlayerEvoPointsCur;
+	
+	Label_EvoCurrentPoints.SetText(TL::ToText(PlayerEvoPointsCur));
+	AnimGauge = True;
+}
+
+// ---------------------------------- //
+// Update player points to next
+if (PrevPlayerEvoPointsNext != PlayerEvoPointsNext) {
+	PrevPlayerEvoPointsNext = PlayerEvoPointsNext;
+	
+	Label_EvoTargetPoints.SetText("/"^PlayerEvoPointsNext);
+	AnimGauge = True;
+}
+
+// ---------------------------------- //
+// Set interface color
+if (GUIPlayer != Null) {
+	if (GUIPlayer.CurrentClan == 0) GUIColor = GUIPlayer.User.Color;
+	else GUIColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+}
+
+if (PrevGUIColor != GUIColor) {
+	PrevGUIColor = GUIColor;
+	
+	AnimGauge = True;
+	declare TextColor = Brightness(GUIColor, 2.);
+	
+	LibManialink_Anim(Label_EvoCurrentPoints, "<label textcolor="^TL::ColorToText(TextColor)^"/>", 250, "EaseInOutSine");
+	LibManialink_Anim(Label_EvoTargetPoints, "<label textcolor="^TL::ColorToText(TextColor)^"/>", 250, "EaseInOutSine");
+}
+
+// ---------------------------------- //
+// Animate gauge
+if (AnimGauge) {
+	AnimGauge = False;
+	
+	declare SizeY = 0.;
+	if (PlayerEvoPointsNext > 0) SizeY = 18. * PlayerEvoPointsCur / PlayerEvoPointsNext;
+	
+	LibManialink_Anim(Label_EvoProgressGauge, "<quad sizen='2.25 "^SizeY^"' bgcolor="^TL::ColorToText(GUIColor)^"/>", 250, "EaseInOutSine");
+}
+***
+
+// ---------------------------------- //
+/** Change color brightness
+ *
+ *	@param	_Color			Input color
+ *	@param	_Brightness		Target brightness
+ *
+ *	@return		New color
+ */
+Vec3 Brightness(Vec3 _Color, Real _Brightness) {
+	if (_Brightness == 1) return _Color;
+	if (_Brightness <= 0) return Vec3;
+	
+	declare Vec3 OutputColor;
+	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
+	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
+	return OutputColor;
+}
+
 {{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
 {{{Translations::InsertToManialink(["Evolution"])}}}
 
-// ---------------------------------- //
-// Main
-// ---------------------------------- //
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_Evolution		<=> (Page.GetFirstChild("Frame_Evolution")		as CMlFrame);
-	declare Label_EvoLevel		<=> (Page.GetFirstChild("Label_EvoLevel")		as CMlLabel);
-	declare Label_EvoPointsCur	<=> (Page.GetFirstChild("Label_EvoPointsCur")	as CMlLabel);
-	declare Label_EvoPointsNext	<=> (Page.GetFirstChild("Label_EvoPointsNext")	as CMlLabel);
-	declare Label_Title			<=> (Page.GetFirstChild("Label_Title")			as CMlLabel);
-	
-	// Translations
-	Label_Title.SetText(Translations_Get("Evolution"));
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	declare netread Int3[Text] Net_LibInvasionUI_EvolutionData for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Boolean ShowEvolution;
-	declare Boolean UseEvolution;
-	declare Integer PlayerEvoLevel;
-	declare Integer PlayerEvoPointsCur;
-	declare Integer PlayerEvoPointsNext;
-	declare Vec3 GUIColor;
-	declare Boolean AnimGauge = True;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowEvolution = False;
-	declare PrevPlayerEvoLevel = 1;
-	declare PrevPlayerEvoPointsCur = 0;
-	declare PrevPlayerEvoPointsNext = 4;
-	declare PrevGUIColor = <-1., -1., -1.>;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface"	: DisplayInterface = (SettingValue == "True");
-					case "UseEvolution"		: UseEvolution = (SettingValue == "True");
-				}
-			}
-		}
-		
-		ShowEvolution = (DisplayInterface && UseEvolution && (GUIPlayer != Null || !IsSpectatorMode));
-		
-		// ---------------------------------- //
-		// Set evolution widget visibility
-		if (PrevShowEvolution != ShowEvolution) {
-			PrevShowEvolution = ShowEvolution;
-			
-			declare TargetPosition = Frame_Evolution.RelativePosition;
-			TargetPosition.X = {{{C_LibInvasionUI_EvolutionPos.X}}};
-			declare TargetEasing = "EaseOutCirc";
-			
-			if (!ShowEvolution) {
-				TargetPosition.X += C_FrameHideaway;
-				TargetEasing = "EaseInCirc";
-			}
-			
-			LibManialink_Anim(
-				"<frame id=\"Frame_Evolution\" posn=\""^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"\"/>",
-				250, TargetEasing
-			);
-		}
-		
-		if (!ShowEvolution) continue;
-		
-		// ---------------------------------- //
-		// Obtain evolution data
-		if (GUIPlayer != Null && Net_LibInvasionUI_EvolutionData.existskey(GUIPlayer.Login)) {
-			PlayerEvoLevel		= Net_LibInvasionUI_EvolutionData[GUIPlayer.Login].X;
-			PlayerEvoPointsCur	= Net_LibInvasionUI_EvolutionData[GUIPlayer.Login].Y;
-			PlayerEvoPointsNext	= Net_LibInvasionUI_EvolutionData[GUIPlayer.Login].Z;
-		}
-		
-		// ---------------------------------- //
-		// Update player level
-		if (PrevPlayerEvoLevel != PlayerEvoLevel) {
-			PrevPlayerEvoLevel = PlayerEvoLevel;
-			Label_EvoLevel.SetText(TL::ToText(PlayerEvoLevel));
-			Label_EvoLevel.RelativeScale = 0.;
-			LibManialink_Anim("<label id=\"Label_EvoLevel\" scale=\"1\"/>", 250, "EaseOutCirc");
-		}
-		
-		// ---------------------------------- //
-		// Update player current points
-		if (PrevPlayerEvoPointsCur != PlayerEvoPointsCur) {
-			PrevPlayerEvoPointsCur = PlayerEvoPointsCur;
-			Label_EvoPointsCur.SetText(TL::ToText(PlayerEvoPointsCur));
-			AnimGauge = True;
-		}
-		
-		// ---------------------------------- //
-		// Update player points to next
-		if (PrevPlayerEvoPointsNext != PlayerEvoPointsNext) {
-			PrevPlayerEvoPointsNext = PlayerEvoPointsNext;
-			Label_EvoPointsNext.SetText("/"^PlayerEvoPointsNext);
-			AnimGauge = True;
-		}
-		
-		// ---------------------------------- //
-		// Set interface color
-		if (GUIPlayer != Null) {
-			if (GUIPlayer.CurrentClan == 0) GUIColor = GUIPlayer.User.Color;
-			else GUIColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
-		}
-		if (PrevGUIColor != GUIColor) {
-			PrevGUIColor = GUIColor;
-			AnimGauge = True;
-			LibManialink_Anim("<label id=\"Label_EvoPointsCur\" textcolor=\""^TL::ColorToText(GUIColor)^"\"/>", 250, "EaseInOutSine");
-			LibManialink_Anim("<label id=\"Label_EvoPointsNext\" textcolor=\""^TL::ColorToText(GUIColor)^"\"/>", 250, "EaseInOutSine");
-		}
-		
-		// ---------------------------------- //
-		// Animate gauge
-		if (AnimGauge) {
-			AnimGauge = False;
-			declare SizeY = 0.;
-			if (PlayerEvoPointsNext > 0) SizeY = 18. * PlayerEvoPointsCur / PlayerEvoPointsNext;
-			
-			LibManialink_Anim(
-				"<quad id=\"Quad_EvoGauge\" sizen=\"2.25 "^SizeY^"\" bgcolor=\""^TL::ColorToText(GUIColor)^"\"/>",
-				250, "EaseInOutSine"
-			);
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -1136,143 +1099,7 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the reload gauge module
- *
- *	@return		The manialink
- */
-Text Private_CreateMLReloadGauge() {
-	return """
-<manialink version="2" name="LibInvasionUI:ReloadGauge">
-<stylesheet>
-	<style class="gauge" sizen="32 4" image="{{{C_ImgBase}}}UiReloadGauge.png" valign="center" halign="right"/>
-	<style class="font" textsize="4" textfont="Eurostile_Bold" textemboss="1" textcolor="FFF"/>
-</stylesheet>
-
-<frame id="Frame_ReloadGauge" posn="{{{C_LibInvasionUI_ReloadGaugePos.X^" "^C_LibInvasionUI_ReloadGaugePos.Y^" "^C_LibInvasionUI_ReloadGaugePos.Z}}}" scale="0">
-	<quad posn="0 0 -1" class="gauge" colorize="777"/>
-	<frame id="Frame_ClipWindow"><quad class="gauge" id="Quad_ReloadGauge" colorize="FFF"/></frame>
-	<label class="font" valign="center2" text="0" id="Label_ReloadGauge"/>
-</frame>
-
-<script><!--
-/**
- *	LibInvasionUI: ReloadGauge
- */
-
-#Include "MathLib" as ML
-#Include "TextLib" as TL
-
-{{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
-
-// ---------------------------------- //
-// Main
-// ---------------------------------- //
-main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_ReloadGauge	<=> (Page.GetFirstChild("Frame_ReloadGauge")	as CMlFrame);
-	declare Frame_ClipWindow	<=> (Page.GetFirstChild("Frame_ClipWindow")		as CMlFrame);
-	declare Label_ReloadGauge	<=> (Page.GetFirstChild("Label_ReloadGauge")	as CMlLabel);
-	Frame_ClipWindow.ClipWindowActive = True;
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	declare netread Int3[Text] Net_LibInvasionUI_ReloadData for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Boolean ShowReloadGauge;
-	declare Vec3 Color;
-	declare PlayerHasBoost = False;
-	declare PlayerBoostStartTime = -1;
-	declare PlayerBoostDuration = 0;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowReloadGauge = False;
-	declare PrevColor = <-1., -1., -1.>;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
-	while (True) {
-		yield;
-		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface" : DisplayInterface = (SettingValue == "True");
-				}
-			}
-		}
-		
-		// ---------------------------------- //
-		// Read current player data
-		if (GUIPlayer != Null && Net_LibInvasionUI_ReloadData.existskey(GUIPlayer.User.Login)) {
-			PlayerBoostStartTime = Net_LibInvasionUI_ReloadData[GUIPlayer.User.Login].X;
-			PlayerBoostDuration = Net_LibInvasionUI_ReloadData[GUIPlayer.User.Login].Y;
-			PlayerHasBoost = (GameTime < PlayerBoostStartTime + PlayerBoostDuration);
-			
-			if (GUIPlayer.CurrentClan == 0) Color = GUIPlayer.User.Color;
-			else Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
-		}
-		// ---------------------------------- //
-		// Reset data when there is no player
-		else if (PlayerHasBoost) {
-			PlayerHasBoost = False;
-			PlayerBoostStartTime = 0;
-			PlayerBoostDuration = 0;
-		}
-		
-		ShowReloadGauge = (DisplayInterface && PlayerHasBoost);
-		
-		// ---------------------------------- //
-		// Set reload gauge visibility
-		if (PrevShowReloadGauge != ShowReloadGauge) {
-			PrevShowReloadGauge = ShowReloadGauge;
-			
-			declare TargetScale = 1.;
-			declare TargetEasing = "EaseOutCirc";
-			
-			if (!ShowReloadGauge) {
-				TargetScale = 0.;
-				TargetEasing = "EaseInCirc";
-			}
-			
-			LibManialink_Anim("<frame id=\"Frame_ReloadGauge\" scale=\""^TargetScale^"\"/>", 250, TargetEasing);
-		}
-		
-		if (!ShowReloadGauge) continue;
-		
-		// ---------------------------------- //
-		// Update color
-		if (PrevColor != Color) {
-			PrevColor = Color;
-			LibManialink_Anim("<quad id=\"Quad_ReloadGauge\" colorize=\""^TL::ColorToText(Color)^"\"/>", 250, "EaseInOutSine");
-		}
-		
-		// ---------------------------------- //
-		// Set label value
-		Label_ReloadGauge.Value = TL::ToText((PlayerBoostStartTime + PlayerBoostDuration - GameTime) / 1000 + 1);
-		
-		// ---------------------------------- //
-		// Set gauge ratio
-		declare GaugeRatio = 1. - ML::ToReal(GameTime - PlayerBoostStartTime) / PlayerBoostDuration;
-		Frame_ClipWindow.ClipWindowSize = <GaugeRatio * 64., 4.>;
-	}
-}
---></script>
-</manialink>""";
-}
-
-// ---------------------------------- //
-/** Create the manialink for the reload gauge module
+/** Create the manialink for the Gold item marker module
  *
  *	@return		The manialink
  */
@@ -1301,107 +1128,153 @@ Text Private_CreateMLGoldMarker() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-{{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
+#Const C_GaugeColors [0. => <1., 0., 0.>, 1. => <1., 1., 0.>]
 
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare CMlQuad[] Quad_MarkerSteps;
+for (I, 0, 7) Quad_MarkerSteps.add((Page.GetFirstChild("Quad_MarkerStep"^I) as CMlQuad));
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+declare netread Boolean[Text] Net_LibInvasionUI_PlayerHasCustomWeapon for Teams[0];
+declare netread Integer[Text] Net_LibInvasionUI_PlayerGoldSpawnId for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayInterface = False;
+declare ShowGoldMarker = False;
+declare GoldSpawnTime = -1;
+declare GoldSpawnDuration = -1;
+declare GoldSpawnId = -1;
+declare GaugeRatio = 0.;
+
+declare PrevSettingsUpdate = -1;
+declare PrevShowGoldMarker = False;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***	
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface" : DisplayInterface = SettingValue == "True";
+			case "GoldSpawnDuration" : GoldSpawnDuration = TL::ToInteger(SettingValue);
+			case "GoldSpawnTime" : GoldSpawnTime = TL::ToInteger(SettingValue);
+			case "GoldSpawnId" : GoldSpawnId = TL::ToInteger(SettingValue);
+		}
+	}
+}
+
+ShowGoldMarker = (
+	DisplayInterface && GoldSpawnDuration > 0 && GameTime <= GoldSpawnTime + GoldSpawnDuration &&
+	(GUIPlayer == Null ||
+	
+	// Hide if player already has a weapon equipped
+	((!Net_LibInvasionUI_PlayerHasCustomWeapon.existskey(GUIPlayer.User.Login) ||
+	!Net_LibInvasionUI_PlayerHasCustomWeapon[GUIPlayer.User.Login]) &&
+	
+	// Hide if player picked up Gold and does no longer have weapon
+	(!Net_LibInvasionUI_PlayerGoldSpawnId.existskey(GUIPlayer.User.Login) ||
+	Net_LibInvasionUI_PlayerGoldSpawnId[GUIPlayer.User.Login] != GoldSpawnId)))
+);
+
+// ---------------------------------- //
+// Set Gold marker visibility
+if (PrevShowGoldMarker != ShowGoldMarker) {
+	PrevShowGoldMarker = ShowGoldMarker;
+	
+	declare TargetScale = 1.;
+	declare TargetEasing = "EaseOutBack";
+	
+	if (!ShowGoldMarker) {
+		TargetScale = 0.;
+		TargetEasing = "EaseInBack";
+	}
+	
+	LibManialink_Anim("<frame id='Frame_GoldMarker' scale="^TargetScale^" />", 500, TargetEasing);
+}
+
+if (!ShowGoldMarker) continue;
+
+// ---------------------------------- //
+// Set gauge ratio
+GaugeRatio = 1. - ML::Clamp(ML::ToReal(GameTime - GoldSpawnTime) / GoldSpawnDuration, 0., 1.);
+
+// ---------------------------------- //
+// Display gauge steps
+for (I, 0, 7) {
+	declare StepStart = 1/8. * I;
+	declare StepEnd = StepStart + 1/8.;
+	
+	declare Opacity = 0.;
+	if (GaugeRatio >= StepStart) Opacity = (GaugeRatio - StepStart) * 8;
+	if (GaugeRatio >= StepEnd) Opacity = 1.;
+	
+	Quad_MarkerSteps[I].Opacity = Opacity;
+	Quad_MarkerSteps[I].Colorize = ColorTransition(GaugeRatio, C_GaugeColors);
+}
+***
+
+// ---------------------------------- //
+/** Get the color depending on a ratio
+ *
+ *	@param	_Ratio			The ratio of the color
+ *	@param	_ColorRatios	List of the colors for each ratio
+ *
+ *	@return		The Blend color according to the ratio
+ */
+Vec3 ColorTransition(Real _Ratio, Vec3[Real] _ColorRatios) {
+	if (_ColorRatios.count <= 0) return <0., 0., 0.>;
+	if (_ColorRatios.count == 1) foreach (Color in _ColorRatios) return Color;
+	if (_ColorRatios.existskey(_Ratio)) return _ColorRatios[_Ratio];
+	
+	// Sort all colors ratios in ascending order
+	declare Real[] SortedRatios;
+	foreach (Ratio => Color in _ColorRatios) SortedRatios.add(Ratio);
+	SortedRatios = SortedRatios.sort();
+	
+	// Get the lowest color ratio
+	declare MinimumRatio = SortedRatios[0];
+	foreach (Ratio in SortedRatios) if (Ratio > MinimumRatio && Ratio < _Ratio) MinimumRatio = Ratio;
+	
+	// Get the highest color ratio
+	declare MaximumRatio = SortedRatios[SortedRatios.count - 1];
+	foreach (Ratio in SortedRatios) if (Ratio < MaximumRatio && Ratio > _Ratio) MaximumRatio = Ratio;
+	
+	// Get the colors blend properties
+	declare BlendRatio = (_Ratio - MinimumRatio) / (MaximumRatio - MinimumRatio);
+	declare MinimumColor = _ColorRatios[MinimumRatio];
+	declare MaximumColor = _ColorRatios[MaximumRatio];
+	
+	// Compute the final color
+	declare Vec3 OutputColor;
+	for (I, 0, 2) OutputColor[I] = MinimumColor[I] + (MaximumColor[I] - MinimumColor[I]) * BlendRatio;
+	return OutputColor;
+}
+
+{{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
+
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare CMlQuad[] Quad_MarkerSteps;
-	for (I, 0, 7) Quad_MarkerSteps.add((Page.GetFirstChild("Quad_MarkerStep"^I) as CMlQuad));
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	declare netread Boolean[Text] Net_LibInvasionUI_PlayerHasWeapon for Teams[0];
-	declare netread Integer[Text] Net_LibInvasionUI_PlayerGoldLife for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Boolean ShowGoldMarker;
-	declare Integer GoldSpawnTime;
-	declare Integer GoldLifeDuration;
-	declare Integer GoldLifeId;
-	declare Real GaugeRatio;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowGoldMarker = False;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface"	: DisplayInterface = (SettingValue == "True");
-					case "GoldSpawnTime"	: GoldSpawnTime = TL::ToInteger(SettingValue);
-					case "GoldLifeDuration"	: GoldLifeDuration = TL::ToInteger(SettingValue);
-					case "GoldLifeId"		: GoldLifeId = TL::ToInteger(SettingValue);
-				}
-			}
-		}
-		
-		ShowGoldMarker = (
-			DisplayInterface && GameTime <= GoldSpawnTime + GoldLifeDuration && GoldLifeDuration > 0 &&
-			(GUIPlayer == Null ||
-			
-			// Hide if player has weapon
-			((!Net_LibInvasionUI_PlayerHasWeapon.existskey(GUIPlayer.User.Login) ||
-			!Net_LibInvasionUI_PlayerHasWeapon[GUIPlayer.User.Login]) &&
-			
-			// Hide if player has matching Gold life id
-			(!Net_LibInvasionUI_PlayerGoldLife.existskey(GUIPlayer.User.Login) ||
-			Net_LibInvasionUI_PlayerGoldLife[GUIPlayer.User.Login] != GoldLifeId)))
-		);
-		
-		// ---------------------------------- //
-		// Set Gold marker visibility
-		if (PrevShowGoldMarker != ShowGoldMarker) {
-			PrevShowGoldMarker = ShowGoldMarker;
-			
-			declare TargetScale = 1.;
-			declare TargetEasing = "EaseOutBack";
-			
-			if (!ShowGoldMarker) {
-				TargetScale = 0.;
-				TargetEasing = "EaseInBack";
-			}
-			
-			LibManialink_Anim("<frame id=\"Frame_GoldMarker\" scale=\""^TargetScale^"\"/>", 500, TargetEasing);
-		}
-		
-		if (!ShowGoldMarker) continue;
-		
-		// ---------------------------------- //
-		// Set gauge ratio
-		GaugeRatio = 1. - ML::ToReal(GameTime - GoldSpawnTime) / GoldLifeDuration;
-		if (GaugeRatio < 0) GaugeRatio = 0.;
-		if (GaugeRatio > 1) GaugeRatio = 1.;
-		
-		// ---------------------------------- //
-		// Display gauge steps
-		for (I, 0, 7) {
-			declare StepStart = 1/8. * I;
-			declare StepEnd = StepStart + 1/8.;
-			
-			declare Opacity = 0.;
-			if (GaugeRatio >= StepStart) Opacity = (GaugeRatio - StepStart) * 8;
-			if (GaugeRatio >= StepEnd) Opacity = 1.;
-			
-			Quad_MarkerSteps[I].Opacity = Opacity;
-			Quad_MarkerSteps[I].Colorize = <1., GaugeRatio, 0.>;
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -1409,166 +1282,186 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the reload gauge module
+/** Create the manialink for the custom weapon bar module
  *
  *	@return		The manialink
  */
-Text Private_CreateMLWeaponBonus() {
+Text Private_CreateMLCustomWeaponBar() {
 	return """
-<manialink version="2" name="LibInvasionUI:WeaponBonus">
+<manialink version="2" name="LibInvasionUI:CustomWeaponBar">
 <stylesheet>
-	<style id="Label_WeaponName" textsize="2" textfont="Eurostile_Bold" textcolor="888" textprefix="$T"/>
-	<style id="Label_EvoBonusAmount" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
+	<style id="Label_CustomWeaponName" textsize="2" textfont="Eurostile_Bold" textcolor="888" textprefix="$T"/>
+	<style id="Label_EvolutionBonusAmount" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
 	<style id="Label_EvolutionSubtitle" textemboss="1" textsize="1" textfont="Eurostile_Bold" textcolor="FFF"/>
 </stylesheet>
 
-<frame id="Frame_WeaponBonus" posn="{{{C_LibInvasionUI_WeaponBonusPos.X^" "^C_LibInvasionUI_WeaponBonusPos.Y^" "^C_LibInvasionUI_WeaponBonusPos.Z}}}" scale="0">
+<frame id="Frame_CustomWeaponBar" posn="{{{C_LibInvasionUI_WeaponBarPos.X^" "^C_LibInvasionUI_WeaponBarPos.Y^" "^C_LibInvasionUI_WeaponBarPos.Z}}}" scale="0">
 	<quad sizen="96 12" halign="center" valign="center" image="{{{C_ImgBase}}}UiWeaponGaugeFg.png"/>
-	<quad posn="-45 1.75 -1" sizen="90 4" valign="center" id="Quad_WeaponGauge" bgcolor="000"/>
-	<label posn="0 -2.25 1" sizen="31 3" halign="center" valign="center2" id="Label_WeaponName" text="Unassigned"/>
+	<quad posn="-45 1.75 -1" sizen="90 4" valign="center" id="Quad_WeaponDurationBar" bgcolor="000"/>
+	<label posn="0 -2.25 1" sizen="31 3" halign="center" valign="center2" id="Label_CustomWeaponName" text="Unassigned"/>
+	
 	<frame id="Frame_EvolutionBonus" posn="52.5 1.5" hidden="1">
-		<label posn="0 1.5" halign="center" valign="center2" id="Label_EvoBonusAmount" text="+0s"/>
+		<label posn="0 1.5" halign="center" valign="center2" id="Label_EvolutionBonusAmount" text="+0s"/>
 		<label posn="0 -1.5" halign="center" valign="center2" id="Label_EvolutionSubtitle" text="EVO"/>
 	</frame>
 </frame>
 
-<quad posn="0 0 -75" sizen="320 180" halign="center" valign="center" image="{{{C_ImgBase}}}BonusEffect.dds" opacity="0" id="Quad_CornerGlow"/>
+<quad posn="0 0 -75" sizen="320 180" halign="center" valign="center" image="{{{C_ImgBase}}}BonusEffect.dds" opacity="0" id="Quad_ScreenEdgeGlow"/>
 
 <script><!--
 /**
- *	LibInvasionUI: WeaponBonus
+ *	LibInvasionUI: CustomWeaponBar
  */
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-{{{Manialink::Animations(["EaseInOutSine", "EaseInBack", "EaseOutBack"])}}}
-
-Real Pulse() {
-	return .5 + ML::Sin((Now/50.) / ML::PI()) * .5;
-}
+#Const C_SpectatorOffset	12.
 
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_CustomWeaponBar	<=> (Page.GetFirstChild("Frame_CustomWeaponBar")	as CMlFrame);
+declare Quad_WeaponDurationBar	<=> (Page.GetFirstChild("Quad_WeaponDurationBar")	as CMlQuad);
+declare Label_CustomWeaponName	<=> (Page.GetFirstChild("Label_CustomWeaponName")	as CMlLabel);
+declare Frame_EvolutionBonus	<=> (Page.GetFirstChild("Frame_EvolutionBonus")		as CMlFrame);
+declare Label_EvolutionBonusAmount	<=> (Page.GetFirstChild("Label_EvolutionBonusAmount")		as CMlLabel);
+declare Quad_ScreenEdgeGlow		<=> (Page.GetFirstChild("Quad_ScreenEdgeGlow")		as CMlQuad);
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+declare netread Int3[Text] Net_LibInvasionUI_PlayerWeaponData for Teams[0]; ///< <Start time, Duration, Evolution bonus>
+declare netread Text[Text] Net_LibInvasionUI_PlayerWeaponName for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayInterface = False;
+declare ShowCustomWeaponBar = False;
+declare GUIColor = <1., 1., 1.>;
+declare CurWeaponName = "Unassigned";
+
+declare PlayerHasCustomWeapon = False;
+declare PlayerWeaponBuffStartTime = 0;
+declare PlayerWeaponBuffDuration = 0;
+declare PlayerWeaponEvolutionBonus = 0;
+
+declare PrevSettingsUpdate = -1;
+declare PrevShowCustomWeaponBar = False;
+declare PrevGUIColor = Vec3;
+declare PrevWeaponName = "";
+declare PrevEvolutionBonus = -1;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface" : DisplayInterface = SettingValue == "True";
+		}
+	}
+}
+
+// ---------------------------------- //
+// Read current player data
+if (GUIPlayer != Null && Net_LibInvasionUI_PlayerWeaponData.existskey(GUIPlayer.User.Login)) {
+	PlayerWeaponBuffStartTime	= Net_LibInvasionUI_PlayerWeaponData[GUIPlayer.User.Login].X;
+	PlayerWeaponBuffDuration	= Net_LibInvasionUI_PlayerWeaponData[GUIPlayer.User.Login].Y;
+	PlayerWeaponEvolutionBonus	= Net_LibInvasionUI_PlayerWeaponData[GUIPlayer.User.Login].Z;
+	PlayerHasCustomWeapon = GameTime < PlayerWeaponBuffStartTime + PlayerWeaponBuffDuration + PlayerWeaponEvolutionBonus;
+}
+else if (PlayerHasCustomWeapon) PlayerHasCustomWeapon = False;
+
+ShowCustomWeaponBar = DisplayInterface && GUIPlayer != Null && PlayerHasCustomWeapon;
+
+// ---------------------------------- //
+// Set weapon gauge visibility
+if (PrevShowCustomWeaponBar != ShowCustomWeaponBar) {
+	PrevShowCustomWeaponBar = ShowCustomWeaponBar;
+	
+	declare TargetScale = 1.;
+	declare TargetEasing = "EaseOutBack";
+	
+	if (!ShowCustomWeaponBar) {
+		TargetScale = 0.;
+		TargetEasing = "EaseInBack";
+	}
+	
+	LibManialink_Anim(Frame_CustomWeaponBar, "<frame scale="^TargetScale^" />", 500, TargetEasing);
+	LibManialink_Anim(Quad_ScreenEdgeGlow, "<frame opacity="^TargetScale * .75^" />", 500, TargetEasing);
+}
+
+if (!ShowCustomWeaponBar) continue;
+
+// ---------------------------------- //
+// Set the frame offset in spectator mode
+Frame_CustomWeaponBar.RelativePosition.Y = {{{C_LibInvasionUI_WeaponBarPos.Y}}};
+if (IsSpectatorMode) Frame_CustomWeaponBar.RelativePosition.Y += C_SpectatorOffset;
+
+// Magic!
+Quad_ScreenEdgeGlow.RelativeScale = 1. + (.5 + ML::Sin((Now / 50.) / ML::PI()) * .5) * .125;
+
+// ---------------------------------- //
+// Update interface color
+if (Teams.existskey(GUIPlayer.CurrentClan - 1)) GUIColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+else GUIColor = GUIPlayer.User.Color;
+
+if (PrevGUIColor != GUIColor) {
+	PrevGUIColor = GUIColor;
+	LibManialink_Anim(Quad_WeaponDurationBar, "<quad bgcolor="^TL::ColorToText(GUIColor)^" />", 250, "EaseInOutSine");
+	Quad_ScreenEdgeGlow.Colorize = GUIColor;
+}
+
+// ---------------------------------- //
+// Set the name of the weapon
+if (!Net_LibInvasionUI_PlayerWeaponName.existskey(GUIPlayer.User.Login)) CurWeaponName = "Unassigned";
+else CurWeaponName = Net_LibInvasionUI_PlayerWeaponName[GUIPlayer.User.Login];
+
+if (PrevWeaponName != CurWeaponName) {
+	PrevWeaponName = CurWeaponName;
+	Translate("Label_CustomWeaponName", CurWeaponName);
+}
+
+// ---------------------------------- //
+// Set gauge ratio
+declare GaugeRatio = 0;
+declare Duration = PlayerWeaponBuffDuration + PlayerWeaponEvolutionBonus;
+
+if (Duration > 0) GaugeRatio = 1 - ML::ToReal(GameTime - PlayerWeaponBuffStartTime) / Duration;
+Quad_WeaponDurationBar.Size.X = 90. * ML::Clamp(GaugeRatio, 0., 1.);
+
+// ---------------------------------- //
+// Display Evolution level time bonus
+if (PrevEvolutionBonus != PlayerWeaponEvolutionBonus) {
+	PrevEvolutionBonus = PlayerWeaponEvolutionBonus;
+	
+	Frame_EvolutionBonus.Visible = PlayerWeaponEvolutionBonus > 0;
+	if (Frame_EvolutionBonus.Visible) Label_EvolutionBonusAmount.Value = "+"^PlayerWeaponEvolutionBonus / 1000^"s";
+}
+***
+
+{{{Translations::InsertToManialink([""])}}}
+{{{Manialink::Animations(["EaseInOutSine", "EaseInBack", "EaseOutBack"])}}}
+
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_WeaponBonus		<=> (Page.GetFirstChild("Frame_WeaponBonus")	as CMlFrame);
-	declare Quad_WeaponGauge		<=> (Page.GetFirstChild("Quad_WeaponGauge")		as CMlQuad);
-	declare Label_WeaponName		<=> (Page.GetFirstChild("Label_WeaponName")		as CMlLabel);
-	declare Frame_EvolutionBonus	<=> (Page.GetFirstChild("Frame_EvolutionBonus")	as CMlFrame);
-	declare Label_EvoBonusAmount	<=> (Page.GetFirstChild("Label_EvoBonusAmount")	as CMlLabel);
-	declare Quad_CornerGlow			<=> (Page.GetFirstChild("Quad_CornerGlow")		as CMlQuad);
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	declare netread Int3[Text] Net_LibInvasionUI_WeaponData for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_WeaponName for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare Boolean DisplayInterface;
-	declare Boolean ShowWeaponBonus;
-	declare Vec3 Color;
-	declare PlayerHasWeapon = False;
-	declare PlayerWeaponStartTime = 0;
-	declare PlayerWeaponDuration = 0;
-	declare PlayerWeaponBonus = 0;
-	
-	declare PrevSettingsUpdate = -1;
-	declare PrevShowWeaponBonus = False;
-	declare PrevColor = <-1., -1., -1.>;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface" : DisplayInterface = (SettingValue == "True");
-				}
-			}
-		}
-		
-		// ---------------------------------- //
-		// Read current player data
-		if (GUIPlayer != Null && Net_LibInvasionUI_WeaponData.existskey(GUIPlayer.User.Login)) {
-			PlayerWeaponStartTime = Net_LibInvasionUI_WeaponData[GUIPlayer.User.Login].X;
-			PlayerWeaponDuration = Net_LibInvasionUI_WeaponData[GUIPlayer.User.Login].Y;
-			PlayerWeaponBonus = Net_LibInvasionUI_WeaponData[GUIPlayer.User.Login].Z;
-			PlayerHasWeapon = (GameTime < PlayerWeaponStartTime + PlayerWeaponDuration + PlayerWeaponBonus);
-			
-			if (GUIPlayer.CurrentClan == 0) Color = GUIPlayer.User.Color;
-			else Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
-		}
-		// ---------------------------------- //
-		// Reset data when there is no player
-		else if (PlayerHasWeapon) {
-			PlayerHasWeapon = False;
-		}
-		
-		ShowWeaponBonus = (DisplayInterface && GUIPlayer != Null && PlayerHasWeapon);
-		
-		// ---------------------------------- //
-		// Set weapon gauge visibility
-		if (PrevShowWeaponBonus != ShowWeaponBonus) {
-			PrevShowWeaponBonus = ShowWeaponBonus;
-			
-			declare TargetScale = 1.;
-			declare TargetEasing = "EaseOutBack";
-			
-			if (!ShowWeaponBonus) {
-				TargetScale = 0.;
-				TargetEasing = "EaseInBack";
-			}
-			
-			LibManialink_Anim("<frame id=\"Frame_WeaponBonus\" scale=\""^TargetScale^"\"/>", 500, TargetEasing);
-			LibManialink_Anim("<frame id=\"Quad_CornerGlow\" opacity=\""^TargetScale * .75^"\"/>", 500, TargetEasing);
-		}
-		
-		if (!ShowWeaponBonus) continue;
-		
-		// ---------------------------------- //
-		// Set spectator offset
-		Frame_WeaponBonus.RelativePosition.Y = {{{C_LibInvasionUI_WeaponBonusPos.Y}}};
-		if (GUIPlayer != Null && GUIPlayer.User.Login != LocalUser.Login) Frame_WeaponBonus.RelativePosition.Y += 18.;
-		
-		Quad_CornerGlow.RelativeScale = 1. + Pulse() * .125;
-		
-		// ---------------------------------- //
-		// Update color
-		if (PrevColor != Color) {
-			PrevColor = Color;
-			LibManialink_Anim("<quad id=\"Quad_WeaponGauge\" bgcolor=\""^TL::ColorToText(Color)^"\"/>", 250, "EaseInOutSine");
-			Quad_CornerGlow.Colorize = Color;
-		}
-		
-		// ---------------------------------- //
-		// Set weapon name
-		if (Net_LibInvasionUI_WeaponName.existskey(GUIPlayer.User.Login))
-			Label_WeaponName.Value = Net_LibInvasionUI_WeaponName[GUIPlayer.User.Login];
-		else
-			Label_WeaponName.Value = "Unassigned";
-		
-		// ---------------------------------- //
-		// Set gauge ratio
-		declare GaugeRatio = 1. - ML::ToReal(GameTime - PlayerWeaponStartTime) / (PlayerWeaponDuration + PlayerWeaponBonus);
-		Quad_WeaponGauge.Size.X = GaugeRatio * 90.;
-		
-		// ---------------------------------- //
-		// Evolution level time bonus
-		Frame_EvolutionBonus.Visible = (PlayerWeaponBonus > 0);
-		if (Frame_EvolutionBonus.Visible) Label_EvoBonusAmount.Value = "+"^PlayerWeaponBonus/1000^"s";
+		---Yield---
 	}
 }
 --></script>
@@ -1576,24 +1469,24 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the reload gauge module
+/** Create the manialink for the Toads counter module
  *
  *	@return		The manialink
  */
-Text Private_CreateMLPerformance() {
+Text Private_CreateMLToadsCounter() {
 	return """
-<manialink version="2" name="LibInvasionUI:Performance">
+<manialink version="2" name="LibInvasionUI:ToadsCounter">
 <stylesheet>
 	<style id="Label_ToadsAmount" scale=".5" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
 </stylesheet>
 
-<frame id="Frame_Performance" posn="{{{C_LibInvasionUI_PerformancePos.X^" "^C_LibInvasionUI_PerformancePos.Y^" "^C_LibInvasionUI_PerformancePos.Z}}}">
+<frame id="Frame_ToadsCounter" posn="{{{C_LibInvasionUI_ToadsCounterPos.X^" "^C_LibInvasionUI_ToadsCounterPos.Y^" "^C_LibInvasionUI_ToadsCounterPos.Z}}}">
 	<label posn="0" valign="bottom" id="Label_ToadsAmount"/>
 </frame>
 
 <script><!--
 /**
- *	LibInvasionUI: Performance
+ *	LibInvasionUI: ToadsCounter
  */
 
 #Include "TextLib" as TL
@@ -1604,27 +1497,27 @@ Text Private_CreateMLPerformance() {
 main() {
 	// ---------------------------------- //
 	// Load interface elements
-	declare Frame_Performance <=> (Page.GetFirstChild("Frame_Performance") as CMlFrame);
 	declare Label_ToadsAmount <=> (Page.GetFirstChild("Label_ToadsAmount") as CMlLabel);
 	
 	declare ToadsCount = 0;
+	declare PrevToadsCount = -1;
 	
 	// ---------------------------------- //
 	// Yield
 	// ---------------------------------- //
 	while (True) {
 		yield;
+		if (!PageIsVisible) continue;
 		
 		// ---------------------------------- //
-		// Update settings
-		Frame_Performance.Visible = IsKeyPressed(123);
-		if (!Frame_Performance.Visible) continue;
-		
-		// ---------------------------------- //
-		// Set spectator offset
+		// Update the amount of Toads
 		ToadsCount = 0;
 		foreach (Player in Players) if (Player.IsBot) ToadsCount += 1;
-		Label_ToadsAmount.Value = TL::Compose("TOADS: %1", TL::ToText(ToadsCount));
+		
+		if (PrevToadsCount != ToadsCount) {
+			PrevToadsCount = ToadsCount;
+			Label_ToadsAmount.SetText(TL::Compose("Toads: %1", TL::ToText(ToadsCount)));
+		}
 	}
 }
 --></script>
@@ -1640,18 +1533,24 @@ Text Private_CreateMLSoloScore() {
 	return """
 <manialink version="2" name="LibInvasionUI:SoloScore">
 <stylesheet>
-	<style class="fontB" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
+	<style class="fontB" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
 	<style class="medal" sizen="10 10" halign="center"/>
 </stylesheet>
 
 <frame id="Frame_SoloScore" posn="{{{C_LibInvasionUI_SoloScorePos.X^" "^C_LibInvasionUI_SoloScorePos.Y^" "^C_LibInvasionUI_SoloScorePos.Z}}}" scale="0">
 	<frame posn="-40 43">
-		<quad posn="0 0 -1" sizen="80 86" image="file://Media/Manialinks/ShootMania/Common/ColoredScreen.dds" id="Quad_Background"/>
-		<label posn="40 -7" halign="center" class="fontB" textsize="5" id="Label_MapName"/>
-		<label posn="40 -12" halign="center" class="fontB" textsize="2" id="Label_MapAuthor"/>
-		<quad posn="40 -16" sizen="26 26" halign="center" style="MedalsBig" substyle="MedalSlot" id="Quad_ScoreMedal"/>
-		<label posn="40 -48" halign="center" class="fontB" textsize="8" id="Label_TotalScore"/>
-		<label posn="40 -54" halign="center" class="fontB" textsize="2" id="Label_BestScore"/>
+		<quad
+			id="Quad_SoloScoreBgImage" posn="0 0 -1" sizen="80 86"
+			image="file://Media/Manialinks/ShootMania/Common/ColoredScreen.dds"
+		/>
+		
+		<label posn="40 -7" class="fontB" textsize="5" id="Label_CurrentMapName"/>
+		<label posn="40 -12" halign="center" class="fontB" textsize="2" id="Label_CurrentMapAuthor"/>
+		<quad posn="40 -16" sizen="26 26" halign="center" style="MedalsBig" substyle="MedalSlot" id="Quad_SoloScoreMedal"/>
+		
+		<label posn="40 -48" halign="center" class="fontB" textsize="8" id="Label_ScorePointsTotal"/>
+		<label posn="40 -54" halign="center" class="fontB" textsize="2" id="Label_ScorePointsBest"/>
+		
 		<frame posn="40 -58">
 			<quad posn="-21" sizen="10 10" halign="center" style="MedalsBig" substyle="MedalBronze"/>
 			<label posn="-21 -12" halign="center" class="fontB" textsize="2" id="Label_ScoreBronze"/>
@@ -1662,8 +1561,9 @@ Text Private_CreateMLSoloScore() {
 			<quad posn="21" sizen="10 10" halign="center" style="MedalsBig" substyle="MedalNadeo"/>
 			<label posn="21 -12" halign="center" class="fontB" textsize="2" id="Label_ScoreAuthor"/>
 		</frame>
-		<label posn="40 -76" sizen="76 3" halign="center" class="fontB" textsize="1" textprefix="$t" id="Label_Tip1"/>
-		<label posn="40 -79" sizen="76 3" halign="center" class="fontB" textsize="1" textprefix="$t" text="Press 'Esc' to leave map" id="Label_Tip2"/>
+		
+		<label posn="40 -76" sizen="76 3" class="fontB" textsize="1" textprefix="$t" id="Label_Tip1"/>
+		<label posn="40 -79" sizen="76 3" class="fontB" textsize="1" textprefix="$t" id="Label_Tip2"/>
 	</frame>
 </frame>
 
@@ -1677,108 +1577,127 @@ Text Private_CreateMLSoloScore() {
 #Const C_MedalColors [<.2, .2, .2>, <1., .6, 0.>, <.7, .7, .7>, <1., .8, 0.>, <.7, 1., 0.>]
 #Const C_MedalStyles ["MedalSlot", "MedalBronze", "MedalSilver", "MedalGold", "MedalNadeo"]
 
-{{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
-{{{Translations::InsertToManialink(["Press '%1' to try again", "Press '%1' to go back to menu"])}}}
-
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Quad_SoloScoreBgImage	<=> (Page.GetFirstChild("Quad_SoloScoreBgImage")	as CMlQuad);
+declare Quad_SoloScoreMedal		<=> (Page.GetFirstChild("Quad_SoloScoreMedal")		as CMlQuad);
+declare Label_CurrentMapName	<=> (Page.GetFirstChild("Label_CurrentMapName")		as CMlLabel);
+declare Label_CurrentMapAuthor	<=> (Page.GetFirstChild("Label_CurrentMapAuthor")	as CMlLabel);
+declare Label_ScorePointsTotal	<=> (Page.GetFirstChild("Label_ScorePointsTotal")	as CMlLabel);
+declare Label_ScorePointsBest	<=> (Page.GetFirstChild("Label_ScorePointsBest")	as CMlLabel);
+
+declare Label_ScoreBronze	<=> (Page.GetFirstChild("Label_ScoreBronze")	as CMlLabel);
+declare Label_ScoreSilver	<=> (Page.GetFirstChild("Label_ScoreSilver")	as CMlLabel);
+declare Label_ScoreGold		<=> (Page.GetFirstChild("Label_ScoreGold")		as CMlLabel);
+declare Label_ScoreAuthor	<=> (Page.GetFirstChild("Label_ScoreAuthor")	as CMlLabel);
+
+// Translations
+Translate("Label_Tip1", ["Press '%1' to try again", "Delete"]);
+Translate("Label_Tip2", ["Press '%1' to go back to menu", "Esc"]);
+
+// ---------------------------------- //
+// Display current map information
+Label_CurrentMapName.SetText(Map.MapName);
+Label_CurrentMapAuthor.SetText(Map.AuthorLogin);
+Label_ScoreBronze.SetText(Map.ObjectiveTextBronze);
+Label_ScoreSilver.SetText(Map.ObjectiveTextSilver);
+Label_ScoreGold.SetText(Map.ObjectiveTextGold);
+Label_ScoreAuthor.SetText(Map.ObjectiveTextAuthor);
+
+// ---------------------------------- //
+// Persistent settings
+declare persistent Integer[Text] Persistent_Invasion_MapBestScores for LocalUser;
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare ShowSoloScore = False;
+
+declare PrevSettingsUpdate = -1;
+declare PrevShowSoloScore = False;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "ShowSoloScore" : ShowSoloScore = SettingValue == "True";
+			
+			// ---------------------------------- //
+			// Display medal
+			case "SoloScoreMedal" : {
+				declare Medal = ML::Clamp(TL::ToInteger(SettingValue), 0, 4);
+				Quad_SoloScoreBgImage.Colorize = C_MedalColors[Medal];
+				Quad_SoloScoreMedal.Substyle = C_MedalStyles[Medal];
+			}
+			// ---------------------------------- //
+			// Display map scores
+			case "SoloScorePoints" : {
+				declare SoloScore = ML::Max(TL::ToInteger(SettingValue), 0);
+				declare MapID = Map.MapInfo.MapUid;
+				
+				// ---------------------------------- //
+				// Save map best score
+				if (
+					!Persistent_Invasion_MapBestScores.existskey(MapID) ||
+					Persistent_Invasion_MapBestScores[MapID] < SoloScore
+				) 
+					Persistent_Invasion_MapBestScores[MapID] = SoloScore;
+				
+				// ---------------------------------- //
+				// Display scores
+				Label_ScorePointsTotal.SetText(TL::ToText(SoloScore));
+				Label_ScorePointsBest.SetText(TL::Compose(_("Best: %1"), ""^Persistent_Invasion_MapBestScores[MapID]));
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Set solo score visibility
+if (PrevShowSoloScore != ShowSoloScore) {
+	PrevShowSoloScore = ShowSoloScore;
+	
+	declare TargetScale = 1.;
+	declare TargetEasing = "EaseOutBack";
+	
+	if (!ShowSoloScore) {
+		TargetScale = 0.;
+		TargetEasing = "EaseInBack";
+	}
+	
+	LibManialink_Anim("<frame id='Frame_SoloScore' scale="^TargetScale^" />", 500, TargetEasing);
+}
+
+{{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
+{{{Translations::InsertToManialink(["Press '%1' to try again", "Press '%1' to go back to menu"])}}}
+
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Quad_Background		<=> (Page.GetFirstChild("Quad_Background")	as CMlQuad);
-	declare Quad_ScoreMedal		<=> (Page.GetFirstChild("Quad_ScoreMedal")	as CMlQuad);
-	declare Label_MapName		<=> (Page.GetFirstChild("Label_MapName")	as CMlLabel);
-	declare Label_MapAuthor		<=> (Page.GetFirstChild("Label_MapAuthor")	as CMlLabel);
-	declare Label_TotalScore	<=> (Page.GetFirstChild("Label_TotalScore")	as CMlLabel);
-	declare Label_BestScore		<=> (Page.GetFirstChild("Label_BestScore")	as CMlLabel);
-	declare Label_ScoreBronze	<=> (Page.GetFirstChild("Label_ScoreBronze")	as CMlLabel);
-	declare Label_ScoreSilver	<=> (Page.GetFirstChild("Label_ScoreSilver")	as CMlLabel);
-	declare Label_ScoreGold		<=> (Page.GetFirstChild("Label_ScoreGold")		as CMlLabel);
-	declare Label_ScoreAuthor	<=> (Page.GetFirstChild("Label_ScoreAuthor")	as CMlLabel);
-	declare Label_Tip1 <=> (Page.GetFirstChild("Label_Tip1") as CMlLabel);
-	declare Label_Tip2 <=> (Page.GetFirstChild("Label_Tip2") as CMlLabel);
-	
-	// Translations
-	Label_Tip1.SetText(Translations_GetComposed(["Press '%1' to try again", "Delete"]));
-	Label_Tip2.SetText(Translations_GetComposed(["Press '%1' to go back to menu", "Esc"]));
-	
 	wait(Map != Null);
-	Label_MapName.SetText(Map.MapName);
-	Label_MapAuthor.SetText(Map.AuthorLogin);
-	Label_ScoreBronze.SetText(Map.ObjectiveTextBronze);
-	Label_ScoreSilver.SetText(Map.ObjectiveTextSilver);
-	Label_ScoreGold.SetText(Map.ObjectiveTextGold);
-	Label_ScoreAuthor.SetText(Map.ObjectiveTextAuthor);
+	---Main---
+	sleep(1000);
 	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	
-	// ---------------------------------- //
-	// Variables
-	declare ShowSoloScore = False;
-	declare PrevShowSoloScore = False;
-	declare PrevSettingsUpdate = -1;
-	declare StartTime = Now + 1000;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
-		if (Now < StartTime) continue;
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "ShowSoloScore" : ShowSoloScore = (SettingValue == "True");
-					case "SoloScoreMedal" : {
-						// ---------------------------------- //
-						// Display medal
-						declare Medal = TL::ToInteger(SettingValue);
-						if (Medal < 0) Medal = 0;
-						if (Medal > 4) Medal = 4;
-						Quad_Background.Colorize = C_MedalColors[Medal];
-						Quad_ScoreMedal.Substyle = C_MedalStyles[Medal];
-					}
-					case "SoloScorePoints" : {
-						// ---------------------------------- //
-						// Save map best score
-						declare persistent Integer[Text] IntegerPersistent_Invasion_MapBestScores for LocalUser;
-						declare SoloScore = TL::ToInteger(SettingValue);
-						declare MapID = Map.AuthorLogin^Map.CopperPrice^Map.MapName^Map.AuthorNickName;
-						if (!IntegerPersistent_Invasion_MapBestScores.existskey(MapID) || IntegerPersistent_Invasion_MapBestScores[MapID] < SoloScore) 
-							IntegerPersistent_Invasion_MapBestScores[MapID] = SoloScore;
-						
-						// Apply scores
-						Label_TotalScore.SetText(SettingValue);
-						Label_BestScore.SetText(TL::Compose(_("Best: %1"), ""^IntegerPersistent_Invasion_MapBestScores[MapID]));
-					}
-				}
-			}
-		}
-		
-		// ---------------------------------- //
-		// Set solo score visibility
-		if (PrevShowSoloScore != ShowSoloScore) {
-			PrevShowSoloScore = ShowSoloScore;
-			
-			declare TargetScale = 1.;
-			declare TargetEasing = "EaseOutBack";
-			
-			if (!ShowSoloScore) {
-				TargetScale = 0.;
-				TargetEasing = "EaseInBack";
-			}
-			
-			LibManialink_Anim("<frame id=\"Frame_SoloScore\" scale=\""^TargetScale^"\"/>", 500, TargetEasing);
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -1792,18 +1711,25 @@ main() {
  */
 Text Private_CreateMLBossHealth() {
 	declare HealthFramesML = "";
-	for (I, 0, 3) HealthFramesML ^= """<frameinstance posn="0 {{{-5. * I}}}" modelid="FrameModel_BossHealth" id="Frame_BossHealth{{{I}}}" hidden="1"/>""";
+	for (I, 0, C_LibInvasionUI_MaxBossesBars - 1) HealthFramesML ^= """<frameinstance
+		posn="0 {{{-3.5 * I}}}"
+		modelid="FrameModel_BossHealth"
+		id="Frame_BossHealth{{{I}}}"
+		hidden="1"
+	/>""";
 	
 	return """
 <manialink version="2" name="LibInvasionUI:BossHealth">
 <framemodel id="FrameModel_BossHealth">
-	<quad sizen="80 10" halign="center" valign="center" image="{{{C_ImgBase}}}UiBossHealthFg.png"/>
-	<quad posn="-38 0 -1" sizen="76 4" valign="center" bgcolor="AF0" id="Quad_BossHealthGauge"/>
-	<label posn="-36" valign="center2" textsize="1" textfont="Eurostile_Bold" textemboss="1" textcolor="FFF" id="Label_BossArmor"/>
+	<quad sizen="80 3.5" halign="center" image="{{{C_ImgBase}}}UiBossHealthRow.png"/>
+	<quad posn="-37.5 0 -1" sizen="69 3.5" bgcolor="AF0" id="Quad_BossHealthGauge"/>
+	<label posn="35 -1.75 1" sizen="6" halign="center" valign="center2" textsize="1" textfont="Eurostile_Bold" textemboss="1" textcolor="AAA" id="Label_BossArmor"/>
 </framemodel>
 
-<frame id="Frame_Window" posn="{{{C_LibInvasionUI_BossHealthPos.X^" "^C_LibInvasionUI_BossHealthPos.Y^" "^C_LibInvasionUI_BossHealthPos.Z}}}" hidden="1">
+<frame id="Frame_BossHealthWindow" posn="{{{C_LibInvasionUI_BossHealthPos.X^" "^C_LibInvasionUI_BossHealthPos.Y^" "^C_LibInvasionUI_BossHealthPos.Z}}}" hidden="1">
+	<quad sizen="80 3.5" halign="center" valign="bottom" image="{{{C_ImgBase}}}UiBossHealthTop.png"/>
 	{{{HealthFramesML}}}
+	<quad sizen="80 3.5" halign="center" image="{{{C_ImgBase}}}UiBossHealthBottom.png" id="Quad_FrameBottomImage"/>
 </frame>
 
 <script><!--
@@ -1814,64 +1740,146 @@ Text Private_CreateMLBossHealth() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
+#Const C_GaugeColors [0. => <1., 0., 0.>, .25 => <1., 1., 0.>, .5 => <1., 1., 0.>, 1. => <.5, 1., 0.>]
+
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_BossHealthWindow <=> (Page.GetFirstChild("Frame_BossHealthWindow") as CMlFrame);
+declare Quad_FrameBottomImage <=> (Page.GetFirstChild("Quad_FrameBottomImage") as CMlQuad);
+
+declare CMlFrame[] Frame_BossHealthBars;
+for (I, 0, {{{C_LibInvasionUI_MaxBossesBars - 1}}})
+	Frame_BossHealthBars.add((Page.GetFirstChild("Frame_BossHealth"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
+declare netread Integer[][] Net_LibInvasionUI_BossesHealthInfo for Teams[0];
+
+declare DisplayBossHealth = False;
+
+declare PrevSettingsUpdate = -1;
+declare PrevNbHealthFrames = 0;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***	
+// ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
+		switch (SettingName) {
+			case "DisplayInterface" : DisplayBossHealth = SettingValue == "True";
+		}
+	}
+}
+	
+Frame_BossHealthWindow.Visible = DisplayBossHealth && Net_LibInvasionUI_BossesHealthInfo.count > 0;
+if (!Frame_BossHealthWindow.Visible) continue;
+		
+// ---------------------------------- //
+// Set health frames visibility
+if (PrevNbHealthFrames != Net_LibInvasionUI_BossesHealthInfo.count) {
+	PrevNbHealthFrames = Net_LibInvasionUI_BossesHealthInfo.count;
+	
+	// Background image positioning
+	Quad_FrameBottomImage.RelativePosition.Y = -3.5 * Net_LibInvasionUI_BossesHealthInfo.count;
+	
+	foreach (I => Frame in Frame_BossHealthBars) {
+		Frame.Visible = Net_LibInvasionUI_BossesHealthInfo.existskey(I);
+		if (!Frame.Visible) continue;
+	}
+}
+
+// ---------------------------------- //
+// Update gauges ratios
+foreach (I => Frame in Frame_BossHealthBars) {
+	if (!Frame.Visible) continue;
+	
+	// ---------------------------------- //
+	// Get the health of the boss
+	declare BossHealthInfo = Net_LibInvasionUI_BossesHealthInfo[I];
+	if (BossHealthInfo.count < 2) continue;
+	
+	declare BossArmor = BossHealthInfo[0];
+	declare BossArmorMax = BossHealthInfo[1];
+	
+	// ---------------------------------- //
+	// Update only on health amount change
+	declare PrevBossArmor for Frame = -1;
+	if (PrevBossArmor == BossArmor) continue;
+	PrevBossArmor = BossArmor;
+	
+	// ---------------------------------- //
+	// Update the gauge
+	declare Quad_BossHealthGauge <=> (Frame.GetFirstChild("Quad_BossHealthGauge") as CMlQuad);
+	declare Label_BossArmor <=> (Frame.GetFirstChild("Label_BossArmor") as CMlLabel);
+	
+	// Set gauge ratio
+	declare GaugeRatio = 1.;
+	if (BossArmorMax > 0) GaugeRatio = ML::Clamp(ML::ToReal(BossArmor) / BossArmorMax, 0., 1.);
+	
+	Quad_BossHealthGauge.Size.X = 69. * GaugeRatio;
+	Quad_BossHealthGauge.BgColor = ColorTransition(GaugeRatio, C_GaugeColors);
+	
+	// Set gauge text
+	Label_BossArmor.Value = TL::ToText(BossArmor / 100);
+}
+***
+
+// ---------------------------------- //
+/** Get the color depending on a ratio
+ *
+ *	@param	_Ratio			The ratio of the color
+ *	@param	_ColorRatios	List of the colors for each ratio
+ *
+ *	@return		The Blend color according to the ratio
+ */
+Vec3 ColorTransition(Real _Ratio, Vec3[Real] _ColorRatios) {
+	if (_ColorRatios.count <= 0) return <0., 0., 0.>;
+	if (_ColorRatios.count == 1) foreach (Color in _ColorRatios) return Color;
+	if (_ColorRatios.existskey(_Ratio)) return _ColorRatios[_Ratio];
+	
+	// Sort all colors ratios in ascending order
+	declare Real[] SortedRatios;
+	foreach (Ratio => Color in _ColorRatios) SortedRatios.add(Ratio);
+	SortedRatios = SortedRatios.sort();
+	
+	// Get the lowest color ratio
+	declare MinimumRatio = SortedRatios[0];
+	foreach (Ratio in SortedRatios) if (Ratio > MinimumRatio && Ratio < _Ratio) MinimumRatio = Ratio;
+	
+	// Get the highest color ratio
+	declare MaximumRatio = SortedRatios[SortedRatios.count - 1];
+	foreach (Ratio in SortedRatios) if (Ratio < MaximumRatio && Ratio > _Ratio) MaximumRatio = Ratio;
+	
+	// Get the colors blend properties
+	declare BlendRatio = (_Ratio - MinimumRatio) / (MaximumRatio - MinimumRatio);
+	declare MinimumColor = _ColorRatios[MinimumRatio];
+	declare MaximumColor = _ColorRatios[MaximumRatio];
+	
+	// Compute the final color
+	declare Vec3 OutputColor;
+	for (I, 0, 2) OutputColor[I] = MinimumColor[I] + (MaximumColor[I] - MinimumColor[I]) * BlendRatio;
+	return OutputColor;
+}
+
 main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_Window <=> (Page.GetFirstChild("Frame_Window") as CMlFrame);
-	declare CMlFrame[] Frame_BossHealth;
-	for (I, 0, 3) Frame_BossHealth.add((Page.GetFirstChild("Frame_BossHealth"^I) as CMlFrame));
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibInvasionUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
-	declare netread Integer[][] Net_LibInvasionUI_BossToadsHealth for Teams[0];
-	
-	declare PrevSettingsUpdate = -1;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
+	---Main---
 	while (True) {
 		yield;
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibInvasionUI_SettingsUpdate;
-			foreach (SettingName => SettingValue in Net_LibInvasionUI_Settings) {
-				switch (SettingName) {
-					case "DisplayInterface" : Frame_Window.Visible = (SettingValue == "True");
-				}
-			}
-		}
-		
-		if (!Frame_Window.Visible) continue;
-		
-		// ---------------------------------- //
-		// Display health
-		for (I, 0, 3) {
-			Frame_BossHealth[I].Visible = (Net_LibInvasionUI_BossToadsHealth.existskey(I));
-			
-			if (Frame_BossHealth[I].Visible) {
-				declare Quad_BossHealthGauge <=> (Frame_BossHealth[I].GetFirstChild("Quad_BossHealthGauge") as CMlQuad);
-				declare Label_BossArmor <=> (Frame_BossHealth[I].GetFirstChild("Label_BossArmor") as CMlLabel);
-				
-				if (Quad_BossHealthGauge != Null) {
-					declare HealthInfo = Net_LibInvasionUI_BossToadsHealth[I];
-					if (HealthInfo.count >= 2 && HealthInfo[1] > 0) {
-						declare Ratio = ML::ToReal(HealthInfo[0]) / HealthInfo[1];
-						if (Ratio < 0) Ratio = 0.;
-						if (Ratio > 1) Ratio = 1.;
-						Quad_BossHealthGauge.Size.X = 76. * Ratio;
-						Label_BossArmor.Value = TL::ToText(HealthInfo[0] / 100);
-					}
-				}
-			}
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -1887,54 +1895,48 @@ main() {
  *
  *	@return		The version number of the script
  */
-Text GetScriptVersion() {
-	return Version;
-}
+Text GetScriptVersion() { return Version; }
 
 // ---------------------------------- //
 /** Return the name of the script
  *
  *	@return		The name of the script
  */
-Text GetScriptName() {
-	return ScriptName;
-}
+Text GetScriptName() { return ScriptName; }
 
 // ---------------------------------- //
 /** Load a module
  *
- *	@param	_ModuleId		The name of the module to load
+ *	@param	_ModuleId	The name of the module to load
  */
 Void LoadModule(Text _ModuleId) {
 	if (Private_ModuleIsLoaded(_ModuleId)) return;
 	G_LibInvasionUI_ModulesLoaded.add(_ModuleId);
 	
 	Layers::Create(_ModuleId);
-	declare Text LayerMLPage;
+	declare ManialinkText = "";
 	
 	switch (_ModuleId) {
-		case "Countdown" : {
-			LayerMLPage = Private_CreateMLCountdown();
-			UIManager.UIAll.OverlayHideCountdown = True;
-		}
-		case "PoleGauge"	: LayerMLPage = Private_CreateMLPoleGauge();
-		case "ToadsArmor"	: LayerMLPage = Private_CreateMLToadsArmor();
-		case "Score"		: LayerMLPage = Private_CreateMLScore();
-		case "ScoreSummary"	: LayerMLPage = Private_CreateMLScoreSummary();
-		case "MedalScore"	: LayerMLPage = Private_CreateMLMedalScore();
-		case "Evolution"	: LayerMLPage = Private_CreateMLEvolution();
-		case "ReloadGauge"	: LayerMLPage = Private_CreateMLReloadGauge();
+		case "CountdownInfo"	: ManialinkText = Private_CreateMLCountdownInfo();
+		case "PoleGauge"		: ManialinkText = Private_CreateMLPoleGauge();
+		case "ToadsArmor"		: ManialinkText = Private_CreateMLToadsArmor();
+		case "Score"			: ManialinkText = Private_CreateMLScore();
+		case "MedalScore"		: ManialinkText = Private_CreateMLMedalScore();
+		case "Evolution"		: ManialinkText = Private_CreateMLEvolution();
+		case "CustomWeaponBar"	: ManialinkText = Private_CreateMLCustomWeaponBar();
+		case "SoloScore"		: ManialinkText = Private_CreateMLSoloScore();
+		case "BossHealth"		: ManialinkText = Private_CreateMLBossHealth();
 		case "GoldMarker" : {
-			LayerMLPage = Private_CreateMLGoldMarker();
+			ManialinkText = Private_CreateMLGoldMarker();
 			Layers::SetType(_ModuleId, CUILayer::EUILayerType::Markers);
 		}
-		case "WeaponBonus"	: LayerMLPage = Private_CreateMLWeaponBonus();
-		case "Performance"	: LayerMLPage = Private_CreateMLPerformance();
-		case "SoloScore"	: LayerMLPage = Private_CreateMLSoloScore();
-		case "BossHealth"	: LayerMLPage = Private_CreateMLBossHealth();
+		case "ToadsCounter"	: {
+			ManialinkText = Private_CreateMLToadsCounter();
+			Layers::SetType(_ModuleId, CUILayer::EUILayerType::ScoresTable);
+		}
 	}
 	
-	Layers::Update(_ModuleId, LayerMLPage);
+	Layers::Update(_ModuleId, ManialinkText);
 	Layers::Attach(_ModuleId);
 }
 
@@ -1960,10 +1962,10 @@ Void LoadAllModules() {
  */
 Void UnloadModule(Text _ModuleId) {
 	declare Removed = G_LibInvasionUI_ModulesLoaded.remove(_ModuleId);
-	if (Removed) {
-		Layers::Detach(_ModuleId);
-		Layers::Destroy(_ModuleId);
-	}
+	if (!Removed) return;
+	
+	Layers::Detach(_ModuleId);
+	Layers::Destroy(_ModuleId);
 }
 
 // ---------------------------------- //
@@ -1982,217 +1984,169 @@ Void UnloadAllModules() {
 }
 
 // ---------------------------------- //
-/** Set interface visibility
+/** Set the interface visibility
  *
- *	@param	_DisplayInterface		Interface visibility
+ *	@param	_DisplayInterface	Interface visibility
  */
 Void SetDisplayInterface(Boolean _DisplayInterface) {
 	Private_SetModuleSetting("DisplayInterface", ""^_DisplayInterface);
 }
 
 // ---------------------------------- //
-/** Set start time
+/** Set the game start time
  *
- *	@param	_StartTime		Start time
+ *	@param	_StartTime	Start time
  */
 Void SetStartTime(Integer _StartTime) {
 	Private_SetModuleSetting("StartTime", TL::ToText(_StartTime));
 }
 
 // ---------------------------------- //
-/** Set amount of waves to Invasion mode
+/** Set the amount of waves remaining to the Invasion phase
  *
- *	@param	_WavesToInvasion	Amount of waves to Invasion mode
+ *	@param	_WavesToInvasion	Amount of waves to Invasion phase
  */
-Void SetWavesToInvasion(Integer _WavesToInvasion) {
+Void SetNbWavesToInvasion(Integer _WavesToInvasion) {
 	Private_SetModuleSetting("WavesToInvasion", TL::ToText(_WavesToInvasion));
 }
 
 // ---------------------------------- //
-/** Set countdown light color
+/** Set the pole limit
  *
- *	@param	_CountdownInfo		Countdown light color
- */
-Void SetCountdownColor(Vec3 _CountdownColor) {
-	Private_SetModuleSetting("CountdownColor", _CountdownColor.X^" "^_CountdownColor.Y^" "^_CountdownColor.Z);
-}
-
-// ---------------------------------- //
-/** Set pole limit
- *
- *	@param	_PoleLimit		Pole limit
+ *	@param	_PoleLimit	Pole limit
  */
 Void SetPoleLimit(Integer _PoleLimit) {
 	Private_SetModuleSetting("PoleLimit", TL::ToText(_PoleLimit));
 }
 
 // ---------------------------------- //
-/** Set amount of Toads reached pole
+/** Set the amount of Toads that reached pole
  *
- *	@param	_NbToadsReachedPole		Amount of Toads reached pole
+ *	@param	_NbToadsReachedPole		Amount of Toads that reached pole
  */
 Void SetNbToadsReachedPole(Integer _NbToadsReachedPole) {
 	Private_SetModuleSetting("NbToadsReachedPole", TL::ToText(_NbToadsReachedPole));
 }
 
 // ---------------------------------- //
-/** Set Toads armor points
+/** Set the current amount of Toads Armor points
  *
- *	@param	_ToadsArmor		Toads armor points
+ *	@param	_ToadsArmor		Amount of Toads Armor points
  */
 Void SetToadsArmor(Integer _ToadsArmor) {
 	Private_SetModuleSetting("ToadsArmor", TL::ToText(_ToadsArmor));
 }
 
 // ---------------------------------- //
-/** Set solo mode
+/** Define if the game is in campaign mode
  *
- *	@param	_IsSoloMode		True. if in solo mode
+ *	@param	_IsSoloMode		True, if mode is played in solo campaign
  */
 Void SetSoloMode(Boolean _IsSoloMode) {
 	Private_SetModuleSetting("IsSoloMode", TL::ToText(_IsSoloMode));
 }
 
 // ---------------------------------- //
-/** Set solo score ticking
+/** Define if the game is giving points for survived time in solo mode
  *
- *	@param	_TickingSoloScore		Set score ticking
+ *	@param	_TimeScoreCounting		Time score usage
  */
-Void SetTickingSoloScore(Boolean _TickingSoloScore) {
-	Private_SetModuleSetting("TickingSoloScore", TL::ToText(_TickingSoloScore));
+Void SetTimeScoreCounting(Boolean _TimeScoreCounting) {
+	Private_SetModuleSetting("TimeScoreCounting", TL::ToText(_TimeScoreCounting));
 }
 
 // ---------------------------------- //
-/** Set evolution usage
+/** Set the Evolution system usage
  *
- *	@param	_UseEvolution		Use evolution
+ *	@param	_UseEvolution	True, if the Evolution system is in use
  */
 Void SetUseEvolution(Boolean _UseEvolution) {
-	Private_SetModuleSetting("UseEvolution", ""^_UseEvolution);
+	Private_SetModuleSetting("UseEvolution", TL::ToText(_UseEvolution));
 }
 
 // ---------------------------------- //
-/** Show solo score window
+/** Display solo score summary window
  *
- *	@param	_Display	Solo score visibility
- *	@param	_Medal		Player solo medal score
- *	@param	_Points		Player solo points
+ *	@param	_DisplayWindow	Solo score visibility
+ *	@param	_WonMedalType	Player solo medal score
+ *	@param	_TotalPoints	Player solo points
  */
-Void DisplaySoloScore(Boolean _Display, ::EMedal _Medal, Integer _Points) {
-	declare Integer Medal;
-	switch (_Medal) {
+Void DisplaySoloScore(Boolean _DisplayWindow, ::EMedal _WonMedalType, Integer _TotalPoints) {
+	declare Medal = 0;
+	switch (_WonMedalType) {
 		case ::EMedal::Bronze : Medal = 1;
 		case ::EMedal::Silver : Medal = 2;
 		case ::EMedal::Gold : Medal = 3;
 		case ::EMedal::Author : Medal = 4;
 	}
-	Private_SetModuleSetting("ShowSoloScore", ""^_Display);
+	
+	Private_SetModuleSetting("ShowSoloScore", TL::ToText(_DisplayWindow));
 	Private_SetModuleSetting("SoloScoreMedal", TL::ToText(Medal));
-	Private_SetModuleSetting("SoloScorePoints", TL::ToText(_Points));
+	Private_SetModuleSetting("SoloScorePoints", TL::ToText(_TotalPoints));
 }
 
 // ---------------------------------- //
-/** Set player evolution data
+/** Update the player Evolution information
  *
- *	@param	_Player			Player to set data
- *	@param	_Level			Evolution level
- *	@param	_PointsCur		Current amount of points to next level
- *	@param	_PointsNext		Points required for next level
+ *	@param	_Player					Player to update information
+ *	@param	_EvolutionLevel			Evolution level
+ *	@param	_CurrentLevelPoints		Current amount of points to next level
+ *	@param	_PointsToNextLevel		Points required for next level
  */
-Void SetPlayerEvoData(CSmPlayer _Player, Integer _Level, Integer _PointsCur, Integer _PointsNext) {
+Void SetPlayerEvolutionData(CSmPlayer _Player, Integer _EvolutionLevel, Integer _CurrentLevelPoints, Integer _PointsToNextLevel) {
 	if (_Player == Null) return;
-	declare netwrite Int3[Text] Net_LibInvasionUI_EvolutionData for Teams[0];
-	Net_LibInvasionUI_EvolutionData[_Player.User.Login] = <_Level, _PointsCur, _PointsNext>;
+	declare netwrite Int3[Text] Net_LibInvasionUI_PlayerEvolutionData for Teams[0];
+	Net_LibInvasionUI_PlayerEvolutionData[_Player.User.Login] = <_EvolutionLevel, _CurrentLevelPoints, _PointsToNextLevel>;
 }
 
 // ---------------------------------- //
-/// Reset evolution data array
-Void ResetEvolutionData() {
-	declare netwrite Int3[Text] Net_LibInvasionUI_EvolutionData for Teams[0];
-	Net_LibInvasionUI_EvolutionData.clear();
-}
-
-// ---------------------------------- //
-/** Set player evolution data
- *
- *	@param	_Player			Player to set data
- *	@param	_StartTime		Reload boost start time
- *	@param	_Duration		Reload boost duration
- */
-Void SetPlayerReloadData(CSmPlayer _Player, Integer _StartTime, Integer _Duration) {
-	if (_Player == Null) return;
-	declare netwrite Int3[Text] Net_LibInvasionUI_ReloadData for Teams[0];
-	Net_LibInvasionUI_ReloadData[_Player.User.Login] = <_StartTime, _Duration, 0>;
-}
-
-// ---------------------------------- //
-/// Reset reload data array
-Void ResetReloadData() {
-	declare netwrite Int3[Text] Net_LibInvasionUI_ReloadData for Teams[0];
-	Net_LibInvasionUI_ReloadData.clear();
-}
-
-// ---------------------------------- //
-/** Set if player has custom weapon
+/** Set if player is carrying a custom weapon
  *
  *	@param	_Player				Player to set data
  *	@param	_HasCustomWeapon	True if player has custom weapon
  */
-Void SetPlayerHasWeapon(CSmPlayer _Player, Boolean _HasCustomWeapon) {
+Void SetPlayerHasCustomWeapon(CSmPlayer _Player, Boolean _HasCustomWeapon) {
 	if (_Player == Null) return;
-	declare netwrite Boolean[Text] Net_LibInvasionUI_PlayerHasWeapon for Teams[0];
-	Net_LibInvasionUI_PlayerHasWeapon[_Player.User.Login] = _HasCustomWeapon;
+	declare netwrite Boolean[Text] Net_LibInvasionUI_PlayerHasCustomWeapon for Teams[0];
+	Net_LibInvasionUI_PlayerHasCustomWeapon[_Player.User.Login] = _HasCustomWeapon;
 }
 
 // ---------------------------------- //
-/** Set if player has custom weapon
+/** Set the spawn ID of the latest Gold item pickd by the player
  *
- *	@param	_Player				Player to set data
- *	@param	_HasCustomWeapon	True if player has custom weapon
+ *	@param	_Player			Player to set spawn ID
+ *	@param	_GoldSpawnId	ID of the latest Gold item picked by the player
  */
-Void SetPlayerGoldLife(CSmPlayer _Player, Integer _GoldLifeId) {
+Void SetPlayerGoldSpawnId(CSmPlayer _Player, Integer _GoldSpawnId) {
 	if (_Player == Null) return;
-	declare netwrite Integer[Text] Net_LibInvasionUI_PlayerGoldLife for Teams[0];
-	Net_LibInvasionUI_PlayerGoldLife[_Player.User.Login] = _GoldLifeId;
+	declare netwrite Integer[Text] Net_LibInvasionUI_PlayerGoldSpawnId for Teams[0];
+	Net_LibInvasionUI_PlayerGoldSpawnId[_Player.User.Login] = _GoldSpawnId;
 }
 
 // ---------------------------------- //
-/** Set player custom weapon data
+/** Set the information about custom weapon used by the player
  *
- *	@param	_Player			Player to set data
- *	@param	_StartTime		Reload boost start time
- *	@param	_Duration		Reload boost duration
- *	@param	_EvoBonus		Extra weapon seconds from evolution levels
+ *	@param	_Player				Player to set weapon information
+ *	@param	_WeaponStartTime	Custom weapon use start time
+ *	@param	_WeaponDuration		Duration of the custom weapon (including Evolution bonus)
+ *	@param	_EvolutionBonus		Additional time given from the Evolution levels (only UI cosmetic)
  */
-Void SetPlayerWeaponData(CSmPlayer _Player, Integer _StartTime, Integer _Duration, Integer _EvoBonus) {
+Void SetPlayerWeaponData(CSmPlayer _Player, Integer _WeaponStartTime, Integer _WeaponDuration, Integer _EvolutionBonus) {
 	if (_Player == Null) return;
-	declare netwrite Int3[Text] Net_LibInvasionUI_WeaponData for Teams[0];
-	Net_LibInvasionUI_WeaponData[_Player.User.Login] = <_StartTime, _Duration, _EvoBonus>;
+	declare netwrite Int3[Text] Net_LibInvasionUI_PlayerWeaponData for Teams[0];
+	Net_LibInvasionUI_PlayerWeaponData[_Player.User.Login] = <_WeaponStartTime, _WeaponDuration, _EvolutionBonus>;
 }
 
 // ---------------------------------- //
-/** Set player weapon name
+/** Set the name of a custom weapon used by the player
  *
- *	@param	_Player			Player to set data
- *	@param	_WeaponName		Name of the player weapon
+ *	@param	_Player				Player to set weapon name
+ *	@param	_CustomWeaponName	Name of the custom weapon used by the player
  */
-Void SetPlayerWeaponName(CSmPlayer _Player, Text _WeaponName) {
+Void SetPlayerWeaponName(CSmPlayer _Player, Text _CustomWeaponName) {
 	if (_Player == Null) return;
-	declare netwrite Text[Text] Net_LibInvasionUI_WeaponName for Teams[0];
-	Net_LibInvasionUI_WeaponName[_Player.User.Login] = _WeaponName;
-}
-
-// ---------------------------------- //
-/// Reset weapon data data array
-Void ResetWeaponData() {
-	declare netwrite Boolean[Text] Net_LibInvasionUI_PlayerHasWeapon for Teams[0];
-	declare netwrite Integer[Text] Net_LibInvasionUI_PlayerGoldLife for Teams[0];
-	declare netwrite Int3[Text] Net_LibInvasionUI_WeaponData for Teams[0];
-	declare netwrite Text[Text] Net_LibInvasionUI_WeaponName for Teams[0];
-	Net_LibInvasionUI_PlayerHasWeapon.clear();
-	Net_LibInvasionUI_PlayerGoldLife.clear();
-	Net_LibInvasionUI_WeaponData.clear();
-	Net_LibInvasionUI_WeaponName.clear();
+	declare netwrite Text[Text] Net_LibInvasionUI_PlayerWeaponName for Teams[0];
+	Net_LibInvasionUI_PlayerWeaponName[_Player.User.Login] = _CustomWeaponName;
 }
 
 // ---------------------------------- //
@@ -2200,48 +2154,62 @@ Void ResetWeaponData() {
  *
  *	@param	_GoldPosition		Position of the Gold item
  *	@param	_GoldSpawnTime		Gold item spawn time
- *	@param	_GoldLifeDuration	Gold item life duration
- *	@param	_GoldLifeId			Gold item life id
+ *	@param	_GoldSpawnDuration	Gold item life duration
+ *	@param	_GoldSpawnId		Gold item life id
  */
-Void UpdateGoldMarker(Vec3 _GoldPosition, Integer _GoldSpawnTime, Integer _GoldLifeDuration, Integer _GoldLifeId) {
-	UIManager.UIAll.MarkersXML = """
-<marker manialinkframeid="Frame_GoldMarker" pos="{{{_GoldPosition.X^" "^_GoldPosition.Y^" "^_GoldPosition.Z}}}" box=".5 1.25 .5"/>
-	""";
+Void UpdateGoldMarker(Vec3 _GoldPosition, Integer _GoldSpawnTime, Integer _GoldSpawnDuration, Integer _GoldSpawnId) {
 	Private_SetModuleSetting("GoldSpawnTime", TL::ToText(_GoldSpawnTime));
-	Private_SetModuleSetting("GoldLifeDuration", TL::ToText(_GoldLifeDuration));
-	Private_SetModuleSetting("GoldLifeId", TL::ToText(_GoldLifeId));
+	Private_SetModuleSetting("GoldSpawnDuration", TL::ToText(_GoldSpawnDuration));
+	Private_SetModuleSetting("GoldSpawnId", TL::ToText(_GoldSpawnId));
+	
+	// ---------------------------------- //
+	// Create or destroy marker
+	if (_GoldPosition != <0., 0., 0.>)
+		UIManager.UIAll.MarkersXML = """
+			<marker
+				manialinkframeid="Frame_GoldMarker" box=".5 1.25 .5" visibility="WhenInFrustum"
+				pos="{{{_GoldPosition.X^" "^_GoldPosition.Y^" "^_GoldPosition.Z}}}"
+			/>
+		""";
+	else
+		UIManager.UIAll.MarkersXML = "";
 }
 
 // ---------------------------------- //
-/** Set bosses health
+/** Set the information about spawned bosses health
  *
- *	@param	_Health		Bosses health
+ *	@param	_HealthHealthInfo	Bosses health
  */
-Void SetBossesHealth(Integer[][] _Health) {
-	declare netwrite Integer[][] Net_LibInvasionUI_BossToadsHealth for Teams[0];
-	Net_LibInvasionUI_BossToadsHealth = _Health;
+Void SetBossesHealth(Integer[][] _HealthHealthInfo) {
+	declare netwrite Integer[][] Net_LibInvasionUI_BossesHealthInfo for Teams[0];
+	Net_LibInvasionUI_BossesHealthInfo = _HealthHealthInfo;
 }
 
 // ---------------------------------- //
-/// Reset everything
-Void ResetAll() {
-	// Reset settings
+/// Completely reset UI settings before a match start
+Void InitializeMatch() {
 	SetDisplayInterface(False);
 	SetUseEvolution(False);
-	SetCountdownColor(Vec3);
-	SetPoleLimit(0);
+	SetTimeScoreCounting(False);
 	SetNbToadsReachedPole(0);
+	SetPoleLimit(0);
 	SetToadsArmor(0);
-	SetTickingSoloScore(False);
 	SetBossesHealth(Integer[][]);
 	
-	// Reset arrays
-	ResetEvolutionData();
-	ResetReloadData();
-	ResetWeaponData();
-	
-	// Other
 	DisplaySoloScore(False, ::EMedal::None, 0);
 	UpdateGoldMarker(Vec3, 0, 0, 0);
-	UIManager.UIAll.MarkersXML = "";
+	
+	// ---------------------------------- //
+	// Clear arrays
+	declare netwrite Int3[Text] Net_LibInvasionUI_PlayerEvolutionData for Teams[0];
+	declare netwrite Boolean[Text] Net_LibInvasionUI_PlayerHasCustomWeapon for Teams[0];
+	declare netwrite Integer[Text] Net_LibInvasionUI_PlayerGoldSpawnId for Teams[0];
+	declare netwrite Int3[Text] Net_LibInvasionUI_PlayerWeaponData for Teams[0];
+	declare netwrite Text[Text] Net_LibInvasionUI_PlayerWeaponName for Teams[0];
+	
+	Net_LibInvasionUI_PlayerEvolutionData.clear();
+	Net_LibInvasionUI_PlayerHasCustomWeapon.clear();
+	Net_LibInvasionUI_PlayerGoldSpawnId.clear();
+	Net_LibInvasionUI_PlayerWeaponData.clear();
+	Net_LibInvasionUI_PlayerWeaponName.clear();
 }

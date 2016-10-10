@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY TRANSLATIONS by domino54      //
-//  script version: 2016-09-25            //
+//  script version: 2016-10-10            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Chat messages MUST be prefixed.
  */
 
-#Const Version		"2016-09-25"
+#Const Version		"2016-10-10"
 #Const ScriptName	"Translations.Script.txt"
 
 #Include "TextLib" as TL
@@ -22,6 +22,14 @@
 // ---------------------------------- //
 #Const C_LibTranslations_DefaultChatPrefix "$FD0» $FFF"	///< Default chat message prefix
 
+/// Characters to escape when including translations inside a manialink script
+#Const C_LibTranslations_CharsToEscape [
+	"\"" => "\\\"",
+	"\\" => "\\\\",
+	"\n" => "\\n",
+	"\t" => "\\t"
+]
+
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
@@ -30,6 +38,39 @@ declare Text G_LibTranslations_ChatPrefix;	///< Custom chat message prefix
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Escape characters forbidden in ManiaScript
+ *
+ *	@param	_String		The string to escape forbidden characters
+ *
+ *	@return		The escaped string
+ */
+Text Private_MSEscape(Text _String) {
+	if (_String == "") return "";
+	
+	// ---------------------------------- //
+	// No need to escape string if any of the forbidden characters doesn't exist
+	declare Text[] ForbiddenCharacters;
+	foreach (Char => Replacement in C_LibTranslations_CharsToEscape) {
+		if (TL::Find(Char, _String, False, False)) ForbiddenCharacters.add(Char);
+	}
+	if (ForbiddenCharacters.count <= 0) return _String;
+	
+	// ---------------------------------- //
+	// Escape characters
+	declare EscapedString = "";
+	for (I, 0, TL::Length(_String) - 1) {
+		declare Char = TL::SubText(_String, I, 1);
+		if (ForbiddenCharacters.exists(Char)) Char = C_LibTranslations_CharsToEscape[Char];
+		EscapedString ^= Char;
+	}
+	return EscapedString;
+}
 
 // ---------------------------------- //
 // Public
@@ -52,7 +93,7 @@ Text GetScriptName() { return ScriptName; }
 // ---------------------------------- //
 /** Return translation depending on selected language
  *
- *	@param	_Language		The language sentence will be translated to
+ *	@param	_Language		The language the sentence will be translated to
  *	@param	_Sentence		The sentence to translate
  *
  *	@return		Translated sentence
@@ -64,23 +105,12 @@ Text Translate(Text _Language, Text _Sentence) {
 	declare SentenceIndex = SB::GetIndex(_Sentence);
 	if (SentenceIndex == SB::UnknownIndex()) return _Sentence;
 	
-	// Translate sentence to target language
-	declare Text TranslatedSentence;
-	switch (_Language) {
-		case "cz" : TranslatedSentence = SB::GetCzech(SentenceIndex);
-		case "de" : TranslatedSentence = SB::GetGerman(SentenceIndex);
-		case "es" : TranslatedSentence = SB::GetSpanish(SentenceIndex);
-		case "fr" : TranslatedSentence = SB::GetFrench(SentenceIndex);
-		case "hr" : TranslatedSentence = SB::GetCroatian(SentenceIndex);
-		case "nl" : TranslatedSentence = SB::GetDutch(SentenceIndex);
-		case "pl" : TranslatedSentence = SB::GetPolish(SentenceIndex);
-		case "pt" : TranslatedSentence = SB::GetPortuguese(SentenceIndex);
-		case "pt_BR" : TranslatedSentence = SB::GetPortuguese(SentenceIndex);
-		case "ru" : TranslatedSentence = SB::GetRussian(SentenceIndex);
-		case "sk" : TranslatedSentence = SB::GetSlovak(SentenceIndex);
-		default : return _Sentence;
-	}
+	// Get user language
+	declare Language = _Language;
+	if (Language == "pt_BR") Language = "pt";
 	
+	// Translate sentence to target language
+	declare TranslatedSentence = SB::Get(Language, SentenceIndex);
 	if (TranslatedSentence == SB::NotFoundString()) return _Sentence;
 	return TranslatedSentence;
 }
@@ -414,28 +444,42 @@ Void SendNotice(Text[] _Arguments, CUIConfig::ENoticeLevel _Level, CUser _Avatar
  *	@return		Text containing generated functions
  */
 Text InsertToManialink(Text[] _Sentences) {
-	// Create languages sentence banks
-	declare Text[Text] SentenceBanks;
-	declare Languages = ["en", "cz", "de", "es", "fr", "hr", "nl", "pl", "pt", "ru", "sk"];
-	foreach (Language in Languages) SentenceBanks[Language] = "-1 => \"\"";
+	// ---------------------------------- //
+	// Create array of sentences indexes
+	declare IndexList = "Text[Integer]";
+	declare Integer[] FoundIndexes;
+	declare Text[] IndexObjects;
 	
-	// Fill banks with available translations
 	foreach (Sentence in _Sentences) {
 		declare Index = SB::GetIndex(Sentence);
-		if (Index != SB::UnknownIndex()) {
-			SentenceBanks["en"] ^= ", "^Index^" => \""^TL::MLEncode(Sentence)^"\"";
-			SentenceBanks["cz"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetCzech(Index))^"\"";
-			SentenceBanks["de"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetGerman(Index))^"\"";
-			SentenceBanks["es"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetSpanish(Index))^"\"";
-			SentenceBanks["fr"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetFrench(Index))^"\"";
-			SentenceBanks["hr"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetCroatian(Index))^"\"";
-			SentenceBanks["nl"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetDutch(Index))^"\"";
-			SentenceBanks["pl"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetPolish(Index))^"\"";
-			SentenceBanks["pt"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetPortuguese(Index))^"\"";
-			SentenceBanks["ru"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetRussian(Index))^"\"";
-			SentenceBanks["sk"] ^= ", "^Index^" => \""^TL::MLEncode(SB::GetSlovak(Index))^"\"";
-		}
+		if (Index == SB::UnknownIndex()) continue;
+		IndexObjects.add(Index^" => \""^Private_MSEscape(Sentence)^"\"");
+		FoundIndexes.add(Index);
 	}
+	if (IndexObjects.count > 0) IndexList = "["^TL::Join(", ", IndexObjects)^"]";
+	
+	// ---------------------------------- //
+	// Create array of sentences translations
+	declare LanguagesList = "Text[Integer][Text]";
+	declare Text[] LanguageObjects;
+	
+	if (FoundIndexes.count > 0) foreach (Language in SB::GetSupportedLanguages()) {
+		declare Text[] SentenceObjects;
+		
+		foreach (Index in FoundIndexes) {
+			declare Sentence = SB::Get(Language, Index);
+			
+			// Add sentence with index to the list of available sentences in the language
+			if (Sentence != "" && Sentence != SB::NotFoundString())
+				SentenceObjects.add(Index^" => \""^Private_MSEscape(Sentence)^"\"");
+		}
+		
+		// Create array of language sentences with the language code as the key
+		if (SentenceObjects.count > 0) LanguageObjects.add("\""^Language^"\" => ["^TL::Join(", ", SentenceObjects)^"]");
+	}
+	
+	// Create array of languages and their available sentences
+	if (LanguageObjects.count > 0) LanguagesList = "["^TL::Join(", ", LanguageObjects)^"]";
 	
 	return """
 // ---------------------------------- //
@@ -443,68 +487,17 @@ Text InsertToManialink(Text[] _Sentences) {
 // ---------------------------------- //
 
 Integer Private_LibTranslations_GetIndex(Text _Sentence) {
-	declare C_LibSB_Index = [{{{SentenceBanks["en"]}}}];
+	declare C_LibSB_Index = {{{IndexList}}};
 	if (C_LibSB_Index.exists(_Sentence)) return C_LibSB_Index.keyof(_Sentence);
 	return {{{SB::UnknownIndex()}}};
 }
 
-Text Private_LibTranslations_GetCzech(Integer _Index) {
-	declare C_LibSB_Czech = [{{{SentenceBanks["cz"]}}}];
-	if (C_LibSB_Czech.existskey(_Index)) return C_LibSB_Czech[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetGerman(Integer _Index) {
-	declare C_LibSB_German = [{{{SentenceBanks["de"]}}}];
-	if (C_LibSB_German.existskey(_Index)) return C_LibSB_German[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetSpanish(Integer _Index) {
-	declare C_LibSB_Spanish = [{{{SentenceBanks["es"]}}}];
-	if (C_LibSB_Spanish.existskey(_Index)) return C_LibSB_Spanish[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetFrench(Integer _Index) {
-	declare C_LibSB_French = [{{{SentenceBanks["fr"]}}}];
-	if (C_LibSB_French.existskey(_Index)) return C_LibSB_French[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetCroatian(Integer _Index) {
-	declare C_LibSB_Croatian = [{{{SentenceBanks["hr"]}}}];
-	if (C_LibSB_Croatian.existskey(_Index)) return C_LibSB_Croatian[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetDutch(Integer _Index) {
-	declare C_LibSB_Dutch = [{{{SentenceBanks["nl"]}}}];
-	if (C_LibSB_Dutch.existskey(_Index)) return C_LibSB_Dutch[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetPolish(Integer _Index) {
-	declare C_LibSB_Polish = [{{{SentenceBanks["pl"]}}}];
-	if (C_LibSB_Polish.existskey(_Index)) return C_LibSB_Polish[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetPortuguese(Integer _Index) {
-	declare C_LibSB_Portuguese = [{{{SentenceBanks["pt"]}}}];
-	if (C_LibSB_Portuguese.existskey(_Index)) return C_LibSB_Portuguese[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetRussian(Integer _Index) {
-	declare C_LibSB_Russian = [{{{SentenceBanks["ru"]}}}];
-	if (C_LibSB_Russian.existskey(_Index)) return C_LibSB_Russian[_Index];
-	return "{{{SB::NotFoundString()}}}";
-}
-
-Text Private_LibTranslations_GetSlovak(Integer _Index) {
-	declare C_LibSB_Slovak = [{{{SentenceBanks["sk"]}}}];
-	if (C_LibSB_Slovak.existskey(_Index)) return C_LibSB_Slovak[_Index];
+Text Private_LibTranslations_GetTranslation(Text _Language, Integer _Index) {
+	declare C_LibSB_Translations = {{{LanguagesList}}};
+	
+	if (C_LibSB_Translations.existskey(_Language) && C_LibSB_Translations[_Language].existskey(_Index))
+		return C_LibSB_Translations[_Language][_Index];
+	
 	return "{{{SB::NotFoundString()}}}";
 }
 
@@ -522,22 +515,10 @@ Text Translations_Get(Text _Sentence) {
 	declare SentenceIndex = Private_LibTranslations_GetIndex(_Sentence);
 	if (SentenceIndex == {{{SB::UnknownIndex()}}}) return _Sentence;
 	
-	declare Text TranslatedSentence;
-	switch (LocalUser.Language) {
-		case "cz" : TranslatedSentence = Private_LibTranslations_GetCzech(SentenceIndex);
-		case "de" : TranslatedSentence = Private_LibTranslations_GetGerman(SentenceIndex);
-		case "es" : TranslatedSentence = Private_LibTranslations_GetSpanish(SentenceIndex);
-		case "fr" : TranslatedSentence = Private_LibTranslations_GetFrench(SentenceIndex);
-		case "hr" : TranslatedSentence = Private_LibTranslations_GetCroatian(SentenceIndex);
-		case "nl" : TranslatedSentence = Private_LibTranslations_GetDutch(SentenceIndex);
-		case "pl" : TranslatedSentence = Private_LibTranslations_GetPolish(SentenceIndex);
-		case "pt" : TranslatedSentence = Private_LibTranslations_GetPortuguese(SentenceIndex);
-		case "pt_BR" : TranslatedSentence = Private_LibTranslations_GetPortuguese(SentenceIndex);
-		case "ru" : TranslatedSentence = Private_LibTranslations_GetRussian(SentenceIndex);
-		case "sk" : TranslatedSentence = Private_LibTranslations_GetSlovak(SentenceIndex);
-		default : return _Sentence;
-	}
+	declare Language = LocalUser.Language;
+	if (Language == "pt_BR") Language = "pt";
 	
+	declare TranslatedSentence = Private_LibTranslations_GetTranslation(Language, SentenceIndex);
 	if (TranslatedSentence == "{{{SB::NotFoundString()}}}") return _Sentence;
 	return TL::GetTranslatedText(TranslatedSentence);
 }
@@ -603,6 +584,10 @@ Void Translate(Text _LabelId, Text[] _Arguments) {
 // Translations Stop
 // ---------------------------------- //
 	""";
+}
+
+Text InjectInManialink(Text[] _Sentences) {
+	return InsertToManialink(_Sentences);
 }
 
 // ---------------------------------- //

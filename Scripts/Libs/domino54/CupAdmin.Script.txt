@@ -1,0 +1,1213 @@
+// -------------------------------------- //
+//  LIBRARY CUP ADMIN by domino54         //
+//  script version: 2016-10-10            //
+// -------------------------------------- //
+
+/*
+ *	This library allows you to add simple cup management
+ *	to your game mode.
+ */
+
+#Const Version		"2016-10-10"
+#Const ScriptName	"CupAdmin.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibCupAdmin_SettingsRefreshInterval	500		///< Time interval between library settings updates
+#Const C_LibCupAdmin_ScoresTableLayerName		"LibCupAdmin:ScoresTable"
+#Const C_LibCupAdmin_MaxNbTablePlayersRows		20		///< Maximum amout of players rows displayed in the table
+#Const C_LibCupAdmin_MaxNbTableMapsColumns		8		///< Maximum amout of maps scores columns displayed in the table
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Integer G_LibCupAdmin_NextRefreshTick;		///< Time to be reached by game mode to update cup settings again
+declare Boolean G_LibCupAdmin_CupModeEnabled;		///< Defines if the cup mode is enabled or not
+declare Boolean G_LibCupAdmin_CupModePaused;		///< Tells if the competition has been paused
+declare Boolean G_LibCupAdmin_CompetitionFinished;	///< True, when competition cup has finished
+declare Integer G_LibCupAdmin_CompetitionNbMaps;	///< Amount of maps played in the competition
+declare Text G_LibCupAdmin_CompetitionTitle;		///< Name of the currently running competition
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Sort an array of scores by points descanding
+ *
+ *	@param	_Scores		The array of scores to sort
+ *
+ *	@return		The array sorted descanding
+ */
+Integer[Text] Private_SortPointsDescanding(Integer[Text] _Scores) {
+	if (_Scores.count <= 1) return _Scores;
+	
+	// ---------------------------------- //
+	// Creates an inverted array
+	declare Integer[Text] CachedScores;
+	foreach (Login => Points in _Scores) CachedScores[Login] = -Points;
+	CachedScores = CachedScores.sort();
+	
+	// ---------------------------------- //
+	// Returns scores sorted descanding
+	declare Integer[Text] SortedScores;
+	foreach (Login => Points in CachedScores) SortedScores[Login] = -Points;
+	return SortedScores;
+}
+
+// ---------------------------------- //
+/** Register a player in the cup
+ *
+ *	@param	_Player		The player to register in a cup
+ */
+Void Private_RegisterPlayer(CPlayer _Player) {
+	if (_Player == Null || _Player.User == Null || _Player.User.Login == "*bot*") return;
+	declare Login = _Player.User.Login;
+	
+	// ---------------------------------- //
+	// Check if the player doesn't exist yet
+	declare persistent Text[] Persistent_LibCupAdmin_PlayersLogins;
+	if (Persistent_LibCupAdmin_PlayersLogins.exists(Login)) return; 
+	
+	// ---------------------------------- //
+	// Registers the player
+	declare persistent Text[Text] Persistent_LibCupAdmin_PlayersNames;
+	declare persistent Text[Text] Persistent_LibCupAdmin_PlayersPaths;
+	declare persistent Vec3[Text] Persistent_LibCupAdmin_PlayersColors;
+	
+	Persistent_LibCupAdmin_PlayersLogins.add(Login);
+	Persistent_LibCupAdmin_PlayersNames[Login] = _Player.User.Name;
+	Persistent_LibCupAdmin_PlayersPaths[Login] = _Player.User.ZonePath;
+	Persistent_LibCupAdmin_PlayersColors[Login] = _Player.User.Color;
+}
+
+// ---------------------------------- //
+/** Get the name of the player
+ *
+ *	@param	_Player		The player to get their name
+ *
+ *	@return		The name of the given player
+ */
+Text Private_GetPlayerName(Text _Login) {
+	if (_Login == "") return "";
+	
+	// Checks if the player is on server and returns name
+	foreach (Player in AllPlayers) if (Player.User.Login == _Login) return Player.User.Name;
+	
+	// Looks up for a cached name
+	declare persistent Text[Text] Persistent_LibCupAdmin_PlayersNames;
+	if (Persistent_LibCupAdmin_PlayersNames.existskey(_Login)) return Persistent_LibCupAdmin_PlayersNames[_Login];
+	
+	// Returns plain login if nothing has been found
+	return _Login;
+}
+
+// ---------------------------------- //
+/** Get the zone path of the player
+ *
+ *	@param	_Player		The player to get their zone path
+ *
+ *	@return		The zone path of the given player
+ */
+Text Private_GetPlayerZonePath(Text _Login) {
+	if (_Login == "") return "World";
+	
+	// Checks if the player is on server and returns zone path
+	foreach (Player in AllPlayers) if (Player.User.Login == _Login) return Player.User.ZonePath;
+	
+	// Looks up for a cached zone path
+	declare persistent Text[Text] Persistent_LibCupAdmin_PlayersPaths;
+	if (Persistent_LibCupAdmin_PlayersPaths.existskey(_Login)) return Persistent_LibCupAdmin_PlayersPaths[_Login];
+	
+	// Returns "World" if nothing has been found
+	return "World";
+}
+
+// ---------------------------------- //
+/** Get the color of the player
+ *
+ *	@param	_Player		The player to get their color
+ *
+ *	@return		The color of the given player
+ */
+Vec3 Private_GetPlayerColor(Text _Login) {
+	if (_Login == "") return Vec3;
+	
+	// Checks if the player is on server and returns color
+	foreach (Player in AllPlayers) if (Player.User.Login == _Login) return Player.User.Color;
+	
+	// Looks up for a cached color
+	declare persistent Vec3[Text] Persistent_LibCupAdmin_PlayersColors;
+	if (Persistent_LibCupAdmin_PlayersColors.existskey(_Login)) return Persistent_LibCupAdmin_PlayersColors[_Login];
+	
+	// Returns black if nothing has been found
+	return Vec3;
+}
+
+// ---------------------------------- //
+/// Unregisters all players from the cup
+Void Private_UnregisterEveryone() {
+	declare persistent Text[] Persistent_LibCupAdmin_PlayersLogins;
+	declare persistent Text[Text] Persistent_LibCupAdmin_PlayersNames;
+	declare persistent Text[Text] Persistent_LibCupAdmin_PlayersPaths;
+	declare persistent Vec3[Text] Persistent_LibCupAdmin_PlayersColors;
+	
+	Persistent_LibCupAdmin_PlayersLogins.clear();
+	Persistent_LibCupAdmin_PlayersNames.clear();
+	Persistent_LibCupAdmin_PlayersPaths.clear();
+	Persistent_LibCupAdmin_PlayersColors.clear();
+}
+
+// ---------------------------------- //
+/** Register that current map has been finished
+ *
+ *	@param	_FinishedMap	The map to register as finished
+ */
+Void Private_RegisterMapFinished(CMapInfo _FinishedMap, Integer[Text] _MapScores) {
+	if (_FinishedMap == Null) return;
+	declare MapUID = ""^_FinishedMap.MapUid;
+	
+	// ---------------------------------- //
+	// Check if the map doesn't exist yet
+	declare persistent Text[] Persistent_LibCupAdmin_FinishedMaps;
+	if (Persistent_LibCupAdmin_FinishedMaps.exists(MapUID)) return;
+	
+	// ---------------------------------- //
+	// Registers the map
+	declare persistent Text[Text] Persistent_LibCupAdmin_MapsNames;
+	declare persistent Text[Text] Persistent_LibCupAdmin_MapsAuthors;
+	declare persistent Integer[Text][Text] Persistent_LibCupAdmin_MapsPlayersPoints;
+	
+	Persistent_LibCupAdmin_FinishedMaps.add(MapUID);
+	Persistent_LibCupAdmin_MapsNames[MapUID] = Map.MapInfo.Name;
+	Persistent_LibCupAdmin_MapsAuthors[MapUID] = Map.MapInfo.AuthorLogin;
+	
+	// ---------------------------------- //
+	// Save the map scores
+	if (_MapScores.count > 0) {
+		declare MapScores = Private_SortPointsDescanding(_MapScores);
+		Persistent_LibCupAdmin_MapsPlayersPoints[MapUID] = MapScores;
+		
+		// ---------------------------------- //
+		// Save points of individual players
+		declare persistent Integer[Text][Text] Persistent_LibCupAdmin_PlayersMapsPoints;
+		
+		foreach (Login => Points in MapScores) {
+			if (!Persistent_LibCupAdmin_PlayersMapsPoints.existskey(Login))
+				Persistent_LibCupAdmin_PlayersMapsPoints[Login] = Integer[Text];
+			
+			Persistent_LibCupAdmin_PlayersMapsPoints[Login][MapUID] = Points;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Check if a given map has been finished
+ *
+ *	@param	_MapToCheck		The map to check if finished
+ *
+ *	@return		True, if the map has been finished
+ */
+Boolean Private_MapAlreadyFinished(CMapInfo _MapToCheck) {
+	if (_MapToCheck == Null) return False;
+	declare MapUID = ""^_MapToCheck.MapUid;
+	
+	declare persistent Text[] Persistent_LibCupAdmin_FinishedMaps;
+	return Persistent_LibCupAdmin_FinishedMaps.exists(MapUID);
+}
+
+// ---------------------------------- //
+/** Returns the UIDs of all maps played in the cup
+ *
+ *	@return		UIDs of all maps
+ */
+Text[] Private_GetRegisteredMaps() {
+	declare persistent Text[] Persistent_LibCupAdmin_FinishedMaps;
+	return Persistent_LibCupAdmin_FinishedMaps;
+}
+
+// ---------------------------------- //
+/** Get the name of a map
+ *
+ *	@param	_MapUID		The map to get its name
+ *
+ *	@return		The name of the given map
+ */
+Text Private_GetMapName(Text _MapUID) {
+	if (_MapUID == "") return "???";
+	
+	// Looks up for a cached name
+	declare persistent Text[Text] Persistent_LibCupAdmin_MapsNames;
+	if (Persistent_LibCupAdmin_MapsNames.existskey(_MapUID)) return Persistent_LibCupAdmin_MapsNames[_MapUID];
+	
+	// Returns undefined string if nothing has been found
+	return "???";
+}
+
+// ---------------------------------- //
+/** Get login of the map author
+ *
+ *	@param	_MapUID		The map to get its author's login
+ *
+ *	@return		The login of the given map author's login
+ */
+Text Private_GetMapAuthorLogin(Text _MapUID) {
+	if (_MapUID == "") return "???";
+	
+	// Looks up for a cached author login
+	declare persistent Text[Text] Persistent_LibCupAdmin_MapsAuthors;
+	if (Persistent_LibCupAdmin_MapsAuthors.existskey(_MapUID)) return Persistent_LibCupAdmin_MapsAuthors[_MapUID];
+	
+	// Returns undefined string if nothing has been found
+	return "???";
+}
+
+// ---------------------------------- //
+/// Get the list of players points on all maps
+Integer[Text][Text] Private_GetMapsPlayersPoints() {
+	declare persistent Integer[Text][Text] Persistent_LibCupAdmin_MapsPlayersPoints;
+	return Persistent_LibCupAdmin_MapsPlayersPoints;
+}
+
+// ---------------------------------- //
+/// Unregisters all maps from the cup
+Void Private_UnregisterAllMaps() {
+	declare persistent Text[] Persistent_LibCupAdmin_FinishedMaps;
+	declare persistent Text[Text] Persistent_LibCupAdmin_MapsNames;
+	declare persistent Text[Text] Persistent_LibCupAdmin_MapsAuthors;
+	declare persistent Integer[Text][Text] Persistent_LibCupAdmin_MapsPlayersPoints;
+	
+	Persistent_LibCupAdmin_FinishedMaps.clear();
+	Persistent_LibCupAdmin_MapsNames.clear();
+	Persistent_LibCupAdmin_MapsAuthors.clear();
+	Persistent_LibCupAdmin_MapsPlayersPoints.clear();
+}
+
+// ---------------------------------- //
+/** Give specific amount of points for the player
+ *
+ *	@param	_Player		The player to give points
+ *	@param	_Points		The amount of point to give to that player
+ */
+Void Private_AddPoints(CPlayer _Player, Integer _Points) {
+	if (_Player == Null || _Player.User == Null || _Player.User.Login == "*bot*" || _Points == 0) return;
+	
+	declare Login = _Player.User.Login;
+	declare persistent Integer[Text] Persistent_LibCupAdmin_PlayersTotalPoints;
+	
+	// Initialize player if doesn't exists in the array
+	if (!Persistent_LibCupAdmin_PlayersTotalPoints.existskey(Login))
+		Persistent_LibCupAdmin_PlayersTotalPoints[Login] = 0;
+	
+	// Give points to the player
+	Persistent_LibCupAdmin_PlayersTotalPoints[Login] += _Points;
+}
+
+// ---------------------------------- //
+/** Get the player points on all maps they played
+ *
+ *	@param	_Login		Login of the player to get points
+ *
+ *	@return		Player points on all maps they played
+ */
+Integer[Text] Private_GetPlayerMapsPoints(Text _Login) {
+	declare persistent Integer[Text][Text] Persistent_LibCupAdmin_PlayersMapsPoints;
+	
+	// Return empty array if player doesn't exist
+	if (!Persistent_LibCupAdmin_PlayersMapsPoints.existskey(_Login)) return Integer[Text];
+	
+	// Return player maps points
+	return Persistent_LibCupAdmin_PlayersMapsPoints[_Login];
+}
+
+// ---------------------------------- //
+/** Get the list of players scores
+ *
+ *	@return		List of all players scores
+ */
+Integer[Text] Private_GetPlayersTotalPoints() {
+	declare persistent Integer[Text] Persistent_LibCupAdmin_PlayersTotalPoints;
+	return Persistent_LibCupAdmin_PlayersTotalPoints;
+}
+
+// ---------------------------------- //
+/// Sort the total scores of all players
+Void Private_SortTotalScores() {
+	declare persistent Integer[Text] Persistent_LibCupAdmin_PlayersTotalPoints;
+	Persistent_LibCupAdmin_PlayersTotalPoints = Private_SortPointsDescanding(Persistent_LibCupAdmin_PlayersTotalPoints);
+}
+
+// ---------------------------------- //
+/// Reset all saved scores of the players
+Void Private_ClearAllScores() {
+	declare persistent Integer[Text] Persistent_LibCupAdmin_PlayersTotalPoints;
+	declare persistent Integer[Text][Text] Persistent_LibCupAdmin_PlayersMapsPoints;
+	
+	Persistent_LibCupAdmin_PlayersTotalPoints.clear();
+	Persistent_LibCupAdmin_PlayersMapsPoints.clear();
+}
+
+// ---------------------------------- //
+/** Set if the table should count scores of the pending map
+ *
+ *	@param	_InProgress		True, if the table has to count scores
+ */
+Void Private_SetMapInProgress(Boolean _InProgress) {
+	declare netwrite Boolean Net_LibCupAdmin_CurrentMapInProgress for Teams[0];
+	Net_LibCupAdmin_CurrentMapInProgress = _InProgress;
+}
+
+// ---------------------------------- //
+/// Update the index of currently played map
+Void Private_UpdateMapIndex() {
+	declare netwrite Integer Net_LibCupAdmin_CurrentMapOrder for Teams[0];
+	declare netwrite Integer Net_LibCupAdmin_CompetitionNbMaps for Teams[0];
+	Net_LibCupAdmin_CurrentMapOrder = Private_GetRegisteredMaps().count + 1;
+	Net_LibCupAdmin_CompetitionNbMaps = G_LibCupAdmin_CompetitionNbMaps;
+	
+	G_LibCupAdmin_CompetitionFinished =
+		G_LibCupAdmin_CompetitionNbMaps > 0 &&
+		Private_GetRegisteredMaps().count >= G_LibCupAdmin_CompetitionNbMaps;
+}
+
+// ---------------------------------- //
+/** Escape characters forbidden in JSON format
+ *
+ *	@param	_String		The string to escape forbidden characters
+ *
+ *	@return		The escaped string
+ */
+Text Private_Escape(Text _String) {
+	if (_String == "") return "";
+	
+	// No need to escape string if any of the forbidden characters doesn't exist
+	if (!TL::Find("\"", _String, False, False) && !TL::Find("\\", _String, False, False)) return _String;
+	
+	// ---------------------------------- //
+	// Escape characters
+	declare EscapedString = "";
+	for (I, 0, TL::Length(_String) - 1) {
+		declare Char = TL::SubText(_String, I, 1);
+		if (Char == "\"" || Char == "\\") Char = "\\"^Char;
+		EscapedString ^= Char;
+	}
+	return EscapedString;
+}
+
+// ---------------------------------- //
+/** Format text into JSON string
+ *
+ *	@param	_String		The string to format
+ *
+ *	@return		The formatted string
+ */
+Text Private_JsonString(Text _String) {
+	return "\""^Private_Escape(_String)^"\"";
+}
+
+// ---------------------------------- //
+/** Create an JSON object from the array
+ *	/!\ Values aren't turned into strings! /!\
+ *
+ *	@param	_Array		The array to convert
+ *	@param	_Tabs		The amount of tabulators to add in front of the object
+ *
+ *	@return		The created JSON object
+ */
+Text Private_ArrayToJsonObject(Text[Text] _Array, Integer _Tabs) {
+	if (_Array.count <= 0) return "";
+	
+	declare Text Tabs;
+	if (_Tabs > 0) for (I, 0, _Tabs) Tabs ^= "\t";
+	
+	declare OutputText = "{\n";
+	declare I = 0;
+	foreach (Param => Value in _Array) {
+		OutputText ^= Tabs^"\t\""^Param^"\": "^Value;
+		if (I < _Array.count - 1) OutputText ^= ",";
+		OutputText ^= "\n";
+		I += 1;
+	}
+	OutputText ^= Tabs^"}";
+	
+	return OutputText;
+}
+
+// ---------------------------------- //
+/** Create JSON document containing the cup results
+ *
+ *	@return		The information about the cup results in JSON format
+ */
+Text Private_PrintJsonData() {
+	// ---------------------------------- //
+	// Parse maps information into JSON array
+	declare RegisteredMapsUIDs = Private_GetRegisteredMaps();
+	declare MapsJsonObjects = Text[];
+	
+	foreach (I => MapUID in RegisteredMapsUIDs) {
+		MapsJsonObjects.add(Private_ArrayToJsonObject([
+			"uid" => Private_JsonString(MapUID),
+			"name" => Private_JsonString(Private_GetMapName(MapUID)),
+			"authorLogin" => Private_JsonString(Private_GetMapAuthorLogin(MapUID))
+		], 2));
+	}
+	
+	declare MapsList = TL::Join(", ", MapsJsonObjects);
+	
+	// ---------------------------------- //
+	// Parse players information into JSON array
+	declare PlayersTotalPoints = Private_GetPlayersTotalPoints();
+	declare TotalNbPlayers = PlayersTotalPoints.count;
+	declare PlayersJsonObjects = Text[];
+	
+	declare Position = 1;
+	foreach (Login => TotalPoints in PlayersTotalPoints) {
+		// ---------------------------------- //
+		// Parse map scores array
+		declare PlayerMapsPoints = Private_GetPlayerMapsPoints(Login);
+		declare PlayerMapsCount = PlayerMapsPoints.count;
+		
+		declare MapsPoints = Text[];
+		foreach (I => MapUID in RegisteredMapsUIDs) {
+			declare MapPoints = 0;
+			if (PlayerMapsPoints.existskey(MapUID)) MapPoints = PlayerMapsPoints[MapUID];
+			MapsPoints.add(TL::ToText(MapPoints));
+		}
+		
+		// ---------------------------------- //
+		// Create player object
+		PlayersJsonObjects.add(Private_ArrayToJsonObject([
+			"login" => Private_JsonString(Login),
+			"name" => Private_JsonString(Private_GetPlayerName(Login)),
+			"zonePath" => Private_JsonString(Private_GetPlayerZonePath(Login)),
+			"color" => Private_JsonString("#"^TL::ColorToText(Private_GetPlayerColor(Login))),
+			"position" => TL::ToText(Position),
+			"leaguePoints" => TL::ToText(TotalNbPlayers - Position + 1),
+			"totalPoints" => TL::ToText(TotalPoints),
+			"mapsPoints" => "["^TL::Join(", ", MapsPoints)^"]"
+		], 2));
+		
+		Position += 1;
+	}
+	
+	declare PlayersList = TL::Join(", ", PlayersJsonObjects);
+	
+	// ---------------------------------- //
+	// Create document
+	return Private_ArrayToJsonObject([
+		"name" => Private_JsonString(G_LibCupAdmin_CompetitionTitle),
+		"totalNbMaps" => TL::ToText(RegisteredMapsUIDs.count),
+		"maps" => "["^MapsList^"]",
+		"totalNbPlayers" => TL::ToText(TotalNbPlayers),
+		"players" => "["^PlayersList^"]"
+	], 0);
+}
+
+// ---------------------------------- //
+/** Create manialink for the scores table module
+ *
+ *	@return		The scores table manialink
+ */
+Text Private_CreateManialinkScoresTable() {
+	// ---------------------------------- //
+	// Create an array with the list of finished maps UIDs
+	declare RegisteredMaps = Text[];
+	foreach (MapUID in Private_GetRegisteredMaps()) RegisteredMaps.add(Private_JsonString(MapUID));
+	
+	declare MapsUIDsArray = "";
+	if (RegisteredMaps.count > 0) MapsUIDsArray = "G_RegisteredMaps = ["^TL::Join(", ", RegisteredMaps)^"];";
+	
+	// ---------------------------------- //
+	// Format players names
+	declare persistent Text[Text] Persistent_LibCupAdmin_PlayersNames;
+	declare PlayersNamesObjects = Text[];
+	declare PlayersNames = "";
+	
+	if (Persistent_LibCupAdmin_PlayersNames.count > 0) {
+		foreach (Login => Name in Persistent_LibCupAdmin_PlayersNames)
+			PlayersNamesObjects.add(Private_JsonString(Login)^" => "^Private_JsonString(Name));
+		
+		PlayersNames = "G_PlayersNames = ["^TL::Join(", ", PlayersNamesObjects)^"];";
+	}
+	
+	// ---------------------------------- //
+	// Create an array with all players points
+	declare PlayersTotalPoints = Private_GetPlayersTotalPoints();
+	declare TotalPoints = "";
+	
+	if (PlayersTotalPoints.count > 0) {
+		declare ScoresObjects = Text[];
+		foreach (Login => Points in PlayersTotalPoints) ScoresObjects.add("\""^TL::MLEncode(Login)^"\" => "^Points);
+		TotalPoints = "G_PlayersTotalPoints = ["^TL::Join(", ", ScoresObjects)^"];";
+	}
+	
+	// ---------------------------------- //
+	// Create an array with all maps scores
+	declare PlayerMapsPoints = Private_GetMapsPlayersPoints();
+	declare MapsPoints = "";
+	
+	if (PlayerMapsPoints.count > 0) {
+		declare MapsObjects = Text[];
+		
+		foreach (MapUID => MapScores in PlayerMapsPoints) {
+			if (MapScores.count <= 0) continue;
+			
+			declare PlayersObjects = Text[];
+			foreach (Login => Points in MapScores) PlayersObjects.add("\""^TL::MLEncode(Login)^"\" => "^Points);
+			MapsObjects.add("\""^MapUID^"\" => ["^TL::Join(", ", PlayersObjects)^"]");
+		}
+		
+		MapsPoints = "G_MapsPoints = ["^TL::Join(", ", MapsObjects)^"];";
+	}
+	
+	// ---------------------------------- //
+	// Create markers that repeat multiple times
+	declare PlayersCards = "";
+	declare MapsScoresLabels = "";
+	declare MapsHeadersLabels = "";
+	
+	for (I, 0, C_LibCupAdmin_MaxNbTablePlayersRows - 1) {
+		PlayersCards ^= """<frameinstance posn="0 {{{I * -4}}}" modelid="FrameModel_PlayerCard" id="Frame_PlayerCard#{{{I}}}" hidden="1"/>""";
+	}
+	
+	for (I, 0, C_LibCupAdmin_MaxNbTableMapsColumns - 1) {
+		MapsScoresLabels ^= """<label posn="{{{I * -10}}}" class="text3" halign="center" id="Label_CardMapScore#{{{I}}}"/>""";
+		MapsHeadersLabels ^= """<label posn="{{{I * -10}}}" class="text2" halign="center" id="Label_MapHeader#{{{I}}}"/>""";
+	}
+	
+	// ---------------------------------- //
+	// Create JSON results format to export
+	declare JsonResults = "";
+	if (G_LibCupAdmin_CompetitionFinished) JsonResults = Private_PrintJsonData();
+	
+	// ---------------------------------- //
+	// Create the manialink
+	return """
+<manialink version="2" name="{{{C_LibCupAdmin_ScoresTableLayerName}}}">
+<stylesheet>
+	<style class="text" textsize="1" valign="center2" textcolor="FFF" textemboss="1" scale="1.125"/>
+	<style class="text2" textsize="1" valign="center2" style="TextValueSmallSm" textcolor="FFF" textprefix="$t" scale=".875"/>
+	<style class="text3" textsize="1" valign="center2" style="TextValueSmallSm" textcolor="FFF"/>
+</stylesheet>
+
+<framemodel id="FrameModel_PlayerCard">
+	<quad posn=".5 0 -.2" sizen="147 4" bgcolor="FFF" opacity=".0625" id="Quad_CardBackground" hidden="1"/>
+	<quad posn=".5 0 -.1" sizen="147 4" bgcolor="6BF" opacity=".25" id="Quad_CardIsGUIPlayer" hidden="1"/>
+	
+	<label posn="2.5 -2" scale="1" class="text3" id="Label_CardPosition"/>
+	<label posn="10 -2" scale="1" class="text" id="Label_CardPlayerName"/>
+	
+	<frame posn="130 -2">{{{MapsScoresLabels}}}</frame>
+	
+	<label posn="145.5 -2" scale="1.125" halign="right" class="text3" id="Label_CardTotalPoints"/>
+</framemodel>
+
+<frame posn="0 42 20">
+	<quad posn="0 0 -.1" sizen="148 96" halign="center" bgcolor="000" opacity=".75"/>
+	<quad posn="0 0 -.2" sizen="148 96" halign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0"/>
+	<quad posn="0 2.5 -.3" sizen="306 202" halign="center" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow"/>
+		
+	<!-- Title block -->
+	<label posn="-71.5 -3 1" sizen="120 6" scale="1.125" class="text2" id="Label_CompetitionName"/>
+	
+	<label
+		posn="71.5 -3 1" scale=".75" style="CardButtonSmallS" halign="right" valign="center2"
+		text="Export results" id="Label_ExportScores" ScriptEvents="1"
+		hidden="{{{!G_LibCupAdmin_CompetitionFinished}}}"
+	/>
+	
+	<frame id="Frame_PlayersScoresTable">
+		<!-- Table headers -->
+		<frame posn="-74 -6 1">
+			<quad posn=".5 0 -.1" sizen="147 4" bgcolor="FFF" opacity=".05"/>
+			<label posn="2.5 -2" class="text2" text="#"/>
+			<label posn="10 -2" class="text2" text="Player" translate="1"/>
+			<frame posn="130 -2">{{{MapsHeadersLabels}}}</frame>
+			<label posn="145.5 -2" halign="right" class="text2" text="Total" translate="1"/>
+		</frame>
+		
+		<!-- Players rows -->
+		<frame id="Frame_PlayersCards" posn="-74 -10 1">{{{PlayersCards}}}</frame>
+	</frame>
+	
+	<!-- JSON scores exporting -->
+	<textedit
+		posn="-71.5 -6 1" sizen="143 80" focusareacolor1="0000" focusareacolor2="0000"
+		textsize="0" textcolor="FFF" default="{{{TL::MLEncode(JsonResults)}}}" id="TextEdit_Exporter" hidden="1"
+	/>
+	
+	<!-- Footer -->
+	<label posn="-71.5 -93 1" class="text2" id="Label_WindowFooter"/>
+	
+	<!-- Navigation -->
+	<frame id="Frame_Navigation" posn="64 -93 1">
+		<label class="text3" halign="center" id="Label_PageSwitchCounter"/>
+		
+		<quad
+			posn="-6 0 1" sizen="5 5" halign="center" valign="center" hidden="1"
+			style="Icons64x64_1" substyle="ArrowPrev" id="Quad_PrevRankingPage" ScriptEvents="1"
+		/>
+		<quad
+			posn="6 0 1" sizen="5 5" halign="center" valign="center" hidden="1"
+			style="Icons64x64_1" substyle="ArrowNext" id="Quad_NextRankingPage" ScriptEvents="1"
+		/>
+		
+		<quad posn="-6" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowDisabled"/>
+		<quad posn="6" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowDisabled"/>
+	</frame>
+</frame>
+
+<script><!--
+/**
+ *	{{{C_LibCupAdmin_ScoresTableLayerName}}}
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+declare Text[] G_PlayersLogins;
+declare Text[Text] G_PlayersNames;
+declare Text[] G_RegisteredMaps;
+declare Integer[Text][Text] G_MapsPoints;
+declare Integer[Text] G_PlayersTotalPoints;
+
+declare Integer G_LastLoginsUpdate;
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_PlayersScoresTable <=> (Page.GetFirstChild("Frame_PlayersScoresTable") as CMlFrame);
+declare TextEdit_Exporter <=> (Page.GetFirstChild("TextEdit_Exporter") as CMlTextEdit);
+declare Label_CompetitionName <=> (Page.GetFirstChild("Label_CompetitionName") as CMlLabel);
+declare Label_WindowFooter <=> (Page.GetFirstChild("Label_WindowFooter") as CMlLabel);
+
+declare Label_PageSwitchCounter <=> (Page.GetFirstChild("Label_PageSwitchCounter") as CMlLabel);
+declare Quad_PrevRankingPage <=> (Page.GetFirstChild("Quad_PrevRankingPage") as CMlQuad);
+declare Quad_NextRankingPage <=> (Page.GetFirstChild("Quad_NextRankingPage") as CMlQuad);
+
+declare CMlFrame[] Frame_PlayersCards;
+for (I, 0, {{{C_LibCupAdmin_MaxNbTablePlayersRows - 1}}})
+	Frame_PlayersCards.add((Page.GetFirstChild("Frame_PlayerCard#"^I) as CMlFrame));
+
+declare CMlLabel[] Label_MapsHeaders;
+for (I, 0, {{{C_LibCupAdmin_MaxNbTableMapsColumns - 1}}})
+	Label_MapsHeaders.add((Page.GetFirstChild("Label_MapHeader#"^I) as CMlLabel));
+
+// ---------------------------------- //
+// Netcode
+declare netread Boolean Net_LibCupAdmin_CurrentMapInProgress for Teams[0];
+declare netread Integer Net_LibCupAdmin_CurrentMapOrder for Teams[0];
+declare netread Integer Net_LibCupAdmin_CompetitionNbMaps for Teams[0];
+declare netread Text Net_LibCupAdmin_CompetitionName for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare PrintPlayersList = True;
+declare UpdateTableFooter = True;
+declare CurrentListPage = 1;
+declare TotalListPages = 1;
+
+/// Update
+declare PrevNbScores = -1;
+declare PrevLoginsUpdate = -1;
+declare PrevMapInProgress = False;
+declare PrevNbMapsFinished = -1;
+declare PrevNbMapsTotal = -1;
+declare PrevGUIPlayerLogin = "";
+declare PrevCompetitionName = "!";
+
+// ---------------------------------- //
+// Data retrieved from the game mode
+{{{MapsUIDsArray}}}
+{{{PlayersNames}}}
+{{{MapsPoints}}}
+{{{TotalPoints}}}
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		switch (Event.ControlId) {
+			// ---------------------------------- //
+			// Toggle scores exporter visibility
+			case "Label_ExportScores" : {
+				Frame_PlayersScoresTable.Visible = !Frame_PlayersScoresTable.Visible;
+				TextEdit_Exporter.Visible =!Frame_PlayersScoresTable.Visible;
+			}
+			// ---------------------------------- //
+			// Prev ranking page
+			case "Quad_PrevRankingPage" : {
+				if (CurrentListPage <= 1) continue;
+				CurrentListPage -= 1;
+				PrintPlayersList = True;
+			}
+			// ---------------------------------- //
+			// Next ranking page
+			case "Quad_NextRankingPage" : {
+				if (CurrentListPage >= TotalListPages) continue;
+				CurrentListPage += 1;
+				PrintPlayersList = True;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update list ob GUIPlayer change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
+		PrevGUIPlayerLogin = "";
+		PrintPlayersList = True;
+	}
+}
+else if (PrevGUIPlayerLogin != "") {
+	PrevGUIPlayerLogin = "";
+	PrintPlayersList = True;
+}
+
+// ---------------------------------- //
+// Sort players when a new score is registered in match
+if (PrevNbScores != Scores.count) {
+	PrevNbScores = Scores.count;
+	UpdateLoginsList();
+}
+
+// ---------------------------------- //
+// Sort players when someone gets or loses points
+foreach (Score in Scores) {
+	declare Integer PrevNbPoints for Score;
+	if (PrevNbPoints == Score.Points) continue;
+	
+	PrevNbPoints = Score.Points;
+	UpdateLoginsList();
+}
+
+// ---------------------------------- //
+// Update scores when map has started or finished
+if (PrevMapInProgress != Net_LibCupAdmin_CurrentMapInProgress) {
+	PrevMapInProgress = Net_LibCupAdmin_CurrentMapInProgress;
+	PrintPlayersList = True;
+}
+
+// ---------------------------------- //
+// Update the scores table when sorted
+if (PrevLoginsUpdate != G_LastLoginsUpdate) {
+	PrevLoginsUpdate = G_LastLoginsUpdate;
+	PrintPlayersList = True;
+}
+
+// ---------------------------------- //
+// Update the competition name
+if (PrevCompetitionName != Net_LibCupAdmin_CompetitionName) {
+	PrevCompetitionName = Net_LibCupAdmin_CompetitionName;
+	
+	if (PrevCompetitionName == "") Label_CompetitionName.SetText("Unnamed competition");
+	else Label_CompetitionName.SetText(PrevCompetitionName);
+}
+
+// ---------------------------------- //
+// Print the scores table
+if (PrintPlayersList) {
+	PrintPlayersList = False;
+	
+	// ---------------------------------- //
+	// Get the amount of maps to display
+	declare NbMapsFinished = G_RegisteredMaps.count;
+	if (Net_LibCupAdmin_CurrentMapInProgress) NbMapsFinished += 1;
+	
+	// ---------------------------------- //
+	// Update the page navigation
+	TotalListPages = (G_PlayersLogins.count - 1) / Frame_PlayersCards.count + 1;
+	if (CurrentListPage > TotalListPages) CurrentListPage = TotalListPages;
+	
+	Label_PageSwitchCounter.SetText(CurrentListPage^" / "^TotalListPages);
+	Quad_PrevRankingPage.Visible = CurrentListPage > 1;
+	Quad_NextRankingPage.Visible = CurrentListPage < TotalListPages;
+	
+	// ---------------------------------- //
+	// Update the maps header above the table
+	foreach (I => Label in Label_MapsHeaders) {
+		Label.Visible = I < NbMapsFinished;
+		if (!Label.Visible) continue;
+		
+		Label.SetText("M"^NbMapsFinished - I);
+		if (Net_LibCupAdmin_CurrentMapInProgress && I == 0) Label.TextColor = <0., .75, 0.>;
+		else Label.TextColor = <1., 1., 1.>;
+	}
+	
+	// ---------------------------------- //
+	// Create card for each player
+	foreach (I => Frame in Frame_PlayersCards) {
+		declare PlayerId = (CurrentListPage - 1) * Frame_PlayersCards.count + I;
+		
+		Frame.Visible = G_PlayersLogins.existskey(PlayerId);
+		if (!Frame.Visible) continue;
+		declare Login = G_PlayersLogins[PlayerId];
+		
+		// ---------------------------------- //
+		// Load frame elements
+		declare Label_CardPosition <=> (Frame.GetFirstChild("Label_CardPosition") as CMlLabel);
+		declare Label_CardPlayerName <=> (Frame.GetFirstChild("Label_CardPlayerName") as CMlLabel);
+		declare Label_CardTotalPoints <=> (Frame.GetFirstChild("Label_CardTotalPoints") as CMlLabel);
+		declare Quad_CardBackground <=> (Frame.GetFirstChild("Quad_CardBackground") as CMlQuad);
+		declare Quad_CardIsGUIPlayer <=> (Frame.GetFirstChild("Quad_CardIsGUIPlayer") as CMlQuad);
+		
+		Label_CardPosition.SetText(TL::ToText(PlayerId + 1));
+		Label_CardPlayerName.SetText(GetPlayerName(Login));
+		Quad_CardIsGUIPlayer.Visible = GUIPlayer != Null && GUIPlayer.Login == Login;
+		Quad_CardBackground.Visible = !Quad_CardIsGUIPlayer.Visible && I % 2 != 0;
+		
+		// ---------------------------------- //
+		// Show the total amount of points get by the player
+		declare TotalPoints = GetPlayerTotalPoints(Login);
+		Label_CardTotalPoints.SetText(TL::ToText(TotalPoints));
+		
+		if (TotalPoints == 0) Label_CardTotalPoints.Opacity = .25;
+		else Label_CardTotalPoints.Opacity = 1.;
+		
+		// ---------------------------------- //
+		// Display player points on each map player
+		for (J, 0, Label_MapsHeaders.count - 1) {
+			declare Label <=> (Frame.GetFirstChild("Label_CardMapScore#"^J) as CMlLabel);
+			Label.Visible = J < NbMapsFinished;
+			if (!Label.Visible) continue;
+			declare Points = 0;
+			
+			// ---------------------------------- //
+			// Dynamic amout of points at the current map
+			if (Net_LibCupAdmin_CurrentMapInProgress && J == 0) {
+				Points = GetPlayerCurrentMapPoints(Login);
+				Label.TextColor = <0., .75, 0.>;
+			}
+			// ---------------------------------- //
+			// Points from a previous map
+			else {
+				Points = GetPlayerMapPoints(Login, G_RegisteredMaps[NbMapsFinished - J - 1]);
+				Label.TextColor = <1., 1., 1.>;
+			}
+			
+			if (Points != 0) Label.SetText(TL::ToText(Points));
+			else Label.Value = "";
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update footer text on map order change
+if (PrevNbMapsFinished != Net_LibCupAdmin_CurrentMapOrder) {
+	PrevNbMapsFinished = Net_LibCupAdmin_CurrentMapOrder;
+	UpdateTableFooter = True;
+}
+
+// ---------------------------------- //
+// Update footer text on total maps amount change
+if (PrevNbMapsTotal != Net_LibCupAdmin_CompetitionNbMaps) {
+	PrevNbMapsTotal = Net_LibCupAdmin_CompetitionNbMaps;
+	UpdateTableFooter = True;
+}
+
+// ---------------------------------- //
+// Update the scores table footer
+if (UpdateTableFooter) {
+	UpdateTableFooter = False;
+	
+	Label_WindowFooter.SetText(
+		"Current map: "^
+		ML::Min(Net_LibCupAdmin_CurrentMapOrder, Net_LibCupAdmin_CompetitionNbMaps)^
+		" / "^Net_LibCupAdmin_CompetitionNbMaps
+	);
+}
+***
+
+// ---------------------------------- //
+/** Get the name of the player
+ *
+ *	@param	_Login		The login of the player to get name
+ *
+ *	@return		Name of the player
+ */
+Text GetPlayerName(Text _Login) {
+	foreach (Player in Players) if (Player.User.Login == _Login) return Player.User.Name;
+	if (G_PlayersNames.existskey(_Login)) return G_PlayersNames[_Login];
+	return _Login;
+}
+
+// ---------------------------------- //
+/** Get the amount of player points on a map
+ *
+ *	@param	_Login		The login of the player to get points
+ *	@param	_MapUID		The UID of the map to get points
+ *
+ *	@return		Points of the player on that map
+ */
+Integer GetPlayerMapPoints(Text _Login, Text _MapUID) {
+	if (!G_MapsPoints.existskey(_MapUID) || !G_MapsPoints[_MapUID].existskey(_Login)) return 0;
+	return G_MapsPoints[_MapUID][_Login];
+}
+
+// ---------------------------------- //
+/** Get the points of the player on present map
+ *
+ *	@param	_Login		The login of the player to get points
+ *
+ *	@return		Points of the player on present map
+ */
+Integer GetPlayerCurrentMapPoints(Text _Login) {
+	foreach (Score in Scores) if (Score.User.Login == _Login) return Score.Points;
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get the player total amount of points
+ *
+ *	@param	_Login		The login of the player to get total points
+ *
+ *	@return		Points of the player
+ */
+Integer GetPlayerTotalPoints(Text _Login) {
+	declare netread Boolean Net_LibCupAdmin_CurrentMapInProgress for Teams[0];
+	
+	declare TotalPoints = 0;
+	if (Net_LibCupAdmin_CurrentMapInProgress) TotalPoints += GetPlayerCurrentMapPoints(_Login);
+	if (G_PlayersTotalPoints.existskey(_Login)) TotalPoints += G_PlayersTotalPoints[_Login];
+	return TotalPoints;
+}
+
+// ---------------------------------- //
+/// Automatically get the players list sorted by points
+Void UpdateLoginsList() {
+	G_LastLoginsUpdate = Now;
+	declare Integer[Text] TempScores;
+	
+	// Invert all points and add current map score
+	foreach (Login => Points in G_PlayersTotalPoints) TempScores[Login] = -GetPlayerTotalPoints(Login);
+	
+	// Add unlisted players
+	foreach (Score in Scores) if (!TempScores.existskey(Score.User.Login)) TempScores[Score.User.Login] = 0;
+	
+	// Sort logins by points descanding
+	TempScores = TempScores.sort();
+	G_PlayersLogins.clear();
+	foreach (Login => Points in TempScores) G_PlayersLogins.add(Login);
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	---Main---
+	while (True) {
+		wait(PageIsVisible);
+		---Yield---
+		yield;
+	}
+}
+
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Check if the library is enabled
+ *
+ *	@return		True, if there is a cup running
+ */
+Boolean IsCupEnabled() { return G_LibCupAdmin_CupModeEnabled; }
+
+// ---------------------------------- //
+/** Check if the cup is paused
+ *
+ *	@return		True, if tthe cup has been paused
+ */
+Boolean IsCupPaused() { return IsCupEnabled() && G_LibCupAdmin_CupModePaused; }
+
+// ---------------------------------- //
+/** Check if the cup has ended
+ *
+ *	@return		True, if tthe cup has ended
+ */
+Boolean IsCupEnd() { return IsCupEnabled() && G_LibCupAdmin_CompetitionFinished; }
+
+// ---------------------------------- //
+/** The library global loop
+ *
+ *	@param	_EnableCupMode		Defines the usage of the library
+ *	@param	_AdminPauseCup		When True, the game will be paused before next round
+ *	@param	_MaxNbMaps			Total amount of maps played in the cup
+ *	@param	_CupName			The name of the cup displayed in the table
+ */
+Void Loop(Boolean _EnableCupMode, Boolean _AdminPauseCup, Integer _MaxNbMaps, Text _CupName) {
+	if (Now <= G_LibCupAdmin_NextRefreshTick) return;
+	G_LibCupAdmin_NextRefreshTick = Now + C_LibCupAdmin_SettingsRefreshInterval;
+	
+	// ---------------------------------- //
+	// Toggle the cup mode
+	if (G_LibCupAdmin_CupModeEnabled != _EnableCupMode) {
+		G_LibCupAdmin_CupModeEnabled = _EnableCupMode;
+		
+		// ---------------------------------- //
+		// Reset everything once the cup has been stopped
+		if (!G_LibCupAdmin_CupModeEnabled) {
+			Private_UnregisterEveryone();
+			Private_UnregisterAllMaps();
+			Private_ClearAllScores();
+			Private_UpdateMapIndex();
+			
+			G_LibCupAdmin_CupModePaused = False;
+			G_LibCupAdmin_CompetitionNbMaps = 0;
+			G_LibCupAdmin_CompetitionFinished = False;
+			
+			UIManager.UIAll.AltMenuNoCustomScores = False;
+			
+			// ---------------------------------- //
+			// Destroy cup scorestable layer
+			if (Layers::Exists(C_LibCupAdmin_ScoresTableLayerName)) {
+				Layers::Detach(C_LibCupAdmin_ScoresTableLayerName);
+				Layers::Destroy(C_LibCupAdmin_ScoresTableLayerName);
+			}
+		}
+		// ---------------------------------- //
+		// Start the new cup
+		else {
+			// ---------------------------------- //
+			// Create the cup scores table
+			if (!Layers::Exists(C_LibCupAdmin_ScoresTableLayerName)) {
+				Layers::Create(C_LibCupAdmin_ScoresTableLayerName, Private_CreateManialinkScoresTable());
+				Layers::SetType(C_LibCupAdmin_ScoresTableLayerName, CUILayer::EUILayerType::AltMenu);
+				Layers::Attach(C_LibCupAdmin_ScoresTableLayerName);
+			}
+			
+			// Hide game mode scoreboard
+			UIManager.UIAll.AltMenuNoCustomScores = True;
+			
+			// Start counting points on the map the cup was started on
+			Private_SetMapInProgress(True);
+			Private_UpdateMapIndex();
+		}
+	}
+	
+	if (!G_LibCupAdmin_CupModeEnabled) return;
+	
+	// ---------------------------------- //
+	// Hide forced visible default scores table
+	if (UIManager.UIAll.ScoreTableVisibility == CUIConfig::EVisibility::ForcedVisible) {
+		UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	}
+	
+	// ---------------------------------- //
+	// Update the cup pause status
+	if (G_LibCupAdmin_CupModePaused != _AdminPauseCup) {
+		G_LibCupAdmin_CupModePaused = _AdminPauseCup;
+	}
+	
+	// ---------------------------------- //
+	// Update the cup name
+	if (G_LibCupAdmin_CompetitionTitle != _CupName) {
+		G_LibCupAdmin_CompetitionTitle = _CupName;
+		
+		declare netwrite Text Net_LibCupAdmin_CompetitionName for Teams[0];
+		Net_LibCupAdmin_CompetitionName = G_LibCupAdmin_CompetitionTitle;
+	}
+	
+	// ---------------------------------- //
+	// Register new players in the cup
+	foreach (Player in AllPlayers) Private_RegisterPlayer(Player);
+	
+	// ---------------------------------- //
+	// Update the total amount of maps played in the cup
+	declare MaxNbMaps = ML::Max(1, _MaxNbMaps);
+	if (G_LibCupAdmin_CompetitionNbMaps != MaxNbMaps) {
+		G_LibCupAdmin_CompetitionNbMaps = MaxNbMaps;
+		Private_UpdateMapIndex();
+	}
+}
+
+// ---------------------------------- //
+/// Start counting points on the map
+Void StartMap() {
+	if (!IsCupEnabled() || Map == Null) return;
+	Private_SetMapInProgress(!Private_MapAlreadyFinished(Map.MapInfo) && !G_LibCupAdmin_CompetitionFinished);
+	Private_UpdateMapIndex();
+}
+
+// ---------------------------------- //
+/// Register end of a map
+Void EndMap() {
+	if (!IsCupEnabled() || Map == Null || Private_MapAlreadyFinished(Map.MapInfo)) return;
+	
+	Private_SetMapInProgress(False);
+	
+	// ---------------------------------- //
+	// Check if the map has players scores - if not, ignore it
+	declare MapHasScores = False;
+	foreach (Score in Scores) if (Score.Points != 0) { MapHasScores = True; break; }
+	
+	// ---------------------------------- //
+	// Save the map information and results in the cache
+	if (MapHasScores && !G_LibCupAdmin_CompetitionFinished) {
+		declare CurMapUID = ""^Map.MapInfo.MapUid;
+		
+		// ---------------------------------- //
+		// Save the amount of points of all players on the current map
+		declare Integer[Text] CurrentMapPoints;
+		
+		foreach (Player in AllPlayers) {
+			if (Player.User == Null && Player.Score == Null) continue;
+			Private_AddPoints(Player, Player.Score.Points);
+			CurrentMapPoints[Player.User.Login] = Player.Score.Points;
+		}
+		
+		// ---------------------------------- //
+		// Register the map and its scores
+		Private_RegisterMapFinished(Map.MapInfo, CurrentMapPoints);
+		Private_SortTotalScores();
+		Private_UpdateMapIndex();
+		
+		// ---------------------------------- //
+		// Update the scores table
+		Layers::Update(C_LibCupAdmin_ScoresTableLayerName, Private_CreateManialinkScoresTable());
+		
+		// Force show scores table at the end of the competition
+		if (G_LibCupAdmin_CompetitionFinished)
+			Layers::SetType(C_LibCupAdmin_ScoresTableLayerName, CUILayer::EUILayerType::Normal);
+	}
+}

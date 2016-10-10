@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2016-09-25            //
+//  script version: 2016-10-10            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2016-09-25"
+#Const	Version		"2016-10-10"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -241,6 +241,9 @@ declare netread Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
 
 /// Players colors
 declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
+
+/// Custom weapons
+declare netwrite Text[Text] Net_LibInterfancy_PlayersWeaponsNames for Teams[0];
 
 /// Classes
 declare netread Text[] Net_LibInterfancy_AvailableClasses for Teams[0];
@@ -478,10 +481,25 @@ foreach (Module in C_GaugesModules) {
 			ModuleRatio[Module] = ML::ToReal(GUIPlayer.CurAmmo) / GUIPlayer.CurAmmoUnit;
 			ModuleSlots[Module] = GUIPlayer.CurAmmoMax / GUIPlayer.CurAmmoUnit;
 			
-			if (C_WeaponsNames.existskey(GUIPlayer.CurWeapon)) {
+			// ---------------------------------- //
+			// Display name and icon of a custom weapon
+			if (
+				Net_LibInterfancy_PlayersWeaponsNames.existskey(GUIPlayer.User.Login) &&
+				Net_LibInterfancy_PlayersWeaponsNames[GUIPlayer.User.Login] != ""
+			) {
+				declare WeaponName = Net_LibInterfancy_PlayersWeaponsNames[GUIPlayer.User.Login];
+				ModuleInfoText[Module] = WeaponName;
+				if (G_IconsTextures.existskey(WeaponName)) ModuleIcon[Module] = G_IconsTextures[WeaponName];
+			}
+			// ---------------------------------- //
+			// Display name and icon of a default weapon
+			else if (C_WeaponsNames.existskey(GUIPlayer.CurWeapon)) {
 				ModuleInfoText[Module] = C_WeaponsNames[GUIPlayer.CurWeapon];
 				ModuleIcon[Module] = G_IconsTextures[C_WeaponsNames[GUIPlayer.CurWeapon]];
-			} else {
+			}
+			// ---------------------------------- //
+			// Display default name and icon, if something went wrong
+			else {
 				ModuleInfoText[Module] = "Weapon";
 				ModuleIcon[Module] = G_IconsTextures[C_WeaponsNames[2]];
 			}
@@ -740,7 +758,7 @@ Void SetModuleRatio(Text _Module, Real _Energy, Integer _Slots) {
 }
 
 {{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutBack"])}}}
-{{{Translations::InsertToManialink(["Laser", "Nucleus", "Arrow", "Rocket", "Stamina", "Sprint Path", "Armor", "Healing Pad", "Healing...", "Zoom Pad", "Arrow Pad", "Safe Zone", "Tunnels"])}}}
+{{{Translations::InjectInManialink(["Laser", "Nucleus", "Arrow", "Rocket", "Stamina", "Sprint Path", "Armor", "Healing Pad", "Healing...", "Zoom Pad", "Arrow Pad", "Safe Zone", "Tunnels", "Handheld Charge", "Frozen Arrow", "Plasma Grenade", "Torpede", "Wide Rail"])}}}
 
 // ---------------------------------- //
 // Main
@@ -1549,7 +1567,7 @@ Label_NearMissGhost.Visible = Label_NearMissGhost.Opacity > 0;
 // ---------------------------------- //
 
 {{{Manialink::Animations(["EaseLinear", "EaseOutCirc"])}}}
-{{{Translations::InsertToManialink(["%1 miss", "$<%1$> healed you!", "Healed %1 players", "Healed 1 player", "$<%1$> boosted you!", "Boosted %1 players", "Boosted 1 player", "Laser", "Nucleus", "Arrow", "Rocket"])}}}
+{{{Translations::InjectInManialink(["%1 miss", "$<%1$> healed you!", "Healed %1 players", "Healed 1 player", "$<%1$> boosted you!", "Boosted %1 players", "Boosted 1 player", "Laser", "Nucleus", "Arrow", "Rocket"])}}}
 
 // ---------------------------------- //
 // Main
@@ -1732,15 +1750,6 @@ Void DisplayNearMiss(CSmPlayer _Player, Real _Distance) {
 }
 
 // ---------------------------------- //
-/// Clear array of crosshair messages data
-Void ClearNotesData() {	
-	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
-	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
-	Net_LibInterfancy_CrosshairNote.clear();
-	Net_LibInterfancy_CrosshairNoteTime.clear();
-}
-
-// ---------------------------------- //
 /** Set player reload boost data
  *
  *	@param	_Player			Player to set data
@@ -1751,13 +1760,6 @@ Void SetPlayerReloadData(CSmPlayer _Player, Integer _StartTime, Integer _Duratio
 	if (_Player == Null) return;
 	declare netwrite Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
 	Net_LibInterfancy_ReloadData[_Player.User.Login] = <_StartTime, _Duration, 0>;
-}
-
-// ---------------------------------- //
-/// Reset reload data array
-Void ResetReloadData() {
-	declare netwrite Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
-	Net_LibInterfancy_ReloadData.clear();
 }
 
 // ---------------------------------- //
@@ -1777,19 +1779,32 @@ Void ForceColor(CSmPlayer _Player, Vec3 _Color) {
 	Net_LibInterfancy_ForcedColors[_Player.User.Login] = Color;
 }
 
-// ---------------------------------- //
-/// Reset forced colours array
-Void ClearColorsData() {
-	declare netwrite Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
-	Net_LibInterfancy_ForcedColors.clear();
+Void SetPlayerCustomWeapon(CSmPlayer _Player, Text _CustomWeapon) {
+	if (_Player == Null || _Player.IsBot) return;
+	
+	declare netwrite Text[Text] Net_LibInterfancy_PlayersWeaponsNames for Teams[0];
+	
+	if (_CustomWeapon != "") Net_LibInterfancy_PlayersWeaponsNames[_Player.User.Login] = _CustomWeapon;
+	
+	else if (Net_LibInterfancy_PlayersWeaponsNames.existskey(_Player.User.Login)) {
+		declare Removed = Net_LibInterfancy_PlayersWeaponsNames.removekey(_Player.User.Login);
+	}
 }
 
 // ---------------------------------- //
 /// Reset all library net data
 Void ClearData() {
-	ClearNotesData();
-	ResetReloadData();
-	ClearColorsData();
+	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
+	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
+	declare netwrite Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
+	declare netwrite Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
+	declare netwrite Text[Text] Net_LibInterfancy_PlayersWeaponsNames for Teams[0];
+	
+	Net_LibInterfancy_CrosshairNote.clear();
+	Net_LibInterfancy_CrosshairNoteTime.clear();
+	Net_LibInterfancy_ReloadData.clear();
+	Net_LibInterfancy_ForcedColors.clear();
+	Net_LibInterfancy_PlayersWeaponsNames.clear();
 }
 
 // ---------------------------------- //

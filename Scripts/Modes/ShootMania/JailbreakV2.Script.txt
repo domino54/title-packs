@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2016-07-21            //
+//  script version: 2016-10-10            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"JailbreakArena JailbreakV2Arena"
-#Const Version		"2016-07-21"
+#Const Version		"2016-10-10"
 #Const ScriptName	"JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -34,7 +34,7 @@
 #Const C_UIPlayersIconsSize		<4., 4.25>
 #Const C_UIPlayersIconsAmount	32
 #Const C_UIPlayersIconsNbInRow	8
-#Const C_UIJailedPlayersColor	<.25, .25, .25>
+#Const C_UIPlayersJailedColor	<.25, .25, .25>
 
 #Const Description _("TYPE: Team versus Team\nOBJECTIVE: Eliminate your opponents to send them to jail. Release your teammates by standing on the Goal. First team to jail all opponents or have more free players after time ends wins.")
 
@@ -144,9 +144,9 @@ ClearGlobalVariables();
 
 // Variables
 declare Integer NextMissingPlayersCheckTime;
-declare CurrentTimeLimit = S_TimeLimit;
 declare Integer PrevPlayersCount;
 declare Integer PrevSpectatorsCount;
+declare CurrentTimeLimit = S_TimeLimit;
 ***
 
 // ---------------------------------- //
@@ -711,7 +711,7 @@ Void UpdateClansPlayersLists() {
 Void JailPlayer(CSmPlayer _Victim, CSmPlayer _Shooter) {
 	if (_Victim == Null || !Players.exists(_Victim) || IsInJail(_Victim) || G_RoundDelayedEndTime > 0) return;
 	G_AllJailedPlayers.add(_Victim.Id);
-	ST2::SetPlayerColor(_Victim.Score, C_UIJailedPlayersColor);
+	ST2::SetPlayerColor(_Victim.Score, C_UIPlayersJailedColor);
 	
 	// ---------------------------------- //
 	// Notify last free player
@@ -842,6 +842,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 	
 	declare HasWaited = False;
+	declare WasPause = False;
 	StartTime = Now;
 	
 	foreach (Player in AllPlayers) SetPlayerClan(Player, GT_GetRequestedClan(Player));
@@ -860,13 +861,20 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 		if (PlayersNbTotal <= 0) continue;
 		
 		// Stop waiting if there are enough players to start the game
-		if (ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers) break;
+		if (ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers && !CupAdmin::IsCupPaused()) break;
 		
 		// ---------------------------------- //
 		// Display big message
 		if (!HasWaited) {
 			UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
-			UIManager.UIAll.BigMessage = _("Waiting for players in each team...");
+			
+			if (CupAdmin::IsCupPaused()) {
+				Translations::SetStatusMessage("Competition has been paused");
+				UIManager.UIAll.BigMessage = TL::Compose("$F90%1", _("Pause"));
+				WasPause = True;
+			}
+			else UIManager.UIAll.BigMessage = _("Waiting for players in each team...");
+			
 			HasWaited = True;
 		}
 		
@@ -899,8 +907,12 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	if (HasWaited) {
 		SM::UnspawnAllPlayers();
 		GalaxyTitles::ResetAll();
+		
 		if (!ServerShutdownRequested && !MatchEndRequested) {
-			Message::SendBigMessage(_("A new player joins the game."), 5000, 0, CUIConfig::EUISound::Default, 0);
+			declare Message = _("A new player joins the game.");
+			if (WasPause) Message = "Competition has been resumed!";
+			
+			Translations::SendBigMessage(Message, 5000, 0, CUIConfig::EUISound::Default, 0);
 			MB_Sleep(5000);
 		}
 	}
@@ -908,6 +920,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	// ---------------------------------- //
 	// Revert changes
 	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.StatusMessage = "";
 	UIManager.UIAll.UISequence = OldSequence;
 	MiniMap::Hide();
 	---UpdateClublinks---
@@ -1047,7 +1060,7 @@ if (PrevSettingsUpdateTime != Net_Jailbreak_SettingsUpdateTime) {
 			// ---------------------------------- //
 			// Set Quads color
 			declare Color = Brightness(Teams[Clan - 1].ColorPrimary, 1.5);
-			if (I >= PlayersNbFree) Color = {{{C_UIJailedPlayersColor}}};
+			if (I >= PlayersNbFree) Color = {{{C_UIPlayersJailedColor}}};
 			Quad.Colorize = Color;
 		}
 	}
@@ -1356,7 +1369,7 @@ Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
 	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
 }
 
-{{{Translations::InsertToManialink(["$<%1$> can escape!", "$<%1$> and $<%2$> can escape!", "Teammates", "Opponents", "You can escape!", "Blocking enemy pole", "Pole blocked by enemy", "Teammates released!", "Releasing teammates..."])}}}
+{{{Translations::InjectInManialink(["$<%1$> can escape!", "$<%1$> and $<%2$> can escape!", "Teammates", "Opponents", "You can escape!", "Blocking enemy pole", "Pole blocked by enemy", "Teammates released!", "Releasing teammates..."])}}}
 {{{Manialink::Animations(["EaseLinear"])}}}
 
 // ---------------------------------- //
@@ -1487,7 +1500,7 @@ Vec3 Brightness(Vec3 _Color, Real _Brightness) {
 	return OutputColor;
 }
 
-{{{Translations::InsertToManialink(["Teammates", "Opponents"])}}}
+{{{Translations::InjectInManialink(["Teammates", "Opponents"])}}}
 
 // ---------------------------------- //
 // Main

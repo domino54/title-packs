@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-09-25            //
+//  script version: 2016-10-10            //
 // -------------------------------------- //
 
 /**
@@ -9,13 +9,14 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-09-25"
+#Const BaseVersion		"2016-10-10"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
 #Include "Libs/Nadeo/ShootMania/WarmUp2.Script.txt" as WarmUp2
 // Custom libraries
 #Include "Libs/domino54/Blacklist.Script.txt" as Blacklist
+#Include "Libs/domino54/CupAdmin.Script.txt" as CupAdmin
 #Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
 #Include "Libs/domino54/SentenceBank.Script.txt" as SentenceBank
@@ -52,11 +53,19 @@
 #Setting S_CustomBlacklistURL	""		as "<hidden>" ///< URL of the custom blacklist file
 #Setting S_KillFeedOffsetY		0.		as "<hidden>" ///< For server hosters: killfeed Y offset
 #Setting S_MusicPlaylistURL		""		as "<hidden>" ///< URL of the server custom music playlist file
-// Clublinks settings
+
+/// Clublinks settings
 #Setting S_UsePlayerClublinks	True	as _("Use players clublinks")
 #Setting S_ForceClublinkTeam1	""		as "<hidden>"	///< Force the Clublink of team 1
 #Setting S_ForceClublinkTeam2	""		as "<hidden>"	///< Force the Clublink of team 2
-// Enable AFK management by default
+
+/// Competition settings
+#Setting S_AdminEnableCupMode		False	// as "<hidden>"
+#Setting S_AdminCupModeNbMaps		3		// as "<hidden>"
+#Setting S_AdminPauseCompetition	False	// as "<hidden>"
+#Setting S_AdminCupName				""		// as "<hidden>"
+
+/// Enable AFK management by default
 #Setting S_AutoManageAFK	True
 
 // ---------------------------------- //
@@ -102,6 +111,8 @@ declare UC_ScriptsVersions = [
 	BaseScriptName => BaseVersion,
 	WarmUp2::GetScriptName()		=> WarmUp2::GetScriptVersion(),
 	Score::GetScriptName()			=> Score::GetScriptVersion(),
+	Blacklist::GetScriptName()		=> Blacklist::GetScriptVersion(),
+	CupAdmin::GetScriptName()		=> CupAdmin::GetScriptVersion(),
 	FakeUsers::GetScriptName()		=> FakeUsers::GetScriptVersion(),
 	FancyMessages::GetScriptName()	=> FancyMessages::GetScriptVersion(),
 	GalaxyTitles::GetScriptName()	=> GalaxyTitles::GetScriptVersion(),
@@ -190,6 +201,19 @@ if (UseClans) {
 // ---------------------------------- //
 ***InitServer***
 ***
+// ---------------------------------- //
+// Set mode options
+UseClans = False; ///< Disable clans by default
+ForceNavMapsComputation = True; ///< Lets the bots move around
+
+MB_UseSectionRound = True;
+MB_UsePlayerClublinks = S_UsePlayerClublinks;
+MB_UseIntro = !MM_IsMatchServer();
+
+// ---------------------------------- //
+// Stop the script if server is in matchmaking mode and mode doesn't support it
+assert(!(MM_IsMatchmakingServer() && !GT_AllowMatchmakingMode), "This game mode does not support matchmaking mode!");
+
 /**
  *	Enable all options by default
  *
@@ -212,19 +236,6 @@ declare Integer GT_NoCollisionsEndTime;
 
 ***StartServer***
 ***
-// ---------------------------------- //
-// Set mode options
-UseClans = False;
-MB_UseSectionRound = True;
-ForceNavMapsComputation = True;
-MB_UsePlayerClublinks = S_UsePlayerClublinks;
-MB_UseIntro = !MM_IsMatchServer();
-
-// ---------------------------------- //
-// Stop the script if server is in matchmaking mode and mode doesn't support it
-assert(!(MM_IsMatchmakingServer() && !GT_AllowMatchmakingMode), "This game mode does not support matchmaking mode!");
-
-// Update rules
 ---Rules---
 
 // ---------------------------------- //
@@ -321,6 +332,7 @@ TopScores::MatchBegin();
 UpdateChecker::CheckUpdate();
 Interfancy::ClearData();
 GalaxyTitles::ResetAll();
+CupAdmin::StartMap();
 
 // Warm-up
 if (UseClans) GT_InitWarmUp();
@@ -399,6 +411,7 @@ FakeUsers::UpdateAmount(S_NbFakeUsers);
 WebLayers::Update(S_CustomLayersURLs);
 Blacklist::Loop(S_CustomBlacklistURL);
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
+CupAdmin::Loop(S_AdminEnableCupMode, S_AdminPauseCompetition, S_AdminCupModeNbMaps, S_AdminCupName);
 Interfancy::UpdateTime();
 Message::Loop();
 KillFeed::Loop();
@@ -689,6 +702,11 @@ if (!UseClans) foreach (I => Score in Scores) Score.LadderClan = 1 + I % 2;
 Score::MatchEnd(True);
 TopScores::MatchEnd();
 GalaxyTitles::ResetAll();
+
+// ---------------------------------- //
+// Custom competitions
+CupAdmin::EndMap();
+while (CupAdmin::IsCupEnabled()) MB_Yield();
 
 // ---------------------------------- //
 // Set matchmaking match master

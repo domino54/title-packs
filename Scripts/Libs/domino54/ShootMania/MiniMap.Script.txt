@@ -1,6 +1,5 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2016-07-14            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +10,6 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2016-07-14"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "TextLib" as TL
@@ -23,9 +21,9 @@
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/Minimap/"
 #Const C_LibMinimap_LayerWindowId		"LibMinimap:Window"
-#Const C_LibMinimap_WindowPosition		<-138., 68., -3.>
+#Const C_LibMinimap_WindowPosition		<-139., 69., -3.>
 #Const C_LibMinimap_WindowHideOffset	<-50., 0., 0.>
-#Const C_LibMinimap_WindowMinimapSize	<39., 39.>
+#Const C_LibMinimap_WindowMinimapSize	<40., 40.>
 #Const C_LibMinimap_NbPlayersMarkers	32
 #Const C_LibMinimap_NbCustomMarkers		16
 
@@ -73,6 +71,11 @@ Text Private_CreateManialinkMinimapWindow() {
 	declare Text InitialPosition;
 	for (I, 0, 2) InitialPosition ^= C_LibMinimap_WindowPosition[I] + C_LibMinimap_WindowHideOffset[I]^" ";
 	
+	// Compute map size
+	declare MapSize = C_LibMinimap_WindowMinimapSize;
+	declare ShadowSize = MapSize;
+	for (I, 0, 1) ShadowSize[I] = ShadowSize[I] * 2 + 10;
+	
 	// ---------------------------------- //
 	// Create manialink
 	return """
@@ -90,13 +93,13 @@ Text Private_CreateManialinkMinimapWindow() {
 <frame id="Frame_HMDClip" clip="1" clipsizen="320 180">
 
 <frame id="Frame_MinimapWindow" posn="{{{InitialPosition}}}" hidden="1">
-	<quad posn="0 0 1.1" sizen="{{{C_LibMinimap_WindowMinimapSize.X * 1.125^" "^C_LibMinimap_WindowMinimapSize.Y * 1.125}}}"
-		halign="center" valign="center" image="{{{C_ImgBase}}}Overlay.png"
+	<quad
+		posn="0 0 -.2" sizen="{{{ShadowSize.X^" "^ShadowSize.Y}}}" scale=".5" halign="center" valign="center"
+		style="Bgs1InRace" substyle="BgButtonShadow"
 	/>
-	<minimap
-		sizen="{{{C_LibMinimap_WindowMinimapSize.X^" "^C_LibMinimap_WindowMinimapSize.Y}}}"
-		halign="center" valign="center" id="Minimap_Main"
-	/>
+	<quad posn="0 0 -.1" sizen="{{{MapSize.X^" "^MapSize.Y}}}" halign="center" valign="center" bgcolor="000" opacity=".5"/>
+	<quad posn="0 0 -.1" sizen="{{{MapSize.X^" "^MapSize.Y}}}" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0"/>
+	<minimap sizen="{{{MapSize.X^" "^MapSize.Y}}}" halign="center" valign="center" id="Minimap_Main"/>
 	<quad
 		posn="0 0 1.1" sizen="7 7" halign="center" valign="center" image="{{{C_ImgBase}}}GUIPlayer.png"
 		id="Quad_MarkerGUIPlayer" hidden="1"
@@ -165,6 +168,12 @@ declare CMlFrame[] Frame_PlayerMarkers;
 for (I, 0, {{{C_LibMinimap_NbPlayersMarkers - 1}}})
 	Frame_PlayerMarkers.add((Page.GetFirstChild("Frame_PlayerMarker#"^I) as CMlFrame));
 
+foreach (Frame in Frame_PlayerMarkers) {
+	declare Quad_MarkerIcon for Frame <=> (Frame.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
+	declare Label_MarkerText for Frame <=> (Frame.GetFirstChild("Label_MarkerText") as CMlLabel);
+	declare Quad_MarkerCone for Frame <=> (Frame.GetFirstChild("Quad_MarkerCone") as CMlQuad);
+}
+
 declare CMlQuad[] Quad_CustomMarkers;
 for (I, 0, {{{C_LibMinimap_NbCustomMarkers - 1}}})
 	Quad_CustomMarkers.add((Page.GetFirstChild("Quad_CustomMarker#"^I) as CMlQuad));
@@ -172,6 +181,10 @@ for (I, 0, {{{C_LibMinimap_NbCustomMarkers - 1}}})
 // ---------------------------------- //
 // Persistent settings
 declare persistent Boolean Persistent_LibMinimap_HideMinimap for LocalUser;
+declare persistent Boolean Persistent_LibMinimap_HideImage for LocalUser;
+declare persistent Boolean Persistent_LibMinimap_HidePlayers for LocalUser;
+declare persistent Boolean Persistent_LibMinimap_HideNames for LocalUser;
+declare persistent Boolean Persistent_LibMinimap_HideCones for LocalUser;
 
 // ---------------------------------- //
 // Netcode
@@ -273,10 +286,14 @@ foreach (Event in PendingEvents) {
 	}
 }
 
+// Reduce the CPU usage by updating minimap only 30 times per second
+if (Ticks % 2 != 0) continue;
+
 // ---------------------------------- //
 // Update settings
 if (PrevSettingsUpdate != Net_LibMinimap_SettingsUpdate) {
 	PrevSettingsUpdate = Net_LibMinimap_SettingsUpdate;
+	
 	foreach (SettingName => SettingValue in Net_LibMinimap_Settings) {
 		switch (SettingName) {
 			case "DisplayMinimap" : DisplayMinimap = SettingValue == "True";
@@ -295,20 +312,25 @@ MinimapVisible = !Persistent_LibMinimap_HideMinimap && DisplayMinimap;
 if (PrevMinimapVisible != MinimapVisible) {
 	PrevMinimapVisible = MinimapVisible;
 	
-	declare Position = {{{C_LibMinimap_WindowPosition}}};
+	declare Pos = {{{C_LibMinimap_WindowPosition}}};
 	declare Easing = "EaseOutCirc";
 	
 	if (!MinimapVisible) {
-		Position += {{{C_LibMinimap_WindowHideOffset}}};
+		Pos += {{{C_LibMinimap_WindowHideOffset}}};
 		Easing = "EaseInCirc";
 	}
 	
 	LibManialink_AnimStop(Frame_MinimapWindow);
-	LibManialink_Anim(Frame_MinimapWindow, "<frame posn=\""^Position.X^" "^Position.Y^" "^Position.Z^"\"/>", 500, Easing);
+	LibManialink_Anim(Frame_MinimapWindow, "<frame posn='"^Pos.X^" "^Pos.Y^" "^Pos.Z^"'/>", 500, Easing);
 }
 Frame_MinimapWindow.Visible = Frame_MinimapWindow.RelativePosition != {{{C_LibMinimap_WindowPosition + C_LibMinimap_WindowHideOffset}}};
 
 if (!Frame_MinimapWindow.Visible) continue;
+
+// ---------------------------------- //
+// Update minimap image visibility
+if (Minimap_Main.Visible != !Persistent_LibMinimap_HideImage)
+	Minimap_Main.Visible = !Persistent_LibMinimap_HideImage;
 
 // ---------------------------------- //
 // Check if the player is spawned
@@ -328,7 +350,7 @@ if (IsPlayerSpawned) {
 		if (PrevZoomState != 2) {
 			PrevZoomState = 2;
 			LibManialink_AnimStop(Label_Debug);
-			LibManialink_Anim(Label_Debug, "<label scale=\""^C_MapZoomWhenSpawned / 2^"\"/>", 250, "EaseInOutSine");
+			LibManialink_Anim(Label_Debug, "<label scale="^C_MapZoomWhenSpawned / 2^" />", 250, "EaseInOutSine");
 		}
 	}
 	// ---------------------------------- //
@@ -336,7 +358,7 @@ if (IsPlayerSpawned) {
 	else if (PrevZoomState != 1) {
 		PrevZoomState = 1;
 		LibManialink_AnimStop(Label_Debug);
-		LibManialink_Anim(Label_Debug, "<label scale=\""^C_MapZoomWhenSpawned^"\"/>", 250, "EaseInOutSine");
+		LibManialink_Anim(Label_Debug, "<label scale="^C_MapZoomWhenSpawned^" />", 250, "EaseInOutSine");
 	}
 	
 	// Apply zoom
@@ -460,21 +482,28 @@ if (GUIPlayer != Null) {
 // Configure players markers
 NbPlayersDisplayed = 0;
 declare IsOverviewMode = !IsPlayerSpawned || GUIPlayer.IsOnTechLaser || GUIPlayer.IsOnTechArrow;
+
 foreach (Player in Players) {
-	if (
-		Player == GUIPlayer || Player.RequestsSpectate || Player.Position == <0., 0., 0.> || (
-		!IsOverviewMode && (
-			(!DisplayTeammates && GUIPlayer.CurrentClan != 0 && GUIPlayer.CurrentClan == Player.CurrentClan) ||
-			(!DisplayOpponents && (GUIPlayer.CurrentClan == 0 || GUIPlayer.CurrentClan != Player.CurrentClan)) ||
-			Distance2D(GUIPlayer.Position, Player.Position) > 60.
-		))
-	) continue;
+	// Don't show any players if the spectated player is spawned and players are hidden
+	if (!IsOverviewMode && Persistent_LibMinimap_HidePlayers) continue;
+	
+	// Ignore the spectated players and all unspawned players
+	if (Player == GUIPlayer || Player.RequestsSpectate || Player.Position == <0., 0., 0.>) continue;
+	
+	// Don't show opponents or teammates if it's disabled by the mode
+	declare IsEnemy = !IsOverviewMode && GUIPlayer.CurrentClan != 0 && GUIPlayer.CurrentClan == Player.CurrentClan;
+	if (!IsOverviewMode && ((!DisplayTeammates && !IsEnemy) || (!DisplayOpponents && IsEnemy))) continue;
+	
+	// Don't show players too far away
+	// if (!IsOverviewMode && Distance2D(GUIPlayer.Position, Player.Position) > 60.) continue;
+	
 	NbPlayersDisplayed += 1;
+	declare I = NbPlayersDisplayed - 1;
 	
 	// ---------------------------------- //
 	// Get the frame to configure
-	if (!Frame_PlayerMarkers.existskey(NbPlayersDisplayed - 1)) continue;
-	declare Frame <=> Frame_PlayerMarkers[NbPlayersDisplayed - 1];
+	if (!Frame_PlayerMarkers.existskey(I)) continue;
+	declare Frame <=> Frame_PlayerMarkers[I];
 	if (!Frame.Visible) Frame.Show();
 	
 	// ---------------------------------- //
@@ -498,26 +527,14 @@ foreach (Player in Players) {
 		MarkerOpacity = GetMarkerFade(Distance2D(GUIPlayer.Position, Player.Position), Distances);
 	}
 	
-	// Half-transparent markers for players undergound
-	if (GUIPlayer != Null && GUIPlayer.IsUnderground != Player.IsUnderground) MarkerOpacity *= C_MarkerTunnelsOpacity;
-	
-	// ---------------------------------- //
-	// Load frame elements
-	declare Quad_MarkerIcon <=> (Frame.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
-	declare Label_MarkerText <=> (Frame.GetFirstChild("Label_MarkerText") as CMlLabel);
-	declare Quad_MarkerCone <=> (Frame.GetFirstChild("Quad_MarkerCone") as CMlQuad);
-	
-	// ---------------------------------- //
-	// Set marker opacity
-	Quad_MarkerIcon		.Opacity = MarkerOpacity;
-	Label_MarkerText	.Opacity = MarkerOpacity;
-	Quad_MarkerCone		.Opacity = MarkerOpacity / 2;
-	
 	// Hide frame too far away from the player
 	if (MarkerOpacity <= 0) {
 		if (Frame.Visible) Frame.Hide();
 		continue;
 	}
+	
+	// Half-transparent markers for players undergound
+	if (GUIPlayer != Null && GUIPlayer.IsUnderground != Player.IsUnderground) MarkerOpacity *= C_MarkerTunnelsOpacity;
 	
 	// ---------------------------------- //
 	// Set marker properties
@@ -530,36 +547,49 @@ foreach (Player in Players) {
 		Frame.RelativeRotation = -Frame_Markers.RelativeRotation;
 	}
 	
-	// Hide dot if player has marker attached
-	declare PlayerHasCustomMarker = Net_LibMinimap_MarkersPlayer.exists(Player.Login);
-	if (Quad_MarkerIcon.Visible == PlayerHasCustomMarker) Quad_MarkerIcon.Visible = !PlayerHasCustomMarker;
-	
 	// ---------------------------------- //
-	// Setup field of view cone image
-	if (Quad_MarkerCone.Visible != !IsOverviewMode) Quad_MarkerCone.Visible = !IsOverviewMode;
-	if (Quad_MarkerCone.Visible) Quad_MarkerCone.RelativeRotation = RadToDeg(-Player.AimYaw) - Frame.RelativeRotation;
+	// Hide dot if player has a custom marker attached
+	declare CMlQuad Quad_MarkerIcon for Frame;
+	Quad_MarkerIcon.Visible = !Net_LibMinimap_MarkersPlayer.exists(Player.Login);
 	
 	// ---------------------------------- //
 	// Set marker icon colour
-	declare MarkerColor = Player.User.Color;
+	if (Quad_MarkerIcon.Visible) {
+		declare MarkerColor = Player.User.Color;
+		
+		// Use current player clan colour
+		if (Player.CurrentClan > 0) MarkerColor = Teams[Player.CurrentClan - 1].ColorPrimary;
+		
+		// Set the bot colour
+		else if (Player.IsBot) MarkerColor = BotsColor;
+		
+		// Use the colour forced bu Interfancy library
+		else if (Net_LibInterfancy_ForcedColors.existskey(Player.User.Login))
+			MarkerColor = Net_LibInterfancy_ForcedColors[Player.User.Login];
+		
+		Quad_MarkerIcon.Opacity = MarkerOpacity;
+		Quad_MarkerIcon.Colorize = MarkerColor;
+	}
 	
-	// Use current player clan colour
-	if (Player.CurrentClan > 0) MarkerColor = Teams[Player.CurrentClan - 1].ColorPrimary;
+	// ---------------------------------- //
+	// Setup field of view cone image
+	declare CMlQuad Quad_MarkerCone for Frame;
+	Quad_MarkerCone.Visible = !IsOverviewMode && !Persistent_LibMinimap_HideCones;
 	
-	// Set the bot colour
-	else if (Player.IsBot) MarkerColor = BotsColor;
-	
-	// Use the colour forced bu Interfancy library
-	else if (Net_LibInterfancy_ForcedColors.existskey(Player.User.Login))
-		MarkerColor = Net_LibInterfancy_ForcedColors[Player.User.Login];
-	
-	Quad_MarkerIcon.Colorize = MarkerColor;
+	if (Quad_MarkerCone.Visible) {
+		Quad_MarkerCone.Opacity = MarkerOpacity / 2;
+		Quad_MarkerCone.RelativeRotation = RadToDeg(-Player.AimYaw) - Frame.RelativeRotation;
+	}
 	
 	// ---------------------------------- //
 	// Setup marker label text
-	declare ShowLabel = !IsOverviewMode && !Player.IsBot;
-	if (Label_MarkerText.Visible != ShowLabel) Label_MarkerText.Visible = ShowLabel;
-	if (Label_MarkerText.Visible) Label_MarkerText.Value = Player.User.Name;
+	declare CMlLabel Label_MarkerText for Frame;
+	Label_MarkerText.Visible = !IsOverviewMode && !Player.IsBot && !Persistent_LibMinimap_HideNames;
+	
+	if (Label_MarkerText.Visible) {
+		Label_MarkerText.Opacity = MarkerOpacity;
+		Label_MarkerText.Value = Player.User.Name;
+	}
 }
 
 // ---------------------------------- //
@@ -816,10 +846,12 @@ Vec3 Brightness(Vec3 _Color, Real _Brightness) {
 // ---------------------------------- //
 main() {
 	yield;
+	declare Ticks = 0;
 	+++Main+++
 	while (True) {
 		yield;
 		LibManialink_AnimLoop();
+		Ticks += 1;
 		+++Yield+++
 	}
 }

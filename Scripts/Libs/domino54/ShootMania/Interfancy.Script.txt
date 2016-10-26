@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2016-10-18            //
+//  script version: 2016-10-26            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2016-10-18"
+#Const	Version		"2016-10-26"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -368,11 +368,11 @@ if (PrevGauges_Display != Gauges_Display) {
 // ---------------------------------- //
 // Get for how long players are loading their armor
 foreach (Player in Players) {
-	if (Player.RequestsSpectate || !Player.IsBot || Player.Position == <0., 0., 0.>) continue;
+	if (Player.RequestsSpectate || Player.IsBot || Player.Position == <0., 0., 0.>) continue;
 	
 	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && Player.Armor > 0 && Player.IsOnTechArmor) {
 		if (!PlayerIsOnTechArmor.existskey(Player.Login) || PlayerIsOnTechArmor[Player.Login] <= 0)
-			PlayerIsOnTechArmor[Player.Login] = Now;
+			PlayerIsOnTechArmor[Player.Login] = GameTime;
 	}
 	else PlayerIsOnTechArmor[Player.Login] = -1;
 }
@@ -424,10 +424,10 @@ foreach (Module in C_AvailableModules) {
 		case "Armor" : {
 			declare GUIPlayerArmorLoaded = 0.;
 			if (
-				GUIPlayer.Armor % 100 != 0 &&
+				GUIPlayer.Armor % 100 == 0 &&
 				PlayerIsOnTechArmor.existskey(GUIPlayer.Login) && PlayerIsOnTechArmor[GUIPlayer.Login] >= 0
 			)
-				GUIPlayerArmorLoaded = (Now - PlayerIsOnTechArmor[GUIPlayer.Login]) % 1850 / 1850.;
+				GUIPlayerArmorLoaded = (GameTime - PlayerIsOnTechArmor[GUIPlayer.Login]) % 1850 / 1850.;
 			
 			ModuleRatio[Module] = GUIPlayer.Armor / 100. + GUIPlayerArmorLoaded;
 			ModuleSlots[Module] = GUIPlayer.ArmorMax / 100;
@@ -819,8 +819,8 @@ declare ClanRoundScores = [1 => 0, 2 => 0];
 declare PrevSettingsUpdate = -1;
 declare PrevShowScoreSummary = False;
 declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
-declare PrevClanScores = [1 => 0, 2 => 0];
-declare PrevClanRoundScores = [1 => -1, 2 => -1];
+declare PrevClanScores = Integer[Integer];
+declare PrevClanRoundScores = Integer[Integer];
 ***
 
 // ---------------------------------- //
@@ -873,9 +873,9 @@ ClanRoundScores = [1 => UI.ScoreSummary_RoundPoints1, 2 => UI.ScoreSummary_Round
 
 // ---------------------------------- //
 // Update teams colors
-foreach (Clan => Team in Teams) {
-	if (PrevTeamsColors[Clan] != Team.ColorPrimary) {
-		PrevTeamsColors[Clan] = Team.ColorPrimary;
+foreach (TeamId => Team in Teams) {
+	if (PrevTeamsColors[TeamId] != Team.ColorPrimary) {
+		PrevTeamsColors[TeamId] = Team.ColorPrimary;
 	
 		LibManialink_AnimStop(Quad_SummaryBgLeft);
 		LibManialink_AnimStop(Quad_SummaryBgRight);
@@ -883,10 +883,17 @@ foreach (Clan => Team in Teams) {
 		Quad_SummaryBgLeft.Colorize = Brightness(Teams[0].ColorPrimary, 1.5);
 		Quad_SummaryBgRight.Colorize = Brightness(Teams[1].ColorPrimary, 1.5);
 	}
-	
+}
+
+// ---------------------------------- //
+// Update clans scores
+for (Clan, 1, 2) {
 	// ---------------------------------- //
-	// Set scores
-	if (PrevClanScores[Clan] != ClanScores[Clan]) {
+	// Set match scores
+	if (
+		ClanScores.existskey(Clan) && (!PrevClanScores.existskey(Clan) ||
+		PrevClanScores[Clan] != ClanScores[Clan])
+	) {
 		PrevClanScores[Clan] = ClanScores[Clan];
 		
 		declare CMlLabel Label;
@@ -908,13 +915,16 @@ foreach (Clan => Team in Teams) {
 		if (Quad != Null) {
 			Quad.Colorize = <1., 1., 1.>;
 			declare TargetColor = TL::ColorToText(Brightness(Teams[Clan - 1].ColorPrimary, 1.5));
-			LibManialink_Anim(Quad, "<quad colorize='^TargetColor^"'/>", 250, "EaseLinear");
+			LibManialink_Anim(Quad, "<quad colorize='"^TargetColor^"'/>", 250, "EaseLinear");
 		}
 	}
 	
 	// ---------------------------------- //
 	// Set round scores
-	if (PrevClanRoundScores[Clan] != ClanRoundScores[Clan]) {
+	if (
+		ClanRoundScores.existskey(Clan) && (!PrevClanRoundScores.existskey(Clan) ||
+		PrevClanRoundScores[Clan] != ClanRoundScores[Clan])
+	) {
 		PrevClanRoundScores[Clan] = ClanRoundScores[Clan];
 		
 		declare CMlLabel Label;

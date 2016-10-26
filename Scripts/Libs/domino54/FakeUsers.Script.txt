@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY FAKE USERS by domino54        //
-//  script version: 2016-06-16            //
+//  script version: 2016-10-26            //
 // -------------------------------------- //
 
 /**
@@ -8,7 +8,7 @@
  *	creation process, creating bots with fancy nicknames.
  */
 
-#Const Version		"2016-06-16"
+#Const Version		"2016-10-26"
 #Const ScriptName	"FakeUsers.Script.txt"
 
 #Include "MathLib" as ML
@@ -16,7 +16,8 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_LibFakeUsers_TeamTagChance .33 ///< Chance for applying a team tag to the nickname
+#Const C_LibFakeUsers_TeamTagChance			.33		///< Chance for applying a team tag to the nickname
+#Const C_LibFakeUsers_TargetSearchInterval	1000	///< Time between each potential target search attempt
 
 /// Available nicknames
 #Const C_LibFakeUsers_FakeUsersNicknames [
@@ -31,19 +32,25 @@
 	"$o$iM4nsion", "$o$a83sta$b94rt$ca5o$db6x$ec7ys", "$0F0»$4F1яe$8F2nt$BF2ge$FF3n$FF3ј$FA2а$F51у$F00«",
 	"$o$i$fa2P$fffro$fa2t$fffon", "$i$fffMister$f39 ノ", "$fffheat$0a0Nodule", "$0C0$wM$w$0A3arijuana$06A$wD$w$06Ariver",
 	"$0F0tomdestroyer", "$fff$iVoldemort", "$i$0ffmirindaribo", "$fffRabbitface", "$bbbSputnik$fa00$f900$f806",
-	"$F00I$F44r$F88D$FFFA",
+	"$F00I$F44r$F88D$FFFA", "$DDDKappa =}",
 	// w/o format
 	"Kawaii Nate", "Miszczur", "Vladimir Shootin", "Alt+F4 free hax", "Smon1945", "Oldbie16x", "Kaszczu", "Combo66",
 	"Spammur", "Gimme a BOOGER", "Lorenfiusted", "Player #3.1416", "MLG-SlowScoper", "Thateadthe", "ManiaProject",
 	"GurkenGurke", "PeeNightly xd", "Cutkness", "happyzealot", "lightplus", "Sleepyw0w", "Mars", "BBinder", "Accelerator",
-	"evekooo3", "mingoal", "magnes", "slowforza", "TheseTwoGuys", "ASmallMike", "Warmsnake", "caramel", "TheSmallH."
+	"evekooo3", "mingoal", "magnes", "slowforza", "TheseTwoGuys", "ASmallMike", "Warmsnake", "caramel", "TheSmallH.",
+	"mierta2016", "DeeppoT", "Ymmod", "127.0.0.1", "-local-host-", "mirHyde12", "Amukkta", "nasoline95", "Carambole",
+	"WildGones", "megamini", "Jaguar Beta", "Groundtrap", "VAugeKampf", "NigGerman", "TheFury", "AK-74", "PolDharek",
+	"[Mirkier|Combo]", "Payyac", "qwertyuiop", "I have your password", "Not there", "Behind U", "Harambe", "Dat Boi",
+	"just a gorilla", "nothing.special", "CQmPlayer", "Pulped", "TickTock", "Start-off", "TheDeadFatMouse6", "Player #69",
+	"0,(81)", "Agent 0,7", "RUSH B", "Slav squat", "Oops", "[censored]"
 ]
 
 /// Availalbe teams tags
 #Const C_LibFakeUsers_TeamsNames [
 	"Mr ", "$AAASa$6F6W !$AAA", "$FF0xτԍ$966» $FF8", "$6BFBL$DDDu$6BFE $DDD// $6BF", "$49F$iGargamel $z",
 	"$0C6zoom$000off$fff", "$800R$A00O$C00T $FDB", "$o$0A0pr0$000$o$AAA» $6F6", "$900*bBb* $i$s$FFF", "$FA0Mando $z",
-	"$F00ZPLAY $i$000bG$FFF.$z ", "$i$FF0americanics.", "$i$39Fq$000.$FFF", "$FF0TTM* $z", "$i$fd0»$666Xerox$fd0|$fff"
+	"$F00ZPLAY $i$000bG$FFF.$z ", "$i$FF0americanics.", "$i$39Fq$000.$FFF", "$FF0TTM* $z", "$i$fd0»$666Xerox$fd0|$fff",
+	"$s$F70Nandewo $FFF", "$07FUbisaft $FFF"
 ]
 
 // ---------------------------------- //
@@ -82,6 +89,34 @@ Text Private_GetNewNickname() {
 }
 
 // ---------------------------------- //
+/** Check if given player can be fake user target
+ *
+ *	@param	_FakeUser	The fake user to compare to
+ *	@param	_Target		The player to check if can be the target
+ *
+ *	@return		True, if the player can be target
+ */
+Boolean Private_IsValidEnemy(CSmPlayer _FakeUser, CSmPlayer _Target) {
+	if (_FakeUser == Null || _FakeUser.Driver == Null || _FakeUser.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned ||
+		_Target == Null || _Target.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned
+	) return False;
+	
+	// ---------------------------------- //
+	// Check if the player can be potential target
+	declare OppositeClan = _FakeUser.CurrentClan == 0 || _FakeUser.CurrentClan != _Target.CurrentClan;
+	switch (_FakeUser.Driver.AttackFilter) {
+		case CSmPlayerDriver::ESmAttackFilter::Nobody : return False;
+		case CSmPlayerDriver::ESmAttackFilter::All : return True;
+		case CSmPlayerDriver::ESmAttackFilter::AllPlayers : return !_Target.IsBot;
+		case CSmPlayerDriver::ESmAttackFilter::AllBots : return _Target.IsBot;
+		case CSmPlayerDriver::ESmAttackFilter::AllOpposite : return OppositeClan;
+		case CSmPlayerDriver::ESmAttackFilter::OppositePlayers : return !_Target.IsBot && OppositeClan;
+		case CSmPlayerDriver::ESmAttackFilter::OppositeBots : return _Target.IsBot && OppositeClan;
+	}
+	return True;
+}
+
+// ---------------------------------- //
 // Public
 // ---------------------------------- //
 
@@ -100,6 +135,17 @@ Text GetScriptVersion() { return Version; }
 Text GetScriptName() { return ScriptName; }
 
 // ---------------------------------- //
+/** Check if the player is a fake user
+ *
+ *	@param	_Player		The player to check
+ *
+ *	@return		True, if the player is fake user
+ */
+Boolean IsFakeUser(CSmPlayer _Player) {
+	return _Player != Null && _Player.User != Null && _Player.User.IsFakeUser;
+}
+
+// ---------------------------------- //
 /** Update amount of the fake users
  *
  *	/!\ Put this function inside ***Yield*** label, using script setting as the parameter /!\
@@ -111,16 +157,111 @@ Void UpdateAmount(Integer _NbFakeUsers) {
 	G_LibFakeUsers_PrevNbFakeUsers = _NbFakeUsers;
 	
 	declare FakeUsers = CUser[];
-	foreach (Player in Players) if (Player.User.IsFakeUser) FakeUsers.add(Player.User);
+	foreach (Player in Players) if (IsFakeUser(Player)) FakeUsers.add(Player.User);
 	declare DeltaAmount = _NbFakeUsers - FakeUsers.count;
 	
 	// Create new fake players
-	if (DeltaAmount > 0) for (I, 1, DeltaAmount) FakeUsers.add(Users_CreateFake(Private_GetNewNickname(), 0));
+	if (DeltaAmount > 0) for (I, 1, DeltaAmount) {
+		declare User <=> Users_CreateFake(Private_GetNewNickname(), 0);
+		if (User != Null) FakeUsers.add(User);
+	}
 	
 	// Destroy existing fake players
-	if (DeltaAmount < 0) for (I, 1, -DeltaAmount) if (FakeUsers.count > 0) {
+	if (DeltaAmount < 0) for (I, 1, -DeltaAmount) {
+		if (FakeUsers.count <= 0) break;
 		declare User = FakeUsers[FakeUsers.count - 1];
 		declare Removed = FakeUsers.remove(User);
 		if (User != Null) Users_DestroyFake(User);
 	}
+}
+
+// ---------------------------------- //
+/// Automatically manage fake users targets
+Void Loop() {
+	// ---------------------------------- //
+	// Ignore function if used not in ShootMania
+	if (!(This is CSmMode)) return;
+	declare CMode CommonMode = This;
+	declare Mode = (CommonMode as CSmMode);
+	
+	// ---------------------------------- //
+	// Forces nearby player that harmed bot as its target
+	foreach (Event in Mode.PendingEvents) {
+		if (Event.Type != CSmModeEvent::EType::OnHit &&
+			Event.Type != CSmModeEvent::EType::OnShoot &&
+			Event.Type != CSmModeEvent::EType::OnNearMiss
+		) continue;
+		
+		// Check if the victim is fake user and shooter is an enemy
+		if (!IsFakeUser(Event.Victim) || !Private_IsValidEnemy(Event.Victim, Event.Shooter)) continue;
+		
+		// Ignores the shooter if 
+		if (Event.Victim.Driver.ForcedTarget != Null &&
+			ML::Distance(Event.Victim.Position, Event.Victim.Driver.ForcedTarget.Position) <=
+			ML::Distance(Event.Victim.Position, Event.Shooter.Position)
+		) continue;
+		
+		// Set the shooter as victim's target
+		Event.Victim.Driver.ForcedTarget = Event.Shooter;
+	}
+	
+	// ---------------------------------- //
+	// Manage fake users functions
+	foreach (Player in Mode.Players) {
+		if (!IsFakeUser(Player)) continue;
+		
+		// ---------------------------------- //
+		// Reset player target when player is unspawned
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned && Player.Driver.ForcedTarget != Null)
+			Player.Driver.ForcedTarget = Null;
+		
+		// Wait until the player is spawned
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+		declare Integer LibFakeUsers_NextTargetSearch for Player;
+		
+		// ---------------------------------- //
+		// Reset player target when target unspawned
+		if (Player.Driver.ForcedTarget != Null) {
+			declare Target <=> Player.Driver.ForcedTarget;
+			if (Target.Armor > 0 && Target.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) continue;
+			
+			Player.Driver.ForcedTarget = Null;
+			LibFakeUsers_NextTargetSearch = Now;
+		}
+		
+		// Wait until new target can be choosen
+		if (Now < LibFakeUsers_NextTargetSearch) continue;
+		LibFakeUsers_NextTargetSearch = Now + C_LibFakeUsers_TargetSearchInterval;
+		
+		// ---------------------------------- //
+		// Get fake user distances to all opposite players
+		declare Real[CSmPlayer] PlayersDistances;
+		foreach (OtherPlayer in Players) {
+			if (OtherPlayer == Player || !Private_IsValidEnemy(Player, OtherPlayer)) continue;
+			PlayersDistances[OtherPlayer] = ML::Distance(Player.Position, OtherPlayer.Position);
+		}
+		
+		// Nothing else to do if there are no valid target candidates
+		if (PlayersDistances.count <= 0) continue;
+		
+		// ---------------------------------- //
+		// Choose the nearest opposite player as fake user's target
+		PlayersDistances = PlayersDistances.sort();
+		foreach (Target => Distance in PlayersDistances) {
+			Player.Driver.ForcedTarget = Target;
+			break;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Automatically manage fake users targets and update amount of the fake users
+ *
+ *	/!\ Put this function inside ***Yield*** label, using script setting as the parameter /!\
+ *
+ *	@param	_NbFakeUsers		The target amount of the fake users
+ */
+Void Loop(Integer _NbFakeUsers) {
+	UpdateAmount(_NbFakeUsers);
+	Loop();
 }

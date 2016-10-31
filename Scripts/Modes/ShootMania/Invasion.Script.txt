@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  INVASION by domino54                  //
-//  script version: v3.0 @2016-10-15      //
+//  script version: v3.0 @2016-10-31      //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"InvasionArena, HordeArena"
-#Const Version				"2016-10-15"
+#Const Version				"2016-10-31"
 #Const ScriptName			"Invasion.Script.txt"
 
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
@@ -172,6 +172,7 @@ GT_UseNoCollisionsStart = False;
 GT_UseComboWeapons = False;
 GT_UseRandomToads = False;
 GT_AutoManageOnHit = False;
+GT_AutoManageOnShoot = False;
 GT_AutoManageOnArmorEmpty = False;
 GT_AutoManageOnNearMiss = False;
 GT_AllowMatchmakingMode = False;
@@ -427,6 +428,9 @@ foreach (Event in PendingEvents) {
 				Object.SetPosition(Event.Victim.Position);
 				declare LibGalaxyTitles_Tag for Object = "Fuel";
 			}
+			
+			// Track elimination statistics
+			if (Event.Shooter == Null) Statistics::TrackEvent(Event.Shooter, "InvasionEliminatedToads"^ToadType, 1);
 		}
 		
 		PassOn(Event);
@@ -452,6 +456,13 @@ foreach (Event in PendingEvents) {
 		AddEvolutionPoints(Event.Shooter, Points);
 		if (UseClans) ClanScores[Event.Shooter.CurrentClan] += Points;
 		
+		// ---------------------------------- //
+		// Track damage statistics
+		if (Event.Victim.IsBot) {
+			declare Text ToadType for Event.Victim;
+			Statistics::TrackEvent(Event.Shooter, "InvasionDamageToads"^ToadType, Points);
+		}
+		
 		SendCritNotification(Event.Shooter, Event.Damage);
 		PassOn(Event);
 	}
@@ -466,6 +477,13 @@ foreach (Event in PendingEvents) {
 		AddScorePoints(Event.Shooter, Points);
 		AddEvolutionPoints(Event.Shooter, Points);
 		if (UseClans) ClanScores[Event.Shooter.CurrentClan] += Points;
+		
+		// ---------------------------------- //
+		// Track damage statistics
+		if (Event.Victim.IsBot) {
+			declare Text ToadType for Event.Victim;
+			Statistics::TrackEvent(Event.Shooter, "InvasionDamageToad"^ToadType, Points);
+		}
 		
 		SendCritNotification(Event.Shooter, EventDamage);
 		RemovePlayerArmor(Event.Victim, EventDamage, Event.Shooter, Points);
@@ -1354,6 +1372,7 @@ Void PickUpObject(CSmPlayer _Player, CSmObject _Object) {
 	
 	InvasionUI::SetPlayerWeaponName(_Player, WeaponName);
 	Interfancy::SetPlayerCustomWeapon(_Player, WeaponName);
+	Statistics::TrackEvent(_Player, "GoldWeaponsAcquired", 1);
 	
 	// Play sound
 	Sound::PlaySound(C_ImgBase^"Sounds/GoldPickUp.ogg", _Player);
@@ -1501,6 +1520,7 @@ Void SendCritNotification(CSmPlayer _Player, Integer _Damage) {
 	if (_Damage >= 400) Message = "$FB0DOUBLE CRIT!";
 	if (_Damage >= 800) Message = "$BF0TRIPLE CRIT!";
 	
+	Statistics::TrackEvent(_Player, "InvasionCriticalHits", 1);
 	Interfancy::SendCrosshairNote(_Player, [Message], 1000);
 }
 

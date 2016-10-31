@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-10-18            //
+//  script version: 2016-10-31            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-10-18"
+#Const Version		"2016-10-31"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -613,11 +613,11 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 		// Armor - heal players
 		case "Armor" : {
 			foreach (Player in Players) {
+				declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan);
+				
 				if (
-					Player.Armor >= Player.ArmorMax ||
-					ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius ||
-					((_Event.Player.CurrentClan == 0 || Player.CurrentClan != _Event.Player.CurrentClan) &&
-					!G_LibGalaxyTitles_ObjectsAffectEveryone)
+					!Affected || Player.Armor >= Player.ArmorMax ||
+					ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius
 				)
 					continue;
 				
@@ -648,12 +648,9 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 		// Fuel - reload boost and stamina
 		case "Fuel" : {
 			foreach (Player in Players) {
-				if (
-					ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius ||
-					((_Event.Player.CurrentClan == 0 || Player.CurrentClan != _Event.Player.CurrentClan) &&
-					!G_LibGalaxyTitles_ObjectsAffectEveryone)
-				)
-					continue;
+				declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan);
+				
+				if (!Affected || ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
 				
 				// ---------------------------------- //
 				// Boost player

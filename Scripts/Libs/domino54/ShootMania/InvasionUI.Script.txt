@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  INVASION INTERFACE LIB by domino54    //
-//  script version: 2016-10-10            //
+//  script version: 2016-11-06            //
 // -------------------------------------- //
 
-#Const Version		"2016-10-10"
+#Const Version		"2016-11-06"
 #Const ScriptName	"InvasionUI.Script.txt"
 
 #Include "TextLib" as TL
@@ -22,7 +22,7 @@
 /// List of all available modules
 #Const C_AvailableModules [
 	"CountdownInfo", "PoleGauge", "ToadsArmor", "Score", "MedalScore", "Evolution",
-	"GoldMarker", "CustomWeaponBar", "ToadsCounter", "SoloScore", "BossHealth"
+	"GoldMarker", "CustomWeaponBar", "ToadsCounter", "SoloScore", "BossHealth", "WeaponStats"
 ]
 
 /// Modules positions
@@ -1572,6 +1572,7 @@ Text Private_CreateMLSoloScore() {
  *	LibInvasionUI: SoloScore
  */
 
+#Include "MathLib" as ML
 #Include "TextLib" as TL
 
 #Const C_MedalColors [<.2, .2, .2>, <1., .6, 0.>, <.7, .7, .7>, <1., .8, 0.>, <.7, 1., 0.>]
@@ -1651,7 +1652,7 @@ if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
 			// Display map scores
 			case "SoloScorePoints" : {
 				declare SoloScore = ML::Max(TL::ToInteger(SettingValue), 0);
-				declare MapID = Map.MapInfo.MapUid;
+				declare MapID = Map.MapInfo.MapUid^"";
 				
 				// ---------------------------------- //
 				// Save map best score
@@ -1685,6 +1686,7 @@ if (PrevShowSoloScore != ShowSoloScore) {
 	
 	LibManialink_Anim("<frame id='Frame_SoloScore' scale="^TargetScale^" />", 500, TargetEasing);
 }
+***
 
 {{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
 {{{Translations::InsertToManialink(["Press '%1' to try again", "Press '%1' to go back to menu"])}}}
@@ -1887,6 +1889,76 @@ main() {
 }
 
 // ---------------------------------- //
+/** Create the manialink for the weapons statistics module
+ *
+ *	@return		The manialink
+ */
+Text Private_CreateMLWeaponStats() {
+	return """
+<manialink version="2" name="LibInvasionUI:WeaponStats">
+<frame id="Frame_Overheating" posn="148 -75" rot="2" hidden="1">
+	<gauge posn="-1" sizen="48 8" halign="right" valign="center" color="FF0" drawbg="0" drawblockbg="0" id="Gauge_Overheating"/>
+	<quad sizen="6 6" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/Heating.png" id="Quad_Overheating"/>
+</frame>
+
+<script><!--
+#Include "MathLib" as ML
+
+#Const C_OverheatingWeapons [3, 5]
+
+***Main***
+***
+declare Frame_Overheating <=> (Page.GetFirstChild("Frame_Overheating") as CMlFrame);
+declare Gauge_Overheating <=> (Page.GetFirstChild("Gauge_Overheating") as CMlGauge);
+declare Quad_Overheating <=> (Page.GetFirstChild("Quad_Overheating") as CMlQuad);
+
+declare netread Int3[Text] Net_LibInvasionUI_PlayersOverheating for Teams[0];
+
+declare OverheatingMaxDuration = 20000.;
+***
+
+***Yield***
+***
+Frame_Overheating.Visible = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && C_OverheatingWeapons.exists(GUIPlayer.CurWeapon);
+
+if (Frame_Overheating.Visible) {
+	declare CurPlayerHeatRatio = 0.;
+	declare WeaponCode = 0; if (GUIPlayer.CurWeapon == 3) WeaponCode = 1;
+	
+	if (Net_LibInvasionUI_PlayersOverheating.existskey(GUIPlayer.User.Login))
+		CurPlayerHeatRatio = ML::Clamp((Net_LibInvasionUI_PlayersOverheating[GUIPlayer.User.Login][WeaponCode] - GameTime) / OverheatingMaxDuration, 0., 1.);
+
+	SetGaugeRatio(Gauge_Overheating, CurPlayerHeatRatio);
+	Quad_Overheating.Visible = CurPlayerHeatRatio > 0;
+}
+***
+
+// ---------------------------------- //
+/** Set gauge ratio with value cut fix
+ *
+ *	@param	_Gauge		The gauge to set ratio
+ *	@param	_Ratio		Ratio to set
+ */
+Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
+	if (_Gauge == Null) return;
+	if (_Ratio <= 0.) { _Gauge.Ratio = 0.; return; }
+	if (_Ratio >= 1.) { _Gauge.Ratio = 1.; return; }
+	declare GaugeCutOff = 4 / _Gauge.Size.X;
+	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
 // Public
 // ---------------------------------- //
 
@@ -1926,6 +1998,7 @@ Void LoadModule(Text _ModuleId) {
 		case "CustomWeaponBar"	: ManialinkText = Private_CreateMLCustomWeaponBar();
 		case "SoloScore"		: ManialinkText = Private_CreateMLSoloScore();
 		case "BossHealth"		: ManialinkText = Private_CreateMLBossHealth();
+		case "WeaponStats"		: ManialinkText = Private_CreateMLWeaponStats();
 		case "GoldMarker" : {
 			ManialinkText = Private_CreateMLGoldMarker();
 			Layers::SetType(_ModuleId, CUILayer::EUILayerType::Markers);
@@ -2186,6 +2259,23 @@ Void SetBossesHealth(Integer[][] _HealthHealthInfo) {
 }
 
 // ---------------------------------- //
+/** Set the information about player weapons overheating
+ *
+ *	@param	_HealthHealthInfo	Bosses health
+ */
+Void SetPlayerOverheating(CSmPlayer _Player, Integer _WeaponNum, Integer _OverheatEndTime) {
+	if (_Player == Null || _Player.IsBot || (_WeaponNum != 3 && _WeaponNum != 5)) return;
+	
+	declare netwrite Int3[Text] Net_LibInvasionUI_PlayersOverheating for Teams[0];
+	declare Weapon = 0; if (_WeaponNum == 3) Weapon = 1;
+	
+	if (!Net_LibInvasionUI_PlayersOverheating.existskey(_Player.User.Login))
+		Net_LibInvasionUI_PlayersOverheating[_Player.User.Login] = Int3;
+		
+	Net_LibInvasionUI_PlayersOverheating[_Player.User.Login][Weapon] = _OverheatEndTime;
+}
+
+// ---------------------------------- //
 /// Completely reset UI settings before a match start
 Void InitializeMatch() {
 	SetDisplayInterface(False);
@@ -2201,12 +2291,14 @@ Void InitializeMatch() {
 	
 	// ---------------------------------- //
 	// Clear arrays
+	declare netwrite Int3[Text] Net_LibInvasionUI_PlayersOverheating for Teams[0];
 	declare netwrite Int3[Text] Net_LibInvasionUI_PlayerEvolutionData for Teams[0];
 	declare netwrite Boolean[Text] Net_LibInvasionUI_PlayerHasCustomWeapon for Teams[0];
 	declare netwrite Integer[Text] Net_LibInvasionUI_PlayerGoldSpawnId for Teams[0];
 	declare netwrite Int3[Text] Net_LibInvasionUI_PlayerWeaponData for Teams[0];
 	declare netwrite Text[Text] Net_LibInvasionUI_PlayerWeaponName for Teams[0];
 	
+	Net_LibInvasionUI_PlayersOverheating.clear();
 	Net_LibInvasionUI_PlayerEvolutionData.clear();
 	Net_LibInvasionUI_PlayerHasCustomWeapon.clear();
 	Net_LibInvasionUI_PlayerGoldSpawnId.clear();

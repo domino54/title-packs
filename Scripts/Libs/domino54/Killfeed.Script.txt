@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY KILLFEED by domino54          //
-//  script version: 2016-06-30            //
+//  script version: 2016-11-11            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	and display eliminations with weapon icon and assists.
  */
 
-#Const Version		"2016-06-30"
+#Const Version		"2016-11-11"
 #Const ScriptName	"Killfeed.Script.txt"
 
 #Include "MathLib" as ML
@@ -772,13 +772,32 @@ Void OnArmorEmpty(CSmModeEvent _Event, CSmPlayer _EventAssistant) {
  * 
  *	@param	_Event	Event to proceed
  */
-Void OnPlayerAdded(CSmModeEvent _Event) {
-	if (
-		_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerAdded ||
-		_Event.Player == Null || _Event.Player.User == Null || G_LibKillfeed_IsMapSwitching
-	) return;
+Void OnPlayerAdded(CNod _Event) {
+	if (G_LibKillfeed_IsMapSwitching || _Event == Null) return;
+	declare Text PlayerName;
 	
-	SendNotice(TL::Compose(_("$0F0$<%1$> joined the game"), _Event.Player.User.Name^"$>$z"));
+	switchtype (_Event) {
+		// ---------------------------------- //
+		// TrackMania event
+		case CTmModeEvent : {
+			declare Event <=> (_Event as CTmModeEvent);
+			if (Event.Type != CTmModeEvent::EType::OnPlayerAdded || Event.Player == Null || Event.Player.User == Null) return;
+			PlayerName = Event.Player.User.Name;
+		}
+		// ---------------------------------- //
+		// ShootMania event
+		case CSmModeEvent : {
+			declare Event <=> (_Event as CSmModeEvent);
+			if (Event.Type != CSmModeEvent::EType::OnPlayerAdded || Event.Player == Null || Event.Player.User == Null) return;
+			PlayerName = Event.Player.User.Name;
+		}
+		// ---------------------------------- //
+		// Ignore other classes
+		default : return;
+	}
+	
+	// Send notice to everyone
+	SendNotice(TL::Compose(_("$0F0$<%1$> joined the game"), "$>$z"^PlayerName^"$z$<"));
 }
 
 // ---------------------------------- //
@@ -786,13 +805,32 @@ Void OnPlayerAdded(CSmModeEvent _Event) {
  * 
  *	@param	_Event	Event to proceed
  */
-Void OnPlayerRemoved(CSmModeEvent _Event) {
-	if (
-		_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerRemoved ||
-		_Event.User == Null || G_LibKillfeed_IsMapSwitching
-	) return;
+Void OnPlayerRemoved(CNod _Event) {
+	if (G_LibKillfeed_IsMapSwitching || _Event == Null) return;
+	declare Text PlayerName;
 	
-	SendNotice(TL::Compose(_("$0F0$<%1$> left the game"), _Event.User.Name^"$>$z"));
+	switchtype (_Event) {
+		// ---------------------------------- //
+		// TrackMania event
+		case CTmModeEvent : {
+			declare Event <=> (_Event as CTmModeEvent);
+			if (Event.Type != CTmModeEvent::EType::OnPlayerRemoved || Event.User == Null) return;
+			PlayerName = Event.User.Name;
+		}
+		// ---------------------------------- //
+		// ShootMania event
+		case CSmModeEvent : {
+			declare Event <=> (_Event as CSmModeEvent);
+			if (Event.Type != CSmModeEvent::EType::OnPlayerRemoved || Event.User == Null) return;
+			PlayerName = Event.User.Name;
+		}
+		// ---------------------------------- //
+		// Ignore other classes
+		default : return;
+	}
+	
+	// Send notice to everyone
+	SendNotice(TL::Compose(_("$0F0$<%1$> left the game"), "$>$z"^PlayerName^"$z$<"));
 }
 
 // ---------------------------------- //
@@ -846,10 +884,8 @@ Void Loop() {
 	// ---------------------------------- //
 	// Send join and leave messages
 	foreach (Event in PendingEvents) {
-		switch (Event.Type) {
-			case CSmModeEvent::EType::OnPlayerAdded : OnPlayerAdded(Event);
-			case CSmModeEvent::EType::OnPlayerRemoved : OnPlayerRemoved(Event);
-		}
+		OnPlayerAdded(Event);
+		OnPlayerRemoved(Event);
 	}
 	
 	// ---------------------------------- //

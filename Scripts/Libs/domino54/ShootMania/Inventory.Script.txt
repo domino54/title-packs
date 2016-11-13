@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2016-07-21            //
+//  script version: 2016-11-13            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2016-07-21"
+#Const Version		"2016-11-13"
 #Const ScriptName	"Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -328,7 +328,7 @@ if (PrevInterfaceVisible != InterfaceVisible) {
 				case CMlQuad : ControlType = "quad";
 			}
 			
-			LibManialink_Anim(Control, "<"^ControlType^" opacity=\""^Opacity^"\"/>", 250, Easing);
+			LibManialink_Anim(Control, "<"^ControlType^" opacity="^Opacity^" />", 250, Easing);
 		}
 	}
 }
@@ -385,7 +385,6 @@ if (InterfaceVisible) {
 			declare Label_ItemAmount <=> (Frame.GetFirstChild("Label_ItemAmount") as CMlLabel);
 			declare Label_ItemHotkey <=> (Frame.GetFirstChild("Label_ItemHotkey") as CMlLabel);
 			declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
-			declare Quad_ItemBackground <=> (Frame.GetFirstChild("Quad_ItemBackground") as CMlQuad);
 			
 			// ---------------------------------- //
 			// Get the information about current item
@@ -504,8 +503,8 @@ if (InterfaceVisible) {
 			Color = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
 		
 		foreach (I => Frame in Frame_InventoryItems) {
-			declare Quad_ItemIsCurWeapon <=> (Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad);
-			Quad_ItemIsCurWeapon.Colorize = Color;
+			declare Quads = [(Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad)];
+			foreach (Quad in Quads) Quad.Colorize = Color;
 		}
 	}
 	
@@ -514,30 +513,28 @@ if (InterfaceVisible) {
 	foreach (I => Frame in Frame_InventoryItems) {
 		if (!Frame.Visible) continue;
 		declare Quad_ItemIsCurWeapon <=> (Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad);
+		declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
+		declare Label_ItemCooldown <=> (Frame.GetFirstChild("Label_ItemCooldown") as CMlLabel);
 		
 		declare ItemWeaponNum = TL::ToInteger(Frame.DataAttributeGet("ItemWeaponNum"));
 		Quad_ItemIsCurWeapon.Visible = GUIPlayer.CurWeapon == ItemWeaponNum;
 		
 		declare ItemAmount = TL::ToInteger(Frame.DataAttributeGet("ItemAmount"));
-		
-		declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
-		declare Label_ItemCooldown <=> (Frame.GetFirstChild("Label_ItemCooldown") as CMlLabel);
 		declare ItemCooldownStart = TL::ToInteger(Frame.DataAttributeGet("ItemCooldownStart"));
 		declare ItemCooldownDuration = TL::ToInteger(Frame.DataAttributeGet("ItemCooldownDuration"));
 		
 		declare CooldownCounter = (ItemCooldownStart + ItemCooldownDuration - GameTime + 1000) / 1000;
-		Label_ItemCooldown.Visible = CooldownCounter > 0;
+		log(ItemCooldownStart + ItemCooldownDuration - GameTime + 1000);
+		Label_ItemCooldown.Visible = CooldownCounter > 0 && ItemCooldownDuration > 0;
 		
-		if (ItemAmount != 0) {
-			// Item is cooling down
-			if (CooldownCounter > 0) {
-				Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorCooldown}}};
-				Label_ItemCooldown.Value = TL::ToText(CooldownCounter);
-			}
-			
-			// Item is availbale
-			else Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorDefault}}};
+		// Item is cooling down
+		if (Label_ItemCooldown.Visible) {
+			Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorCooldown}}};
+			Label_ItemCooldown.Value = TL::ToText(CooldownCounter);
 		}
+			
+		// Item is availbale
+		else if (ItemAmount != 0) Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorDefault}}};
 		
 		// Enpty item
 		else Quad_ItemIcon.ModulateColor = {{{C_LibInventory_UIItemColorEmpty}}};

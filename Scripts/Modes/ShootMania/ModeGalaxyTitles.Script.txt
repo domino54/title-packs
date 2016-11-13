@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-11-11            //
+//  script version: 2016-11-13            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-11-11"
+#Const BaseVersion		"2016-11-13"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -95,6 +95,7 @@ declare Text GT_SpawnScreenObjectives;		///< Rules of the game mode displayed in
 declare Boolean GT_UseNoCollisionsStart;	///< Use the no-collisions round start
 declare Boolean GT_UseAutoEndSequence;		///< Use the automatic End Map sequence
 declare Boolean GT_UseComboWeapons;			///< Use Combo weapon items
+declare Boolean GT_UseRepliePickups;		///< Use Replie pickup items
 declare Boolean GT_UseRandomToads;			///< Spawn Toads on random bot path landmarks
 declare Boolean GT_AutoManageOnHit;			///< Automatically manage OnHit events
 declare Boolean GT_AutoManageOnShoot;		///< Automatically manage OnShoot events
@@ -220,6 +221,7 @@ MB_UseIntro = !MM_IsMatchServer();
 GT_UseNoCollisionsStart = True;
 GT_UseAutoEndSequence = True;
 GT_UseComboWeapons = True;
+GT_UseRepliePickups = True;
 GT_UseRandomToads = True;
 GT_AutoManageOnHit = True;
 GT_AutoManageOnShoot = True;
@@ -394,7 +396,7 @@ foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 // Init GalaxyTitles functions
 declare ToadsSpawnRatio = 0.;
 if (GT_UseRandomToads) ToadsSpawnRatio = S_ToadsSpawnRatio;
-GalaxyTitles::Init(S_UseComboWeapons && GT_UseComboWeapons, ToadsSpawnRatio);
+GalaxyTitles::Init(S_UseComboWeapons && GT_UseComboWeapons, GT_UseRepliePickups, ToadsSpawnRatio);
 GalaxyTitles::SetDroppedWeaponsLifetime(S_WeaponsDropLifetime * 1000);
 
 // Update the rules now, if a change occured in the settings
@@ -630,6 +632,7 @@ foreach (Event in PendingEvents) {
 	// On player switch weapon
 	else if (Event.Type == CSmModeEvent::EType::OnActionEvent) {
 		declare Switched = Inventory::SwitchWeapon(Event.Player, Event.ActionInput);
+		GalaxyTitles::UseConsumableItems(Event);
 		+++OnActionEvent+++
 	}
 	// ---------------------------------- //

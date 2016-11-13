@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-10-31            //
+//  script version: 2016-11-13            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-10-31"
+#Const Version		"2016-11-13"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -29,7 +29,7 @@
 // Constants
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
-#Const C_LibGalaxyTitles_AcceptedObjects ["Armor", "Fuel", "Laser", "Nucleus", "Arrow", "Rocket"]
+#Const C_LibGalaxyTitles_AcceptedObjects ["Armor", "Fuel", "Laser", "Nucleus", "Arrow", "Rocket", "Replie"]
 #Const C_LibGalaxyTitles_WeaponItemsTags ["Laser", "Nucleus", "Arrow", "Rocket"]
 
 /// Objects spawning
@@ -66,21 +66,29 @@
 // Global variables
 // ---------------------------------- //
 declare Ident[Text] G_LibGalaxyTitles_Objects;
+declare Ident[Text] G_LibGalaxyTitles_Actions;
+
+/// Global conditions
 declare Boolean G_LibGalaxyTitles_LibraryLoaded;
-declare Integer G_LibGalaxyTitles_PointsForPick;
 declare Ident[] G_LibGalaxyTitles_ToadsSpawns;
-declare Integer G_LibGalaxyTitles_ToadsArmorMax;
 declare Boolean G_LibGalaxyTitles_WeaponItemsAvailable;
 declare Text[] G_LibGalaxyTitles_AvailableWeapons;
+declare Boolean G_LibGalaxyTitles_RepliesAvailable;
+
+/// Library settings
+declare Integer G_LibGalaxyTitles_ToadsArmorMax;
+declare Integer G_LibGalaxyTitles_PointsForPick;
 declare Boolean G_LibGalaxyTitles_ObjectsAffectEveryone;
 declare Integer G_LibGalaxyTitles_ObjectsDropLifetime;
-declare Vec3[Integer] G_LibGalaxyTitles_PrevTeamsColors;
 
 /// Elements created within library
 declare Ident[] G_LibGalaxyTitles_CreatedObjects;
 declare Ident[] G_LibGalaxyTitles_SpawnedToads;
 declare Text[] G_LibGalaxyTitles_MinimapMarkers;
 declare Ident[Integer] G_LibGalaxyTitles_DroppedObjects;
+
+/// Update
+declare Vec3[Integer] G_LibGalaxyTitles_PrevTeamsColors;
 
 // ---------------------------------- //
 // Functions
@@ -212,7 +220,12 @@ Void Load() {
 	G_LibGalaxyTitles_Objects["Nucleus"]	= ItemList_Add("SMCommon\\Pickups\\Nucleus.Item.gbx");
 	G_LibGalaxyTitles_Objects["Arrow"]		= ItemList_Add("SMCommon\\Pickups\\Arrow.Item.gbx");
 	G_LibGalaxyTitles_Objects["Rocket"]		= ItemList_Add("SMCommon\\Pickups\\Rocket.Item.gbx");
+	G_LibGalaxyTitles_Objects["Replie"]		= ItemList_Add("HungerGames\\Replie.Item.gbx");
 	G_LibGalaxyTitles_Objects["Toad"]		= ItemList_Add("Characters\\ToadSample.Item.gbx");
+	
+	// ---------------------------------- //
+	// Load actions
+	G_LibGalaxyTitles_Actions["Replie"] = ActionList_Add("HungerGames\\ReplieParticles.Action.gbx");
 	
 	// ---------------------------------- //
 	// Load and format Inventory
@@ -222,11 +235,11 @@ Void Load() {
 		CMlControl::AlignHorizontal::Right, CMlControl::AlignVertical::VCenter
 	);
 	
-	Inventory::FormatLabelAmount("<label posn=\"4 -2.5\" valign=\"center2\" textfont=\"Eurostile_Bold\"/>");
-	Inventory::FormatLabelHotkey("<label posn=\"-3.5 3\" valign=\"center2\" textfont=\"Eurostile_Bold\"/>");
-	Inventory::FormatLabelCooldown("<label textsize=\"3\" textfont=\"Eurostile_Bold\"/>");
-	Inventory::FormatQuadBackground("<quad sizen=\"8 8\" image=\""^C_ImgBase^"UiItemShadow.png\"/>");
-	Inventory::FormatQuadHighlight("<quad sizen=\"10 10\" image=\""^C_ImgBase^"UiCurrentWeapon.png\"/>");
+	Inventory::FormatLabelAmount("<label posn='4 -2.5' valign='center2' textfont='Eurostile_Bold'/>");
+	Inventory::FormatLabelHotkey("<label posn='-3.5 3' valign='center2' textfont='Eurostile_Bold'/>");
+	Inventory::FormatLabelCooldown("<label textsize=3 textfont='Eurostile_Bold'/>");
+	Inventory::FormatQuadBackground("<quad sizen='8 8' image='"^C_ImgBase^"UiItemShadow.png'/>");
+	Inventory::FormatQuadHighlight("<quad sizen='10 10' image='"^C_ImgBase^"UiCurrentWeapon.png'/>");
 	
 	Inventory::SetWeaponsIcons([
 		CSmMode::EWeapon::Laser		=> C_ImgBase^"Icons/Laser.png",
@@ -307,11 +320,13 @@ Void AddReloadBoost(CSmPlayer _Player) {
 // ---------------------------------- //
 /** Destroy all objects and reset landmarks settings
  *
- *	@param	_UseWeapons		Combo weapon items usage
+ *	@param	_UseWeapons		Enable weapons pickups (if available to be picked up on map)
+ *	@param	_UseReplies		Evable Replies objects (if available to be picked up on map)
  */
-Void InitObjects(Boolean _UseWeapons) {
+Void InitObjects(Boolean _UseWeapons, Boolean _UseReplies) {
 	DestroyLibObjects();
 	G_LibGalaxyTitles_WeaponItemsAvailable = False;
+	G_LibGalaxyTitles_RepliesAvailable = False;
 	G_LibGalaxyTitles_AvailableWeapons.clear();
 	
 	if (!G_LibGalaxyTitles_LibraryLoaded) return;
@@ -330,6 +345,9 @@ Void InitObjects(Boolean _UseWeapons) {
 			if (!G_LibGalaxyTitles_AvailableWeapons.exists(MapLandmark.Tag))
 				G_LibGalaxyTitles_AvailableWeapons.add(MapLandmark.Tag);
 		}
+		
+		// Check if Replies are available
+		if (_UseReplies && MapLandmark.Tag == "Replie") G_LibGalaxyTitles_RepliesAvailable = True;
 	}
 
 	// ---------------------------------- //
@@ -339,6 +357,13 @@ Void InitObjects(Boolean _UseWeapons) {
 		PlayerWeaponsToDrop.clear();
 	}
 }
+
+// ---------------------------------- //
+/** Destroy all objects and reset landmarks settings
+ *
+ *	@param	_UseWeaponsAndReplies	Enable weapons pickups and Replies objects (if available to be picked up on map)
+ */
+Void InitObjects(Boolean _UseWeaponsAndReplies) { InitObjects(_UseWeaponsAndReplies, _UseWeaponsAndReplies); }
 
 // ---------------------------------- //
 /// Destroy all objects and reset landmarks settings
@@ -424,7 +449,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 	}
 	
 	// ---------------------------------- //
-	// Get the times out objects
+	// Get the timed out objects
 	declare Ident[] ObjectsToDestroy;
 	foreach (SpawnTime => ObjectId in G_LibGalaxyTitles_DroppedObjects)
 		if (Now > SpawnTime + G_LibGalaxyTitles_ObjectsDropLifetime) ObjectsToDestroy.add(ObjectId);
@@ -477,6 +502,10 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		if (!G_LibGalaxyTitles_WeaponItemsAvailable && C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) continue;
 		
 		// ---------------------------------- //
+		// Continue if landmark spawns Replie when they're not available
+		if (!G_LibGalaxyTitles_RepliesAvailable && MapLandmark.Tag == "Replie") continue;
+		
+		// ---------------------------------- //
 		// Continue if weapon is carried by the player
 		if (
 			LibGalaxyTitles_ObjectPlayerId != NullId &&
@@ -494,6 +523,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			case "Arrow"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Arrow"]);
 			case "Rocket"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Rocket"]);
 			case "Fuel"		: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Fuel"]);
+			case "Replie"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Replie"]);
 		}
 		
 		if (Object == Null) continue;
@@ -691,6 +721,10 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 		// ---------------------------------- //
 		// Give Rocket weapon slot
 		case "Rocket" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Rocket, 1);
+		
+		// ---------------------------------- //
+		// Give Replie consumable item
+		case "Replie" : Inventory::AddItems(_Event.Player, "LibGalaxyTitles_Replie", 1);
 	}
 	
 	// ---------------------------------- //
@@ -924,18 +958,25 @@ Void ToadsLoop() { ToadsLoop(C_LibGalaxyTitles_ToadRespawnTime); }
 // ---------------------------------- //
 /** Initialize the library
  *
- *	@param	_UseWeapons			Combo weapon items usage
+ *	@param	_UseWeapons			Enable weapons pickups (if available to be picked up on map)
+ *	@param	_UseReplies			Enable Replies objects (if available to be picked up on map)
  *	@param	_ToadsSpawnRatio	Target ratio of landmarks spawning Toads to all landmarks
  */
-Void Init(Boolean _UseWeapons, Real _ToadsSpawnRatio) {
+Void Init(Boolean _UseWeapons, Boolean _UseReplies, Real _ToadsSpawnRatio) {
 	ClearReloadBoost();
-	InitObjects(_UseWeapons);
+	InitObjects(_UseWeapons, _UseReplies);
 	InitToads(_ToadsSpawnRatio);
 }
 
-Void Init(Boolean _UseWeapons) {
+Void Init(Boolean _UseWeaponsAndReplies, Real _ToadsSpawnRatio) {
 	ClearReloadBoost();
-	InitObjects(_UseWeapons);
+	InitObjects(_UseWeaponsAndReplies);
+	InitToads(_ToadsSpawnRatio);
+}
+
+Void Init(Boolean _UseWeaponsAndReplies) {
+	ClearReloadBoost();
+	InitObjects(_UseWeaponsAndReplies);
 	InitToads();
 }
 
@@ -991,6 +1032,18 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	if (_Player == Null || !G_LibGalaxyTitles_LibraryLoaded) return;
 	Inventory::ResetInventory(_Player);
 	
+	// ---------------------------------- //
+	// Load Replies in the Inventory
+	if (G_LibGalaxyTitles_RepliesAvailable) {
+		Inventory::CreateItemSlot(
+			_Player, "LibGalaxyTitles_Replie", CSmModeEvent::EActionInput::Consumable1, 0, C_ImgBase^"Icons/Replie.png"
+		);
+		
+		// Load action used to show particle effect on the player
+		ActionLoad(_Player, CSmMode::EActionSlot::Slot_H, G_LibGalaxyTitles_Actions["Replie"]);
+		ActionBind(_Player, CSmMode::EActionSlot::Slot_H, CSmMode::EActionInput::None);
+	}
+	
 	if (!G_LibGalaxyTitles_WeaponItemsAvailable) return;
 	
 	// ---------------------------------- //
@@ -1033,6 +1086,31 @@ Void InitPlayer(CSmPlayer _Player) {
 	if (_Player == Null || !G_LibGalaxyTitles_LibraryLoaded) return;
 	ClearReloadBoost(_Player);
 	InitPlayerInventory(_Player);
+}
+
+// ---------------------------------- //
+/** Autmatically manage consumable items usage
+ *
+ *	@param	_Player		Player to initialize
+ */
+Void UseConsumableItems(CSmModeEvent _Event) {
+	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnActionEvent || _Event.Player == Null) return;
+	
+	// ---------------------------------- //
+	// Use a Replie
+	if (_Event.ActionInput == CSmModeEvent::EActionInput::Consumable1) {
+		if (_Event.Player.Armor >= _Event.Player.ArmorMax) return;
+		
+		// Use a Replie (ignore code below if Replie was not used)
+		if (!Inventory::UseItem(_Event.Player, "LibGalaxyTitles_Replie", 2000, False)) return;
+		
+		// Heal the player
+		AddPlayerArmor(_Event.Player, C_LibGalaxyTitles_ArmorHealAmount, Null, 0);
+		
+		// Show particle effect on the player
+		declare Boolean Replie_TriggerParticles for _Event.Player;
+		Replie_TriggerParticles = True;
+	}
 }
 
 // ---------------------------------- //

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-11-13            //
+//  script version: 2016-11-14            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-11-13"
+#Const BaseVersion		"2016-11-14"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -41,6 +41,8 @@
 #Setting S_PlayerArmorPoints	3		as _("Amount of players Armor points (1 min, 10 max)")
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
 #Setting S_UseAutoBalance		False	as _("Balance teams on round start")
+#Setting S_MaximumNbWeapons		2		as _("Max. slots amount of every Weapon")
+#Setting S_MaximumNbReplies		3		as _("Max. amount of Replies held")
 #Setting S_ObjectsRespawnTime	15		as "<hidden>" //_("Items respawn time (0 = don't spawn)")
 #Setting S_ToadsRespawnTime		60		as "<hidden>" //_("Toads respawn time (0 = don't spawn)")
 #Setting S_ToadsSpawnRatio		.5		as "<hidden>" //_("Percentage amount of Toads to spawn on landmarks")
@@ -232,6 +234,8 @@ GT_AllowMatchmakingMode = True;
 
 // Variables
 declare Integer GT_NoCollisionsEndTime;
+declare PrevMaximumNbWeapons = S_MaximumNbWeapons;
+declare PrevMaximumNbReplies = S_MaximumNbReplies;
 ***
 
 // ---------------------------------- //
@@ -396,14 +400,22 @@ foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 // Init GalaxyTitles functions
 declare ToadsSpawnRatio = 0.;
 if (GT_UseRandomToads) ToadsSpawnRatio = S_ToadsSpawnRatio;
-GalaxyTitles::Init(S_UseComboWeapons && GT_UseComboWeapons, GT_UseRepliePickups, ToadsSpawnRatio);
+
 GalaxyTitles::SetDroppedWeaponsLifetime(S_WeaponsDropLifetime * 1000);
+GalaxyTitles::SetMaxWeapons(S_MaximumNbWeapons);
+GalaxyTitles::SetMaxReplies(S_MaximumNbReplies);
+
+GalaxyTitles::Init(
+	GT_UseComboWeapons && S_UseComboWeapons && S_MaximumNbWeapons != 0,
+	GT_UseRepliePickups && S_MaximumNbReplies != 0,
+	ToadsSpawnRatio
+);
 
 // Update the rules now, if a change occured in the settings
 ---Rules---
 
 // No collisions at the beginning of the round
-UsePvPCollisions = !GT_UseNoCollisionsStart;
+if (GT_UseNoCollisionsStart) UsePvPCollisions = False;
 if (!UsePvPCollisions) GT_NoCollisionsEndTime = StartTime + C_NoCollisionsDuration;
 
 ---UpdateClublinks---
@@ -678,6 +690,20 @@ GalaxyTitles::Loop(S_ObjectsRespawnTime > 0, S_ToadsRespawnTime * 1000);
 if (GT_UseNoCollisionsStart && GT_NoCollisionsEndTime > 0 && GT_NoCollisionsEndTime <= Now) {
 	GT_NoCollisionsEndTime = -1;
 	UsePvPCollisions = True;
+}
+
+// ---------------------------------- //
+// Update maximum weapons slots setting
+if (PrevMaximumNbWeapons != S_MaximumNbWeapons) {
+	PrevMaximumNbWeapons = S_MaximumNbWeapons;
+	GalaxyTitles::SetMaxWeapons(S_MaximumNbWeapons);
+}
+
+// ---------------------------------- //
+// Update maximum Replies setting
+if (PrevMaximumNbReplies != S_MaximumNbReplies) {
+	PrevMaximumNbReplies = S_MaximumNbReplies;
+	GalaxyTitles::SetMaxReplies(S_MaximumNbReplies);
 }
 
 // Stop match if there's not enough players left in matchmaking

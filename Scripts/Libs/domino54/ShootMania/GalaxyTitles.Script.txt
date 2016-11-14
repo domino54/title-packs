@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-11-13            //
+//  script version: 2016-11-14            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-11-13"
+#Const Version		"2016-11-14"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -45,6 +45,9 @@
 #Const C_LibGalaxyTitles_FuelReloadDuration		2000	///< Fuel reload bonus duration
 #Const C_LibGalaxyTitles_DefaultPointsForPick	1		///< Default amount of points for affecting other player
 #Const C_LibGalaxyTitles_NoteDisplayTime		1750	///< Duration of the notice display time
+#Const C_LibGalaxyTitles_ReplieUseCooldown		2000	///< Time before Replie can be used again
+#Const C_LibGalaxyTitles_DefaultMaxWeapons		2		///< Default maximum amount of each weapon in the Inventory
+#Const C_LibGalaxyTitles_DefaultMaxReplies		3		///< Default maximum amount of Replies in the Inventory
 
 /// Toads
 #Const C_LibGalaxyTitles_ToadLandmarksRatio		.5		///< Minimal amount of landmark spawning Toads
@@ -58,8 +61,17 @@
 #Const C_LibGalaxyTitles_ToadAggroRadius		8.		///< Distance within shoot provokes Toad
 #Const C_LibGalaxyTitles_ToadPeaceDistance		16.		///< Distance within Toad will follow Player
 
+/// Colors of the weapons items shown in the Minimap library
 #Const C_LibGalaxyTitles_MinimapColors [
 	"Laser" => <1., 0., 1.>, "Nucleus" => <1., 0., .5>, "Arrow" => <1., 0., 0.>, "Rocket" => <1., 1., 0.>
+]
+
+/// Default amount of bullets in every weapon when player spawns
+#Const C_LibGalaxyTitles_InitialWeaponsAmmoMax [
+	CSmMode::EWeapon::Laser => 0,
+	CSmMode::EWeapon::Nucleus => 0,
+	CSmMode::EWeapon::Arrow => 0,
+	CSmMode::EWeapon::Rocket => 4
 ]
 
 // ---------------------------------- //
@@ -80,6 +92,8 @@ declare Integer G_LibGalaxyTitles_ToadsArmorMax;
 declare Integer G_LibGalaxyTitles_PointsForPick;
 declare Boolean G_LibGalaxyTitles_ObjectsAffectEveryone;
 declare Integer G_LibGalaxyTitles_ObjectsDropLifetime;
+declare Integer G_LibGalaxyTitles_InventoryMaxWeapons;
+declare Integer G_LibGalaxyTitles_InventoryMaxReplies;
 
 /// Elements created within library
 declare Ident[] G_LibGalaxyTitles_CreatedObjects;
@@ -199,6 +213,9 @@ Void Unload() {
 	G_LibGalaxyTitles_ObjectsAffectEveryone = False;
 	G_LibGalaxyTitles_PointsForPick = C_LibGalaxyTitles_DefaultPointsForPick;
 	G_LibGalaxyTitles_ToadsArmorMax = C_LibGalaxyTitles_ToadArmorMax;
+	G_LibGalaxyTitles_ObjectsDropLifetime = C_LibGalaxyTitles_ObjectsDropLifetime;
+	G_LibGalaxyTitles_InventoryMaxWeapons = C_LibGalaxyTitles_DefaultMaxWeapons;
+	G_LibGalaxyTitles_InventoryMaxReplies = C_LibGalaxyTitles_DefaultMaxReplies;
 	G_LibGalaxyTitles_LibraryLoaded = False;
 	
 	// Unload libraries
@@ -210,7 +227,6 @@ Void Unload() {
 Void Load() {
 	Unload();
 	G_LibGalaxyTitles_LibraryLoaded = True;
-	G_LibGalaxyTitles_ObjectsDropLifetime = C_LibGalaxyTitles_ObjectsDropLifetime;
 	
 	// ---------------------------------- //
 	// Load objects
@@ -340,14 +356,18 @@ Void InitObjects(Boolean _UseWeapons, Boolean _UseReplies) {
 		LibGalaxyTitles_ObjectNextSpawn = Now;
 		
 		// Tell the library to use weapons
-		if (_UseWeapons && C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
+		if (
+			_UseWeapons && G_LibGalaxyTitles_InventoryMaxWeapons != 0 &&
+			C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)
+		) {
 			G_LibGalaxyTitles_WeaponItemsAvailable = True;
 			if (!G_LibGalaxyTitles_AvailableWeapons.exists(MapLandmark.Tag))
 				G_LibGalaxyTitles_AvailableWeapons.add(MapLandmark.Tag);
 		}
 		
 		// Check if Replies are available
-		if (_UseReplies && MapLandmark.Tag == "Replie") G_LibGalaxyTitles_RepliesAvailable = True;
+		if (_UseReplies && G_LibGalaxyTitles_InventoryMaxReplies != 0 && MapLandmark.Tag == "Replie")
+			G_LibGalaxyTitles_RepliesAvailable = True;
 	}
 
 	// ---------------------------------- //
@@ -585,28 +605,65 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 	
 	// ---------------------------------- //
 	// Pick conditions
+	declare CanPickUpObject = True;
+	
 	switch (LibGalaxyTitles_Tag) {
 		// ---------------------------------- //
 		// Armor conditions
 		case "Armor" : {
-			declare CanPickUpArmor = _Event.Player.Armor < _Event.Player.ArmorMax;
+			CanPickUpObject = _Event.Player.Armor < _Event.Player.ArmorMax;
 			
 			// Check if players nearby can be healed
-			if (!CanPickUpArmor) foreach (Player in Players)
+			if (!CanPickUpObject) foreach (Player in Players) {
 				if (
-					Player != _Event.Player && Player.Armor < Player.ArmorMax &&
-					ML::Distance(_Event.Player.Position, Player.Position) <= C_LibGalaxyTitles_ArmorPickupRadius &&
-					((_Event.Player.CurrentClan == 0 || Player.CurrentClan != _Event.Player.CurrentClan) &&
-					!G_LibGalaxyTitles_ObjectsAffectEveryone)
-				) {
-					CanPickUpArmor = True;
-					break;
-				}
+					Player.Armor >= Player.ArmorMax ||
+					ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius ||
+					!(
+						G_LibGalaxyTitles_ObjectsAffectEveryone ||
+						(_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan)
+					)
+				) continue;
+				
+				CanPickUpObject = True;
+				break;
+			}
+		}
+		// ---------------------------------- //
+		// Replie conditions
+		case "Replie" : {
+			// Player can't hold any Replies
+			if (G_LibGalaxyTitles_InventoryMaxReplies == 0) CanPickUpObject = False;
 			
-			// Cant pick up Armor
-			if (!CanPickUpArmor) return True;
+			// Limited Replies amount
+			else if (G_LibGalaxyTitles_InventoryMaxReplies > 0) {
+				declare PlayerReplies = Inventory::GetItemAmount(_Event.Player, "LibGalaxyTitles_Replie");
+				CanPickUpObject = PlayerReplies < G_LibGalaxyTitles_InventoryMaxReplies;
+			}
+		}
+		// ---------------------------------- //
+		// Weapons conditions
+		default : if (C_LibGalaxyTitles_WeaponItemsTags.exists(LibGalaxyTitles_Tag)) {
+			// Player can't hold any additional weapons
+			if (G_LibGalaxyTitles_InventoryMaxWeapons == 0) CanPickUpObject = False;
+			
+			// Limited weapons amount
+			else if (G_LibGalaxyTitles_InventoryMaxWeapons > 0) {
+				declare CSmMode::EWeapon Weapon;
+				switch (LibGalaxyTitles_Tag) {
+					case "Laser" : Weapon = CSmMode::EWeapon::Laser;
+					case "Nucleus" : Weapon = CSmMode::EWeapon::Nucleus;
+					case "Arrow" : Weapon = CSmMode::EWeapon::Arrow;
+					default : Weapon = CSmMode::EWeapon::Rocket;
+				}
+				
+				declare PlayerWeaponAmmoMax = Inventory::GetWeaponSlots(_Event.Player, Weapon);
+				CanPickUpObject = PlayerWeaponAmmoMax < C_LibGalaxyTitles_InitialWeaponsAmmoMax[Weapon] + G_LibGalaxyTitles_InventoryMaxWeapons;
+			}
 		}
 	}
+	
+	// Continue, if the object can't be picked up
+	if (!CanPickUpObject) return True;
 	
 	// ---------------------------------- //
 	// Item respawn timer
@@ -1065,7 +1122,7 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	
 	// ---------------------------------- //
 	// Init weapons
-	Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Rocket, 4);
+	foreach (Weapon => Amount in C_LibGalaxyTitles_InitialWeaponsAmmoMax) Inventory::SetWeaponSlots(_Player, Weapon, Amount);
 	Inventory::SetFirstWeapon(_Player);
 	
 	// Reset weapons to drop
@@ -1102,7 +1159,7 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 		if (_Event.Player.Armor >= _Event.Player.ArmorMax) return;
 		
 		// Use a Replie (ignore code below if Replie was not used)
-		if (!Inventory::UseItem(_Event.Player, "LibGalaxyTitles_Replie", 2000, False)) return;
+		if (!Inventory::UseItem(_Event.Player, "LibGalaxyTitles_Replie", C_LibGalaxyTitles_ReplieUseCooldown, False)) return;
 		
 		// Heal the player
 		AddPlayerArmor(_Event.Player, C_LibGalaxyTitles_ArmorHealAmount, Null, 0);
@@ -1147,4 +1204,22 @@ Void SetToadsArmorMax(Integer _Setting) {
  */
 Void SetDroppedWeaponsLifetime(Integer _Setting) {
 	G_LibGalaxyTitles_ObjectsDropLifetime = _Setting;
+}
+
+// ---------------------------------- //
+/** Set maximum amount of every additional weapon slot held in the inventory
+
+ *	@param	_Setting	Additional slots amount
+ */
+Void SetMaxWeapons(Integer _Setting) {
+	G_LibGalaxyTitles_InventoryMaxWeapons = _Setting;
+}
+
+// ---------------------------------- //
+/** Set maximum amount of Replies held in the inventory
+ *
+ *	@param	_Setting	Maximum Replies amount
+ */
+Void SetMaxReplies(Integer _Setting) {
+	G_LibGalaxyTitles_InventoryMaxReplies = _Setting;
 }

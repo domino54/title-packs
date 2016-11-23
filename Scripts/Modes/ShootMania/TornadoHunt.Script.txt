@@ -1,81 +1,49 @@
 // -------------------------------------- //
 //  TORNADO HUNT by domino54              //
-//  script version: 1.0.1                 //
+//  script version: 2016-11-23            //
 // -------------------------------------- //
 
-#Extends "Modes/ShootMania/ModeBase.Script.txt"
+#Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
-#Const	CompatibleMapTypes	"TornadoHuntArena, RealmArena, BattleArena, GoalHuntArena"
-#Const	Version				"2015-01-15"
-#Const	ScriptName			"TornadoHunt.Script.txt"
-
-#Include "MathLib" as MathLib
-#Include "TextLib" as TextLib
-#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
-#Include "Libs/Nadeo/Message.Script.txt" as Message
-#Include "Libs/Nadeo/Interface.Script.txt" as Interface
-#Include "Libs/Nadeo/ShootMania/SM.Script.txt" as SM
-#Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
-#Include "Libs/Nadeo/ShootMania/SpawnScreen.Script.txt" as SpawnScreen
+#Const CompatibleMapTypes	"TornadoHuntArena GoalHuntArena RealmArena BattleArena"
+#Const Version		"2016-11-23"
+#Const ScriptName	"TornadoHunt.Script.txt"
 
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_TimeLimit		600		as _("Time limit")							///< Time limit on a map
-#Setting S_PointLimit		25		as _("Points limit")						///< Points limit on a map
-#Setting S_StaminaBuff		True	as _("Reload player stamina")				///< Reload player stamina
-#Setting S_PoleTimeOutTime	20		as _("Capture time limit (0 = no limit)")	///< Time before pole is changed to another one
-#Setting S_HideTornado		False	as _("Hide Tornado (may increase performance)")		///< Hide Tornado to increase client GPU performance
-#Setting S_FriendlyFire		False	as _("Friendly Fire (damage clanmates)")	///< Damage clanmates
-
-// Clublinks settings
-#Setting S_UsePlayerClublinks	False	as _("Use players clublinks")
-#Setting S_ForceClublinkTeam1	""		as "<hidden>"
-#Setting S_ForceClublinkTeam2	""		as "<hidden>"
-
-#Setting S_NbBots	0	as _("Fake players")	///< Number of bots
-
-#Const C_RequiredPlayersNb	1	///< Required number of players to start the game
-#Const C_RequiredPolesNb	2	///< Required number of poles on map
-#Const C_PlayerStaminaMax	2.	///< Amount of player stamina
-#Const C_OffZoneRadius		5.	///< Radius of the OffZone
-
-#Const Description _("TYPE: Team versus Team\nOBJECTIVE: Catch Tornado to score points for your team. The first team to reach the points limit or the team with the highest score at the end of the time limit wins the map.")
+#Setting S_TimeLimit			600 	as _("Time limit (seconds)")
+#Setting S_PointsLimit			120		as _("Points limit")
+#Setting S_EnablePvPWeapons		True	as _("Enable PvP weapons")
+#Setting S_ShowTornadoOnGoal	True	as _("Show Tornado over the first Goal")
+#Setting S_MaxNbPrevGoals		2		as _("Number of capturable previous goals")
+#Setting S_BoostOthersOnCap		True	as _("Boost other players on capture")
+#Setting S_GoalCaptureTimeout	30		as _("Time before other Goal is selected if not captured")
 
 // ---------------------------------- //
-// Globales variables
+// Constants
 // ---------------------------------- //
-declare Ident[]	G_SpawnsList;		///< Id of all the landmarks with a player spawn of the map
-declare Ident	G_LatestSpawnId;	///< Id of the last landmark used
-declare Ident[]	G_PolesList;		///< Id of all the landmarks with a player spawn of the map
-declare Ident	G_LatestPoleId;		///< Id of the last landmark used
+#Const C_PointsPerCapturedGoal	2	///< Amount of points per every goal avaialble
+#Const C_OffZoneConstantRadius	3.	///< Radius of the Tornado around the Goal
 
 // ---------------------------------- //
-// Log version
+// Global variables
 // ---------------------------------- //
-***LogVersion***
+declare Ident[] G_GoalsOrder;	///< All Goals listed from the oldest to the newest tossed
+declare Ident[] G_GoalsList;	///< List of Goals available to toss
+declare Ident G_LatestGoalId;	///< Previously tossed Goal
+declare Ident[] G_SpawnsList;	///< List of Spawns available to toss
+declare Ident G_LatestSpawnId;	///< Previously tossed Spawn
+
+// ---------------------------------- //
+// Adjust the scores table
+// ---------------------------------- //
+***ScoresTable***
 ***
-MB_LogVersion(ScriptName, Version);
-MB_LogVersion(SM::GetScriptName(), SM::GetScriptVersion());
-MB_LogVersion(Layers::GetScriptName(), Layers::GetScriptVersion());
-MB_LogVersion(Score::GetScriptName(), Score::GetScriptVersion());
-MB_LogVersion(Message::GetScriptName(), Message::GetScriptVersion());
-MB_LogVersion(Interface::GetScriptName(), Interface::GetScriptVersion());
-MB_LogVersion(SpawnScreen::GetScriptName(), SpawnScreen::GetScriptVersion());
-***
-
-// ---------------------------------- //
-// Set rules
-// ---------------------------------- //
-***Rules***
-***
-declare ModeName = "Tornado Hunt";
-declare ModeRules = TextLib::Compose(_("$<%11. $>Catch Tornado to score points for your team.\n$<%12. $>The first team to reach the points limit or team with the highest score at the end of the time limit wins the map."), "$"^SpawnScreen::GetModeColor());
-SpawnScreen::ResetRulesSection();
-SpawnScreen::AddSubsection(_("Type"), _("Team versus Team"), 0.);
-SpawnScreen::AddSubsection(_("Objectives"), ModeRules, 20.);
-SpawnScreen::CreatePrettyRules(ModeName);
-ModeStatusMessage = _("TYPE: Team versus Team\nOBJECTIVE: Catch Tornado maximum times to win the game.");
+ST2::DestroyCol("LibST_SMRoundPoints");
+ST2::SetColWidth("LibST_SMPoints", 5.);
+TopScores::RemoveCategory("Items");
+TopScores::AddCategory("Capture", "Cp", 2.25, 70.);
 ***
 
 // ---------------------------------- //
@@ -85,86 +53,73 @@ ModeStatusMessage = _("TYPE: Team versus Team\nOBJECTIVE: Catch Tornado maximum 
 ***
 // ---------------------------------- //
 // Set mode options
-MB_UsePlayerClublinks = S_UsePlayerClublinks;
-UseClans = True;
-ForceNavMapsComputation = True;
-OffZoneRadiusSpeed = 0.;
+GT_AutoManageOnArmorEmpty = False;
+GT_LogScriptsVersions = [ScriptName => Version];
 
 // ---------------------------------- //
-// Create the rules
----Rules---
+// Set the rules in the SpawnScreen
+GT_SpawnScreenModeName = "Tornado Hunt";
+GT_SpawnScreenModeType = _("Free for all");
+GT_SpawnScreenObjectives = TL::Compose(
+	_("$<%11. $>Touch the $<$F00red$> Goal highlighted with the Tornado to get a point.\n$<%12. $>Touch the previous $<$00Fblue$> and $<$FFFwhite$> Goals to get less points than highlighted one gives.\n$<%13. $>The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map."),
+	"$"^SpawnScreen::GetModeColor()
+);
 
 // ---------------------------------- //
-// Initialize UI
-SpawnScreen::CreateMapInfo();
-SpawnScreen::SetModeName("Tornado Hunt");
-SpawnScreen::CreateScores("Score.RoundPoints");
-Interface::CreateRank();
-Layers::Create("PlayerLists", CreateLayerPlayerLists());
-
-// UIAll
-UIManager.UIAll.OverlayScoreSummary = True;
-UIManager.UIAll.ScreenIn3dHideScoreSummary = True;
+// Set the rules in the pause menu
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Rules", "Touch the $<$F00red$> Goal highlighted with the Tornado to get a point. Touch the previous $<$00Fblue$> and $<$FFFwhite$> Goals to get less points than highlighted one gives. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.");
 
 // ---------------------------------- //
-// Create the scores table
-ST2::SetStyle("LibST_SMBaseTeams");
-ST2::SetStyle("LibST_SMBasePoints");
-ST2::SetStyle("LibST_SMWithLegends");
-ST2::SetFormat(2, 6);
-ST2::SetColWidth("LibST_Avatar", 2.);
-ST2::SetColWidth("LibST_Tags", 0.);
-ST2::SetColWidth("LibST_ManiaStars", 2.);
-ST2::CreateCol("Capture", _("|Capture,Substantive|Cap"), "", 2.5, 80.);
-ST2::CreateCol("Hit", _("|Capture,Substantive|Hit"), "", 2.5, 90.);
-MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
-ST2::Build("SM");
+// Create custom interface
+Layers::Create("TornadoHunt:Markers", CreateManialinkMarkers());
+Layers::Attach("TornadoHunt:Markers");
 ***
 
+// ---------------------------------- //
+// Map begin
+// ---------------------------------- //
 ***InitMap***
 ***
+declare CurrentTimeLimit = S_TimeLimit;
 declare PrevPointsLimit = -1;
+declare PrevShowTornado = False;
+
+// ---------------------------------- //
+// Check if the map is valid
+declare MapValidated = True;
+declare TotalNbGoals = 0;
+
+if (MapLandmarks_PlayerSpawn.count <= 0) MapValidated = False;
+foreach (MapLandmark in MapLandmarks_Gauge) if (MapLandmark.Gate == Null) TotalNbGoals += 1;
+if (TotalNbGoals < 3) MapValidated = False;
+
+// ---------------------------------- //
+// Skip map if not valid
+if (!MapValidated) {
+	Translations::SendChat("This map is not valid, moving to the next one.");
+	MB_Sleep(10000);
+	MB_StopMap = True;
+}
 ***
 
 // ---------------------------------- //
-// Map start
+// Start map
 // ---------------------------------- //
 ***StartMap***
 ***
-Score::MatchBegin();
-Score::RoundBegin();
-
+G_GoalsOrder.clear();
+G_GoalsList.clear();
 G_SpawnsList.clear();
+G_LatestGoalId = NullId;
 G_LatestSpawnId = NullId;
-G_PolesList.clear();
-G_LatestPoleId = NullId;
 
-SM::SetupDefaultVisibility();
-
-UIManager.UIAll.ScoreSummary_Points1 = 0;
-UIManager.UIAll.ScoreSummary_Points2 = 0;
+// Reset OffZone
+OffZoneRadius = 0.;
+PrevShowTornado = False;
 
 // ---------------------------------- //
-// Init bases
-foreach (Base in MapBases) {
-	Base.Clan = 0;
-	Base.IsActive = True;
-}
-
-// ---------------------------------- //
-// Let the server sleep until there's enough players to start a game
-while (!ServerShutdownRequested && !MatchEndRequested && PlayersNbTotal < C_RequiredPlayersNb) {
-	MB_Yield();
-	UIManager.UIAll.BigMessage = _("Waiting for players...");
-	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
-}
-UIManager.UIAll.BigMessage = "";
-
-// ---------------------------------- //
-// Update the players clublinks
-if (S_ForceClublinkTeam1 == "" && S_ForceClublinkTeam2 == "") Clublink::DefineTeamAuto();
-else Clublink::DefineTeamFromUrl(S_ForceClublinkTeam1, S_ForceClublinkTeam2);
-Clublink::SyncUpdate();
+// Wait for enough players to start game
+while (!ServerShutdownRequested && !MatchEndRequested && Players.count <= 0) MB_Yield();
 
 // ---------------------------------- //
 // Init scores
@@ -172,49 +127,27 @@ MB_Sleep(1); ///< Allow the scores array to be sorted
 foreach (Score in Scores) {
 	declare Integer LastPoint for Score;
 	LastPoint = 0;
-	
-	declare Integer TopScoreHit for Score;
-	TopScoreHit = 0;
-	ST2::SetColValue("Hit", Score, "");
-	
-	declare Integer TopScoreCapture for Score;
-	TopScoreCapture = 0;
-	ST2::SetColValue("Capture", Score, "");
 }
-declare LeadClan = 0;
-declare PrevLeadClan = 0;
+declare LeadId = NullId;
+if (Scores.existskey(0)) LeadId = Scores[0].User.Id;
 
 // ---------------------------------- //
-// Set first pole
-if (MapLandmarks_Gauge.count >= C_RequiredPolesNb) {
-	SetNextPole();
-} else {
-	MB_StopMap = True;
-	UIManager.UIAll.SendChat(_("Too less poles on map."));
+// Init players
+foreach (Player in Players) {
+	declare Ident[] CapturedLandmarksIds for Player;
+	CapturedLandmarksIds.clear();
 }
 
 // ---------------------------------- //
-// New map sound
-UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
-
-StartTime = Now;
+// Start match
+StartTime = Now + S_RespawnTime;
 if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
 else EndTime = -1;
-
-Layers::Attach("PlayerLists");
-
-declare CurrentTimeLimit = S_TimeLimit;
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
-***
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
 
-// ---------------------------------- //
-// Global loop
-// ---------------------------------- //
-***Yield***
-***
-Users_SetNbFakeUsers(S_NbBots/2, S_NbBots-(S_NbBots/2));
-Message::Loop();
-Clublink::DefineTeamAuto();
+// Set the first Goal
+SelectNextGoal();
 ***
 
 // ---------------------------------- //
@@ -222,109 +155,70 @@ Clublink::DefineTeamAuto();
 // ---------------------------------- //
 ***PlayLoop***
 ***
-SM::UnspawnPlayersChangingClan();
-
+// ---------------------------------- //
+// Events management
 foreach (Event in PendingEvents) {
 	// ---------------------------------- //
-	// On armor empty
+	// Completely ignore OffZone in the mode
 	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
-		if (Event.Victim != Null) {
-			if (Event.Victim.Armor == 0) {
-				Score::RemovePoints(Event.Victim, 1);
-				XmlRpc::OnArmorEmpty(Event);
-				PassOn(Event);
-			} else {
-				Discard(Event);
-			}
-		}
-	} 
-	// ---------------------------------- //
-	// On hit
-	else if (Event.Type == CSmModeEvent::EType::OnHit) {
-		declare Points = Event.Damage / 100;
-		// Catch invalid events
-		if (Event.Shooter == Null || Event.Victim == Null || Event.Shooter == Event.Victim) {
-			Discard(Event);
-		}
-		// Friendly Fire
-		else if (Event.Shooter.CurrentClan == Event.Victim.CurrentClan) {
-			if (S_FriendlyFire) {
-				Score::RemovePoints(Event.Shooter, Points);
-				Score::AddPoints(Event.Victim, Points);
-				
-				Event.ShooterPoints = -Points;
-				
-				Message::SendStatusMessage(Event.Shooter, _("$F00Friendly fire!"), 2000, 2, CUIConfig::EUISound::Warning, 0);
-				
-				XmlRpc::OnHit(Event);
-				PassOn(Event);
-			} else {
-				Discard(Event);
-			}
-		}
-		// Normal hit
-		else {
-			Score::AddPoints(Event.Shooter, Points);
-			Event.ShooterPoints = Points;
-			
-			declare Integer TopScoreHit for Event.Shooter.Score;
-			TopScoreHit += 1;
-			ST2::SetColValue("Hit", Event.Shooter.Score, TextLib::ToText(TopScoreHit));
-			
-			XmlRpc::OnHit(Event);
-			PassOn(Event);
-		}
+		if (OffZoneRadius > 0 && Event.Shooter == Null) { Discard(Event); continue; }
+		---PremadeOnArmorEmpty---
 	}
-	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
-		Discard(Event);
+}
+
+// ---------------------------------- //
+// Check if current Goal has timed out
+foreach (MapLandmark in MapLandmarks_Gauge) {
+	if (MapLandmark.Gate != Null || MapLandmark.Gauge.Speed >= 0) continue;
+	if (MapLandmark.Gauge.ValueReal <= 0) {
+		Translations::SendStatusMessage("The Goal has timed out", 3000, 0, CUIConfig::EUISound::Notice, 0);
+		SelectNextGoal();
 	}
-	// ---------------------------------- //
-	// Others
-	else {
-		PassOn(Event);
-	}
-}	
+}
 
 // ---------------------------------- //
 // Spawn players
 foreach (Player in Players) {
-	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate) {
-		Player.StaminaMax = C_PlayerStaminaMax;
-		MeleeSpawnPlayer(Player);
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate && GT_IsValidPlayer(Player)) {
+		GT_InitPlayer(Player);
+		GH_SpawnPlayer(Player);
 	}
 	
 	// ---------------------------------- //
-	// Pole capture
-	if (Player.CapturedLandmark != Null) {
-		if (Player.CapturedLandmark.Id == OffZoneCenterBlockId) {
-			OnCapture(Player);
-		}
+	// Check if player is touching a goal
+	declare Ident PrevLandmarkId for Player;
+	
+	// Get the ID of landmark the player is on
+	declare MapLandmarkId = NullId;
+	if (Player.CapturedLandmark != Null) MapLandmarkId = Player.CapturedLandmark.Id;
+	
+	// Fire event on landmark change
+	if (PrevLandmarkId != MapLandmarkId) {
+		PrevLandmarkId = MapLandmarkId;
+		CaptureLandmark(Player, MapLandmarkId);
 	}
 }
 
 // ---------------------------------- //
-// Pole time limit
-foreach (MapLandmark in MapLandmarks_Gauge) {
-	if (MapLandmark.Id == OffZoneCenterBlockId && MapLandmark.Gate == Null) {
-		if (MapLandmark.Gauge.Value == 0 && MapLandmark.Gauge.Max != 1) {
-			SetNextPole();
-			Message::SendStatusMessage(_("Pole timed out!"), 3000, 1, CUIConfig::EUISound::PlayerHit, 0);
-		}
-	}
+// Turn all round points into normal points
+foreach (Score in Scores) {
+	if (Score.RoundPoints == 0) continue;
+	Score.Points += Score.RoundPoints;
+	Score.RoundPoints = 0;
 }
 
 // ---------------------------------- //
 // Play sound and notice if someone is taking the lead
-if (LeadClan != PrevLeadClan && LeadClan != 0) {
-	PrevLeadClan = LeadClan;
-	Message::SendBigMessage(TextLib::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 2, CUIConfig::EUISound::PhaseChange, 1);
+if (Scores.existskey(0) && Scores[0].User.Id != LeadId) {
+	LeadId = Scores[0].User.Id;
+	Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Scores[0].User.Name), 3000, 1, CUIConfig::EUISound::PhaseChange, 1);
 }
 
 // ---------------------------------- //
 // Server info change
-if (PrevPointsLimit != S_PointLimit) {
-	PrevPointsLimit = S_PointLimit;
-	ST2::SetFooterText(TextLib::Compose("%1 "^S_PointLimit, _("Points limit : ")));
+if (PrevPointsLimit != S_PointsLimit) {
+	PrevPointsLimit = S_PointsLimit;
+	ST2::SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
 }
 
 // ---------------------------------- //
@@ -336,70 +230,49 @@ if (CurrentTimeLimit != S_TimeLimit) {
 }
 
 // ---------------------------------- //
-// Update Tornado visibility
-if (S_HideTornado) OffZoneRadius = 0.;
-else OffZoneRadius = C_OffZoneRadius;
+// PvP weapons setting change
+if (UsePvPWeapons != S_EnablePvPWeapons) {
+	UsePvPWeapons = S_EnablePvPWeapons;
+}
 
 // ---------------------------------- //
-// victory conditions
-if (ClanScores[1] == ClanScores[2]) LeadClan = 0;
-else if (ClanScores[1] > ClanScores[2]) LeadClan = 1;
-else LeadClan = 2;
-
-declare IsMatchOver = False;
-if (S_TimeLimit > 0 && Now > EndTime) IsMatchOver = True;
-if (S_PointLimit > 0) {
-	foreach (Score in ClanScores) {
-		if (Score >= S_PointLimit) IsMatchOver = True;
-	}
+// Set the Tornado visibility
+if (PrevShowTornado != S_ShowTornadoOnGoal) {
+	PrevShowTornado = S_ShowTornadoOnGoal;
+	
+	if (S_ShowTornadoOnGoal) OffZoneRadius = C_OffZoneConstantRadius;
+	else OffZoneRadius = 0.;
 }
 
-if (IsMatchOver) {
-	OffZoneRadius = 0.;
+// ---------------------------------- //
+// Victory conditions
+if (Scores.existskey(0) && Scores[0].Points >= S_PointsLimit) {
+	Message::SendBigMessage(
+		TL::Compose(_("$<%1$> gets the final hit!"), Scores[0].User.Name),
+		3000, 3, CUIConfig::EUISound::VictoryPoint, 0
+	);
 	MB_StopMap = True;
 }
+if (EndTime > 0 && Now > EndTime) MB_StopMap = True;
 ***
 
 // ---------------------------------- //
 // Map end
 // ---------------------------------- //
-***EndMap***
+***EndMapBeforePodium***
 ***
-Score::RoundEnd();
-Score::MatchEnd(True);
-
+G_GoalsOrder.clear();
+UpdateInterface();
+OffZoneRadius = -1.;
+StartTime = -1;
 EndTime = -1;
-ClearPoleIndicators();
-OffZoneRadius = 0.;
 
-// ---------------------------------- //
-// End match sequence
-foreach (Player in Players) {
-	if (Player.CurrentClan != LeadClan) UnspawnPlayer(Player);
-}
+// Unspawn everyone except the winner
+foreach (I => Player in Players) if (I > 0) UnspawnPlayer(Player);
 
 MB_Sleep(3000);
-Layers::Detach("PlayerLists");
-Message::CleanAllMessages();
-UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
-UIManager.UIAll.BigMessageSoundVariant = 0;
-if (LeadClan != 0) {
-	UIManager.UIAll.BigMessage = TextLib::Compose(_("$<%1$> wins the match!"), Teams[LeadClan - 1].ColorizedName);
-} else {
-	UIManager.UIAll.BigMessage = _("|Match|Draw");
-}
-MB_Sleep(2000);
-UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
-UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
-MB_Sleep(5000);
 
-UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
-while (!UIManager.UIAll.UISequenceIsCompleted) {
-	MB_Yield();
-}
-
-UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
-UIManager.UIAll.BigMessage = "";
+Message::CleanBigMessages();
 ***
 
 // ---------------------------------- //
@@ -407,150 +280,328 @@ UIManager.UIAll.BigMessage = "";
 // ---------------------------------- //
 ***EndServer***
 ***
-Interface::DestroyRank();
-SpawnScreen::DestroyRules();
-SpawnScreen::DestroyScores();
-SpawnScreen::DestroyMapInfo();
-Layers::Destroy("PlayerLists");
+Layers::Detach("TornadoHunt:Markers");
+Layers::Destroy("TornadoHunt:Markers");
 ***
 
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
 
-/* ------------------------------------- */
-/** Spawn a player
+// ---------------------------------- //
+/** Get the selection order of a landmark
  *
- * @param	_Player		The player to spawn
+ *	@param	_MapLandmarkId		Id of the landmark to get order
+ *
+ *	@return		The landmark order
  */
-Void MeleeSpawnPlayer(CSmPlayer _Player) {
-	if (G_SpawnsList.count == 0) {
-		foreach (MapLandmark in MapLandmarks_PlayerSpawn) G_SpawnsList.add(MapLandmark.Id);
-	}
+Integer GetGoalOrder(Ident _MapLandmarkId) {
+	if (!MapLandmarks_Gauge.existskey(_MapLandmarkId) || !G_GoalsOrder.exists(_MapLandmarkId)) return -1;
 	
-	declare SpawnId = NullId;
-	while (True) {
-		SpawnId = G_SpawnsList[MathLib::Rand(0, G_SpawnsList.count - 1)];
-		if (SpawnId != G_LatestSpawnId) break;
-		if (G_SpawnsList.count == 1) break;
+	declare Order = 0;
+	while (Order <= G_GoalsOrder.count - 1) {
+		if (G_GoalsOrder[G_GoalsOrder.count - Order - 1] == _MapLandmarkId) return Order;
+		Order += 1;
 	}
-	G_LatestSpawnId = SpawnId;
-	SM::SpawnPlayer(_Player, _Player.RequestedClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
-	declare Removed = G_SpawnsList.remove(SpawnId);
+	return -1;
 }
 
-/* ------------------------------------- */
-/** Indicate pole
- *
- * @param	_PoleId		Id of Pole to light up
- */
-Void IndicatePole(Ident _PoleId) {
-	foreach (MapLandmark in MapLandmarks_Gauge) {
-		if (MapLandmark.Gate == Null) {
-			// Pole time out
-			if (S_PoleTimeOutTime > 0) MapLandmark.Gauge.Max = S_PoleTimeOutTime * 1000;
-			else MapLandmark.Gauge.Max = 1;
-			
-			// Tornado pole
-			if (MapLandmark.Id == _PoleId) {
-				MapLandmark.Gauge.Value = MapLandmark.Gauge.Max;
-				if (S_PoleTimeOutTime > 0) MapLandmark.Gauge.Speed = -1;
-				else MapLandmark.Gauge.Speed = 0;
-				
-				// Marker
-				UIManager.UIAll.MarkersXML = """<marker pos="{{{MapLandmark.Position.X}}} {{{MapLandmark.Position.Y + 25.}}} {{{MapLandmark.Position.Z}}}" icon="PointA"/>""";
-			}
-			
-			// Other poles
-			else {
-				MapLandmark.Gauge.Value = 0;
-			}
+// ---------------------------------- //
+/// Update the data sent to the interface
+Void UpdateInterface() {
+	declare netwrite Integer Net_TornadoHunt_UpdateTime for Teams[0];
+	declare netwrite Vec3[] Net_TornadoHunt_GoalsOrder for Teams[0];
+	declare netwrite Vec3[][Text] Net_TornadoHunt_CapturedGoals for Teams[0];
+	
+	Net_TornadoHunt_UpdateTime = Now;
+	Net_TornadoHunt_GoalsOrder.clear();
+	Net_TornadoHunt_CapturedGoals.clear();
+	
+	// ---------------------------------- //
+	// Get the list of all capturable Goals
+	foreach (MapLandmarkId in G_GoalsOrder) {
+		declare GoalOrder = GetGoalOrder(MapLandmarkId);
+		if (GoalOrder < 0 || GoalOrder > S_MaxNbPrevGoals) continue;
+		
+		// Get landmark position
+		if (!MapLandmarks.existskey(MapLandmarkId)) continue;
+		declare MapLandmark <=> MapLandmarks[MapLandmarkId];
+		Net_TornadoHunt_GoalsOrder.add(MapLandmark.Position);
+	}
+	
+	// ---------------------------------- //
+	// Get list of Goals captured by players
+	foreach (Player in Players) {
+		declare Ident[] CapturedLandmarksIds for Player;
+		Net_TornadoHunt_CapturedGoals[Player.User.Login] = Vec3[];
+		
+		foreach (MapLandmarkId in CapturedLandmarksIds) {
+			if (!MapLandmarks.existskey(MapLandmarkId)) continue;
+			declare MapLandmark <=> MapLandmarks[MapLandmarkId];
+			Net_TornadoHunt_CapturedGoals[Player.User.Login].add(MapLandmark.Position);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Select random next goal
+Void SelectNextGoal() {
+	// Fill the goals list
+	if (G_GoalsList.count <= 0) foreach (MapLandmark in MapLandmarks_Gauge) if (MapLandmark.Gate == Null) G_GoalsList.add(MapLandmark.Id);
+	
+	// ---------------------------------- //
+	// Choose random goal
+	declare MapLandmarkId = NullId;
+	while (True) {
+		MapLandmarkId = G_GoalsList[ML::Rand(0, G_GoalsList.count - 1)];
+		if (MapLandmarkId != G_LatestGoalId || G_GoalsList.count == 1) break;
+	}
+	declare Removed = G_GoalsList.remove(MapLandmarkId);
+	G_LatestGoalId = MapLandmarkId;
+	
+	// ---------------------------------- //
+	// List the goal at the end of the array
+	if (G_GoalsOrder.exists(MapLandmarkId)) {
+		declare Removed = G_GoalsOrder.remove(MapLandmarkId);
+	}
+	G_GoalsOrder.add(MapLandmarkId);
+	
+	// ---------------------------------- //
+	// Remove landmark from captured IDs array
+	foreach (Player in AllPlayers) {
+		declare Ident[] CapturedLandmarksIds for Player;
+		while (CapturedLandmarksIds.exists(MapLandmarkId)) {
+			Removed = CapturedLandmarksIds.remove(MapLandmarkId);
 		}
 	}
 	
-	// Reset marker
-	if (_PoleId == NullId) UIManager.UIAll.MarkersXML = "";
-}
-
-// ---------------------------------- //
-/// Clear poles colors
-Void ClearPoleIndicators() {
-	IndicatePole(NullId);
-}
-
-// ---------------------------------- //
-/// Set next pole
-Void SetNextPole() {
-	if (G_PolesList.count == 0) {
-		foreach (MapLandmark in MapLandmarks_Gauge) if (MapLandmark.Gate == Null) G_PolesList.add(MapLandmark.Id);
+	// ---------------------------------- //
+	// Configure landmarks apperance
+	foreach (MapLandmark in MapLandmarks_Gauge) {
+		if (MapLandmark.Gate != Null) continue;
+		declare GoalOrder = GetGoalOrder(MapLandmark.Id);
+		
+		// Make the goal center of the OffZone
+		if (GoalOrder == 0) OffZoneCenterLandmarkId = MapLandmark.Id;
+		
+		// Reset Goal gauge
+		MapLandmark.Gauge.Max = 1;
+		MapLandmark.Gauge.ValueReal = 0.;
+		MapLandmark.Gauge.Speed = 0;
+		
+		// ---------------------------------- //
+		// Configure the landmark base
+		if (MapLandmark.Base == Null) continue;
+		MapLandmark.Base.IsActive = GoalOrder != -1 && GoalOrder <= S_MaxNbPrevGoals;
+		if (MapLandmark.Base.IsActive) MapLandmark.Gauge.ValueReal = 1.;
+		
+		// Set clan depending on order
+		declare Clan = 0;
+		switch (GoalOrder) {
+			case 0 : Clan = 2;
+			case 1 : Clan = 1;
+		}
+		MapLandmark.Base.Clan = Clan;
+		MapLandmark.Gauge.Clan = Clan;
 	}
-	
-	declare PoleId = NullId;
-	while (True) {
-		PoleId = G_PolesList[MathLib::Rand(0, G_PolesList.count - 1)];
-		if (PoleId != G_LatestPoleId) break;
-		if (G_PolesList.count == 1) break;
-	}
-	G_LatestPoleId = PoleId;
-	OffZoneCenterBlockId = PoleId;
-	declare Removed = G_PolesList.remove(PoleId);
-	IndicatePole(PoleId);
-}
-
-/* ------------------------------------- */
-/** Player touched pole
- *
- * @param	_Player		Player that touched pole
- */
-Void OnCapture(CSmPlayer _Player) {
-	Score::AddPoints(_Player, 1);
-	ClanScores[_Player.CurrentClan] += 1;
-	
-	declare Integer TopScoreCapture for _Player.Score;
-	TopScoreCapture += 1;
-	ST2::SetColValue("Capture", _Player.Score, TextLib::ToText(TopScoreCapture));
-	
-	switch (_Player.CurrentClan) {
-		case 1 : UIManager.UIAll.ScoreSummary_Points1 += 1;
-		case 2 : UIManager.UIAll.ScoreSummary_Points2 += 1;
-	}
-	
-	Message::SendStatusMessage(_Player, "", 500, 0, CUIConfig::EUISound::ScoreProgress, 1);
-	Message::SendStatusMessage(
-		TextLib::Compose(_("$<%1$> captured the pole."), _Player.Name),
-		3000, 1, CUIConfig::EUISound::PlayerHit, 0
-	);
-	
-	_Player.Stamina = MathLib::FloorInteger(3600 * _Player.StaminaMax);
-	
-	SetNextPole();
 	
 	// ---------------------------------- //
-	// Play sound and notice if someone is close to win
-	declare Gap = S_PointLimit - ClanScores[_Player.CurrentClan];
-	if (Gap > 0 && Gap <= 3) {
-		declare Variant = 3 - Gap;
-		declare Msg = "";
-		if (Gap > 1) Msg = TextLib::Compose(_("$<%1$> is %2 points from victory!"), Teams[_Player.CurrentClan - 1].ColorizedName, TextLib::ToText(Gap));
-		else Msg = TextLib::Compose(_("$<%1$> is 1 point from victory!"), Teams[_Player.CurrentClan - 1].ColorizedName);
-		Message::SendBigMessage(Msg, 3000, 3, CUIConfig::EUISound::TieBreakPoint, Variant);
+	// Set the goal timeout
+	if (S_GoalCaptureTimeout > 0) {
+		declare MapLandmark <=> MapLandmarks[MapLandmarkId];
+		MapLandmark.Gauge.Max = S_GoalCaptureTimeout * 1000;
+		MapLandmark.Gauge.ValueReal = 1.;
+		MapLandmark.Gauge.Speed = -1;
 	}
-	else if (Gap == 0) {
-		Message::SendBigMessage(
-			TextLib::Compose(_("$<%1$> captured all goals!"), Teams[_Player.CurrentClan - 1].ColorizedName),
-			3000, 3, CUIConfig::EUISound::VictoryPoint, 0
-		);
-	}
+	
+	// Update interfaces
+	UpdateInterface();
 }
 
-/* ------------------------------------- */
-/** Create players lists layer
+// ---------------------------------- //
+/** Capture a landmark by a player
  *
- * @return		Created players lists layer
+ *	@param	_Player			The player that captures a landmark
+ *	@param	_MapLandmarkId	Id of the landmark to capture
  */
-Text CreateLayerPlayerLists() {
+Void CaptureLandmark(CSmPlayer _Player, Ident _MapLandmarkId) {
+	if (_Player == Null || _MapLandmarkId == NullId) return;
+	
+	// Get the order of the goal
+	declare GoalOrder = GetGoalOrder(_MapLandmarkId);
+	if (GoalOrder <= -1 || GoalOrder > S_MaxNbPrevGoals) return;
+	
+	// Check if player haven't captured this goal yet
+	declare Ident[] CapturedLandmarksIds for _Player;
+	if (CapturedLandmarksIds.exists(_MapLandmarkId)) return;
+	CapturedLandmarksIds.add(_MapLandmarkId);
+	
+	// Give points for capturing the goal
+	declare Points = (S_MaxNbPrevGoals - GoalOrder + 1) * C_PointsPerCapturedGoal;
+	Score::AddPoints(_Player, Points);
+	TopScores::AddPoints(_Player.Score, "Capture", Points);
+	Statistics::TrackEvent(_Player, "TornadoHuntGoals", 1);
+	
+	// Notify player about the capture
+	Translations::SendStatusMessage("You've captured the Goal!", 3000, 1, CUIConfig::EUISound::Checkpoint, 0);
+	
+	// ---------------------------------- //
+	// Things valid only for the highlighted Goal
+	if (GoalOrder == 0) {
+		foreach (Player in AllPlayers) {
+			if (Player == _Player || Player.IsBot) continue;
+			
+			// Notify other players about the capture
+			Translations::SendStatusMessage(["$<%1$> has captured the Goal", _Player.User.Name], 3000, 0, CUIConfig::EUISound::Checkpoint, 1);
+			
+			// Boost other players on capture
+			if (S_BoostOthersOnCap && Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+				GalaxyTitles::AddReloadBoost(Player);
+				Player.Stamina = ML::FloorInteger(3600 * Player.StaminaMax);
+			}
+		}
+		
+		// Select new random Goal
+		SelectNextGoal();
+	}
+	
+	// Update interfaces
+	else UpdateInterface();
+}
+
+// ---------------------------------- //
+/** Spawn a player
+ *
+ *	@param	_Player		The player to spawn
+ */
+Void GH_SpawnPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	// Fill the spawns lists
+	if (G_SpawnsList.count == 0) foreach (MapLandmark in MapLandmarks_PlayerSpawn) G_SpawnsList.add(MapLandmark.Id);
+	
+	// ---------------------------------- //
+	// Get new spawn
+	declare SpawnId = NullId;
+	while (True) {
+		SpawnId = G_SpawnsList[ML::Rand(0, G_SpawnsList.count - 1)];
+		if (SpawnId != G_LatestSpawnId || G_SpawnsList.count == 1) break;
+	}
+	G_LatestSpawnId = SpawnId;
+	
+	// ---------------------------------- //
+	// Spawn player
+	SM::SpawnPlayer(_Player, 0, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn, Now + S_RespawnTime);
+	declare Removed = G_SpawnsList.remove(SpawnId);
+}
+
+// ---------------------------------- //
+/** Create manialink for the markers module
+ *
+ *	@return		The markers manialink
+ */
+Text CreateManialinkMarkers() {
 	return """
-		<playerlist posn="-160 68" halign="left" substyle="Small" lines="5" columns="1" team="1" status="Playing"/>
-		<playerlist posn="160 68" halign="right" substyle="Small" lines="5" columns="1" team="2" status="Playing"/>
-	""";
+<manialink version="2" name="TornadoHunt:Markers">
+<script><!--
+/**
+ *	TornadoHunt: Markers
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_TornadoHunt_UpdateTime for Teams[0];
+declare netread Vec3[] Net_TornadoHunt_GoalsOrder for Teams[0];
+declare netread Vec3[][Text] Net_TornadoHunt_CapturedGoals for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare UpdateMarkers = True;
+declare PrevUpdateTime = -1;
+declare PrevGUIPlayerId = NullId;
+
+// Reset markers
+ClientUI.MarkersXML = "<marker/>";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Server script called an update
+if (PrevUpdateTime != Net_TornadoHunt_UpdateTime) {
+	PrevUpdateTime = Net_TornadoHunt_UpdateTime;
+	UpdateMarkers = True;
+}
+
+// ---------------------------------- //
+// Force update on spectated player change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerId != GUIPlayer.Id) {
+		PrevGUIPlayerId = GUIPlayer.Id;
+		UpdateMarkers = True;
+	}
+}
+if (PrevGUIPlayerId != NullId) {
+	PrevGUIPlayerId = NullId;
+	UpdateMarkers = True;
+}
+
+// ---------------------------------- //
+// Update markers
+if (UpdateMarkers) {
+	UpdateMarkers = False;
+	
+	// Reset markers
+	ClientUI.MarkersXML = "<marker/>";
+	
+	declare Text Login;
+	if (GUIPlayer != Null && GUIPlayer.User != Null) Login = GUIPlayer.User.Login;
+	
+	// ---------------------------------- //
+	// Create marker for every Goal available
+	foreach (I => Position in Net_TornadoHunt_GoalsOrder) {
+		declare GoalOrder = Net_TornadoHunt_GoalsOrder.count - I - 1;
+		
+		// ---------------------------------- //
+		// Ignore goal if captured by the spectated player
+		declare Vec3[] GUIPlayerGoals;
+		if (Net_TornadoHunt_CapturedGoals.existskey(Login)) GUIPlayerGoals = Net_TornadoHunt_CapturedGoals[Login];
+		if (GUIPlayerGoals.exists(Position)) continue;
+		
+		// ---------------------------------- //
+		// Create marker
+		declare Pos = Position.X^" "^Position.Y + 25^" "^Position.Z;
+		declare Label = TL::GetTranslatedText(TL::Compose("%1 #"^GoalOrder + 1, _("Goal")));
+		declare Color = "FFF";
+		
+		if (GoalOrder == 0) Color = TL::ColorToText(Teams[1].ColorPrimary);
+		if (GoalOrder == 1) Color = TL::ColorToText(Teams[0].ColorPrimary);
+		
+		ClientUI.MarkersXML ^= "<marker label='"^TL::MLEncode(Label)^"' pos='"^Pos^"' color='"^Color^"' visibility='WhenInFrustum' minimapvisibility='Never'/>";
+	}
+}
+***
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>""";
 }

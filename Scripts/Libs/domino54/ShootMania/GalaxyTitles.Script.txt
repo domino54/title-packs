@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-11-14            //
+//  script version: 2016-11-23            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-11-14"
+#Const Version		"2016-11-23"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -165,15 +165,28 @@ Void ClearReloadBoost() {
 }
 
 // ---------------------------------- //
+/** Destroy an object
+ *
+ *	@param	_Object		The object to destroy
+ */
+Boolean DestroyObject(CSmObject _Object) {
+	if (_Object == Null || !G_LibGalaxyTitles_CreatedObjects.exists(_Object.Id)) return False;
+	
+	// Remove the object from the array
+	declare Removed = G_LibGalaxyTitles_CreatedObjects.remove(_Object.Id);
+	
+	// Destroy object (unspawning the object gives a quiet sound)
+	_Object.SetUnspawned();
+	ObjectDestroy(_Object);
+	return True;
+}
+
+// ---------------------------------- //
 /// Destroy all objects 
 Void DestroyLibObjects() {
 	foreach (ObjectId in G_LibGalaxyTitles_CreatedObjects) {
-		declare CSmObject Object;
-		if (Objects.existskey(ObjectId)) Object = Objects[ObjectId];
-		if (Object == Null) continue;
-		
-		Object.SetUnspawned();
-		ObjectDestroy(Object);
+		if (!Objects.existskey(Objects[ObjectId])) continue;
+		declare Destroyed = DestroyObject(Objects[ObjectId]);
 	}
 	G_LibGalaxyTitles_CreatedObjects.clear();
 	G_LibGalaxyTitles_DroppedObjects.clear();
@@ -390,6 +403,59 @@ Void InitObjects(Boolean _UseWeaponsAndReplies) { InitObjects(_UseWeaponsAndRepl
 Void InitObjects() { InitObjects(True); }
 
 // ---------------------------------- //
+/** Spawn an object
+ *
+ *	@param	_Position	The position the object will be created at
+ *	@param	_ObjectTag	Type of the object to create
+ *	@param	_AnchorId	Id of the map landmark object is spawned on
+ *
+ *	@return		The created object
+ */
+CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag, Ident _AnchorId) {
+	if (_Position == <0., 0., 0.> || !C_LibGalaxyTitles_AcceptedObjects.exists(_ObjectTag)) return Null;
+	
+	// Check if the given id belongs to a real object anchor landmark
+	declare AnchorId = NullId;
+	if (MapLandmarks_ObjectAnchor.existskey(_AnchorId)) AnchorId = _AnchorId;
+	
+	// ---------------------------------- //
+	// Create the object
+	declare CSmObject Object;
+	switch (_ObjectTag) {
+		case "Armor"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Armor"]);
+		case "Laser"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Laser"]);
+		case "Nucleus"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Nucleus"]);
+		case "Arrow"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Arrow"]);
+		case "Rocket"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Rocket"]);
+		case "Fuel"		: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Fuel"]);
+		case "Replie"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Replie"]);
+	}
+	if (Object == Null) return Null;
+	
+	// ---------------------------------- //
+	// Set object properties
+	declare Ident LibGalaxyTitles_AnchorId for Object;
+	declare Text LibGalaxyTitles_ObjectTag for Object;
+	LibGalaxyTitles_AnchorId = AnchorId;
+	LibGalaxyTitles_ObjectTag = _ObjectTag;
+	
+	// Spawn object
+	Object.SetPosition(_Position);
+	G_LibGalaxyTitles_CreatedObjects.add(Object.Id);
+	return Object;
+}
+
+// ---------------------------------- //
+/** Spawn an object
+ *
+ *	@param	_Position	The position the object will be created at
+ *	@param	_ObjectTag	Type of the object to create
+ *
+ *	@return		The created object
+ */
+CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag) { return SpawnObject(_Position, _ObjectTag, NullId); }
+
+// ---------------------------------- //
 /** Spawn objects on landmarks
  *
  *	@param	_SpawnObjects	If False, objects won't be spawned
@@ -416,36 +482,21 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		foreach (MapLandmarkId in PlayerWeaponsToDrop) {
 			if (!MapLandmarks_ObjectAnchor.existskey(MapLandmarkId)) continue;
 			declare MapLandmark <=> MapLandmarks_ObjectAnchor[MapLandmarkId];
-			
-			// ---------------------------------- //
-			// Create object
 			declare Boolean LibGalaxyTitles_ObjectSpawned for MapLandmark;
-			declare CSmObject Object;
-			
-			switch (MapLandmark.Tag) {
-				case "Laser"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Laser"]);
-				case "Nucleus"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Nucleus"]);
-				case "Arrow"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Arrow"]);
-				case "Rocket"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Rocket"]);
-			}
-			
-			if (Object == Null) continue;
-			LibGalaxyTitles_ObjectSpawned = True;
-			
-			// ---------------------------------- //
-			// Set object properties
-			declare Ident LibGalaxyTitles_AnchorId for Object;
-			declare Text LibGalaxyTitles_Tag for Object;
-			LibGalaxyTitles_AnchorId = MapLandmarkId;
-			LibGalaxyTitles_Tag = MapLandmark.Tag;
-			
-			// Reset weapon carrier
-			declare Ident LibGalaxyTitles_ObjectPlayerId for MapLandmark;
-			LibGalaxyTitles_ObjectPlayerId = NullId;
 			
 			// Get the target position of an object
 			declare Position = Player.Position;
 			for (I, 0, 2) Position[I] += C_LibGalaxyTitles_ObjectsDropSpreadSize[I] * ML::Rand(-1., 1.);
+			
+			// ---------------------------------- //
+			// Create object
+			declare Object = SpawnObject(Position, MapLandmark.Tag, MapLandmarkId);
+			LibGalaxyTitles_ObjectSpawned = Object != Null;
+			if (!LibGalaxyTitles_ObjectSpawned) continue;
+			
+			// Reset weapon carrier
+			declare Ident LibGalaxyTitles_ObjectPlayerId for MapLandmark;
+			LibGalaxyTitles_ObjectPlayerId = NullId;
 			
 			// Create weapon marker
 			if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
@@ -461,10 +512,6 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			declare SpawnTime = Now;
 			while (G_LibGalaxyTitles_DroppedObjects.existskey(SpawnTime)) SpawnTime += 1;
 			G_LibGalaxyTitles_DroppedObjects[SpawnTime] = Object.Id;
-			
-			// Spawn object
-			Object.SetPosition(Position);
-			G_LibGalaxyTitles_CreatedObjects.add(Object.Id);
 		}
 	}
 	
@@ -481,11 +528,10 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		declare Object <=> Objects[ObjectId];
 		declare Ident LibGalaxyTitles_AnchorId for Object;
 		
-		// ---------------------------------- //
-		// Remove object from custom arrays
-		declare Boolean Removed;
-		Removed = G_LibGalaxyTitles_CreatedObjects.remove(ObjectId);
-		Removed = G_LibGalaxyTitles_DroppedObjects.remove(ObjectId);
+		declare Destroyed = DestroyObject(Object);
+		
+		// Remove object from custom array
+		declare Removed = G_LibGalaxyTitles_DroppedObjects.remove(ObjectId);
 		
 		// ---------------------------------- //
 		// Update landmark information
@@ -500,10 +546,6 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			MiniMap::DestroyMarker(MarkerTag);
 			Removed = G_LibGalaxyTitles_MinimapMarkers.remove(MarkerTag);
 		}
-		
-		// Destroy object
-		Object.SetUnspawned();
-		ObjectDestroy(Object);
 	}
 	
 	// ---------------------------------- //
@@ -535,26 +577,9 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		
 		// ---------------------------------- //
 		// Create object
-		declare CSmObject Object;
-		switch (MapLandmark.Tag) {
-			case "Armor"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Armor"]);
-			case "Laser"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Laser"]);
-			case "Nucleus"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Nucleus"]);
-			case "Arrow"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Arrow"]);
-			case "Rocket"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Rocket"]);
-			case "Fuel"		: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Fuel"]);
-			case "Replie"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Replie"]);
-		}
-		
-		if (Object == Null) continue;
-		LibGalaxyTitles_ObjectSpawned = True;
-		
-		// ---------------------------------- //
-		// Set object properties
-		declare Ident LibGalaxyTitles_AnchorId for Object;
-		declare Text LibGalaxyTitles_Tag for Object;
-		LibGalaxyTitles_AnchorId = MapLandmark.Id;
-		LibGalaxyTitles_Tag = MapLandmark.Tag;
+		declare Object = SpawnObject(MapLandmark.Position, MapLandmark.Tag, MapLandmark.Id);
+		LibGalaxyTitles_ObjectSpawned = Object != Null;
+		if (LibGalaxyTitles_ObjectSpawned == False) continue;
 		
 		// Reset weapon carrier
 		LibGalaxyTitles_ObjectPlayerId = NullId;
@@ -568,10 +593,6 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			);
 			G_LibGalaxyTitles_MinimapMarkers.add(MarkerTag);
 		}
-		
-		// Spawn object
-		Object.SetPosition(MapLandmark.Position);
-		G_LibGalaxyTitles_CreatedObjects.add(Object.Id);
 	}
 }
 
@@ -595,11 +616,11 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 		!G_LibGalaxyTitles_LibraryLoaded
 	) return False;
 	
-	declare Text LibGalaxyTitles_Tag for _Event.Object;
+	declare Text LibGalaxyTitles_ObjectTag for _Event.Object;
 	declare Ident LibGalaxyTitles_AnchorId for _Event.Object;
 	
 	// Return False if object is not handled by GalaxyTitles library
-	if (!C_LibGalaxyTitles_AcceptedObjects.exists(LibGalaxyTitles_Tag)) return False;
+	if (!C_LibGalaxyTitles_AcceptedObjects.exists(LibGalaxyTitles_ObjectTag)) return False;
 	
 	Discard(_Event);
 	
@@ -607,7 +628,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 	// Pick conditions
 	declare CanPickUpObject = True;
 	
-	switch (LibGalaxyTitles_Tag) {
+	switch (LibGalaxyTitles_ObjectTag) {
 		// ---------------------------------- //
 		// Armor conditions
 		case "Armor" : {
@@ -642,14 +663,14 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 		}
 		// ---------------------------------- //
 		// Weapons conditions
-		default : if (C_LibGalaxyTitles_WeaponItemsTags.exists(LibGalaxyTitles_Tag)) {
+		default : if (C_LibGalaxyTitles_WeaponItemsTags.exists(LibGalaxyTitles_ObjectTag)) {
 			// Player can't hold any additional weapons
 			if (G_LibGalaxyTitles_InventoryMaxWeapons == 0) CanPickUpObject = False;
 			
 			// Limited weapons amount
 			else if (G_LibGalaxyTitles_InventoryMaxWeapons > 0) {
 				declare CSmMode::EWeapon Weapon;
-				switch (LibGalaxyTitles_Tag) {
+				switch (LibGalaxyTitles_ObjectTag) {
 					case "Laser" : Weapon = CSmMode::EWeapon::Laser;
 					case "Nucleus" : Weapon = CSmMode::EWeapon::Nucleus;
 					case "Arrow" : Weapon = CSmMode::EWeapon::Arrow;
@@ -695,7 +716,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 	declare NbOtherPlayersAffected = 0;
 	declare Message = Text[];
 	
-	switch (LibGalaxyTitles_Tag) {
+	switch (LibGalaxyTitles_ObjectTag) {
 		// ---------------------------------- //
 		// Armor - heal players
 		case "Armor" : {
@@ -792,10 +813,10 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 		TopScores::AddPoints(_Event.Player.Score, "Items", NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
 	}
 	
-	if (C_LibGalaxyTitles_WeaponItemsTags.exists(LibGalaxyTitles_Tag)) {
+	if (C_LibGalaxyTitles_WeaponItemsTags.exists(LibGalaxyTitles_ObjectTag)) {
 		// ---------------------------------- //
 		// Crosshair notice on weapon added
-		Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1", LibGalaxyTitles_Tag], C_LibGalaxyTitles_NoteDisplayTime);
+		Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1", LibGalaxyTitles_ObjectTag], C_LibGalaxyTitles_NoteDisplayTime);
 		
 		// ---------------------------------- //
 		// Add weapon to drop
@@ -803,11 +824,8 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 		if (!PlayerWeaponsToDrop.exists(LibGalaxyTitles_AnchorId)) PlayerWeaponsToDrop.add(LibGalaxyTitles_AnchorId);
 	}
 	
-	// ---------------------------------- //
-	// Destroy object (unspawning the object gives a quiet sound)
-	declare Removed = G_LibGalaxyTitles_CreatedObjects.remove(_Event.Object.Id);
-	_Event.Object.SetUnspawned();
-	ObjectDestroy(_Event.Object);
+	// Destroy the object
+	declare Destroyed = DestroyObject(_Event.Object);
 	return True;
 }
 
@@ -862,7 +880,7 @@ Void InitToads() { InitToads(C_LibGalaxyTitles_ToadLandmarksRatio); }
  *	@param	_ToadsRespawnTime	Time before Toad will respawn after elimination
  */
 Void ToadsLoop(Integer _ToadsRespawnTime) {
-	if (!G_LibGalaxyTitles_LibraryLoaded) return;
+	if (!G_LibGalaxyTitles_LibraryLoaded || OffZoneRadius > 0) return;
 	
 	// ---------------------------------- //
 	// Spawn Toads
@@ -1081,7 +1099,7 @@ Void Loop() {
 
 // ---------------------------------- //
 /** Reset and load player weapons after player is respawned
- *	/!\ Must be placed after player is spawned in the world /!\
+ *	/!\ Must be called after player is spawned in the world /!\
  *
  *	@param	_Player		Player to set weapon
  */
@@ -1128,10 +1146,6 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	// Reset weapons to drop
 	declare Ident[] PlayerWeaponsToDrop for _Player;
 	PlayerWeaponsToDrop.clear();
-	
-	// Change icons to GalaxyTitles style
-	foreach (Weapon in C_LibGalaxyTitles_WeaponItemsTags)
-		Inventory::ChangeSlotIcon(_Player, "LibInventory_Weapon"^Weapon, C_ImgBase^"Icons/"^Weapon^".png");
 }
 
 // ---------------------------------- //
@@ -1163,6 +1177,9 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 		
 		// Heal the player
 		AddPlayerArmor(_Event.Player, C_LibGalaxyTitles_ArmorHealAmount, Null, 0);
+		
+		// Track event
+		Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
 		
 		// Show particle effect on the player
 		declare Boolean Replie_TriggerParticles for _Event.Player;

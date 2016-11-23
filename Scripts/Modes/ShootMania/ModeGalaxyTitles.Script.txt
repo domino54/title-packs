@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-11-14            //
+//  script version: 2016-11-23            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-11-14"
+#Const BaseVersion		"2016-11-23"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -43,8 +43,8 @@
 #Setting S_UseAutoBalance		False	as _("Balance teams on round start")
 #Setting S_MaximumNbWeapons		2		as _("Max. slots amount of every Weapon")
 #Setting S_MaximumNbReplies		3		as _("Max. amount of Replies held")
-#Setting S_ObjectsRespawnTime	15		as "<hidden>" //_("Items respawn time (0 = don't spawn)")
-#Setting S_ToadsRespawnTime		60		as "<hidden>" //_("Toads respawn time (0 = don't spawn)")
+#Setting S_ObjectsRespawnTime	15		as _("Items respawn time (0 = don't spawn)")
+#Setting S_ToadsRespawnTime		60		as _("Toads respawn time (0 = don't spawn)")
 #Setting S_ToadsSpawnRatio		.5		as "<hidden>" //_("Percentage amount of Toads to spawn on landmarks")
 #Setting S_WeaponsDropLifetime	0		as "<hidden>" ///< Duration before bropped weapons reappear on landmarks
 #Setting S_WarmUpDuration		300		as "<hidden>" ///< Duration of the warm up round (0 = no warmup)
@@ -96,6 +96,7 @@ declare Text GT_SpawnScreenObjectives;		///< Rules of the game mode displayed in
 // ---------------------------------- //
 declare Boolean GT_UseNoCollisionsStart;	///< Use the no-collisions round start
 declare Boolean GT_UseAutoEndSequence;		///< Use the automatic End Map sequence
+declare Boolean GT_UseAutospawnObjects;		///< Use automatically spawned objects
 declare Boolean GT_UseComboWeapons;			///< Use Combo weapon items
 declare Boolean GT_UseRepliePickups;		///< Use Replie pickup items
 declare Boolean GT_UseRandomToads;			///< Spawn Toads on random bot path landmarks
@@ -104,6 +105,7 @@ declare Boolean GT_AutoManageOnShoot;		///< Automatically manage OnShoot events
 declare Boolean GT_AutoManageOnArmorEmpty;	///< Automatically manage OnArmorEmpty events
 declare Boolean GT_AutoManageOnNearMiss;	///< Automatically manage OnNearMiss events
 declare Boolean GT_AutoManageOnRespawn;		///< Automatically manage OnPlayerRequestRespawn event
+declare Boolean GT_AutoManageOnObjectTouch;	///< Automatically manage OnPlayerTouchesObject events
 declare Boolean GT_AllowMatchmakingMode;	///< Defines if the mode can use matchmaking feature
 
 // ---------------------------------- //
@@ -209,6 +211,7 @@ if (UseClans) {
 // Set mode options
 UseClans = False; ///< Disable clans by default
 ForceNavMapsComputation = True; ///< Lets the bots move around
+UseAutoSpawnBots = False; ///< Disable bots items placed on map by user
 
 MB_UseSectionRound = True;
 MB_UsePlayerClublinks = S_UsePlayerClublinks;
@@ -222,6 +225,7 @@ MB_UseIntro = !MM_IsMatchServer();
  */
 GT_UseNoCollisionsStart = True;
 GT_UseAutoEndSequence = True;
+GT_UseAutospawnObjects = True;
 GT_UseComboWeapons = True;
 GT_UseRepliePickups = True;
 GT_UseRandomToads = True;
@@ -230,6 +234,7 @@ GT_AutoManageOnShoot = True;
 GT_AutoManageOnArmorEmpty = True;
 GT_AutoManageOnNearMiss = True;
 GT_AutoManageOnRespawn = True;
+GT_AutoManageOnObjectTouch = True;
 GT_AllowMatchmakingMode = True;
 
 // Variables
@@ -336,7 +341,7 @@ if (UseClans && !UseForcedClans) {
 // ---------------------------------- //
 // Map start
 // ---------------------------------- //
-***StartMap***
+***InitMap***
 ***
 Score::MatchBegin(True);
 TopScores::MatchBegin();
@@ -385,7 +390,7 @@ if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 // ---------------------------------- //
 // Round start
 // ---------------------------------- //
-***StartRound***
+***InitRound***
 ***
 Score::RoundBegin();
 TopScores::RoundBegin();
@@ -636,7 +641,7 @@ foreach (Event in PendingEvents) {
 		}
 		
 		// Pick up object handled by the mode base
-		if (GalaxyTitles::PickUpObject(Event, S_ObjectsRespawnTime * 1000)) continue;
+		if (GT_AutoManageOnObjectTouch) if (GalaxyTitles::PickUpObject(Event, S_ObjectsRespawnTime * 1000)) continue;
 		
 		+++OnPlayerTouchesObject+++
 	}
@@ -683,7 +688,7 @@ foreach (Event in PendingEvents) {
 // ---------------------------------- //
 // Galaxy Titles features
 GT_UnspawnPlayersChangingClan();
-GalaxyTitles::Loop(S_ObjectsRespawnTime > 0, S_ToadsRespawnTime * 1000);
+GalaxyTitles::Loop(GT_UseAutospawnObjects && S_ObjectsRespawnTime > 0, S_ToadsRespawnTime * 1000);
 
 // ---------------------------------- //
 // Stop the no-collisions phase
@@ -1033,7 +1038,7 @@ Void GT_DoWarmUp() {
 		// Let the server sleep if there are no players
 		if (PlayersNbTotal <= 0) continue;
 		
-		GalaxyTitles::SpawnObjects();
+		GalaxyTitles::SpawnObjects(GT_UseAutospawnObjects);
 		if (UseClans) GT_UnspawnPlayersChangingClan();
 		
 		// ---------------------------------- //

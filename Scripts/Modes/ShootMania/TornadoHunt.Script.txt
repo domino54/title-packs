@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  TORNADO HUNT by domino54              //
-//  script version: 2016-11-23            //
+//  script version: 2016-11-24            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"TornadoHuntArena GoalHuntArena RealmArena BattleArena"
-#Const Version		"2016-11-23"
+#Const Version		"2016-11-24"
 #Const ScriptName	"TornadoHunt.Script.txt"
 
 // ---------------------------------- //
@@ -16,7 +16,7 @@
 #Setting S_PointsLimit			120		as _("Points limit")
 #Setting S_EnablePvPWeapons		True	as _("Enable PvP weapons")
 #Setting S_ShowTornadoOnGoal	True	as _("Show Tornado over the first Goal")
-#Setting S_MaxNbPrevGoals		2		as _("Number of capturable previous goals")
+#Setting S_MaxNbPrevGoals		2		as _("Number of capturable previous Goals (4 max)")
 #Setting S_BoostOthersOnCap		True	as _("Boost other players on capture")
 #Setting S_GoalCaptureTimeout	30		as _("Time before other Goal is selected if not captured")
 
@@ -24,11 +24,16 @@
 // Constants
 // ---------------------------------- //
 #Const C_PointsPerCapturedGoal	2	///< Amount of points per every goal avaialble
+#Const C_MaxNbPrevGoalsToCap	4	///< Maximum number of previous Goals to capture
 #Const C_OffZoneConstantRadius	3.	///< Radius of the Tornado around the Goal
+
+/// Force colors of both teams
+#Const C_TeamsColors [0 => <0., 1., 0.>, 1 => <1., 1., 0.>]
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
+declare Integer G_GoalsNbMax;	///< Maxinum number of previous Goals to capture
 declare Ident[] G_GoalsOrder;	///< All Goals listed from the oldest to the newest tossed
 declare Ident[] G_GoalsList;	///< List of Goals available to toss
 declare Ident G_LatestGoalId;	///< Previously tossed Goal
@@ -72,7 +77,13 @@ PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Rules", "Touch the $<$F00red$> 
 // ---------------------------------- //
 // Create custom interface
 Layers::Create("TornadoHunt:Markers", CreateManialinkMarkers());
+Layers::SetType("TornadoHunt:Markers", CUILayer::EUILayerType::Markers);
 Layers::Attach("TornadoHunt:Markers");
+
+Layers::Create("TornadoHunt:Countdown", CreateManialinkCountdown());
+Layers::Attach("TornadoHunt:Countdown");
+
+UpdateInterface();
 ***
 
 // ---------------------------------- //
@@ -83,6 +94,7 @@ Layers::Attach("TornadoHunt:Markers");
 declare CurrentTimeLimit = S_TimeLimit;
 declare PrevPointsLimit = -1;
 declare PrevShowTornado = False;
+declare PrevNbGoalsMax = S_MaxNbPrevGoals;
 
 // ---------------------------------- //
 // Check if the map is valid
@@ -107,6 +119,7 @@ if (!MapValidated) {
 // ---------------------------------- //
 ***StartMap***
 ***
+G_GoalsNbMax = ML::Clamp(S_MaxNbPrevGoals, 0, C_MaxNbPrevGoalsToCap);
 G_GoalsOrder.clear();
 G_GoalsList.clear();
 G_SpawnsList.clear();
@@ -148,6 +161,19 @@ UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConf
 
 // Set the first Goal
 SelectNextGoal();
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Force custom teams colors
+foreach (I => Team in Teams) {
+	if (Team.ColorPrimary == C_TeamsColors[I]) continue;
+	Team.ColorPrimary = C_TeamsColors[I];
+}
 ***
 
 // ---------------------------------- //
@@ -245,6 +271,14 @@ if (PrevShowTornado != S_ShowTornadoOnGoal) {
 }
 
 // ---------------------------------- //
+// Update previous capturable Goals count
+if (PrevNbGoalsMax != S_MaxNbPrevGoals) {
+	PrevNbGoalsMax = S_MaxNbPrevGoals;
+	G_GoalsNbMax = ML::Clamp(S_MaxNbPrevGoals, 0, C_MaxNbPrevGoalsToCap);
+	UpdateInterface();
+}
+
+// ---------------------------------- //
 // Victory conditions
 if (Scores.existskey(0) && Scores[0].Points >= S_PointsLimit) {
 	Message::SendBigMessage(
@@ -267,6 +301,15 @@ OffZoneRadius = -1.;
 StartTime = -1;
 EndTime = -1;
 
+// ---------------------------------- //
+// Reset landmarks apperance
+foreach (MapLandmark in MapLandmarks_Gauge) {
+	if (MapLandmark.Gate != Null) continue;
+	MapLandmark.Gauge.Max = 0;
+	MapLandmark.Gauge.ValueReal = 0.;
+	MapLandmark.Gauge.Speed = 0;
+}
+
 // Unspawn everyone except the winner
 foreach (I => Player in Players) if (I > 0) UnspawnPlayer(Player);
 
@@ -280,6 +323,8 @@ Message::CleanBigMessages();
 // ---------------------------------- //
 ***EndServer***
 ***
+Layers::Detach("TornadoHunt:Countdown");
+Layers::Destroy("TornadoHunt:Countdown");
 Layers::Detach("TornadoHunt:Markers");
 Layers::Destroy("TornadoHunt:Markers");
 ***
@@ -309,11 +354,15 @@ Integer GetGoalOrder(Ident _MapLandmarkId) {
 // ---------------------------------- //
 /// Update the data sent to the interface
 Void UpdateInterface() {
+	declare netwrite Integer Net_TornadoHunt_NbMaxGoals for Teams[0];
 	declare netwrite Integer Net_TornadoHunt_UpdateTime for Teams[0];
+	declare netwrite Vec3 Net_TornadoHunt_CurrentGoal for Teams[0];
 	declare netwrite Vec3[] Net_TornadoHunt_GoalsOrder for Teams[0];
 	declare netwrite Vec3[][Text] Net_TornadoHunt_CapturedGoals for Teams[0];
 	
+	Net_TornadoHunt_NbMaxGoals = G_GoalsNbMax;
 	Net_TornadoHunt_UpdateTime = Now;
+	Net_TornadoHunt_CurrentGoal = Vec3;
 	Net_TornadoHunt_GoalsOrder.clear();
 	Net_TornadoHunt_CapturedGoals.clear();
 	
@@ -321,13 +370,18 @@ Void UpdateInterface() {
 	// Get the list of all capturable Goals
 	foreach (MapLandmarkId in G_GoalsOrder) {
 		declare GoalOrder = GetGoalOrder(MapLandmarkId);
-		if (GoalOrder < 0 || GoalOrder > S_MaxNbPrevGoals) continue;
+		if (GoalOrder < 0 || GoalOrder > G_GoalsNbMax) continue;
 		
 		// Get landmark position
 		if (!MapLandmarks.existskey(MapLandmarkId)) continue;
 		declare MapLandmark <=> MapLandmarks[MapLandmarkId];
 		Net_TornadoHunt_GoalsOrder.add(MapLandmark.Position);
 	}
+	
+	// ---------------------------------- //
+	// Get the current Goal
+	if (Net_TornadoHunt_GoalsOrder.count > 0)
+		Net_TornadoHunt_CurrentGoal = Net_TornadoHunt_GoalsOrder[Net_TornadoHunt_GoalsOrder.count - 1];
 	
 	// ---------------------------------- //
 	// Get list of Goals captured by players
@@ -392,7 +446,7 @@ Void SelectNextGoal() {
 		// ---------------------------------- //
 		// Configure the landmark base
 		if (MapLandmark.Base == Null) continue;
-		MapLandmark.Base.IsActive = GoalOrder != -1 && GoalOrder <= S_MaxNbPrevGoals;
+		MapLandmark.Base.IsActive = GoalOrder != -1 && GoalOrder <= G_GoalsNbMax;
 		if (MapLandmark.Base.IsActive) MapLandmark.Gauge.ValueReal = 1.;
 		
 		// Set clan depending on order
@@ -429,7 +483,7 @@ Void CaptureLandmark(CSmPlayer _Player, Ident _MapLandmarkId) {
 	
 	// Get the order of the goal
 	declare GoalOrder = GetGoalOrder(_MapLandmarkId);
-	if (GoalOrder <= -1 || GoalOrder > S_MaxNbPrevGoals) return;
+	if (GoalOrder <= -1 || GoalOrder > G_GoalsNbMax) return;
 	
 	// Check if player haven't captured this goal yet
 	declare Ident[] CapturedLandmarksIds for _Player;
@@ -437,7 +491,7 @@ Void CaptureLandmark(CSmPlayer _Player, Ident _MapLandmarkId) {
 	CapturedLandmarksIds.add(_MapLandmarkId);
 	
 	// Give points for capturing the goal
-	declare Points = (S_MaxNbPrevGoals - GoalOrder + 1) * C_PointsPerCapturedGoal;
+	declare Points = (G_GoalsNbMax - GoalOrder + 1) * C_PointsPerCapturedGoal;
 	Score::AddPoints(_Player, Points);
 	TopScores::AddPoints(_Player.Score, "Capture", Points);
 	Statistics::TrackEvent(_Player, "TornadoHuntGoals", 1);
@@ -495,19 +549,32 @@ Void GH_SpawnPlayer(CSmPlayer _Player) {
 	declare Removed = G_SpawnsList.remove(SpawnId);
 }
 
-// ---------------------------------- //
-/** Create manialink for the markers module
- *
- *	@return		The markers manialink
- */
-Text CreateManialinkMarkers() {
+Text CreateManialinkCountdown() {
 	return """
-<manialink version="2" name="TornadoHunt:Markers">
+<manialink version="2" name="TornadoHunt:Countdown">
+<stylesheet>
+	<style class="text" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
+	<style class="circ" sizen="16 16" halign="center" valign="center" colorize="FFF"/>
+</stylesheet>
+
+<frame id="Frame_PoleGauge" posn="0 75">
+	<quad class="circ" image="{{{C_ImgBase}}}CircGaugeBg.png" id="Quad_GaugeBg"/>
+	<frame posn="-.05 0 1" clip="1" clipposn="4" clipsizen="8 16">
+		<quad class="circ" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeL" hidden="1"/>
+	</frame>
+	<frame posn="0 0 1" clip="1" clipposn="-4" clipsizen="8 16">
+		<quad class="circ" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeR" hidden="1" rot="180"/>
+	</frame>
+	<label posn="0 -2.75 2" class="text" textsize="2" text="0s" id="Label_Ratio"/>
+	<quad posn="0 1.25 2" sizen="6 6" halign="center" valign="center" style="Emblems" substyle="#0"/>
+</frame>
+
 <script><!--
 /**
- *	TornadoHunt: Markers
+ *	TornadoHunt: Countdown
  */
 
+#Include "MathLib" as ML
 #Include "TextLib" as TL
 
 // ---------------------------------- //
@@ -516,19 +583,148 @@ Text CreateManialinkMarkers() {
 ***Main***
 ***
 // ---------------------------------- //
+// Load interface elements
+declare Frame_PoleGauge <=> (Page.GetFirstChild("Frame_PoleGauge") as CMlFrame);
+declare Quad_GaugeL <=> (Page.GetFirstChild("Quad_GaugeL") as CMlQuad);
+declare Quad_GaugeR <=> (Page.GetFirstChild("Quad_GaugeR") as CMlQuad);
+declare Quad_GaugeBg <=> (Page.GetFirstChild("Quad_GaugeBg") as CMlQuad);
+declare Label_Ratio <=> (Page.GetFirstChild("Label_Ratio") as CMlLabel);
+
+// ---------------------------------- //
 // Netcode
+declare netwrite Vec3 Net_TornadoHunt_CurrentGoal for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare CurrentGoalId = NullId;
+declare Time = 0;
+declare MaxTime = 0;
+
+// Update
+declare PrevGoal = Vec3;
+
+// ---------------------------------- //
+// Set the gauge color
+declare Color = {{{C_TeamsColors[1]}}};
+Quad_GaugeL.Colorize = Color;
+Quad_GaugeR.Colorize = Color;
+Quad_GaugeBg.Colorize = Color;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+if (!PageIsVisible) continue;
+
+// ---------------------------------- //
+// Get current Goal Id
+if (PrevGoal != Net_TornadoHunt_CurrentGoal) {
+	PrevGoal = Net_TornadoHunt_CurrentGoal;
+	CurrentGoalId = NullId;
+	foreach (MapLandmark in MapLandmarks_Gauge) if (MapLandmark.Position == PrevGoal) CurrentGoalId = MapLandmark.Id;
+}
+
+// ---------------------------------- //
+// Set the frame visibility
+if (CurrentGoalId != NullId) {
+	declare MapLandmark <=> MapLandmarks_Gauge[CurrentGoalId];
+	Time = MapLandmark.Gauge.Value;
+	MaxTime = MapLandmark.Gauge.Max;
+}
+Frame_PoleGauge.Visible = MaxTime > 1 && Time > 0;
+if (!Frame_PoleGauge.Visible) continue;
+
+// ---------------------------------- //
+// Set ratio
+declare Ratio = ML::ToReal(Time) / MaxTime;
+Quad_GaugeL.RelativeRotation = ML::Clamp(Ratio * 360., 0., 180.);
+Quad_GaugeR.RelativeRotation = 180 + ML::Clamp((Ratio - .5) * 360., 0., 180.);
+Quad_GaugeL.Visible = Quad_GaugeL.RelativeRotation > 1.5;
+Quad_GaugeR.Visible = Quad_GaugeR.RelativeRotation > 180;
+Label_Ratio.Value = ML::CeilingInteger(Time / 1000.)^"s";
+***
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create manialink for the markers module
+ *
+ *	@return		The markers manialink
+ */
+Text CreateManialinkMarkers() {
+	declare R = 9/16.;
+	
+	declare Text MarkersInstances;
+	for (I, 0, C_MaxNbPrevGoalsToCap)
+		MarkersInstances ^= "<frameinstance modelid='FrameModel_GoalMarker' id='Frame_GoalMarker#"^I^"' hidden=1 />";
+	
+	return """
+<manialink version="2" name="TornadoHunt:Markers">
+<stylesheet>
+	<style class="text" halign="center" valign="center2" textsize="0" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
+</stylesheet>
+
+<framemodel id="FrameModel_GoalMarker">
+	<label posn="0 4" class="text" id="Label_MarkerDistance"/>
+	<label posn="0 2" class="text" scale="1.5" id="Label_MarkerGoalName"/>
+	<label class="text" id="Label_MarkerNbPoints"/>
+	<quad posn="0 3" sizen="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon"/>
+</framemodel>
+
+{{{MarkersInstances}}}
+
+<script><!--
+/**
+ *	TornadoHunt: Markers
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare CMlFrame[] Frame_GoalsMarkers;
+for (I, 0, {{{C_MaxNbPrevGoalsToCap}}}) Frame_GoalsMarkers.add((Page.GetFirstChild("Frame_GoalMarker#"^I) as CMlFrame));
+
+declare CMlLabel[] Label_MarkersDistances;
+foreach (Frame in Frame_GoalsMarkers) Label_MarkersDistances.add((Frame.GetFirstChild("Label_MarkerDistance") as CMlLabel));
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_TornadoHunt_NbMaxGoals for Teams[0];
 declare netread Integer Net_TornadoHunt_UpdateTime for Teams[0];
 declare netread Vec3[] Net_TornadoHunt_GoalsOrder for Teams[0];
 declare netread Vec3[][Text] Net_TornadoHunt_CapturedGoals for Teams[0];
 
 // ---------------------------------- //
 // Variables
-declare UpdateMarkers = True;
+declare UpdateMarkers = 2;
+declare VisibleFrames = Integer[];
+
 declare PrevUpdateTime = -1;
 declare PrevGUIPlayerId = NullId;
 
 // Reset markers
-ClientUI.MarkersXML = "<marker/>";
+ClientUI.MarkersXML = "";
 ***
 
 // ---------------------------------- //
@@ -540,7 +736,7 @@ ClientUI.MarkersXML = "<marker/>";
 // Server script called an update
 if (PrevUpdateTime != Net_TornadoHunt_UpdateTime) {
 	PrevUpdateTime = Net_TornadoHunt_UpdateTime;
-	UpdateMarkers = True;
+	UpdateMarkers = 2;
 }
 
 // ---------------------------------- //
@@ -548,49 +744,121 @@ if (PrevUpdateTime != Net_TornadoHunt_UpdateTime) {
 if (GUIPlayer != Null) {
 	if (PrevGUIPlayerId != GUIPlayer.Id) {
 		PrevGUIPlayerId = GUIPlayer.Id;
-		UpdateMarkers = True;
+		UpdateMarkers = 2;
 	}
 }
-if (PrevGUIPlayerId != NullId) {
+else if (PrevGUIPlayerId != NullId) {
 	PrevGUIPlayerId = NullId;
-	UpdateMarkers = True;
+	UpdateMarkers = 2;
 }
 
 // ---------------------------------- //
 // Update markers
-if (UpdateMarkers) {
-	UpdateMarkers = False;
+if (UpdateMarkers > 0) {
+	UpdateMarkers -= 1;
 	
 	// Reset markers
-	ClientUI.MarkersXML = "<marker/>";
+	ClientUI.MarkersXML = "";
 	
 	declare Text Login;
 	if (GUIPlayer != Null && GUIPlayer.User != Null) Login = GUIPlayer.User.Login;
 	
 	// ---------------------------------- //
 	// Create marker for every Goal available
-	foreach (I => Position in Net_TornadoHunt_GoalsOrder) {
+	foreach (I => Frame in Frame_GoalsMarkers) {
+		Frame.Visible = Net_TornadoHunt_GoalsOrder.existskey(I);
+		if (!Frame.Visible) continue;
+		
+		// Goal parameters
+		declare Position = Net_TornadoHunt_GoalsOrder[I];
 		declare GoalOrder = Net_TornadoHunt_GoalsOrder.count - I - 1;
+		declare Points = (Net_TornadoHunt_NbMaxGoals - GoalOrder + 1) * {{{C_PointsPerCapturedGoal}}};
 		
 		// ---------------------------------- //
 		// Ignore goal if captured by the spectated player
 		declare Vec3[] GUIPlayerGoals;
 		if (Net_TornadoHunt_CapturedGoals.existskey(Login)) GUIPlayerGoals = Net_TornadoHunt_CapturedGoals[Login];
-		if (GUIPlayerGoals.exists(Position)) continue;
+		if (GUIPlayerGoals.exists(Position)) { Frame.Hide(); continue; }
 		
 		// ---------------------------------- //
 		// Create marker
 		declare Pos = Position.X^" "^Position.Y + 25^" "^Position.Z;
-		declare Label = TL::GetTranslatedText(TL::Compose("%1 #"^GoalOrder + 1, _("Goal")));
-		declare Color = "FFF";
+		ClientUI.MarkersXML ^= "<marker manialinkframeid='Frame_GoalMarker#"^I^"' pos='"^Pos^"' visibility='WhenInFrustum' minimapvisibility='Never'/>";
 		
-		if (GoalOrder == 0) Color = TL::ColorToText(Teams[1].ColorPrimary);
-		if (GoalOrder == 1) Color = TL::ColorToText(Teams[0].ColorPrimary);
+		// ---------------------------------- //
+		// Load frame elements
+		declare Label_MarkerGoalName <=> (Frame.GetFirstChild("Label_MarkerGoalName") as CMlLabel);
+		declare Label_MarkerNbPoints <=> (Frame.GetFirstChild("Label_MarkerNbPoints") as CMlLabel);
+		declare Quad_MarkerIcon <=> (Frame.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
 		
-		ClientUI.MarkersXML ^= "<marker label='"^TL::MLEncode(Label)^"' pos='"^Pos^"' color='"^Color^"' visibility='WhenInFrustum' minimapvisibility='Never'/>";
+		// ---------------------------------- //
+		// Configure marker text
+		Label_MarkerGoalName.Value = MarkerText("$n$t%1 #%2", _("Target"), TL::ToText(GoalOrder + 1));
+		Label_MarkerNbPoints.Value = MarkerText("$n$t%1 - %2", _("Points"), TL::ToText(Points));
+		
+		// ---------------------------------- //
+		// Set the marker color
+		declare Color = <.75, .75, .75>;
+		switch (GoalOrder) {
+			case 0 : Color = {{{C_TeamsColors[1]}}};
+			case 1 : Color = {{{C_TeamsColors[0]}}};
+		}
+		Label_MarkerGoalName.TextColor = Brightness(Color, 2.);
+		Quad_MarkerIcon.Colorize = Color;
+		
+		// Configure distance label
+		Label_MarkersDistances[I].DataAttributeSet("Position", Position.X^" "^Position.Y^" "^Position.Z);
 	}
 }
+
+// ---------------------------------- //
+// Show the distance to a Goal
+foreach (Label in Label_MarkersDistances) {
+	Label.Visible = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>;
+	if (!Label.Visible) continue;
+	
+	// ---------------------------------- //
+	// Get the Goal position
+	declare Vec3 MapLandmarkPosition;
+	declare PositionText = TL::Split(" ", Label.DataAttributeGet("Position"));
+	foreach (I => SubText in PositionText) MapLandmarkPosition[I] = TL::ToReal(SubText);
+	
+	// Set the distance text
+	declare Distance = ML::Distance(GUIPlayer.Position, MapLandmarkPosition);
+	Label.Value = "$n"^ML::FloorInteger(Distance)^" M";
+}
 ***
+
+// ---------------------------------- //
+/** Change color brightness
+ *
+ *	@param	_Color			Input color
+ *	@param	_Brightness		Target brightness
+ *
+ *	@return		New color
+ */
+Vec3 Brightness(Vec3 _Color, Real _Brightness) {
+	if (_Brightness == 1) return _Color;
+	if (_Brightness <= 0) return Vec3;
+	
+	declare Vec3 OutputColor;
+	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
+	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
+	return OutputColor;
+}
+
+// ---------------------------------- //
+/** Simplified marker text creation
+ *
+ *	@param	_Attrib0	Marker text base
+ *	@param	_Attrib1	First attribute
+ *	@param	_Attrib2	Second attribute
+ *
+ *	@return		Marker text
+ */
+Text MarkerText(Text _Attrib0, Text _Attrib1, Text _Attrib2) {
+	return TL::GetTranslatedText(TL::Compose(_Attrib0, _Attrib1, _Attrib2));
+}
 
 // ---------------------------------- //
 // Main

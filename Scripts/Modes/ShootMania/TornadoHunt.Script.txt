@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  TORNADO HUNT by domino54              //
-//  script version: 2016-11-24            //
+//  script version: 2016-11-27            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"TornadoHuntArena GoalHuntArena RealmArena BattleArena"
-#Const Version		"2016-11-24"
+#Const Version		"2016-11-27"
 #Const ScriptName	"TornadoHunt.Script.txt"
 
 // ---------------------------------- //
@@ -28,7 +28,7 @@
 #Const C_OffZoneConstantRadius	3.	///< Radius of the Tornado around the Goal
 
 /// Force colors of both teams
-#Const C_TeamsColors [0 => <0., 1., 0.>, 1 => <1., 1., 0.>]
+#Const C_TeamsColors [0 => <1., 1., 0.>, 1 => <0., 1., 0.>]
 
 // ---------------------------------- //
 // Global variables
@@ -39,6 +39,7 @@ declare Ident[] G_GoalsList;	///< List of Goals available to toss
 declare Ident G_LatestGoalId;	///< Previously tossed Goal
 declare Ident[] G_SpawnsList;	///< List of Spawns available to toss
 declare Ident G_LatestSpawnId;	///< Previously tossed Spawn
+declare Text[] C_MapMarkers;	///< Text Ids of all markers created on the minimap by the mode
 
 // ---------------------------------- //
 // Adjust the scores table
@@ -58,7 +59,8 @@ TopScores::AddCategory("Capture", "Cp", 2.25, 70.);
 ***
 // ---------------------------------- //
 // Set mode options
-GT_AutoManageOnArmorEmpty = False;
+GT_DisableOffZoneDamage = True;
+GT_DisableTornadoDamage = True;
 GT_LogScriptsVersions = [ScriptName => Version];
 
 // ---------------------------------- //
@@ -66,13 +68,13 @@ GT_LogScriptsVersions = [ScriptName => Version];
 GT_SpawnScreenModeName = "Tornado Hunt";
 GT_SpawnScreenModeType = _("Free for all");
 GT_SpawnScreenObjectives = TL::Compose(
-	_("$<%11. $>Touch the $<$FF0yellow$> Goal highlighted with the Tornado to get a point.\n$<%12. $>Touch the previous $<$FF0green$> and $<$FFFwhite$> Goals to get less points than highlighted one gives.\n$<%13. $>The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map."),
+	_("$<%11. $>Touch the $<$FF0yellow$> Goal highlighted with the Tornado to get a point.\n$<%12. $>Touch the previous $<$0F0green$> and $<$FFFwhite$> Goals to get less points than highlighted one gives.\n$<%13. $>The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map."),
 	"$"^SpawnScreen::GetModeColor()
 );
 
 // ---------------------------------- //
 // Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Rules", "Touch the $<$FF0yellow$> Goal highlighted with the Tornado to get a point. Touch the previous $<$FF0green$> and $<$FFFwhite$> Goals to get less points than highlighted one gives. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.");
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Touch the $<$FF0yellow$> Goal highlighted with the Tornado to get a point. Touch the previous $<$0F0green$> and $<$owhite$> Goals to get less points than highlighted one gives. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.", "");
 
 // ---------------------------------- //
 // Create custom interface
@@ -177,21 +179,18 @@ foreach (I => Team in Teams) {
 ***
 
 // ---------------------------------- //
+// Remove points on respawn
+// ---------------------------------- //
+***OnPlayerRequestRespawn***
+***
+if (Event.Player.Score != Null) Event.Player.Score.Points -= C_PointsPerCapturedGoal;
+***
+
+// ---------------------------------- //
 // Play loop
 // ---------------------------------- //
 ***PlayLoop***
 ***
-// ---------------------------------- //
-// Events management
-foreach (Event in PendingEvents) {
-	// ---------------------------------- //
-	// Completely ignore OffZone in the mode
-	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
-		if (OffZoneRadius > 0 && Event.Shooter == Null) { Discard(Event); continue; }
-		---PremadeOnArmorEmpty---
-	}
-}
-
 // ---------------------------------- //
 // Check if current Goal has timed out
 foreach (MapLandmark in MapLandmarks_Gauge) {
@@ -297,7 +296,6 @@ if (EndTime > 0 && Now > EndTime) MB_StopMap = True;
 ***
 G_GoalsOrder.clear();
 UpdateInterface();
-OffZoneCenterLandmarkId = NullId;
 OffZoneRadius = 0.;
 StartTime = -1;
 EndTime = -1;
@@ -396,6 +394,33 @@ Void UpdateInterface() {
 			Net_TornadoHunt_CapturedGoals[Player.User.Login].add(MapLandmark.Position);
 		}
 	}
+	
+	// ---------------------------------- //
+	// Update minimap markers
+	foreach (Marker in C_MapMarkers) MiniMap::DestroyMarker(Marker);
+	C_MapMarkers.clear();
+	
+	foreach (MapLandmarkId in G_GoalsOrder) {
+		declare GoalOrder = GetGoalOrder(MapLandmarkId);
+		if (GoalOrder < 0 || GoalOrder > G_GoalsNbMax) continue;
+		
+		// Configure marker apperance
+		declare MapLandmark <=> MapLandmarks[MapLandmarkId];
+		declare MarkerId = "Goal#"^GoalOrder;
+		declare Color = <1., 1., 1.>;
+		if (C_TeamsColors.existskey(GoalOrder)) Color = C_TeamsColors[GoalOrder];
+		
+		// Create marker
+		MiniMap::SetMarker(MarkerId, C_ImgBase^"Minimap/Goal.png", Color, MapLandmark.Position);
+		C_MapMarkers.add(MarkerId);
+	}
+}
+
+// ---------------------------------- //
+/// Show the capture alert animation
+Void ShowCaptureAlert() {
+	declare netwrite Integer Net_TornadoHunt_CaptureTime for Teams[0];
+	Net_TornadoHunt_CaptureTime = Now;
 }
 
 // ---------------------------------- //
@@ -451,11 +476,8 @@ Void SelectNextGoal() {
 		if (MapLandmark.Base.IsActive) MapLandmark.Gauge.ValueReal = 1.;
 		
 		// Set clan depending on order
-		declare Clan = 0;
-		switch (GoalOrder) {
-			case 0 : Clan = 2;
-			case 1 : Clan = 1;
-		}
+		declare Clan = GoalOrder + 1;
+		if (Clan > 2) Clan = 0;
 		MapLandmark.Base.Clan = Clan;
 		MapLandmark.Gauge.Clan = Clan;
 	}
@@ -496,9 +518,10 @@ Void CaptureLandmark(CSmPlayer _Player, Ident _MapLandmarkId) {
 	Score::AddPoints(_Player, Points);
 	TopScores::AddPoints(_Player.Score, "Capture", Points);
 	Statistics::TrackEvent(_Player, "TornadoHuntGoals", 1);
+	Interfancy::SendCrosshairNote(_Player, ["+%1 %2", TL::ToText(Points), _("Points")], 2000);
 	
 	// Notify player about the capture
-	Translations::SendStatusMessage(_Player, "You've captured the Goal!", 3000, 1, CUIConfig::EUISound::Checkpoint, 0);
+	Translations::SendStatusMessage(_Player, ["You've captured the Goal #%1!", TL::ToText(GoalOrder + 1)], 3000, 1, CUIConfig::EUISound::Checkpoint, 0);
 	
 	// ---------------------------------- //
 	// Things valid only for the highlighted Goal
@@ -507,7 +530,7 @@ Void CaptureLandmark(CSmPlayer _Player, Ident _MapLandmarkId) {
 			if (Player == _Player || Player.IsBot) continue;
 			
 			// Notify other players about the capture
-			Translations::SendStatusMessage(Player, ["$<%1$> has captured the Goal", _Player.User.Name], 3000, 0, CUIConfig::EUISound::Checkpoint, 1);
+			Translations::SendStatusMessage(Player, ["$<%1$> has captured the Goal #%2", _Player.User.Name, TL::ToText(GoalOrder + 1)], 3000, 0, CUIConfig::EUISound::Checkpoint, 1);
 			
 			// Boost other players on capture
 			if (S_BoostOthersOnCap && Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
@@ -518,6 +541,7 @@ Void CaptureLandmark(CSmPlayer _Player, Ident _MapLandmarkId) {
 		
 		// Select new random Goal
 		SelectNextGoal();
+		ShowCaptureAlert();
 	}
 	
 	// Update interfaces
@@ -550,6 +574,11 @@ Void GH_SpawnPlayer(CSmPlayer _Player) {
 	declare Removed = G_SpawnsList.remove(SpawnId);
 }
 
+// ---------------------------------- //
+/** Create manialink for the countdown module
+ *
+ *	@return		The countdown manialink
+ */
 Text CreateManialinkCountdown() {
 	return """
 <manialink version="2" name="TornadoHunt:Countdown">
@@ -558,7 +587,7 @@ Text CreateManialinkCountdown() {
 	<style class="circ" sizen="16 16" halign="center" valign="center" colorize="FFF"/>
 </stylesheet>
 
-<frame id="Frame_PoleGauge" posn="0 75">
+<frame id="Frame_PoleGauge" posn="0 75" hidden="1">
 	<quad class="circ" image="{{{C_ImgBase}}}CircGaugeBg.png" id="Quad_GaugeBg"/>
 	<frame posn="-.05 0 1" clip="1" clipposn="4" clipsizen="8 16">
 		<quad class="circ" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeL" hidden="1"/>
@@ -568,6 +597,10 @@ Text CreateManialinkCountdown() {
 	</frame>
 	<label posn="0 -2.75 2" class="text" textsize="2" text="0s" id="Label_Ratio"/>
 	<quad posn="0 1.25 2" sizen="6 6" halign="center" valign="center" style="Emblems" substyle="#0"/>
+	<quad
+		posn="0 0 -1" sizen="14 14" halign="center" valign="center"
+		image="file://Media/Manialinks/Common/disc.dds" colorize="FFF" opacity="0" id="Quad_CaptureAlert"
+	/>
 </frame>
 
 <script><!--
@@ -590,10 +623,12 @@ declare Quad_GaugeL <=> (Page.GetFirstChild("Quad_GaugeL") as CMlQuad);
 declare Quad_GaugeR <=> (Page.GetFirstChild("Quad_GaugeR") as CMlQuad);
 declare Quad_GaugeBg <=> (Page.GetFirstChild("Quad_GaugeBg") as CMlQuad);
 declare Label_Ratio <=> (Page.GetFirstChild("Label_Ratio") as CMlLabel);
+declare Quad_CaptureAlert <=> (Page.GetFirstChild("Quad_CaptureAlert") as CMlQuad);
 
 // ---------------------------------- //
 // Netcode
 declare netread Vec3 Net_TornadoHunt_CurrentGoal for Teams[0];
+declare netread Integer Net_TornadoHunt_CaptureTime for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -603,10 +638,11 @@ declare MaxTime = 0;
 
 // Update
 declare PrevGoal = Vec3;
+declare PrevCaptureTime = -1;
 
 // ---------------------------------- //
 // Set the gauge color
-declare Color = {{{C_TeamsColors[1]}}};
+declare Color = {{{C_TeamsColors[0]}}};
 Quad_GaugeL.Colorize = Color;
 Quad_GaugeR.Colorize = Color;
 Quad_GaugeBg.Colorize = Color;
@@ -625,6 +661,20 @@ if (PrevGoal != Net_TornadoHunt_CurrentGoal) {
 	PrevGoal = Net_TornadoHunt_CurrentGoal;
 	CurrentGoalId = NullId;
 	foreach (MapLandmark in MapLandmarks_Gauge) if (MapLandmark.Position == PrevGoal) CurrentGoalId = MapLandmark.Id;
+}
+
+// ---------------------------------- //
+// Show the capture alert
+if (PrevCaptureTime != Net_TornadoHunt_CaptureTime) {
+	if (PrevCaptureTime > 0) {
+		LibManialink_AnimStop(Quad_CaptureAlert);
+		
+		Quad_CaptureAlert.RelativeScale = 1.;
+		Quad_CaptureAlert.Opacity = .75;
+		
+		LibManialink_Anim(Quad_CaptureAlert, "<quad scale=1.75 opacity=0 />", 1500, "EaseOutCirc");
+	}
+	PrevCaptureTime = Net_TornadoHunt_CaptureTime;
 }
 
 // ---------------------------------- //
@@ -647,6 +697,8 @@ Quad_GaugeR.Visible = Quad_GaugeR.RelativeRotation > 180;
 Label_Ratio.Value = ML::CeilingInteger(Time / 1000.)^"s";
 ***
 
+{{{Manialink::Animations(["EaseOutCirc"])}}}
+
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
@@ -654,6 +706,7 @@ main() {
 	---Main---
 	while (True) {
 		yield;
+		LibManialink_AnimLoop();
 		---Yield---
 	}
 }
@@ -782,8 +835,15 @@ if (UpdateMarkers > 0) {
 		if (GUIPlayerGoals.exists(Position)) { Frame.Hide(); continue; }
 		
 		// ---------------------------------- //
+		// Get marker height depending on the Goal type
+		declare MarkerHeight = 5.;
+		declare MapLandmarkTag = "Checkpoint";
+		foreach (MapLandmark in MapLandmarks) if (MapLandmark.Position == Position) MapLandmarkTag = MapLandmark.Tag;
+		if (MapLandmarkTag == "Goal") MarkerHeight = 25.;
+		
+		// ---------------------------------- //
 		// Create marker
-		declare Pos = Position.X^" "^Position.Y + 25^" "^Position.Z;
+		declare Pos = Position.X^" "^Position.Y + MarkerHeight^" "^Position.Z;
 		ClientUI.MarkersXML ^= "<marker manialinkframeid='Frame_GoalMarker#"^I^"' pos='"^Pos^"' visibility='WhenInFrustum' minimapvisibility='Never'/>";
 		
 		// ---------------------------------- //
@@ -801,8 +861,8 @@ if (UpdateMarkers > 0) {
 		// Set the marker color
 		declare Color = <.75, .75, .75>;
 		switch (GoalOrder) {
-			case 0 : Color = {{{C_TeamsColors[1]}}};
-			case 1 : Color = {{{C_TeamsColors[0]}}};
+			case 0 : Color = {{{C_TeamsColors[0]}}};
+			case 1 : Color = {{{C_TeamsColors[1]}}};
 		}
 		Label_MarkerGoalName.TextColor = Brightness(Color, 2.);
 		Quad_MarkerIcon.Colorize = Color;

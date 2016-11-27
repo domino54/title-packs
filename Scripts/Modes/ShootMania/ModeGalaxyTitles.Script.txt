@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-11-23            //
+//  script version: 2016-11-27            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-11-23"
+#Const BaseVersion		"2016-11-27"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -107,6 +107,8 @@ declare Boolean GT_AutoManageOnNearMiss;	///< Automatically manage OnNearMiss ev
 declare Boolean GT_AutoManageOnRespawn;		///< Automatically manage OnPlayerRequestRespawn event
 declare Boolean GT_AutoManageOnObjectTouch;	///< Automatically manage OnPlayerTouchesObject events
 declare Boolean GT_AllowMatchmakingMode;	///< Defines if the mode can use matchmaking feature
+declare Boolean GT_DisableOffZoneDamage;	///< Disable OffZone eliminations (Tornado may stil leliminate players)
+declare Boolean GT_DisableTornadoDamage;	///< Disable Tornado eliminations (only if OffZone is disabled)
 
 // ---------------------------------- //
 // Log scripts versions
@@ -544,7 +546,30 @@ foreach (Event in PendingEvents) {
 	// On armor empty
 	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
 		if (GT_AutoManageOnArmorEmpty) {
-			---PremadeOnArmorEmpty---
+			declare PassOnEvent = True;
+			
+			// ---------------------------------- //
+			// OffZone damage is disabled
+			if (Event.Shooter == Null && GT_DisableOffZoneDamage) {
+				PassOnEvent = False;
+				
+				// ---------------------------------- //
+				// Tornado is enabled even if OffZone is not active
+				if (!GT_DisableTornadoDamage && OffZoneRadius > 0) {
+					declare Vec3 MapLandmarkPosition;
+					foreach (MapLandmark in MapLandmarks) {
+						if (MapLandmark.Id != OffZoneCenterLandmarkId) continue;
+						MapLandmarkPosition = MapLandmark.Position;
+						break;
+					}
+					PassOnEvent = GT_Distance2D(Event.Victim.Position, MapLandmarkPosition) >= OffZoneRadius;
+				}
+			}
+			
+			// ---------------------------------- //
+			// Manage the event
+			if (PassOnEvent) { ---PremadeOnArmorEmpty--- }
+			else Discard(Event);
 		}
 	}
 	// ---------------------------------- //
@@ -992,6 +1017,21 @@ Void GT_InitWarmUp() {
 		WarmUp2::DestroyGroup("Clan2");
 		WarmUp2::DisplayClanSelection(False);
 	}
+}
+
+// ---------------------------------- //
+/** Compute distance between points excluding Y axis
+ *
+ *	@param	_Pos1	Starting point
+ *	@param	_Pos2	Ending point
+ *
+ *	@return		Distance between points
+ */
+Real GT_Distance2D(Vec3 _Pos1, Vec3 _Pos2) {
+	declare Pos1 = <_Pos1.X, _Pos1.Z>;
+	declare Pos2 = <_Pos2.X, _Pos2.Z>;
+	if (Pos1 == Pos2) return 0.;
+	return ML::Sqrt(ML::Pow(Pos1.X - Pos2.X, 2.) + ML::Pow(Pos1.Y - Pos2.Y, 2.));
 }
 
 // ---------------------------------- //

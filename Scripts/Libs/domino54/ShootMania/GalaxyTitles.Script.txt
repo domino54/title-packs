@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-11-23            //
+//  script version: 2016-12-05            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-11-23"
+#Const Version		"2016-12-05"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -94,6 +94,7 @@ declare Boolean G_LibGalaxyTitles_ObjectsAffectEveryone;
 declare Integer G_LibGalaxyTitles_ObjectsDropLifetime;
 declare Integer G_LibGalaxyTitles_InventoryMaxWeapons;
 declare Integer G_LibGalaxyTitles_InventoryMaxReplies;
+declare Boolean G_LibGalaxyTitles_FuelGivesReloadBoost;
 
 /// Elements created within library
 declare Ident[] G_LibGalaxyTitles_CreatedObjects;
@@ -229,6 +230,7 @@ Void Unload() {
 	G_LibGalaxyTitles_ObjectsDropLifetime = C_LibGalaxyTitles_ObjectsDropLifetime;
 	G_LibGalaxyTitles_InventoryMaxWeapons = C_LibGalaxyTitles_DefaultMaxWeapons;
 	G_LibGalaxyTitles_InventoryMaxReplies = C_LibGalaxyTitles_DefaultMaxReplies;
+	G_LibGalaxyTitles_FuelGivesReloadBoost = True;
 	G_LibGalaxyTitles_LibraryLoaded = False;
 	
 	// Unload libraries
@@ -605,10 +607,11 @@ Void SpawnObjects() { SpawnObjects(True); }
  *
  *	@param	_Event			The event to proceed
  *	@param	_RespawnTime	Time before object will be spawned again after pick
+ *	@param	_TrueIfPick		If True, event is not discarded and returns True only if item was picked up
  *
  *	@return		True, if the item is handled by the library
  */
-Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
+Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfPick) {
 	if (
 		_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerTouchesObject ||
 		_Event.Object == Null || _Event.Player == Null || _Event.Player.IsBot ||
@@ -622,7 +625,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 	// Return False if object is not handled by GalaxyTitles library
 	if (!C_LibGalaxyTitles_AcceptedObjects.exists(LibGalaxyTitles_ObjectTag)) return False;
 	
-	Discard(_Event);
+	if (!_TrueIfPick) Discard(_Event);
 	
 	// ---------------------------------- //
 	// Pick conditions
@@ -684,7 +687,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 	}
 	
 	// Continue, if the object can't be picked up
-	if (!CanPickUpObject) return True;
+	if (!CanPickUpObject) return !_TrueIfPick;
 	
 	// ---------------------------------- //
 	// Item respawn timer
@@ -762,7 +765,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 				
 				// ---------------------------------- //
 				// Boost player
-				AddReloadBoost(Player);
+				if (G_LibGalaxyTitles_FuelGivesReloadBoost) AddReloadBoost(Player);
 				Player.Stamina = ML::FloorInteger(Player.StaminaMax * 3600);
 				
 				// ---------------------------------- //
@@ -802,7 +805,10 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 		
 		// ---------------------------------- //
 		// Give Replie consumable item
-		case "Replie" : Inventory::AddItems(_Event.Player, "LibGalaxyTitles_Replie", 1);
+		case "Replie" : {
+			Inventory::AddItems(_Event.Player, "LibGalaxyTitles_Replie", 1);
+			Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1", "Replie"], C_LibGalaxyTitles_NoteDisplayTime);
+		}
 	}
 	
 	// ---------------------------------- //
@@ -829,8 +835,16 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
 	return True;
 }
 
+Boolean PickUpObject(CSmModeEvent _Event, Boolean _TrueIfPick) {
+	return PickUpObject(_Event, C_LibGalaxyTitles_ObjectsRespawnTime, _TrueIfPick);
+}
+
+Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime) {
+	return PickUpObject(_Event, _RespawnTime, False);
+}
+
 Boolean PickUpObject(CSmModeEvent _Event) {
-	return PickUpObject(_Event, C_LibGalaxyTitles_ObjectsRespawnTime);
+	return PickUpObject(_Event, C_LibGalaxyTitles_ObjectsRespawnTime, False);
 }
 
 // ---------------------------------- //
@@ -1239,4 +1253,13 @@ Void SetMaxWeapons(Integer _Setting) {
  */
 Void SetMaxReplies(Integer _Setting) {
 	G_LibGalaxyTitles_InventoryMaxReplies = _Setting;
+}
+
+// ---------------------------------- //
+/** Set if Fuel gives reload boost
+ *
+ *	@param	_Setting	If True, Fuel will give reload boost
+ */
+Void SetFuelGivingBoost(Boolean _Setting) {
+	G_LibGalaxyTitles_FuelGivesReloadBoost = _Setting;
 }

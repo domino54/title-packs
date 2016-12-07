@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  HUNGER GAMES 3.0 by domino54          //
-//  script version: 2016-12-05            //
+//  script version: 2016-12-07            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2016-12-05"
+#Const Version		"2016-12-07"
 #Const ScriptName	"HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -140,6 +140,9 @@ declare PrevPlayersNbAlive = PlayersNbAlive;
 ST2::SetFooterText(TL::Compose("%1-", _("Remaining players: ")));
 UIResetPlayersTouchingGoal();
 UISetStartTime(-1);
+
+G_SpawnsList.clear();
+G_LatestSpawnId = NullId;
 
 // ---------------------------------- //
 // Init OffZone
@@ -358,11 +361,8 @@ ST2::Build("SM");
 ***OnArmorEmpty***
 ***
 // ---------------------------------- //
-// Notify everyone about player elimination
-if (!Event.Victim.IsBot && PlayersNbAlive > 2) {
-	Message::SendStatusMessage(TL::Compose(_("$<%1$> is eliminated!"), Event.Victim.Name), 4000, 1);
-	DropPlayerObjects(Event.Victim, S_ObjectsDroppingRatio);
-}
+// Drop the player objects
+if (!Event.Victim.IsBot && PlayersNbAlive > 2) DropPlayerObjects(Event.Victim, S_ObjectsDroppingRatio);
 
 // ---------------------------------- //
 // Chance for Toads to drop an item
@@ -587,13 +587,12 @@ foreach (Player in Players) {
 		// ---------------------------------- //
 		// Eliminate player
 		if (IsOutsideArena) {
-			UnspawnPlayer(Player);
-
 			// Notify everyone about elimination and drop player objects
 			if (PlayersNbAlive >= 2) {
-				Translations::SendStatusMessage(["$<%1$> tried to escape arena", Player.User.Name], 4000, 1);
+				Killfeed::SendNotice(["$<%1$> tried to escape arena", Player.User.Name]);
 				DropPlayerObjects(Player, S_ObjectsDroppingRatio);
 			}
+			UnspawnPlayer(Player);
 		}
 	}
 }
@@ -606,10 +605,13 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 	
 	// ---------------------------------- //
 	// Give survival points to all players alive
-	if (PrevPlayersNbAlive < PlayersNbAlive) foreach (Player in Players) {
-		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
-		TopScores::AddPoints(Player.Score, "Survival", 1);
-		Score::AddPoints(Player, C_PlayerPointsForSurvival);
+	if (PlayersNbAlive < PrevPlayersNbAlive) {
+		foreach (Player in Players) {
+			if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+			TopScores::AddPoints(Player.Score, "Survival", 1);
+			Score::AddPoints(Player, C_PlayerPointsForSurvival);
+		}
+		Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 1);
 	}
 
 	// ---------------------------------- //

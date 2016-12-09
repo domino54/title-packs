@@ -605,13 +605,13 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 	
 	// ---------------------------------- //
 	// Give survival points to all players alive
-	if (PlayersNbAlive < PrevPlayersNbAlive) {
+	if (Now > StartTime && PlayersNbAlive < PrevPlayersNbAlive) {
 		foreach (Player in Players) {
 			if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 			TopScores::AddPoints(Player.Score, "Survival", 1);
 			Score::AddPoints(Player, C_PlayerPointsForSurvival);
 		}
-		Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 1);
+		if (PlayersNbAlive >= 2) Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 1);
 	}
 
 	// ---------------------------------- //
@@ -634,7 +634,7 @@ foreach (Score in Scores) {
 }
 
 // Victory conditions
-if (PlayersNbAlive <= 1) MB_StopMap = True;
+if (Now > StartTime && PlayersNbAlive <= 1) MB_StopMap = True;
 ***
 
 // ---------------------------------- //
@@ -653,13 +653,19 @@ CenterGoal.Gauge.Speed = 0;
 // ---------------------------------- //
 // Set the map winner
 declare WinnerId = NullId;
-foreach (Player in Players) if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+if (PlayersNbAlive == 1) foreach (Player in Players) if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
 	if (Scores.existskey(1)) Player.Score.Points = ML::Max(Scores[0].Points + C_WinnerMinPointsDiff, Player.Score.Points);
 	WinnerId = Player.Id;
 	break;
 }
 
-MB_Sleep(3000);
+// Disallow the winner to move after match end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;
+MB_Sleep(1500);
+
+// Cinematic round end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+MB_Sleep(1500);
 
 // ---------------------------------- //
 // Revert the interface
@@ -668,11 +674,10 @@ ST2::SetPos(C_ScoresTablePosition[False]);
 ST2::Build("SM");
 
 declare Text WinnerName;
-if (Scores.existskey(0)) WinnerName = Scores[0].User.Name;
+if (Players.existskey(WinnerId)) WinnerName = Players[WinnerId].User.Name;
 
 // ---------------------------------- //
 // Display the round winner
-UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
 UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
 UIManager.UIAll.BigMessageSoundVariant = 0;
@@ -1449,7 +1454,7 @@ Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
 	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
 }
 
-{{{Translations::InjectInManialink(["Ammo gain", "Stamina gain", "Stamina max"])}}}
+{{{Translations::InjectInManialink(["Ammo reload", "Stamina reload", "Stamina max"])}}}
 
 // ---------------------------------- //
 // Main

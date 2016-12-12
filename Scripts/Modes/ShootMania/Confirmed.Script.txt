@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  CONFIRMED by domino54                 //
-//  script version: 2016-10-15            //
+//  script version: 2016-12-12            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"MeleeArena TeamMeleeArena"
-#Const Version		"2016-10-15"
+#Const Version		"2016-12-12"
 #Const ScriptName	"Confirmed.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -27,8 +27,8 @@ declare Ident[Integer] G_ClanLatestSpawnId;		///< Ids of the latest spawns used
 declare Integer[Integer] G_ClanNbCoinsSpawned;	///< Total amount of coins laying on the ground
 declare Boolean G_IsTeamMeleeArena;	///< True, if current map is in type of TeamMeleeArena
 declare Boolean G_IsOvertime;		///< True, if the game is in the overtime mode
-
 declare Ident[Vec3] G_ObjectsIds;	///< Ids of the objects used by the mode
+declare Ident[] G_CreatedObjects;	///< Objects created by the game mode
 
 // ---------------------------------- //
 // Adjust the scores table
@@ -41,6 +41,7 @@ ST2::SetColScript("LibST_SMPoints", """
 declare Score <=> (_Score as CSmScore);
 Label_Col.Value = TL::ToText(Score.RoundPoints + Score.Points);
 """);
+TopScores::AddCategory("Confirmations", "Con", 2.25, 60.);
 ***
 
 // ---------------------------------- //
@@ -248,15 +249,15 @@ if (!G_IsOvertime && CurrentTimeLimit != S_TimeLimit) {
 
 // ---------------------------------- //
 // Victory conditions
-if (S_PointsLimit > 0) for (Clan, 1, 2) if (ClanScores[Clan] >= S_PointsLimit) MB_StopRound = True;
+if (S_PointsLimit > 0) for (Clan, 1, 2) if (ClanScores[Clan] >= S_PointsLimit) MB_StopMap = True;
 if (EndTime > 0 && Now > EndTime) {
-	if (ClanScores[1] != ClanScores[2]) MB_StopRound = True;
+	if (ClanScores[1] != ClanScores[2]) MB_StopMap = True;
 	else {
 		EndTime = -1;
 		G_IsOvertime = True;
 	}
 }
-if (G_IsOvertime && ClanScores[1] != ClanScores[2]) MB_StopRound = True;
+if (G_IsOvertime && ClanScores[1] != ClanScores[2]) MB_StopMap = True;
 
 // Stop match if there's not enough players left in matchmaking
 if (MM_IsMatchServer() && MM_RestartMatchmaking) MB_StopMatch = True;
@@ -267,16 +268,8 @@ if (MM_IsMatchServer() && MM_RestartMatchmaking) MB_StopMatch = True;
 // ---------------------------------- //
 ***EndRound***
 ***
-MB_StopMap = True;
-***
-
-***EndMapBeforePodium***
-***
+DestroyAllObjects();
 SM::UnspawnAllPlayers();
-ObjectDestroyAll();
-
-StartTime = -1;
-EndTime = -1;
 
 MB_Sleep(3000);
 
@@ -390,6 +383,9 @@ Void SpawnCoin(CSmPlayer _Player) {
 	PlayerLogin = _Player.User.Login;
 	PlayerClan = _Player.CurrentClan;
 	
+	// Save created object id
+	G_CreatedObjects.add(Object.Id);
+	
 	// Increase items amount
 	if (G_ClanNbCoinsSpawned.existskey(_Player.CurrentClan)) G_ClanNbCoinsSpawned[_Player.CurrentClan] += 1;
 	UpdateCoinsAmount();
@@ -414,6 +410,32 @@ Void SendPickMessage(CSmPlayer _Player, Text _ObjectLogin, Integer _ObjectClan) 
 	Net_Confirmed_MessageEndTime = Now + 4000;
 	Net_Confirmed_MessagePlayersLogins = [_Player.User.Login, _ObjectLogin];
 	Net_Confirmed_MessagePlayersClans = [_Player.CurrentClan, _ObjectClan];
+}
+
+// ---------------------------------- //
+/** Destroy an object
+ *
+ *	@param	_Object		The object to destroy
+ */
+Boolean DestroyObject(CSmObject _Object) {
+	if (_Object == Null) return False;
+	declare Removed = G_CreatedObjects.remove(_Object.Id);
+	
+	// Destroy object (unspawning the object gives a quiet sound)
+	_Object.SetUnspawned();
+	ObjectDestroy(_Object);
+	return True;
+}
+
+// ---------------------------------- //
+/// Destroy all objects created in the mode
+Void DestroyAllObjects() {
+	if (G_CreatedObjects.count <= 0) return;
+	foreach (ObjectId in G_CreatedObjects) {
+		if (!Objects.existskey(ObjectId)) continue;
+		declare Removed = DestroyObject(Objects[ObjectId]);
+	}
+	G_CreatedObjects.clear();
 }
 
 // ---------------------------------- //
@@ -443,7 +465,7 @@ Boolean PickUpCoin(CSmModeEvent _Event) {
 	// Give points
 	declare Points = 1;
 	Score::AddPoints(_Event.Player, Points);
-	TopScores::AddPoints(_Event.Player.Score, "Items", Points);
+	TopScores::AddPoints(_Event.Player.Score, "Confirmations", Points);
 	if (_Event.Player.CurrentClan != PlayerClan) ClanScores[_Event.Player.CurrentClan] += Points;
 	
 	// Decrease items amount
@@ -484,8 +506,7 @@ Boolean PickUpCoin(CSmModeEvent _Event) {
 	}
 	
 	// Destroy item
-	_Event.Object.SetUnspawned();
-	ObjectDestroy(_Event.Object);
+	declare Removed = DestroyObject(_Event.Object);
 	return True;
 }
 

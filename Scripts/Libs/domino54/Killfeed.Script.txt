@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY KILLFEED by domino54          //
-//  script version: 2016-11-11            //
+//  script version: 2016-12-12            //
 // -------------------------------------- //
 
 /**
@@ -10,13 +10,14 @@
  *	and display eliminations with weapon icon and assists.
  */
 
-#Const Version		"2016-11-11"
+#Const Version		"2016-12-12"
 #Const ScriptName	"Killfeed.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
@@ -166,7 +167,8 @@ if (LastUpdateTime != Net_LibKillfeed_LastUpdateTime) {
 	// Display ghosts of the old notices
 	declare ToRemove = Integer[];
 	foreach (Time => Notice in G_CachedNotices) if (!Net_LibKillfeed_Notifications.existskey(Time)) ToRemove.add(Time);
-	foreach (Time in ToRemove) {
+	if (ToRemove.count > 0) for (I, 1, ToRemove.count) {
+		declare Time = ToRemove[ToRemove.count - I];
 		CreateGhost(G_CachedNotices[Time]);
 		declare Removed = G_CachedNotices.removekey(Time);
 	}
@@ -210,6 +212,7 @@ G_NbGhostsInCurrentTick = 0;
 // ---------------------------------- //
 
 {{{Manialink::Animations(["EaseOutSine", "EaseInCirc", "EaseOutCirc"])}}}
+{{{ManialinkTools::Functions(["ComputeWidth", "Brightness"])}}}
 {{{Translations::InsertToManialink(G_LibKillfeed_PreloadedTranslations)}}}
 
 // ---------------------------------- //
@@ -237,24 +240,6 @@ Text RemoveColor(Text _Name) {
 	declare FinalNick = "";
 	foreach (Object in NewObjects) FinalNick ^= Object;
 	return FinalNick;
-}
-
-// ---------------------------------- //
-/** Change color brightness
- *
- *	@param	_Color			Input color
- *	@param	_Brightness		Target brightness
- *
- *	@return		New color
- */
-Vec3 Brightness(Vec3 _Color, Real _Brightness) {
-	if (_Brightness == 1) return _Color;
-	if (_Brightness <= 0) return Vec3;
-	
-	declare Vec3 OutputColor;
-	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
-	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
-	return OutputColor;
 }
 
 // ---------------------------------- //
@@ -291,18 +276,6 @@ Text GetNickname(Text _Login) {
 		return Nickname;
 	}
 	return _Login;
-}
-
-// ---------------------------------- //
-/** Compute label width
- *
- *	@param	_Label		Label to compute its width
- *
- *	@return		Total length of the label text
- */
-Real ComputeWidth(CMlLabel _Label) {
-	if (_Label == Null || _Label.Value == "") return 0.;
-	return _Label.ComputeWidth(_Label.Value) * _Label.AbsoluteScale;
 }
 
 // ---------------------------------- //

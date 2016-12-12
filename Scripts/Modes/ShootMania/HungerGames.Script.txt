@@ -618,6 +618,7 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 	ST2::SetFooterText(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")));
 	UISetNbPlayersAlive(PlayersNbAlive);
 	
+<<<<<<< HEAD
 	if (Now > StartTime) {
 		// ---------------------------------- //
 		// Give survival points to all players alive
@@ -637,6 +638,17 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 			Null, CUIConfig::EAvatarVariant::Default,
 			CUIConfig::EUISound::VictoryPoint, 0
 		);
+=======
+	// ---------------------------------- //
+	// Give survival points to all players alive
+	if (Now > StartTime && PlayersNbAlive < PrevPlayersNbAlive) {
+		foreach (Player in Players) {
+			if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+			TopScores::AddPoints(Player.Score, "Survival", 1);
+			Score::AddPoints(Player, C_PlayerPointsForSurvival);
+		}
+		if (PlayersNbAlive >= 2) Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 1);
+>>>>>>> origin/master
 	}
 
 	PrevPlayersNbAlive = PlayersNbAlive;
@@ -1455,7 +1467,46 @@ foreach (I => Frame in Frame_StatGauges) {
 }
 ***
 
+<<<<<<< HEAD
 {{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness", "ReplaceChars"])}}}
+=======
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Change color brightness
+ *
+ *	@param	_Color			Input color
+ *	@param	_Brightness		Target brightness
+ *
+ *	@return		New color
+ */
+Vec3 Brightness(Vec3 _Color, Real _Brightness) {
+	if (_Brightness == 1) return _Color;
+	if (_Brightness <= 0) return Vec3;
+	
+	declare Vec3 OutputColor;
+	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
+	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
+	return OutputColor;
+}
+
+// ---------------------------------- //
+/** Set gauge ratio with value cut fix
+ *
+ *	@param	_Gauge		The gauge to set ratio
+ *	@param	_Ratio		Ratio to set
+ */
+Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
+	if (_Gauge == Null) return;
+	if (_Ratio <= 0.) { _Gauge.Ratio = 0.; return; }
+	if (_Ratio >= 1.) { _Gauge.Ratio = 1.; return; }
+	declare GaugeCutOff = 4 / _Gauge.Size.X;
+	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
+}
+
+>>>>>>> origin/master
 {{{Translations::InjectInManialink(["Ammo reload", "Stamina reload", "Stamina max"])}}}
 
 // ---------------------------------- //

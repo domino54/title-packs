@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-12-05            //
+//  script version: 2016-12-12            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-12-05"
+#Const Version		"2016-12-12"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -287,32 +287,22 @@ Void ReloadBoost() {
 	
 	foreach (Player in Players) {
 		declare LibGalaxyTitles_BoostEndTime for Player = -1;
-		declare LibGalaxyTitles_PrevAmmoGain for Player = -1.;
 		declare LibGalaxyTitles_BoostMultipler for Player = 1.;
+		declare LibGalaxyTitles_AmmoGainBase for Player = -1.;
 		
 		// ---------------------------------- //
 		// Increase player reload speed
 		if (Now < LibGalaxyTitles_BoostEndTime) {
-			if (LibGalaxyTitles_PrevAmmoGain < 0.) {
-				LibGalaxyTitles_PrevAmmoGain = Player.AmmoGain;
-				Player.AmmoGain = ML::Clamp(Player.AmmoGain * LibGalaxyTitles_BoostMultipler, 0., 10.);
-			}
-			// ---------------------------------- //
-			// Player base reload speed changed during boost
-			else if (
-				Player.AmmoGain < 10 &&
-				LibGalaxyTitles_PrevAmmoGain != Player.AmmoGain / C_LibGalaxyTitles_FuelReloadMultipler
-			) {
-				declare ReloadDelta = Player.AmmoGain - LibGalaxyTitles_PrevAmmoGain / LibGalaxyTitles_BoostMultipler;
-				LibGalaxyTitles_PrevAmmoGain += ReloadDelta;
-				Player.AmmoGain = ML::Clamp(LibGalaxyTitles_PrevAmmoGain * LibGalaxyTitles_BoostMultipler, 0., 10.);
+			if (LibGalaxyTitles_AmmoGainBase < 0.) {
+				LibGalaxyTitles_AmmoGainBase = Player.AmmoGain;
+				Player.AmmoGain = ML::Clamp(LibGalaxyTitles_AmmoGainBase * LibGalaxyTitles_BoostMultipler, 0., 10.);
 			}
 		}
 		// ---------------------------------- //
 		// Reverse reload speed back to the old value
-		else if (LibGalaxyTitles_PrevAmmoGain >= 0) {
-			Player.AmmoGain = ML::Clamp(LibGalaxyTitles_PrevAmmoGain, 0., 10.);
-			LibGalaxyTitles_PrevAmmoGain = -1.;
+		else if (LibGalaxyTitles_AmmoGainBase >= 0) {
+			Player.AmmoGain = ML::Clamp(LibGalaxyTitles_AmmoGainBase, 0., 10.);
+			LibGalaxyTitles_AmmoGainBase = -1.;
 		}
 	}
 }
@@ -816,7 +806,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 	if (NbOtherPlayersAffected > 0) {
 		Interfancy::SendCrosshairNote(_Event.Player, Message, C_LibGalaxyTitles_NoteDisplayTime);
 		Score::AddPoints(_Event.Player, NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
-		TopScores::AddPoints(_Event.Player.Score, "Items", NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
+		TopScores::AddPoints(_Event.Player.Score, "Support", NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
 	}
 	
 	if (C_LibGalaxyTitles_WeaponItemsTags.exists(LibGalaxyTitles_ObjectTag)) {

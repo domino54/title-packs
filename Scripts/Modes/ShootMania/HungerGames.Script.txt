@@ -1,12 +1,12 @@
 // -------------------------------------- //
-//  HUNGER GAMES 3.0 by domino54          //
-//  script version: 2016-12-07            //
+//  HUNGER GAMES 3.0.1 by domino54        //
+//  script version: 2016-12-12            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2016-12-07"
+#Const Version		"2016-12-12"
 #Const ScriptName	"HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -21,6 +21,7 @@
 #Setting S_ObjectsDroppingRatio		.5		as _("Objects drop ratio from eliminated players")
 #Setting S_RandomizeObjectsSpawns	True	as _("Randomize objects locations on the map (except Armor)")
 #Setting S_ArmorRespawnTime			180		as _("Armor and Replie respawn duration (0 = don't respawn)")
+#Setting S_ToadsFirstSpawnDelay		30		as _("Delay before Toads are spawned")
 
 /// Overwrite existing settings
 #Setting S_AutoManageAFK		False
@@ -39,7 +40,7 @@
 #Const C_StartCountdownDuration		10000	///< Duration of the cinematic countdown before game start
 #Const C_OffZoneMinShrinkDuration	60		///< Minimum Tornado shrinking duration
 #Const C_OffZoneMinimumRadius		36.		///< Minimum radius Tornado is shrinking to
-#Const C_AutoRatioItemsPerPlayer	20		///< Amount of items spawned per player with automatic ratio on
+#Const C_AutoRatioItemsPerPlayer	15		///< Amount of items spawned per player with automatic ratio on
 #Const C_PlayerMaxNbRocketSlots		4		///< Maximum amount of Rockets held by the player
 #Const C_PlayerPointsForSurvival	10		///< Points given for surviving other player elimination
 #Const C_PlayerPointsForObjects		1		///< Points given for picking up Weapon, Charge and Mini
@@ -65,7 +66,7 @@
 /// Players skills settings
 #Const C_SkillsPointsStart	["AmmoGain" => 0, "StaminaGain" => 0, "StaminaMax" => 75]
 #Const C_SkillsPointsOnGoal	["AmmoGain" => 50, "StaminaGain" => 20]
-#Const C_SkillsPointsLimit	["AmmoGain" => 500, "StaminaGain" => 100, "StaminaMax" => 300]
+#Const C_SkillsPointsLimit	["AmmoGain" => 300, "StaminaGain" => 100, "StaminaMax" => 300]
 
 /// Position of the scores table depending on the statistics visibility
 #Const C_ScoresTablePosition [False => <0., 40., 20.>, True => <0., 47., 20.>]
@@ -80,12 +81,15 @@ declare Vec3 G_CenterGoalPosition;
 
 declare Boolean G_IsOffZoneActivated;
 declare Text[] G_SpawnedPlayers;
+declare Ident[] G_CreatedObjects;
 
 // ---------------------------------- //
 // Scores table
 // ---------------------------------- //
 ***ScoresTable***
 ***
+TopScores::RemoveCategory("Support");
+TopScores::AddCategory("Items", "Itm", 2.25, 60.);
 TopScores::AddCategory("Survival", "Sv", 2.25, 75.);
 ST2::SetColWidth("LibST_SMPoints", 5.);
 ST2::DestroyCol("LibST_SMRoundPoints");
@@ -101,6 +105,7 @@ ST2::DestroyCol("LibST_SMRoundPoints");
 GT_UseAutoEndSequence = False;
 GT_UseAutospawnObjects = False;
 GT_UseComboWeapons = False;
+GT_UseRandomToads = False; ///< Toads are initialized later manually
 GT_AutoManageOnRespawn = False;
 GT_AutoManageOnObjectTouch = False;
 GT_AllowMatchmakingMode = False;
@@ -115,9 +120,6 @@ GT_LogScriptsVersions = [
 G_ObjectId["Weapon"]	= ItemList_Add("HungerGames\\Weapon.Item.Gbx");
 G_ObjectId["Charge"]	= ItemList_Add("HungerGames\\Charge.Item.Gbx");
 G_ObjectId["Mini"]		= ItemList_Add("HungerGames\\Mini.Item.Gbx");
-G_ObjectId["Replie"]	= ItemList_Add("HungerGames\\Replie.Item.Gbx");
-G_ObjectId["Armor"]		= ItemList_Add("SMCommon\\Pickups\\Armor.Item.Gbx");
-G_ObjectId["Fuel"]		= ItemList_Add("SMCommon\\Collectibles\\Fuel.Item.gbx");
 
 // ---------------------------------- //
 // Create custom interfaces
@@ -140,9 +142,11 @@ declare PrevPlayersNbAlive = PlayersNbAlive;
 ST2::SetFooterText(TL::Compose("%1-", _("Remaining players: ")));
 UIResetPlayersTouchingGoal();
 UISetStartTime(-1);
+DestroyAllObjects();
 
 G_SpawnsList.clear();
 G_LatestSpawnId = NullId;
+declare SpawnedToads = False;
 
 // ---------------------------------- //
 // Init OffZone
@@ -215,7 +219,10 @@ while (TotalNbObjectsToSpawn < TotalNbObjectsSpawns * ObjectsSpawnRatio) {
 	if (!NbObjectsToSpawn.existskey(CurrentObjectTag)) NbObjectsToSpawn[CurrentObjectTag] = 0;
 	
 	// Go to the next item type if there is enough of current one
-	if (NbObjectsToSpawn[CurrentObjectTag] >= NbObjectsSpawnLandmarks[CurrentObjectTag] * ObjectsSpawnRatio) {
+	if (
+		!NbObjectsSpawnLandmarks.existskey(CurrentObjectTag) ||
+		NbObjectsToSpawn[CurrentObjectTag] >= NbObjectsSpawnLandmarks[CurrentObjectTag] * ObjectsSpawnRatio
+	) {
 		declare Removed = AvailableObjectsTags.remove(CurrentObjectTag);
 		if (AvailableObjectsTags.count <= 0) break;
 		
@@ -288,7 +295,6 @@ if (S_RandomizeObjectsSpawns) foreach (Type => ObjectAmount in NbObjectsToSpawn)
 ***StartRound***
 ***
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
-GalaxyTitles::SetFuelGivingBoost(False);
 Interfancy::SetModuleVisibility("Countdown", False);
 UISetNbPlayersAlive(0);
 MiniMap::Hide();
@@ -302,7 +308,9 @@ if (CenterGoal != Null) {
 	CenterGoalLandmarkId = CenterGoal.Id;
 	CenterGoal.Gauge.ValueReal = 1.;
 	CenterGoal.Gauge.Captured = True;
+	
 	G_CenterGoalPosition = CenterGoal.Position;
+	MiniMap::SetMarker("Goal", C_ImgBase^"Minimap/Goal.png", Vec3, G_CenterGoalPosition);
 }
 
 // ---------------------------------- //
@@ -452,11 +460,18 @@ foreach (Event in PendingEvents) {
 
 // ---------------------------------- //
 // Disable cinematic stripes and show minimap
-if (StartTime - Now <= 1500 && UIManager.UIAll.UISequence != CUIConfig::EUISequence::Playing) {
+if (Now >= StartTime - 1500 && UIManager.UIAll.UISequence != CUIConfig::EUISequence::Playing) {
 	Interfancy::SetModuleVisibility("Countdown", Now < UIManager.UIAll.CountdownEndTime);
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 	UIManager.UIAll.SpectatorAutoTarget = NullId;
 	MiniMap::Show();
+}
+
+// ---------------------------------- //
+// Initialize Toads
+if (S_ToadsFirstSpawnDelay >= 0 && !G_IsOffZoneActivated && !SpawnedToads && Now >= StartTime + S_ToadsFirstSpawnDelay * 1000) {
+	GalaxyTitles::InitToads(S_ToadsSpawnRatio);
+	SpawnedToads = True;
 }
 
 // ---------------------------------- //
@@ -469,7 +484,7 @@ if (!G_IsOffZoneActivated) {
 		
 		if (S_OffZoneActivationTime <= 0) UIManager.UIAll.CountdownEndTime = -1;
 		else UIManager.UIAll.CountdownEndTime = StartTime + (S_OffZoneActivationTime * 1000);
-		Interfancy::SetModuleVisibility("Countdown", Now < UIManager.UIAll.CountdownEndTime);
+		Interfancy::SetModuleVisibility("Countdown", Now >= StartTime - 1500 && Now < UIManager.UIAll.CountdownEndTime);
 	}
 	
 	// ---------------------------------- //
@@ -569,7 +584,7 @@ foreach (Player in Players) {
 	if (!G_SpawnedPlayers.exists(Player.User.Login)) {
 		if (!G_IsOffZoneActivated && S_NewcomersJoinTime > 0 && Now - StartTime <= S_NewcomersJoinTime * 1000) {
 			HG_SpawnPlayer(Player);
-			Killfeed::SendNotice(["$<%1$> is now playing in Games", Player.User.Name]);
+			if (Now > StartTime) Killfeed::SendNotice(["$<%1$> is now playing in Games", Player.User.Name]);
 		}
 		else {
 			G_SpawnedPlayers.add(Player.Login);
@@ -603,24 +618,26 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 	ST2::SetFooterText(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")));
 	UISetNbPlayersAlive(PlayersNbAlive);
 	
-	// ---------------------------------- //
-	// Give survival points to all players alive
-	if (PlayersNbAlive < PrevPlayersNbAlive) {
-		foreach (Player in Players) {
-			if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
-			TopScores::AddPoints(Player.Score, "Survival", 1);
-			Score::AddPoints(Player, C_PlayerPointsForSurvival);
+	if (Now > StartTime) {
+		// ---------------------------------- //
+		// Give survival points to all players alive
+		if (PlayersNbAlive < PrevPlayersNbAlive) {
+			foreach (Player in Players) {
+				if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+				TopScores::AddPoints(Player.Score, "Survival", 1);
+				Score::AddPoints(Player, C_PlayerPointsForSurvival);
+			}
+			if (PlayersNbAlive >= 2) Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 1);
 		}
-		Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 1);
+	
+		// ---------------------------------- //
+		// Play the victory sound
+		if (PlayersNbAlive == 1) UIManager.UIAll.SendNotice(
+			"", CUIConfig::ENoticeLevel::Default,
+			Null, CUIConfig::EAvatarVariant::Default,
+			CUIConfig::EUISound::VictoryPoint, 0
+		);
 	}
-
-	// ---------------------------------- //
-	// Play the victory sound
-	if (PlayersNbAlive == 1) UIManager.UIAll.SendNotice(
-		"", CUIConfig::ENoticeLevel::Default,
-		Null, CUIConfig::EAvatarVariant::Default,
-		CUIConfig::EUISound::VictoryPoint, 0
-	);
 
 	PrevPlayersNbAlive = PlayersNbAlive;
 }
@@ -634,7 +651,7 @@ foreach (Score in Scores) {
 }
 
 // Victory conditions
-if (PlayersNbAlive <= 1) MB_StopMap = True;
+if (Now > StartTime && PlayersNbAlive <= 1) MB_StopMap = True;
 ***
 
 // ---------------------------------- //
@@ -645,6 +662,8 @@ if (PlayersNbAlive <= 1) MB_StopMap = True;
 Interfancy::SetModuleVisibility("Countdown", False);
 UISetNbPlayersAlive(0);
 UISetStartTime(-1);
+DestroyAllObjects();
+MiniMap::DestroyMarker("Goal");
 
 OffZoneRadiusSpeed = 0.;
 OffZoneRadius = 0.;
@@ -653,13 +672,19 @@ CenterGoal.Gauge.Speed = 0;
 // ---------------------------------- //
 // Set the map winner
 declare WinnerId = NullId;
-foreach (Player in Players) if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+if (PlayersNbAlive == 1) foreach (Player in Players) if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
 	if (Scores.existskey(1)) Player.Score.Points = ML::Max(Scores[0].Points + C_WinnerMinPointsDiff, Player.Score.Points);
 	WinnerId = Player.Id;
 	break;
 }
 
-MB_Sleep(3000);
+// Disallow the winner to move after match end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;
+MB_Sleep(1500);
+
+// Cinematic round end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+MB_Sleep(1500);
 
 // ---------------------------------- //
 // Revert the interface
@@ -668,11 +693,10 @@ ST2::SetPos(C_ScoresTablePosition[False]);
 ST2::Build("SM");
 
 declare Text WinnerName;
-if (Scores.existskey(0)) WinnerName = Scores[0].User.Name;
+if (Players.existskey(WinnerId)) WinnerName = Players[WinnerId].User.Name;
 
 // ---------------------------------- //
 // Display the round winner
-UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
 UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
 UIManager.UIAll.BigMessageSoundVariant = 0;
@@ -849,6 +873,9 @@ CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag, Ident _AnchorId) {
 	ObjectAnchorId = AnchorId;
 	Tag = _ObjectTag;
 	
+	// Save created object id
+	G_CreatedObjects.add(Object.Id);
+	
 	// ---------------------------------- //
 	// Save central Goal distance in the object
 	declare Real CenterGoalDistance for Object;
@@ -895,6 +922,8 @@ Boolean DestroyObject(CSmObject _Object) {
 	if (_Object == Null) return False;
 	if (GalaxyTitles::DestroyObject(_Object)) return True;
 	
+	declare Removed = G_CreatedObjects.remove(_Object.Id);
+	
 	// Destroy object (unspawning the object gives a quiet sound)
 	_Object.SetUnspawned();
 	ObjectDestroy(_Object);
@@ -902,10 +931,22 @@ Boolean DestroyObject(CSmObject _Object) {
 }
 
 // ---------------------------------- //
+/// Destroy all objects created in the mode
+Void DestroyAllObjects() {
+	if (G_CreatedObjects.count <= 0) return;
+	foreach (ObjectId in G_CreatedObjects) {
+		if (!Objects.existskey(ObjectId)) continue;
+		declare Removed = DestroyObject(Objects[ObjectId]);
+	}
+	G_CreatedObjects.clear();
+}
+
+// ---------------------------------- //
 /** Pick up object
  *
  *	@param	_Event	The event to proceed
  *
+ *	@return		True, if the object was picked up
  */
 Boolean PickUpObject(CSmModeEvent _Event) {
 	if (
@@ -1008,7 +1049,7 @@ Boolean PickUpObject(CSmModeEvent _Event) {
 	Score::AddPoints(_Event.Player, C_PlayerPointsForObjects);
 	
 	// Destroy object
-	DestroyObject(_Event.Object);
+	declare Destroyed = DestroyObject(_Event.Object);
 	return True;
 }
 
@@ -1127,8 +1168,8 @@ declare Quad_DigitSec <=> (Page.GetFirstChild("Quad_DigitSec") as CMlQuad);
 declare Label_TouchGoalTitle <=> (Page.GetFirstChild("Label_TouchGoalTitle") as CMlLabel);
 declare Label_TouchGoalDesc <=> (Page.GetFirstChild("Label_TouchGoalDesc") as CMlLabel);
 
-Label_TouchGoalTitle.SetText(Translate("Touch the Goal!"));
-Label_TouchGoalDesc.SetText(Translate("You must touch the Goal to be able to pick up items!"));
+Label_TouchGoalTitle.SetText(ReplaceChars(Translate("Touch the Goal!")));
+Label_TouchGoalDesc.SetText(ReplaceChars(Translate("You must touch the Goal to be able to pick up items!")));
 
 // ---------------------------------- //
 // Netcode
@@ -1197,8 +1238,7 @@ if (PrevTouchGoalAlertVisible != TouchGoalAlertVisible) {
 if (TouchGoalAlertVisible && CenterGoalPosition != <0., 0., 0.>) {
 	declare Distance = ML::Distance(CenterGoalPosition, GUIPlayer.Position);
 	if (Distance > 50) {
-		declare Color = <1., 0., 0.>;
-		if (Now % 250 >= 125) Color = <.5, 0., 0.>;
+		declare Color = <.5 + .5 * Pulse(Now, 3.), 0., 0.>;
 		Label_TouchGoalTitle.TextColor = Color;
 		Label_TouchGoalDesc.TextColor = Color;
 	} else {
@@ -1246,10 +1286,11 @@ if (PrevCountdownTick != CountdownTick) {
 		LibManialink_AnimChain(Quad_DigitPri, "<quad opacity=0 />", 250, "EaseLinear");
 		LibManialink_AnimChain(Quad_DigitSec, "<quad opacity=0 />", 250, "EaseLinear");
 		
-		if (!CountdownSound.IsPlaying && CountdownTick > 0) {
-			CountdownSound.Play();
-			CountdownSound.PlayCursor = ML::ToReal(10 - CountdownTick);
-		}
+		// ---------------------------------- //
+		// Manage countdown sound
+		if (!CountdownSound.IsPlaying && CountdownTick > 0) CountdownSound.Play();
+		declare TargetPlayCursor = ML::ToReal(10 - CountdownTick);
+		if (ML::Abs(CountdownSound.PlayCursor - TargetPlayCursor) > .01) CountdownSound.PlayCursor = TargetPlayCursor;
 	}
 	
 	// ---------------------------------- //
@@ -1258,11 +1299,12 @@ if (PrevCountdownTick != CountdownTick) {
 	
 	// ---------------------------------- //
 	// Stop countdown sound
-	if (CountdownSound.IsPlaying && CountdownTick <= -1) CountdownSound.Stop();
+	if (CountdownSound.IsPlaying && (CountdownTick <= 0 || CountdownTick > 10)) CountdownSound.Stop();
 }
 ***
 
 {{{Manialink::Animations(["EaseOutCirc"])}}}
+{{{ManialinkTools::Functions(["Pulse", "ReplaceChars"])}}}
 {{{Translations::InjectInManialink(["Touch the Goal!", "You must touch the Goal to be able to pick up items!"])}}}
 
 // ---------------------------------- //
@@ -1298,7 +1340,7 @@ Text CreateManialinkStatistics() {
 	<label posn="-25 2.25" class="font" halign="left" textcolor="888" id="Label_StatValueMin" text="0%"/>
 	<label posn="25 2.25" class="font" halign="right" textcolor="888" id="Label_StatValueMax" text="0%"/>
 	<gauge sizen="54 8" halign="center" valign="center" drawbg="0" id="Gauge_StatProgress"/>
-	<label posn="0 -3" class="font" halign="center" textprefix="$t" id="Label_StatDescription" text="---"/>
+	<label posn="0 -3" sizen="50 0" class="font" halign="center" textprefix="$t" id="Label_StatDescription" text="---"/>
 </framemodel>
 
 <frame posn="-84 -44 10" clip="1" clipposn="84 -10" clipsizen="170 22">
@@ -1320,7 +1362,7 @@ Text CreateManialinkStatistics() {
 #Include "TextLib" as TL
 
 #Const C_StatsNames 	["Ammo reload", "Stamina reload", "Stamina max"]
-#Const C_StatsMaximum	[5., 1., 3.]
+#Const C_StatsMaximum	[3., 1., 3.]
 
 // ---------------------------------- //
 // Main
@@ -1349,7 +1391,7 @@ foreach (I => Frame in Frame_StatGauges) {
 	declare Label_StatValueMin <=> (Frame.GetFirstChild("Label_StatValueMin") as CMlLabel);
 	declare Label_StatValueMax <=> (Frame.GetFirstChild("Label_StatValueMax") as CMlLabel);
 	
-	Label_StatDescription.SetText(Translate(C_StatsNames[I]));
+	Label_StatDescription.SetText(ReplaceChars(Translate(C_StatsNames[I])));
 	Label_StatValueMin.SetText("0%");
 	Label_StatValueMax.SetText(ML::FloorInteger(C_StatsMaximum[I] * 100)^"%");
 }
@@ -1413,43 +1455,8 @@ foreach (I => Frame in Frame_StatGauges) {
 }
 ***
 
-// ---------------------------------- //
-// Functions
-// ---------------------------------- //
-
-// ---------------------------------- //
-/** Change color brightness
- *
- *	@param	_Color			Input color
- *	@param	_Brightness		Target brightness
- *
- *	@return		New color
- */
-Vec3 Brightness(Vec3 _Color, Real _Brightness) {
-	if (_Brightness == 1) return _Color;
-	if (_Brightness <= 0) return Vec3;
-	
-	declare Vec3 OutputColor;
-	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
-	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
-	return OutputColor;
-}
-
-// ---------------------------------- //
-/** Set gauge ratio with value cut fix
- *
- *	@param	_Gauge		The gauge to set ratio
- *	@param	_Ratio		Ratio to set
- */
-Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
-	if (_Gauge == Null) return;
-	if (_Ratio <= 0.) { _Gauge.Ratio = 0.; return; }
-	if (_Ratio >= 1.) { _Gauge.Ratio = 1.; return; }
-	declare GaugeCutOff = 4 / _Gauge.Size.X;
-	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
-}
-
-{{{Translations::InjectInManialink(["Ammo gain", "Stamina gain", "Stamina max"])}}}
+{{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness", "ReplaceChars"])}}}
+{{{Translations::InjectInManialink(["Ammo reload", "Stamina reload", "Stamina max"])}}}
 
 // ---------------------------------- //
 // Main

@@ -1,0 +1,203 @@
+// -------------------------------------- //
+//  LIBRARY MANIALINK TOOLS by domino54   //
+//  script version: 2016-12-12            //
+// -------------------------------------- //
+
+/**
+ *	You can use this library to inject various additional
+ *	functions in your manialinks, like corrected gauges ratio
+ *	setting, color brightness and pulse animation.
+ *
+ *	Available functions:
+ *	-	Pulse			Creates simple pulse animations from given time and frequency.
+ *	-	SetGaugeRatio	Correctly sets the ratio of the given gauge bar.
+ *	-	ComputeWidth	Compute the width of a label faster.
+ *	-	Brightness		Used to adjust brightness of a given color.
+ *	-	ReplaceChars	Replaces diacritic characters with characters they are based on.
+ */
+
+#Const Version		"2016-12-12"
+#Const ScriptName	"ManialinkTools.Script.txt"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ManialinkTools_AvailableFunctions ["Pulse", "SetGaugeRatio", "ComputeWidth", "Brightness", "ReplaceChars"]
+
+/// Code of the Pulse() function
+#Const C_ManialinkTools_Pulse """
+// ---------------------------------- //
+/** Return pulse value for animations
+ *
+ *	@param	_Time		Time of the pulse animations
+ *	@param	_Frequency	Frequency of the pulse in Hz
+ *
+ *	@return		Pulse animation value
+ */
+Real Pulse(Integer _Time, Real _Frequency) {
+	return (ML::Sin(ML::PI() * 2 * (_Time / 1000.) * _Frequency) + 1) / 2;
+}
+"""
+
+/// Code of the SetGaugeRatio() function
+#Const C_ManialinkTools_SetGaugeRatio """
+// ---------------------------------- //
+/** Set gauge ratio with value cut fix
+ *
+ *	@param	_Gauge		The gauge to set ratio
+ *	@param	_Ratio		Ratio to set
+ */
+Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
+	if (_Gauge == Null) return;
+	if (_Ratio <= 0.) { _Gauge.Ratio = 0.; return; }
+	if (_Ratio >= 1.) { _Gauge.Ratio = 1.; return; }
+	declare GaugeCutOff = 4 / _Gauge.Size.X;
+	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
+}
+"""
+
+/// Code of the ComputeWidth() function
+#Const C_ManialinkTools_ComputeWidth """
+// ---------------------------------- //
+/** Compute label width
+ *
+ *	@param	_Label		Label to compute its width
+ *
+ *	@return		Total length of the label text
+ */
+Real ComputeWidth(CMlLabel _Label) {
+	if (_Label == Null || _Label.Value == "") return 0.;
+	return _Label.ComputeWidth(_Label.Value) * _Label.RelativeScale;
+}
+"""
+
+/// Code of the Brightness() function
+#Const C_ManialinkTools_Brightness """
+// ---------------------------------- //
+/** Change color brightness
+ *
+ *	@param	_Color			Input color
+ *	@param	_Brightness		Target brightness
+ *
+ *	@return		New color
+ */
+Vec3 Brightness(Vec3 _Color, Real _Brightness) {
+	if (_Brightness == 1) return _Color;
+	if (_Brightness <= 0) return Vec3;
+	
+	declare Vec3 OutputColor;
+	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
+	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
+	return OutputColor;
+}
+"""
+
+/// Code of the ReplaceChars() function
+#Const C_ManialinkTools_ReplaceChars """
+// ---------------------------------- //
+/** Replaces special characters with their latin bases
+ *
+ *	@param	_Input	The text to replace characters
+ *
+ *	@return		Text with characters replaced
+ */
+Text ReplaceChars(Text _Input) {
+	if (_Input == "") return "";
+	declare Output = _Input;
+	declare ToReplace = [
+		"Ą" => "A", "Ć" => "C", "Ę" => "E", "Ń" => "N", "Ś" => "S", "Ż" => "Z", "Ź" => "Z",
+		"ą" => "a", "ć" => "c", "ę" => "e", "ń" => "n", "ś" => "s", "ż" => "z", "ź" => "ż"
+	];
+	foreach (Char => Replacement in ToReplace) {
+		if (!TL::Find(Char, Output, True, True)) continue;
+		Output = TL::Replace(Output, Char, Replacement);
+	}
+	return Output;
+}
+"""
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get the code of a function
+ *
+ *	@param	_FunctionName	Name of the function to get code
+ *
+ *	@return		The code of the function
+ */
+Text Private_GetFunctionCode(Text _FunctionName) {
+	switch (_FunctionName) {
+		case "Pulse"			: return C_ManialinkTools_Pulse;
+		case "SetGaugeRatio"	: return C_ManialinkTools_SetGaugeRatio;
+		case "ComputeWidth"		: return C_ManialinkTools_ComputeWidth;
+		case "Brightness"		: return C_ManialinkTools_Brightness;
+		case "ReplaceChars"		: return C_ManialinkTools_ReplaceChars;
+	}
+	return "";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script
+ *
+ *	@return		The version number of the script
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script
+ *
+ *	@return		The name of the script
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Inject multiple library functions in manialink
+ *
+ *	@param	_FunctionsNames		Name of the functions to inject
+ *
+ *	@return		The functions code
+ */
+Text Functions(Text[] _FunctionsNames) {
+	if (_FunctionsNames.count <= 0) return "";
+	declare Output = "";
+	declare LoadedFunctions = Text[];
+	
+	// Get the code of specified functions
+	foreach (FunctionName in _FunctionsNames) {
+		declare FunctionCode = Private_GetFunctionCode(FunctionName);
+		if (FunctionCode != "") LoadedFunctions.add(FunctionCode);
+	}
+	
+	// Return if no finctions were found
+	if (LoadedFunctions.count <= 0) return "";
+	
+	// Return the loaded functions
+	foreach (FunctionCode in LoadedFunctions) Output ^= FunctionCode;
+	return Output;
+}
+
+// ---------------------------------- //
+/** Inject one library function in manialink
+ *
+ *	@param	_FunctionName	Name of the function to inject
+ *
+ *	@return		The function code
+ */
+Text Function(Text _FunctionName) { return Functions([_FunctionName]); }
+
+// ---------------------------------- //
+/** Inject all available functions in manialink
+ *
+ *	@return		The functions code
+ */
+Text AllFunctions() { return Functions(C_ManialinkTools_AvailableFunctions); }

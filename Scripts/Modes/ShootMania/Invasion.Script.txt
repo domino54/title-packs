@@ -1,15 +1,16 @@
 // -------------------------------------- //
 //  INVASION by domino54                  //
-//  script version: v3.1 @2016-11-13      //
+//  script version: v3.1 @2016-12-15      //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"InvasionArena, HordeArena"
-#Const Version				"2016-11-13"
+#Const Version				"2016-12-15"
 #Const ScriptName			"Invasion.Script.txt"
 
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
+#Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
 #Include "Libs/domino54/ShootMania/InvasionUI.Script.txt" as InvasionUI
 
 // ---------------------------------- //
@@ -41,7 +42,7 @@
 #Const C_WeaponHeatTimeMax		20000	///< Maximum overheating duration
 #Const C_WeaponBaseReloadBonus	.333	///< Normal reload bonus on hit
 
-#Const Description _("TYPE: Cooperation\nOBJECTIVE:\nProtect Pole from Toads attack as long as it's possible.\nSwitch weapons with mouse roll and 1 - 4 keys.")
+#Const Description _("TYPE: Cooperation\nOBJECTIVE: Protect Pole from Toads attack as long as it's possible. Game is over when 20 Toads reach the Pole.")
 
 // Gold crystal properties
 #Const C_GoldSpawningInterval	40000	///< Time between each Gold spawn
@@ -161,7 +162,6 @@ declare Ident[Text] G_ActionId; ///< List of all available actions
 // Columns
 ST2::CreateCol("Invasion_Evolution", _("Evo"), "", 3., 90.);
 ST2::DestroyCol("LibST_SMRoundPoints");
-TopScores::RemoveCategory("Items");
 TopScores::RemoveCategory("Hit");
 
 // ---------------------------------- //
@@ -188,6 +188,13 @@ GT_AutoManageOnShoot = False;
 GT_AutoManageOnArmorEmpty = False;
 GT_AutoManageOnNearMiss = False;
 GT_AllowMatchmakingMode = False;
+
+GT_LogScriptsVersions = [
+	ScriptName => Version,
+	InvasionUI::GetScriptName()	=> InvasionUI::GetScriptVersion(),
+	Sound::GetScriptName()		=> Sound::GetScriptVersion(),
+	Map::GetScriptName()		=> Map::GetScriptVersion()
+];
 
 // ---------------------------------- //
 // Set the mode options
@@ -218,7 +225,7 @@ GT_SpawnScreenObjectives = TL::Compose("$<%11. $>Player has to protect Goal from
 
 // ---------------------------------- //
 // Set the rules in the pause menu
-PauseMenu::SetModeRules("Invasion", "Protect Pole from Toads attack as long as it's possible.\nSwitch weapons with mouse roll and 1 - 4 keys.\nGame is over when 20 of Toads reach the Pole.", "");
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Protect Pole from Toads attack as long as it's possible.\nSwitch weapons with mouse roll and 1 - 4 keys.\nGame is over when 20 of Toads reach the Pole.", "");
 
 // ---------------------------------- //
 // Load objects
@@ -253,13 +260,27 @@ if (!G_IsSoloMode) {
 }
 ***
 
+// ---------------------------------- //
+// Initialize map
+// ---------------------------------- //
 ***InitMap***
 ***
-InvasionUI::InitializeMatch();
 UpdateScoresTableFooter(S_ToadsReachedPoleLimit, C_ToadArmorPointsMin);
-
 GalaxyTitles::SetObjectsAffectEveryone(True);
-GalaxyTitles::SetPointsForPick(0);
+InvasionUI::InitializeMatch();
+
+// ---------------------------------- //
+// Check if the map is valid
+declare MapValidated = True;
+for (Order, 1, 2) {
+	if (Map::GetLandmarkPlayerSpawn("Spawn", 0) == Null) MapValidated = False;
+	if (Map::GetLandmarkBotPath("BotPath", 0) == Null) MapValidated = False;
+	if (Map::GetLandmarkGauge("Goal", 0) == Null) MapValidated = False;
+}
+
+// ---------------------------------- //
+// Skip map if not valid
+if (!MapValidated) GT_SkipInvalidMap();
 ***
 
 // ---------------------------------- //
@@ -988,13 +1009,11 @@ else if (Players.count <= 0) {
 ***
 
 // ---------------------------------- //
-// End map
+// Round end
 // ---------------------------------- //
-***EndMapBeforePodium***
+***EndRound***
 ***
 UIManager.UIAll.CountdownEndTime = -1;
-StartTime = -1;
-Message::CleanAllMessages();
 
 // ---------------------------------- //
 // Destroy everything
@@ -1002,11 +1021,13 @@ ObjectDestroyAll();
 DestroyAllBotPlayers();
 SM::UnspawnAllPlayers();
 
+MB_Sleep(2000);
+
 // ---------------------------------- //
 // Compute final time score
 InvasionUI::SetDisplayInterface(False);
 InvasionUI::SetTimeScoreCounting(False);
-MB_Sleep(1000);
+Message::CleanAllMessages();
 
 // ---------------------------------- //
 // Do a proper end sequence

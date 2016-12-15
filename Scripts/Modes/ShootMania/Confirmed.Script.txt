@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  CONFIRMED by domino54                 //
-//  script version: 2016-12-12            //
+//  script version: 2016-12-15            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"MeleeArena TeamMeleeArena"
-#Const Version		"2016-12-12"
+#Const Version		"2016-12-15"
 #Const ScriptName	"Confirmed.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -17,6 +17,8 @@
 // ---------------------------------- //
 #Setting S_TimeLimit	300 as _("Time limit (seconds)")	///< Time limit (seconds)
 #Setting S_PointsLimit	50	as _("Points limit")			///< First team to reach this number wins
+
+#Const Description _("TYPE: Team versus Team\nOBJECTIVE: Pick up coins dropped by opposite team players to score points for your team. First team to reach points limit wins.")
 
 // ---------------------------------- //
 // Global variables
@@ -69,7 +71,7 @@ GT_SpawnScreenObjectives = TL::Compose(
 
 // ---------------------------------- //
 // Set the rules in the pause menu
-PauseMenu::SetModeRules("Confirmed", "Eliminate opponents to make them drop coins. Pick up these coins to score points for your team. First team to reach points limit wins.", "");
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Eliminate opponents to make them drop coins. Pick up these coins to score points for your team. First team to reach points limit wins.", "");
 
 // ---------------------------------- //
 // Create custom interface
@@ -105,11 +107,7 @@ switch (Map.MapType) {
 
 // ---------------------------------- //
 // Skip map if not valid
-if (!MapValidated) {
-	Translations::SendChat("This map is not valid, moving to the next one.");
-	MB_Sleep(10000);
-	MB_StopMap = True;
-}
+if (!MapValidated) GT_SkipInvalidMap();
 ***
 
 // ---------------------------------- //
@@ -533,7 +531,6 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	// Initialize objects
 	GalaxyTitles::ResetAll();
 	GalaxyTitles::InitObjects();
-	MiniMap::Show();
 	
 	// ---------------------------------- //
 	// Waiting for players play loop
@@ -617,7 +614,6 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	UIManager.UIAll.BigMessage = "";
 	UIManager.UIAll.StatusMessage = "";
 	UIManager.UIAll.UISequence = OldSequence;
-	MiniMap::Hide();
 	---UpdateClublinks---
 }
 

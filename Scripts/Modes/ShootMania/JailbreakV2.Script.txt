@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2016-11-11            //
+//  script version: 2016-12-15            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"JailbreakArena JailbreakV2Arena"
-#Const Version		"2016-11-11"
+#Const Version		"2016-12-15"
 #Const ScriptName	"JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -89,7 +89,7 @@ GT_SpawnScreenObjectives = TL::Compose(
 
 // ---------------------------------- //
 // Set the rules in the pause menu
-PauseMenu::SetModeRules("Jailbreak v2", "When a player is eliminated, they will be respawned in Jail. To let teammates escape, at least one team member has to stand on the Goal. Game ends after time reach the limit or one team doesn't have any players outside of the Jail.", "");
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "When a player is eliminated, they will be respawned in Jail. To let teammates escape, at least one team member has to stand on the Goal. Game ends after time reach the limit or one team doesn't have any players outside of the Jail.", "");
 
 // ---------------------------------- //
 // Register callbacks
@@ -128,11 +128,7 @@ if (GetLandmarksGate("Gate", 1).count != GetLandmarksGate("Gate", 2).count) MapV
 
 // ---------------------------------- //
 // Skip map if not valid
-if (!MapValidated) {
-	Translations::SendChat("This map is not valid, moving to the next one.");
-	MB_Sleep(10000);
-	MB_StopMap = True;
-}
+if (!MapValidated) GT_SkipInvalidMap();
 ***
 
 // ---------------------------------- //
@@ -416,7 +412,7 @@ foreach (Player in Players) {
 foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
 	if (GateLandmarks.count <= 0) continue;
 	
-	declare PlayersCanEscape = (G_EscapeEndTime.existskey(Clan) && Now < G_EscapeEndTime[Clan]);
+	declare PlayersCanEscape = G_EscapeEndTime.existskey(Clan) && Now < G_EscapeEndTime[Clan];
 	foreach (GateLandmark in GateLandmarks) {
 		GateLandmark.Gate.ManualClosed = !PlayersCanEscape;
 		declare ValueReal = 0.;
@@ -429,7 +425,7 @@ foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
 // Update time limit
 if (CurrentTimeLimit != S_TimeLimit) {
 	CurrentTimeLimit = S_TimeLimit;
-	if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
+	if (S_TimeLimit > 0) EndTime = StartTime + S_TimeLimit * 1000;
 	else EndTime = -1;
 }
 
@@ -446,6 +442,8 @@ if (EndTime > 0 && Now > EndTime) MB_StopRound = True;
 ***
 UpdateClansPlayersLists();
 Message::CleanBigMessages();
+SM::UnspawnAllPlayers();
+ResetPlayersColors();
 
 // ---------------------------------- //
 // Victory sound
@@ -456,9 +454,6 @@ if (EndTime > 0 && Now < EndTime && !MB_StopMap && !MatchEndRequested) {
 	);
 	MB_Sleep(1250);
 }
-
-SM::UnspawnAllPlayers();
-ResetPlayersColors();
 ***
 
 ***EndRound***
@@ -851,7 +846,6 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	// Initialize objects
 	GalaxyTitles::ResetAll();
 	GalaxyTitles::InitObjects();
-	MiniMap::Show();
 	
 	// ---------------------------------- //
 	// Waiting for players play loop
@@ -923,7 +917,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	UIManager.UIAll.BigMessage = "";
 	UIManager.UIAll.StatusMessage = "";
 	UIManager.UIAll.UISequence = OldSequence;
-	MiniMap::Hide();
+	
 	---UpdateClublinks---
 }
 

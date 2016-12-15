@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  HUNGER GAMES 3.0.1 by domino54        //
-//  script version: 2016-12-12            //
+//  script version: 2016-12-15            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2016-12-12"
+#Const Version		"2016-12-15"
 #Const ScriptName	"HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -22,6 +22,7 @@
 #Setting S_RandomizeObjectsSpawns	True	as _("Randomize objects locations on the map (except Armor)")
 #Setting S_ArmorRespawnTime			180		as _("Armor and Replie respawn duration (0 = don't respawn)")
 #Setting S_ToadsFirstSpawnDelay		30		as _("Delay before Toads are spawned")
+#Setting S_AllowPlayersRespawn		True	as _("Allow players to respawn on Checkpoints")
 
 /// Overwrite existing settings
 #Setting S_AutoManageAFK		False
@@ -54,6 +55,11 @@
 #Const C_ToadChanceForArmorDrop		.25		///< Chance that item dropped by Toad will be Armor
 #Const C_GateOpeningDuration		5000	///< Required standing time for a Gate to open
 #Const C_GateAutoCloseDelay			7500	///< Time after which the Gate closes again
+#Const C_CheckpointSafeDistance		12.		///< Tornado distance for a Checkpoint to become unavailable to respawn at
+#Const C_RespawnWaitingDuration		15000	///< Time the player needs to wait to respawn
+#Const C_RespawnCancellingSpeed		2.5		///< Cancel respawn request if the player reaches this speed
+
+#Const Description _("TYPE: Free for all\nOBJECTIVE: Protect Pole from Toads attack as long as it's possible. Game is over when 20 Toads reach the Pole.")
 
 /// Amount of weapons players get for touching the pole
 #Const C_PlayerInitialWeapons [
@@ -74,14 +80,14 @@
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Ident[Text] G_ObjectId;
-declare Ident[] G_SpawnsList;
-declare Ident G_LatestSpawnId;
-declare Vec3 G_CenterGoalPosition;
-
-declare Boolean G_IsOffZoneActivated;
-declare Text[] G_SpawnedPlayers;
-declare Ident[] G_CreatedObjects;
+declare Boolean G_IsOffZoneActivated;	///< Tells if the Tornado is active or not
+declare Text[] G_SpawnedPlayers;	///< List of all players who were spawned during the map
+declare Ident[] G_CreatedObjects;	///< Objects created by the game mode
+declare Vec3 G_CenterGoalPosition;	///< Position of the central Goal landmark
+declare Ident[] G_RespawnLandmarks;	///< Ids of all landmarks on which the player can respawn
+declare Ident[Text] G_ObjectId;	///< Ids of the loaded objects used by the mode
+declare Ident[] G_SpawnsList;	///< List of Spawns available to toss
+declare Ident G_LatestSpawnId;	///< Previously tossed Spawn
 
 // ---------------------------------- //
 // Scores table
@@ -115,6 +121,21 @@ GT_LogScriptsVersions = [
 	Map::GetScriptName() => Map::GetScriptVersion()
 ];
 
+GT_KillfeedTranslations = ["$<%1$> tried to escape arena"];
+
+// ---------------------------------- //
+// Set the mode rules
+GT_SpawnScreenModeName = "Hunger Games";
+GT_SpawnScreenModeType = _("Free for all");
+GT_SpawnScreenObjectives = TL::Compose(
+	_("$<%11. $>You have only one life per map.\n$<%12. $>At the very beginning of the map, you must activate your skills by touching the Goal.\n$<%13. $>To get more weapons and develop your character abilities, search and pick up items on the map.\n$<%14. $>If you are eliminated, you will spectate the rest of the map.\n$<%15. $>The last player alive wins the game."),
+	"$"^SpawnScreen::GetModeColor()
+);
+
+// ---------------------------------- //
+// Set the rules in the pause menu
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "The last player alive wins the game. You have only one life per map. You must activate your skills by touching the Goal at the very beginning of the map. Get more weapons and develop your character abilities with items spread all over the map.", "");
+
 // ---------------------------------- //
 // Load objects
 G_ObjectId["Weapon"]	= ItemList_Add("HungerGames\\Weapon.Item.Gbx");
@@ -137,36 +158,22 @@ declare PrevPlayersNbAlive = PlayersNbAlive;
 // ---------------------------------- //
 // Map start
 // ---------------------------------- //
-***StartMap***
+***InitMap***
 ***
 ST2::SetFooterText(TL::Compose("%1-", _("Remaining players: ")));
-UIResetPlayersTouchingGoal();
+UIResetAll();
 UISetStartTime(-1);
 DestroyAllObjects();
 
-G_SpawnsList.clear();
-G_LatestSpawnId = NullId;
-declare SpawnedToads = False;
-
 // ---------------------------------- //
-// Init OffZone
-declare OffZoneRadiusMax = 0.;
-OffZoneRadiusSpeed = 0.;
-OffZoneRadius = 0.;
-
-// ---------------------------------- //
-// Get the central goal landmark id
+// Check if the map is valid
 declare CenterGoalLandmarkId = NullId;
 declare CenterGoal <=> Map::GetLandmarkSector("Goal", 0);
-if (CenterGoal != Null) UIManager.UIAll.SpectatorAutoTarget = CenterGoal.Id;
+declare MapValidated = CenterGoal != Null && MapLandmarks_PlayerSpawn.count > 0;
 
 // ---------------------------------- //
 // Skip map if not valid
-if (MapLandmarks_PlayerSpawn.count <= 0 || CenterGoal == Null) {
-	Translations::SendChat("This map is not valid, moving to the next one.");
-	MB_StopMap = True;
-	MB_Sleep(5000);
-}
+if (!MapValidated) GT_SkipInvalidMap();
 ***
 
 // ---------------------------------- //
@@ -292,7 +299,7 @@ if (S_RandomizeObjectsSpawns) foreach (Type => ObjectAmount in NbObjectsToSpawn)
 // ---------------------------------- //
 // Round start
 // ---------------------------------- //
-***StartRound***
+***InitRound***
 ***
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
 Interfancy::SetModuleVisibility("Countdown", False);
@@ -301,10 +308,21 @@ MiniMap::Hide();
 
 G_IsOffZoneActivated = False;
 G_SpawnedPlayers.clear();
+G_RespawnLandmarks.clear();
+G_SpawnsList.clear();
+G_LatestSpawnId = NullId;
+declare SpawnedToads = False;
+
+// ---------------------------------- //
+// Init OffZone
+declare OffZoneRadiusMax = 0.;
+OffZoneRadiusSpeed = 0.;
+OffZoneRadius = 0.;
 
 // ---------------------------------- //
 // Initialize the central Goal
 if (CenterGoal != Null) {
+	UIManager.UIAll.SpectatorAutoTarget = CenterGoal.Id;
 	CenterGoalLandmarkId = CenterGoal.Id;
 	CenterGoal.Gauge.ValueReal = 1.;
 	CenterGoal.Gauge.Captured = True;
@@ -329,6 +347,11 @@ foreach (MapLandmark in MapLandmarks_Gate) {
 	MapLandmark.Gate.Clan = 1;
 	MapLandmark.Gauge.Max = C_GateOpeningDuration;
 }
+
+// ---------------------------------- //
+// Get the respawnable Checkpoints landmarks
+foreach (MapLandmark in MapLandmarks_Gauge)
+	if (MapLandmark.Tag == "Checkpoint") G_RespawnLandmarks.add(MapLandmark.Id);
 
 // ---------------------------------- //
 // Wait for enough players to start the game
@@ -422,6 +445,42 @@ if (PickedUpObject && MapLandmarks_ObjectAnchor.existskey(ObjectAnchorId)) {
 ***
 
 // ---------------------------------- //
+// On hit event
+// ---------------------------------- //
+***OnHit***
+***
+declare Boolean PlayerRequestsRespawn for Event.Victim;
+declare Integer PlayerRespawnStartTime for Event.Victim;
+
+// ---------------------------------- //
+// Stop respawn request
+if (PlayerRequestsRespawn) {
+	Translations::SendStatusMessage(Event.Victim, "Respawn aborted: you've taken damage!", 3000, 0);
+	PlayerRequestsRespawn = False;
+	PlayerRespawnStartTime = -1;
+	UISetRespawnStartTime(Event.Victim, -1);
+}
+***
+
+// ---------------------------------- //
+// On shoot event
+// ---------------------------------- //
+***OnShoot***
+***
+declare Boolean PlayerRequestsRespawn for Event.Shooter;
+declare Integer PlayerRespawnStartTime for Event.Shooter;
+
+// ---------------------------------- //
+// Stop respawn request
+if (PlayerRequestsRespawn) {
+	Translations::SendStatusMessage(Event.Shooter, "Respawn aborted: you started attacking", 3000, 0);
+	PlayerRequestsRespawn = False;
+	PlayerRespawnStartTime = -1;
+	UISetRespawnStartTime(Event.Shooter, -1);
+}
+***
+
+// ---------------------------------- //
 // Play loop
 // ---------------------------------- //
 ***PlayLoop***
@@ -453,7 +512,39 @@ foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// On player request respawn
 	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
-		Translations::SendChat(Event.Player, "Respawn is not allowed in Hunger Games.");
+		declare Boolean PlayerRequestsRespawn for Event.Player;
+		declare Integer PlayerRespawnStartTime for Event.Player;
+		declare Boolean PlayerHasWeapon for Event.Player;
+		
+		// ---------------------------------- //
+		// Cancel ongoing respawn request
+		if (PlayerRequestsRespawn) {
+			PlayerRequestsRespawn = False;
+			PlayerRespawnStartTime = -1;
+			UISetRespawnStartTime(Event.Player, -1);
+		}
+		
+		// Respawn is disabled by the server
+		else if (!S_AllowPlayersRespawn)
+			Translations::SendStatusMessage(Event.Player, "Respawn is not allowed on this server", 3000, 0);
+		
+		// Player must touch the Goal first
+		else if (!PlayerHasWeapon)
+			Translations::SendStatusMessage(Event.Player, "You must touch the Goal before respawning!", 3000, 0);
+		
+		// No checkpoints available for respawn
+		else if (G_RespawnLandmarks.count <= 0)
+			Translations::SendStatusMessage(Event.Player, "No respawn Checkpoints available on map!", 3000, 0);
+		
+		// ---------------------------------- //
+		// Start new respawn request
+		else {
+			PlayerRequestsRespawn = True;
+			PlayerRespawnStartTime = Now;
+			UISetRespawnStartTime(Event.Player, Now);
+		}
+		
+		// Always discard the event
 		Discard(Event);
 	}
 }
@@ -515,7 +606,7 @@ if (!G_IsOffZoneActivated) {
 		CenterGoal.Gauge.Speed = -1;
 		
 		// Send notice
-		Message::SendStatusMessage(_("Tornado activated."), 4000, 0, CUIConfig::EUISound::Notice, 0);
+		Message::SendStatusMessage(_("Tornado activated."), 4000, 1, CUIConfig::EUISound::Notice, 0);
 		Interfancy::SetModuleVisibility("Countdown", False);
 	}
 }
@@ -573,6 +664,15 @@ else if (OffZoneRadius > 0) {
 				MapLandmark.Gauge.Max = ML::FloorInteger(C_GateOpeningDuration * TornadoDistance / TornadoDistanceMax);
 			}
 		}
+		
+		// ---------------------------------- //
+		// Remove respawn Checkpoint close to the Tornado
+		if (
+			MapLandmark.Gauge != Null && G_RespawnLandmarks.exists(MapLandmark.Id) &&
+			CenterGoalDistance >= OffZoneRadius - C_CheckpointSafeDistance
+		) {
+			declare Removed = G_RespawnLandmarks.remove(MapLandmark.Id);
+		}
 	}
 }
 
@@ -591,7 +691,7 @@ foreach (Player in Players) {
 			Translations::SendChat(Player, "You came too late to join this match. Please wait for the next map. Good luck!");
 		}
 	}
-
+	
 	// ---------------------------------- //
 	// Unspawn players trying to escape arena
 	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
@@ -610,6 +710,47 @@ foreach (Player in Players) {
 			UnspawnPlayer(Player);
 		}
 	}
+	
+	// ---------------------------------- //
+	// Respawning players on checkpoints
+	declare Boolean PlayerRequestsRespawn for Player;
+	declare Integer PlayerRespawnStartTime for Player;
+	declare StopRespawnRequest = False;
+	
+	if (PlayerRequestsRespawn) {
+		// ---------------------------------- //
+		// Cancel respawn if the player is not spawned anymore
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) StopRespawnRequest = True;
+		
+		// ---------------------------------- //
+		// Successfully respawn the player
+		else if (Now >= PlayerRespawnStartTime + C_RespawnWaitingDuration) {
+			declare MapLandmark <=> MapLandmarks[G_RespawnLandmarks[ML::Rand(0, G_RespawnLandmarks.count - 1)]];
+			RespawnPlayer(Player, MapLandmark);
+			PlayerRequestsRespawn = False;
+			PlayerRespawnStartTime = -1;
+		}
+		// ---------------------------------- //
+		// Cancel respawn if the player has moved
+		else if (Player.Speed >= C_RespawnCancellingSpeed) {
+			Translations::SendStatusMessage(Player, "Respawn aborted: you moved!", 3000, 0);
+			StopRespawnRequest = True;
+		}
+		// ---------------------------------- //
+		// Cancel request if all Checkpoints are behind Tornado
+		else if (G_RespawnLandmarks.count <= 0) {
+			Translations::SendStatusMessage(Player, "Respawn aborted: no respawn Checkpoints avaliable anymore", 3000, 0);
+			StopRespawnRequest = True;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Stop respawn request
+	if (StopRespawnRequest) {
+		PlayerRequestsRespawn = False;
+		PlayerRespawnStartTime = -1;
+		UISetRespawnStartTime(Player, -1);
+	}
 }
 
 // ---------------------------------- //
@@ -627,7 +768,7 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 				TopScores::AddPoints(Player.Score, "Survival", 1);
 				Score::AddPoints(Player, C_PlayerPointsForSurvival);
 			}
-			if (PlayersNbAlive >= 2) Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 1);
+			if (PlayersNbAlive >= 2) Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 2);
 		}
 	
 		// ---------------------------------- //
@@ -655,9 +796,9 @@ if (Now > StartTime && PlayersNbAlive <= 1) MB_StopMap = True;
 ***
 
 // ---------------------------------- //
-// Map end
+// Round end
 // ---------------------------------- //
-***EndMap***
+***EndRound***
 ***
 Interfancy::SetModuleVisibility("Countdown", False);
 UISetNbPlayersAlive(0);
@@ -667,7 +808,7 @@ MiniMap::DestroyMarker("Goal");
 
 OffZoneRadiusSpeed = 0.;
 OffZoneRadius = 0.;
-CenterGoal.Gauge.Speed = 0;
+if (CenterGoal != Null) CenterGoal.Gauge.Speed = 0;
 
 // ---------------------------------- //
 // Set the map winner
@@ -1121,10 +1262,32 @@ Void UIAddPlayerTouchingGoal(Text _Login) {
 }
 
 // ---------------------------------- //
-/// Clear list of players who touched goal
-Void UIResetPlayersTouchingGoal() {
+/** Set player respawn time on the UI
+ *
+ *	@param	_Player		The player to set time
+ *	@param	_Time		Player respawn start time
+ */
+Void UISetRespawnStartTime(CSmPlayer _Player, Integer _Time) {
+	if (_Player == Null || _Player.IsBot || _Player.User == Null) return;
+	declare Login = _Player.User.Login;
+	
+	// Set respawn start time
+	declare netwrite Integer[Text] Net_HungerGames_RespawnStart for Teams[0];
+	if (_Time > 0) Net_HungerGames_RespawnStart[Login] = _Time;
+	
+	// Reset start time
+	else if (Net_HungerGames_RespawnStart.existskey(Login)) {
+		declare Removed = Net_HungerGames_RespawnStart.removekey(Login);
+	}
+}
+
+// ---------------------------------- //
+/// Clear interfaces
+Void UIResetAll() {
 	declare netwrite Text[] Net_HungerGames_TouchedGoal for Teams[0];
+	declare netwrite Integer[Text] Net_HungerGames_RespawnStart for Teams[0];
 	Net_HungerGames_TouchedGoal.clear();
+	Net_HungerGames_RespawnStart.clear();
 }
 
 // ---------------------------------- //
@@ -1138,14 +1301,25 @@ Text CreateManialinkInterface() {
 <stylesheet>
 	<style class="font" halign="center" valign="center2" textsize="1" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
 </stylesheet>
+
+<frame id="Frame_RespawnProgress" posn="0 -54 5">
+	<frame id="Frame_RespawnProgAnim">
+		<quad posn="0 8 -.1" sizen="12 12" halign="center" valign="center" id="Quad_RespawnProgIcon" opacity="0"/>
+		<label class="font" textsize="3" id="Label_RespawnProgress" opacity="0"/>
+		<gauge posn="0 -3 -.1" sizen="52 8" halign="center" valign="center" drawbg="0" id="Gauge_RespawnProgress" hidden="1"/>
+	</frame>
+</frame>
+
 <frame id="Frame_Countdown">
 	<quad sizen="40 40" halign="center" valign="center" id="Quad_DigitPri"/>
 	<quad sizen="40 40" halign="center" valign="center" id="Quad_DigitSec" posn="0 0 -1"/>
 </frame>
+
 <frame id="Frame_TouchGoal" posn="0 76">
 	<label posn="0 2" class="font" textsize="4" textprefix="$T" id="Label_TouchGoalTitle" opacity="0"/>
 	<label posn="0 -2" class="font" textprefix="$T" id="Label_TouchGoalDesc" opacity="0"/>
 </frame>
+
 <script><!--
 /**
  *	HungerGames: Interface
@@ -1154,7 +1328,10 @@ Text CreateManialinkInterface() {
 #Include "TextLib" as TL
 #Include "MathLib" as ML
 
-#Const C_MaxCountdownTicks {{{ML::Max(C_StartCountdownDuration / 1000, 0)}}}
+#Const C_MaxCountdownTicks	{{{ML::Max(C_StartCountdownDuration / 1000, 0)}}}
+#Const C_PoleAlertDistance	60.
+#Const C_RespawnBarImgBase	"file://Media/Manialinks/ShootMania/Common/"
+#Const C_DisplayDuration	2000
 
 // ---------------------------------- //
 // Main
@@ -1168,6 +1345,13 @@ declare Quad_DigitSec <=> (Page.GetFirstChild("Quad_DigitSec") as CMlQuad);
 declare Label_TouchGoalTitle <=> (Page.GetFirstChild("Label_TouchGoalTitle") as CMlLabel);
 declare Label_TouchGoalDesc <=> (Page.GetFirstChild("Label_TouchGoalDesc") as CMlLabel);
 
+/// Respawn progress bar
+declare Frame_RespawnProgress <=> (Page.GetFirstChild("Frame_RespawnProgress") as CMlFrame);
+declare Frame_RespawnProgAnim <=> (Page.GetFirstChild("Frame_RespawnProgAnim") as CMlLabel);
+declare Label_RespawnProgress <=> (Page.GetFirstChild("Label_RespawnProgress") as CMlLabel);
+declare Quad_RespawnProgIcon <=> (Page.GetFirstChild("Quad_RespawnProgIcon") as CMlQuad);
+declare Gauge_RespawnProgress <=> (Page.GetFirstChild("Gauge_RespawnProgress") as CMlGauge);
+
 Label_TouchGoalTitle.SetText(ReplaceChars(Translate("Touch the Goal!")));
 Label_TouchGoalDesc.SetText(ReplaceChars(Translate("You must touch the Goal to be able to pick up items!")));
 
@@ -1176,6 +1360,7 @@ Label_TouchGoalDesc.SetText(ReplaceChars(Translate("You must touch the Goal to b
 declare netread Integer Net_HungerGames_StartTime for Teams[0];
 declare netread Integer Net_HungerGames_PlayersAlive for Teams[0];
 declare netread Text[] Net_HungerGames_TouchedGoal for Teams[0];
+declare netread Integer[Text] Net_HungerGames_RespawnStart for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -1183,11 +1368,15 @@ declare CountdownSound = Audio.CreateSound("{{{C_ImgBase}}}Sounds/CountdownHunge
 declare CountdownTick = -1;
 declare CenterGoalPosition = Vec3;
 declare TouchGoalAlertVisible = False;
+declare RespawnStartTime = -1;
+declare RespawnProgressVisible = False;
+declare WaitingDuration = {{{C_RespawnWaitingDuration}}};
 
 // Update
 declare PrevCountdownTick = CountdownTick;
 declare PrevNbPlayersAlive = -1;
 declare PrevTouchGoalAlertVisible = False;
+declare PrevRespawnProgressVisible = RespawnProgressVisible;
 
 foreach (MapLandmark in MapLandmarks) {
 	if (MapLandmark.Gauge != Null && MapLandmark.Tag == "Goal") CenterGoalPosition = MapLandmark.Position;
@@ -1237,7 +1426,7 @@ if (PrevTouchGoalAlertVisible != TouchGoalAlertVisible) {
 // Warning about touching the Goal
 if (TouchGoalAlertVisible && CenterGoalPosition != <0., 0., 0.>) {
 	declare Distance = ML::Distance(CenterGoalPosition, GUIPlayer.Position);
-	if (Distance > 50) {
+	if (Distance > C_PoleAlertDistance) {
 		declare Color = <.5 + .5 * Pulse(Now, 3.), 0., 0.>;
 		Label_TouchGoalTitle.TextColor = Color;
 		Label_TouchGoalDesc.TextColor = Color;
@@ -1301,11 +1490,75 @@ if (PrevCountdownTick != CountdownTick) {
 	// Stop countdown sound
 	if (CountdownSound.IsPlaying && (CountdownTick <= 0 || CountdownTick > 10)) CountdownSound.Stop();
 }
+
+// ---------------------------------- //
+// Change respawn progress bar visibility
+if (GUIPlayer != Null && Net_HungerGames_RespawnStart.existskey(GUIPlayer.User.Login)) {
+	RespawnStartTime = Net_HungerGames_RespawnStart[GUIPlayer.User.Login];
+}
+else if (RespawnStartTime > 0) RespawnStartTime = -1;
+
+RespawnProgressVisible = GUIPlayer != Null && RespawnStartTime > 0 && GameTime - C_DisplayDuration <= RespawnStartTime + WaitingDuration;
+
+if (PrevRespawnProgressVisible != RespawnProgressVisible) {
+	PrevRespawnProgressVisible = RespawnProgressVisible;
+	
+	LibManialink_AnimStop(Frame_RespawnProgAnim);
+	LibManialink_AnimStop(Label_RespawnProgress);
+	LibManialink_AnimStop(Quad_RespawnProgIcon);
+	Gauge_RespawnProgress.Visible = RespawnProgressVisible;
+	
+	Frame_RespawnProgAnim.RelativePosition.Y = 0.;
+	Label_RespawnProgress.Opacity = 1.;
+	declare PositionY = -2.;
+	declare Opacity = 0.;
+	
+	if (RespawnProgressVisible) {
+		Frame_RespawnProgAnim.RelativePosition.Y = -PositionY;
+		Label_RespawnProgress.Opacity = 0.;
+		PositionY = 0.;
+		Opacity = 1.;
+	}
+	
+	LibManialink_Anim(Frame_RespawnProgAnim, "<frame posn='0 "^PositionY^"'/>", 125, "EaseLinear");
+	LibManialink_Anim(Label_RespawnProgress, "<label opacity="^Opacity^" />", 125, "EaseLinear");
+	LibManialink_Anim(Quad_RespawnProgIcon, "<quad opacity="^Opacity^" />", 125, "EaseLinear");
+	
+	// ---------------------------------- //
+	// Play sound
+	declare Sound = CAudioManager::ELibSound::ShowMenu;
+	if (!RespawnProgressVisible) Sound = CAudioManager::ELibSound::HideMenu;
+	Audio.PlaySoundEvent(Sound, 0, 0.);
+}
+
+// ---------------------------------- //
+// Configure respawn progress bar
+if (RespawnProgressVisible) {
+	declare TimeUntilRespawn = RespawnStartTime + WaitingDuration - GameTime;
+	
+	// ---------------------------------- //
+	// Set respawn gauge
+	Gauge_RespawnProgress.Color = GUIPlayer.User.Color;
+	SetGaugeRatio(Gauge_RespawnProgress, 1 - ML::ToReal(TimeUntilRespawn) / WaitingDuration);
+	
+	// ---------------------------------- //
+	// Set respawn icon
+	declare IconURL = C_RespawnBarImgBase^"c_goal_shield.dds";
+	if (TimeUntilRespawn <= 0) IconURL = C_RespawnBarImgBase^"c_goal_captured.dds";
+	Quad_RespawnProgIcon.ImageUrl = IconURL;
+	
+	// ---------------------------------- //
+	// Ser respawn message text
+	declare Message = "";
+	if (TimeUntilRespawn <= 0) Message = Translate("Respawned!");
+	else Message = Translate(["%1 (%2s)", "Respawning...", TL::ToText(ML::CeilingInteger(TimeUntilRespawn / 1000.))]);
+	Label_RespawnProgress.Value = Message;
+}
 ***
 
 {{{Manialink::Animations(["EaseOutCirc"])}}}
-{{{ManialinkTools::Functions(["Pulse", "ReplaceChars"])}}}
-{{{Translations::InjectInManialink(["Touch the Goal!", "You must touch the Goal to be able to pick up items!"])}}}
+{{{ManialinkTools::Functions(["Pulse", "SetGaugeRatio", "ReplaceChars"])}}}
+{{{Translations::InjectInManialink(["Touch the Goal!", "You must touch the Goal to be able to pick up items!", "Respawning...", "Respawned!"])}}}
 
 // ---------------------------------- //
 // Main

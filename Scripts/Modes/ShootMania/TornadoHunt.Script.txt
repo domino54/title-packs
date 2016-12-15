@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  TORNADO HUNT by domino54              //
-//  script version: 2016-11-27            //
+//  script version: 2016-12-15            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"TornadoHuntArena GoalHuntArena RealmArena BattleArena"
-#Const Version		"2016-11-27"
+#Const Version		"2016-12-15"
 #Const ScriptName	"TornadoHunt.Script.txt"
 
 // ---------------------------------- //
@@ -30,6 +30,8 @@
 /// Force colors of both teams
 #Const C_TeamsColors [0 => <1., 1., 0.>, 1 => <0., 1., 0.>]
 
+#Const Description _("TYPE: Free for all\nOBJECTIVE: Touch the Goal highlighted with the Tornado to get a point. The first player to reach the points limit wins the map.")
+
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
@@ -48,7 +50,7 @@ declare Text[] C_MapMarkers;	///< Text Ids of all markers created on the minimap
 ***
 ST2::DestroyCol("LibST_SMRoundPoints");
 ST2::SetColWidth("LibST_SMPoints", 5.);
-TopScores::RemoveCategory("Items");
+TopScores::RemoveCategory("Support");
 TopScores::AddCategory("Capture", "Cp", 2.25, 70.);
 ***
 
@@ -74,7 +76,7 @@ GT_SpawnScreenObjectives = TL::Compose(
 
 // ---------------------------------- //
 // Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Touch the $<$FF0yellow$> Goal highlighted with the Tornado to get a point. Touch the previous $<$0F0green$> and $<$owhite$> Goals to get less points than highlighted one gives. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.", "");
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Touch the $<$FF0yellow$> Goal highlighted with the Tornado to get a point. Touch the previous $<$0F0green$> and $<$BBBwhite$> Goals to get less points than highlighted one gives. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.", "");
 
 // ---------------------------------- //
 // Create custom interface
@@ -109,11 +111,7 @@ if (TotalNbGoals < 3) MapValidated = False;
 
 // ---------------------------------- //
 // Skip map if not valid
-if (!MapValidated) {
-	Translations::SendChat("This map is not valid, moving to the next one.");
-	MB_Sleep(10000);
-	MB_StopMap = True;
-}
+if (!MapValidated) GT_SkipInvalidMap();
 ***
 
 // ---------------------------------- //
@@ -292,13 +290,11 @@ if (EndTime > 0 && Now > EndTime) MB_StopMap = True;
 // ---------------------------------- //
 // Map end
 // ---------------------------------- //
-***EndMapBeforePodium***
+***EndRound***
 ***
 G_GoalsOrder.clear();
 UpdateInterface();
 OffZoneRadius = 0.;
-StartTime = -1;
-EndTime = -1;
 
 // ---------------------------------- //
 // Reset landmarks apperance
@@ -309,10 +305,22 @@ foreach (MapLandmark in MapLandmarks_Gauge) {
 	MapLandmark.Gauge.Speed = 0;
 }
 
+foreach (MapLandmark in MapLandmarks) {
+	if (MapLandmark.Base == Null) continue;
+	MapLandmark.Base.Clan = 0;
+	MapLandmark.Base.IsActive = False;
+}
+
 // Unspawn everyone except the winner
 foreach (I => Player in Players) if (I > 0) UnspawnPlayer(Player);
 
-MB_Sleep(3000);
+// Disallow the winner to move after match end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;
+MB_Sleep(1500);
+
+// Cinematic round end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+MB_Sleep(1500);
 
 Message::CleanBigMessages();
 ***

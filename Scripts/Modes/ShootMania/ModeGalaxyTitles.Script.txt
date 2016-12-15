@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-12-12            //
+//  script version: 2016-12-15            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-12-12"
+#Const BaseVersion		"2016-12-15"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -248,7 +248,7 @@ declare PrevMaximumNbReplies = S_MaximumNbReplies;
 ***
 
 // ---------------------------------- //
-// Start server
+// Server start
 // ---------------------------------- //
 ***StartServer***
 ***
@@ -343,11 +343,11 @@ if (UseClans && !UseForcedClans) {
 ***
 
 // ---------------------------------- //
-// Map start
+// Initialize map
 // ---------------------------------- //
 ***InitMap***
 ***
-Score::MatchBegin(True);
+Score::MatchBegin();
 TopScores::MatchBegin();
 UpdateChecker::CheckUpdate();
 Interfancy::ClearData();
@@ -392,7 +392,7 @@ if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 ***
 
 // ---------------------------------- //
-// Round start
+// Initialize round
 // ---------------------------------- //
 ***InitRound***
 ***
@@ -422,7 +422,13 @@ GalaxyTitles::Init(
 
 // Update the rules now, if a change occured in the settings
 ---Rules---
+***
 
+// ---------------------------------- //
+// Round start
+// ---------------------------------- //
+***StartRound***
+***
 // No collisions at the beginning of the round
 if (GT_UseNoCollisionsStart) UsePvPCollisions = False;
 if (!UsePvPCollisions) GT_NoCollisionsEndTime = StartTime + C_NoCollisionsDuration;
@@ -1031,6 +1037,14 @@ Real GT_Distance2D(Vec3 _Pos1, Vec3 _Pos2) {
 	declare Pos2 = <_Pos2.X, _Pos2.Z>;
 	if (Pos1 == Pos2) return 0.;
 	return ML::Sqrt(ML::Pow(Pos1.X - Pos2.X, 2.) + ML::Pow(Pos1.Y - Pos2.Y, 2.));
+}
+
+// ---------------------------------- //
+/// Skip the map if it's not valid
+Void GT_SkipInvalidMap() {
+	Translations::SendChat("This map is not valid, moving to the next one.");
+	if (!ServerShutdownRequested) MB_Sleep(10000);
+	MB_StopMap = True;
 }
 
 // ---------------------------------- //

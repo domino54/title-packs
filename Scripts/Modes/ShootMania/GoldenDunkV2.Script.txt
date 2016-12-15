@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2016-10-15            //
+//  script version: 2016-11-15            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2016-10-15"
+#Const Version		"2016-11-15"
 #Const ScriptName	"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -29,10 +29,13 @@
 #Const C_GoalShieldMinRatio		.75		///< Minimum percentage goal energy required to activate shield
 #Const C_GoalPostCaptureCoef	2		///< Team pole capture speed multipler
 #Const C_GoalPostDecaptureCoef	1		///< Enemy pole decpture speed multipler
+#Const C_GoalPercentPerPoint	.1		///< Shield % required to load for next point in construction category
 #Const C_NbPlayersPerNextBall	4		///< Amount of additional players required to spawn a next ball
 #Const C_MaxNbBallsTotal		10		///< Overall maximum amount of balls
 #Const C_DroppedBallLifetime	5000	///< Duratin for how long ball can stay dropped on the ground
 #Const C_BallRepickDistance		3.		///< Distance to travel before ball can be picked up by the same player again
+
+#Const Description _("TYPE: Team versus Team\nOBJECTIVE: Pick up a ball from the checkpoint in the middle of map and bring it to the enemy hoop area. Team with more points when time ends wins.")
 
 // ---------------------------------- //
 // Global variables
@@ -56,7 +59,7 @@ declare Boolean G_IsOvertime;		///< True, if game is in overtime mode
 // ---------------------------------- //
 ***ScoresTable***
 ***
-// TopScores::AddCategory("Shield", "OS", 2.25, 50.);	///< TODO
+TopScores::AddCategory("Shield", "OS", 2.25, 50.);
 TopScores::AddCategory("Dunks", "Dk", 2.25, 60.);
 ***
 
@@ -89,7 +92,7 @@ GT_SpawnScreenObjectives = TL::Compose(
 
 // ---------------------------------- //
 // Set the rules in the pause menu
-PauseMenu::SetModeRules("Golden Dunk v2", "Pick up a ball from the checkpoint in the middle of map and bring it to the enemy hoop area, to score 2 points for your team. If the map features Poles, you can capture your team Pole to be immune to OffZone.", "");
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Pick up a ball from the checkpoint in the middle of map and bring it to the enemy hoop area, to score 2 points for your team. If the map features Poles, you can capture your team Pole to be immune to OffZone.", "");
 
 // ---------------------------------- //
 // Create custom interface
@@ -133,11 +136,7 @@ for (Order, 1, 2) {
 
 // ---------------------------------- //
 // Skip map if not valid
-if (!MapValidated) {
-	Translations::SendChat("This map is not valid, moving to the next one.");
-	MB_Sleep(10000);
-	MB_StopMap = True;
-}
+if (!MapValidated) GT_SkipInvalidMap();
 ***
 
 // ---------------------------------- //
@@ -226,7 +225,18 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 	MapLandmark.Gauge.ValueReal = .25;
 	
 	declare Real PrevRatio for MapLandmark;
+	declare Real PrevValueReal for MapLandmark;
 	PrevRatio = 0.;
+	PrevValueReal = MapLandmark.Gauge.ValueReal;
+}
+
+// ---------------------------------- //
+// Reset OffZone construction counter
+foreach (Player in Players) {
+	declare Real PlayerShieldPercLoaded for Player;
+	declare Real PrevPlayerShieldPercLoaded for Player;
+	PlayerShieldPercLoaded = 0.;
+	PrevPlayerShieldPercLoaded = 0.;
 }
 
 UpdateMarkers();
@@ -237,7 +247,6 @@ WaitForPlayers(S_NbPlayersPerTeamMin);
 
 Layers::Attach("GoldenDunk:Interface");
 Layers::Attach("GoldenDunk:Markers");
-MiniMap::Show();
 
 // ---------------------------------- //
 // New map sound
@@ -433,6 +442,17 @@ foreach (Player in Players) {
 			Removed = PositionsToRemove.removekey(0);
 		}
 	}
+	
+	// ---------------------------------- //
+	// Give capture points for every 10% Shield loaded
+	declare Real PlayerShieldPercLoaded for Player;
+	declare Real PrevPlayerShieldPercLoaded for Player;
+	
+	if (PlayerShieldPercLoaded - PrevPlayerShieldPercLoaded > C_GoalPercentPerPoint) {
+		TopScores::AddPoints(Player.Score, "Shield", 1);
+		Score::AddPoints(Player, 1);
+		PrevPlayerShieldPercLoaded = PlayerShieldPercLoaded;
+	}
 }
 
 // ---------------------------------- //
@@ -483,6 +503,25 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 		}
 		
 		PrevRatio = MapLandmark.Gauge.ValueReal;
+	}
+	
+	// ---------------------------------- //
+	// Save how many percent of Shield every player has loaded
+	declare Real PrevValueReal for MapLandmark;
+	if (PrevValueReal != MapLandmark.Gauge.ValueReal) {
+		if (MapLandmark.Gauge.ValueReal > PrevValueReal) {
+			declare PercentConstructed = MapLandmark.Gauge.ValueReal - PrevValueReal;
+			
+			foreach (PlayerId in MapLandmark.Sector.PlayersIds) {
+				if (!Players.existskey(PlayerId)) continue;
+				declare Player <=> Players[PlayerId];
+				if (Player.CurrentClan != MapLandmark.Gauge.Clan || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+				
+				declare Real PlayerShieldPercLoaded for Player;
+				PlayerShieldPercLoaded += PercentConstructed;
+			}
+		}
+		PrevValueReal = MapLandmark.Gauge.ValueReal;
 	}
 }
 
@@ -537,20 +576,11 @@ if (G_IsOvertime && ClanScores[1] != ClanScores[2]) MB_StopRound = True;
 ***
 
 // ---------------------------------- //
-// Reound end
+// Round end
 // ---------------------------------- //
-***EndRoundBeforeSetScores***
-***
-SM::UnspawnAllPlayers();
-StartTime = -1;
-EndTime = -1;
-
-if (G_IsOvertime) MB_Sleep(3000);
-Message::CleanBigMessages();
-***
-
 ***EndRound***
 ***
+SM::UnspawnAllPlayers();
 G_NbBallsTotal = 0;
 G_BallCarriersIds.clear();
 G_DroppedBalls.clear();
@@ -573,10 +603,11 @@ if (!MB_StopMap && !MatchEndRequested) {
 		if (Clan != 0 && Points > ClanScores[3 - Clan]) RoundWinner = Clan;
 }
 
-MB_Sleep(1000);
+MB_Sleep(3000);
 
 Layers::Detach("GoldenDunk:Interface");
 Layers::Detach("GoldenDunk:Markers");
+Message::CleanBigMessages();
 
 // Destroy markers
 foreach (Marker in G_CreatedUIMarkers) MiniMap::DestroyMarker(Marker);
@@ -1002,7 +1033,6 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	// Initialize objects
 	GalaxyTitles::ResetAll();
 	GalaxyTitles::InitObjects();
-	MiniMap::Show();
 	
 	// ---------------------------------- //
 	// Waiting for players play loop
@@ -1073,7 +1103,6 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	UIManager.UIAll.BigMessage = "";
 	UIManager.UIAll.StatusMessage = "";
 	UIManager.UIAll.UISequence = OldSequence;
-	MiniMap::Hide();
 	---UpdateClublinks---
 }
 
@@ -1113,7 +1142,7 @@ Text CreateManialinkInterface() {
 	<frame id="Frame_GaugeMessageAnim">
 		<quad posn="0 8 -.1" sizen="12 12" halign="center" valign="center" autoscale="0" id="Quad_CurLandmarkIcon"/>
 		<label class="EscapeMessage" id="Label_CurLandmarkMessage"/>
-		<gauge posn="0 -3 -.1" sizen="52 8" halign="center" valign="center" drawbg="0" id="Qauge_CurLandmarkValue" hidden="1"/>
+		<gauge posn="0 -3 -.1" sizen="52 8" halign="center" valign="center" drawbg="0" id="Gauge_CurLandmarkValue" hidden="1"/>
 	</frame>
 </frame>
 
@@ -1161,7 +1190,7 @@ Text CreateManialinkInterface() {
 // ---------------------------------- //
 // Load interface elements
 declare Frame_GaugeMessageAnim		<=> (Page.GetFirstChild("Frame_GaugeMessageAnim") as CMlFrame);
-declare Qauge_CurLandmarkValue		<=> (Page.GetFirstChild("Qauge_CurLandmarkValue") as CMlGauge);
+declare Gauge_CurLandmarkValue		<=> (Page.GetFirstChild("Gauge_CurLandmarkValue") as CMlGauge);
 declare Label_CurLandmarkMessage	<=> (Page.GetFirstChild("Label_CurLandmarkMessage") as CMlLabel);
 declare Quad_CurLandmarkIcon		<=> (Page.GetFirstChild("Quad_CurLandmarkIcon") as CMlQuad);
 declare Quad_GoldenDunk				<=> (Page.GetFirstChild("Quad_GoldenDunk") as CMlQuad);
@@ -1382,8 +1411,8 @@ if (GUIPlayer != Null) {
 		// ---------------------------------- //
 		// Configure message
 		declare LandmarkClan = ClanGoalLandmarks.keyof(GUIPlayer.CapturedLandmark);
-		Qauge_CurLandmarkValue.Color = Teams[LandmarkClan - 1].ColorPrimary;
-		SetGaugeRatio(Qauge_CurLandmarkValue, GUIPlayer.CapturedLandmark.Gauge.ValueReal);
+		Gauge_CurLandmarkValue.Color = Teams[LandmarkClan - 1].ColorPrimary;
+		SetGaugeRatio(Gauge_CurLandmarkValue, GUIPlayer.CapturedLandmark.Gauge.ValueReal);
 		
 		declare Message = "";
 		declare Speed = GUIPlayer.CapturedLandmark.Gauge.Speed;
@@ -1464,7 +1493,7 @@ if (PrevGaugeMessageVisible != GaugeMessageVisible) {
 	LibManialink_AnimStop(Frame_GaugeMessageAnim);
 	LibManialink_AnimStop(Label_CurLandmarkMessage);
 	LibManialink_AnimStop(Quad_CurLandmarkIcon);
-	Qauge_CurLandmarkValue.Visible = GaugeMessageVisible;
+	Gauge_CurLandmarkValue.Visible = GaugeMessageVisible;
 	
 	declare PositionY = -2.;
 	Frame_GaugeMessageAnim.RelativePosition.Y = 0.;

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY TOP SCORES by domino54        //
-//  script version: 2016-06-16            //
+//  script version: 2016-12-16            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	match.
  */
 
-#Const Version		"2016-06-16"
+#Const Version		"2016-12-16"
 #Const ScriptName	"TopScores.Script.txt"
 
 #Include "TextLib" as TL
@@ -73,8 +73,17 @@ Text GetScriptName() { return ScriptName; }
 Void AddCategory(Text _CategoryId, Text _LegendLabel, Real _Width, Real _Position) {
 	if (G_LibTopScores_TopsIds.exists(_CategoryId)) return;
 	G_LibTopScores_TopsIds.add(_CategoryId);
-	ST2::CreateCol(_CategoryId, _LegendLabel, "", _Width, _Position);
+	if (_LegendLabel != "") ST2::CreateCol(_CategoryId, _LegendLabel, "", _Width, _Position);
 }
+
+// ---------------------------------- //
+/** Create new category
+ *
+ *	Note: This function won't display ScoresTable2 column.
+ *
+ *	@param	_CategoryId		Id of the category to add
+ */
+Void AddCategory(Text _CategoryId) { AddCategory(_CategoryId, "", 0., 0.); }
 
 // ---------------------------------- //
 /** Remove existing category
@@ -100,6 +109,53 @@ Void ClearCategory(Text _CategoryId) {
 Void ClearAllCategories() {
 	foreach (CategoryId in G_LibTopScores_TopsIds) ClearCategory(CategoryId);
 }
+
+// ---------------------------------- //
+/** Get the player points in a specific category
+ *
+ *	@param	_Score			Score to get points
+ *	@param	_CategoryId		Id of the category to get points
+ *	@param	_IsMatchPoints	If true, returns player match points, round points otherwise
+ *
+ *	@return		The amount of points in the given category
+ */
+Integer GetPoints(CScore _Score, Text _CategoryId, Boolean _IsMatchPoints) {
+	if (_Score == Null || !G_LibTopScores_TopsIds.exists(_CategoryId)) return 0;
+	
+	// ---------------------------------- //
+	// Return the match points
+	if (_IsMatchPoints) {
+		declare Integer[Text] LibTopScores_MatchPoints for _Score;
+		if (!LibTopScores_MatchPoints.existskey(_CategoryId)) return 0;
+		return LibTopScores_MatchPoints[_CategoryId];
+	}
+	
+	// ---------------------------------- //
+	// Return the round points
+	declare Integer[Text] LibTopScores_RoundPoints for _Score;
+	if (!LibTopScores_RoundPoints.existskey(_CategoryId)) return 0;
+	return LibTopScores_RoundPoints[_CategoryId];
+}
+
+// ---------------------------------- //
+/** Get the player round points in a specific category
+ *
+ *	@param	_Score			Score to get round points
+ *	@param	_CategoryId		Id of the category to get round points
+ *
+ *	@return		The amount of round points in the given category
+ */
+Integer GetRoundPoints(CScore _Score, Text _CategoryId) { return  GetPoints(_Score, _CategoryId, False); }
+
+// ---------------------------------- //
+/** Get the player match points in a specific category
+ *
+ *	@param	_Score			Score to get match points
+ *	@param	_CategoryId		Id of the category to get match points
+ *
+ *	@return		The amount of match points in the given category
+ */
+Integer GetMatchPoints(CScore _Score, Text _CategoryId) { return  GetPoints(_Score, _CategoryId, True); }
 
 // ---------------------------------- //
 /** Give points to a player in specific category
@@ -181,3 +237,122 @@ Void MatchEnd() {
 			Private_SetColValue(Score, CategoryId, Points);
 	}
 }
+
+// ---------------------------------- //
+/** Get the list of players points in given category
+ *
+ *	Note: Players with 0 or less points are not listed.
+ *
+ *	@param	_CategoryId		The id of the category to get players points list
+ *	@param	_IsMatchPoints	If True, returns match points list, round points otherwise
+ *
+ *	@return		The list of players points
+ */	
+Integer[Text] GetPlayersPoints(Text _CategoryId, Boolean _IsMatchPoints) {
+	if (!G_LibTopScores_TopsIds.exists(_CategoryId)) return Integer[Text];
+	declare Integer[Text] PlayersPoints;
+	
+	// Get the points of every player
+	foreach (Score in Scores) {
+		declare Points = GetPoints(Score, _CategoryId, _IsMatchPoints);
+		if (Points > 0) PlayersPoints[Score.User.Login] = -Points;
+	}
+	
+	// Sort the scores descanding
+	declare TempPlayersPoints = PlayersPoints.sort();
+	PlayersPoints.clear();
+	foreach (Login => Points in TempPlayersPoints) PlayersPoints[Login] = -Points;
+	
+	// Return the array of players points
+	return PlayersPoints;
+}
+
+// ---------------------------------- //
+/** Get the list of players round points in given category
+ *
+ *	@param	_CategoryId		The id of the category to get players round points list
+ *
+ *	@return		The list of players round points
+ */	
+Integer[Text] GetPlayersRoundPoints(Text _CategoryId) { return GetPlayersPoints(_CategoryId, False); }
+
+// ---------------------------------- //
+/** Get the list of players match points in given category
+ *
+ *	@param	_CategoryId		The id of the category to get players round match list
+ *
+ *	@return		The list of players match points
+ */	
+Integer[Text] GetPlayersMatchPoints(Text _CategoryId) { return GetPlayersPoints(_CategoryId, True); }
+
+// ---------------------------------- //
+/** Get the list of players ordered by the amount of points in given category
+ *
+ *	Note: Players with 0 or less points are not listed.
+ *
+ *	@param	_CategoryId		The id of the category to get players list
+ *	@param	_IsMatchPoints	If True, returns list ordered by match points, round points order otherwise
+ *
+ *	@return		The ordered list of players
+ */	
+Text[] GetPlayersOrder(Text _CategoryId, Boolean _IsMatchPoints) {
+	if (!G_LibTopScores_TopsIds.exists(_CategoryId)) return Text[];
+	declare Text[] PlayersOrder;
+	foreach (Login => Points in GetPlayersPoints(_CategoryId, _IsMatchPoints)) PlayersOrder.add(Login);
+	return PlayersOrder;
+}
+
+// ---------------------------------- //
+/** Get the list of players ordered by the amount of round points in given category
+ *
+ *	@param	_CategoryId		The id of the category to get players list
+ *
+ *	@return		The ordered list of players
+ */	
+Text[] GetPlayersRoundOrder(Text _CategoryId) { return GetPlayersOrder(_CategoryId, False); }
+
+// ---------------------------------- //
+/** Get the list of players ordered by the amount of match points in given category
+ *
+ *	@param	_CategoryId		The id of the category to get players list
+ *
+ *	@return		The ordered list of players
+ */	
+Text[] GetPlayersMatchOrder(Text _CategoryId) { return GetPlayersOrder(_CategoryId, False); }
+
+// ---------------------------------- //
+/** Get the best player in specific category
+ *
+ *	Note: Returns only players with positive amount of points.
+ *	Player with more points in general ranking has a higher priority
+ *	if 2 or more players have the same amount of points in a category.
+ *
+ *	@param	_CategoryId		The id of the category to get best player
+ *	@param	_IsMatchPoints	If True, returns best player of the match, best of round otherwise
+ *
+ *	@return		Login of the player with most points in the given category
+ */
+Text GetBestPlayer(Text _CategoryId, Boolean _IsMatchPoints) {
+	if (!G_LibTopScores_TopsIds.exists(_CategoryId)) return "";
+	declare PlayersOrder = GetPlayersOrder(_CategoryId, _IsMatchPoints);
+	if (PlayersOrder.existskey(0)) return PlayersOrder[0];
+	return "";
+}
+
+// ---------------------------------- //
+/** Get the round best player in specific category
+ *
+ *	@param	_CategoryId		The id of the category to get best round player
+ *
+ *	@return		Login of the player with most round points in the given category
+ */
+Text GetRoundBestPlayer(Text _CategoryId) { return GetBestPlayer(_CategoryId, False); }
+
+// ---------------------------------- //
+/** Get the match best player in specific category
+ *
+ *	@param	_CategoryId		The id of the category to get best match player
+ *
+ *	@return		Login of the player with most match points in the given category
+ */
+Text GetMatchBestPlayer(Text _CategoryId) { return GetBestPlayer(_CategoryId, True); }

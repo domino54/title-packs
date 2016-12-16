@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-12-12            //
+//  script version: 2016-12-16            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-12-12"
+#Const Version		"2016-12-16"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -336,6 +336,31 @@ Void AddReloadBoost(CSmPlayer _Player, Real _Multipler) {
 
 Void AddReloadBoost(CSmPlayer _Player) {
 	AddReloadBoost(_Player, C_LibGalaxyTitles_FuelReloadDuration, C_LibGalaxyTitles_FuelReloadMultipler);
+}
+
+// ---------------------------------- //
+/** Show healing particle effect
+ *
+ *	@param	_Player		The player to show particles on
+ */
+Void ShowHealingParticles(CSmPlayer _Player) {
+	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return;
+	declare Boolean Replie_TriggerParticles for _Player;
+	Replie_TriggerParticles = True;
+}
+
+// ---------------------------------- //
+/** Give armor to a player
+ *
+ *	@param	_Player		The player to give armor
+ *	@param	_Amount		The amount of armor points to give
+ */
+Void GivePlayerArmor(CSmPlayer _Player, Integer _Amount) {
+	if (_Player == Null || _Amount <= 0) return;
+	if (_Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || _Player.Armor >= _Player.ArmorMax) return;
+	
+	AddPlayerArmor(_Player, _Amount, Null, 0);
+	ShowHealingParticles(_Player);
 }
 
 // ---------------------------------- //
@@ -722,9 +747,8 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 				)
 					continue;
 				
-				// ---------------------------------- //
-				// Heal player
-				AddPlayerArmor(Player, C_LibGalaxyTitles_ArmorHealAmount, Null, 0);
+				// Heal the player
+				GivePlayerArmor(Player, C_LibGalaxyTitles_ArmorHealAmount);
 				
 				// ---------------------------------- //
 				// Notify player about who healed them
@@ -1166,7 +1190,7 @@ Void InitPlayer(CSmPlayer _Player) {
 // ---------------------------------- //
 /** Autmatically manage consumable items usage
  *
- *	@param	_Player		Player to initialize
+ *	@param	_Event	The event to proceed
  */
 Void UseConsumableItems(CSmModeEvent _Event) {
 	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnActionEvent || _Event.Player == Null) return;
@@ -1180,14 +1204,8 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 		if (!Inventory::UseItem(_Event.Player, "LibGalaxyTitles_Replie", C_LibGalaxyTitles_ReplieUseCooldown, False)) return;
 		
 		// Heal the player
-		AddPlayerArmor(_Event.Player, C_LibGalaxyTitles_ArmorHealAmount, Null, 0);
-		
-		// Track event
+		GivePlayerArmor(_Event.Player, C_LibGalaxyTitles_ArmorHealAmount);
 		Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
-		
-		// Show particle effect on the player
-		declare Boolean Replie_TriggerParticles for _Event.Player;
-		Replie_TriggerParticles = True;
 	}
 }
 

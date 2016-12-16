@@ -1,12 +1,12 @@
 // -------------------------------------- //
-//  HUNGER GAMES 3.0.1 by domino54        //
-//  script version: 2016-12-15            //
+//  HUNGER GAMES 3.1.0 by domino54        //
+//  script version: 2016-12-16            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2016-12-15"
+#Const Version		"2016-12-16"
 #Const ScriptName	"HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -82,6 +82,7 @@
 // ---------------------------------- //
 declare Boolean G_IsOffZoneActivated;	///< Tells if the Tornado is active or not
 declare Text[] G_SpawnedPlayers;	///< List of all players who were spawned during the map
+declare Text[] G_LoginsTouchedGoal;	///< Players, who have touched the central Goal
 declare Ident[] G_CreatedObjects;	///< Objects created by the game mode
 declare Vec3 G_CenterGoalPosition;	///< Position of the central Goal landmark
 declare Ident[] G_RespawnLandmarks;	///< Ids of all landmarks on which the player can respawn
@@ -121,7 +122,7 @@ GT_LogScriptsVersions = [
 	Map::GetScriptName() => Map::GetScriptVersion()
 ];
 
-GT_KillfeedTranslations = ["$<%1$> tried to escape arena"];
+GT_KillfeedTranslations = ["$<%1$> is now playing in Games", "$<%1$> tried to escape arena"];
 
 // ---------------------------------- //
 // Set the mode rules
@@ -153,6 +154,7 @@ Layers::SetType("HungerGames:Statistics", CUILayer::EUILayerType::ScoresTable);
 // Variables
 declare PrevTimeLimit = S_OffZoneActivationTime;
 declare PrevPlayersNbAlive = PlayersNbAlive;
+declare SpawnedToads = False;
 ***
 
 // ---------------------------------- //
@@ -306,12 +308,14 @@ Interfancy::SetModuleVisibility("Countdown", False);
 UISetNbPlayersAlive(0);
 MiniMap::Hide();
 
+// ---------------------------------- //
+// Reset global variables
 G_IsOffZoneActivated = False;
 G_SpawnedPlayers.clear();
+G_LoginsTouchedGoal.clear();
 G_RespawnLandmarks.clear();
 G_SpawnsList.clear();
 G_LatestSpawnId = NullId;
-declare SpawnedToads = False;
 
 // ---------------------------------- //
 // Init OffZone
@@ -415,8 +419,7 @@ if (Event.Victim.IsBot && Event.Shooter != Null && C_ToadObjectDropChance > 0 &&
 Discard(Event);
 
 // Ignore all events caused by bots and players who haven't touched the goal
-declare Boolean PlayerHasWeapon for Event.Player;
-if (Event.Player.IsBot || !PlayerHasWeapon) continue;
+if (Event.Player.IsBot || !G_LoginsTouchedGoal.exists(Event.Player.Login)) continue;
 
 // Cache Tag and AnchorId, as it gets destroyed with object
 declare Ident AnchorId for Event.Object;
@@ -497,9 +500,9 @@ foreach (Event in PendingEvents) {
 		foreach (MapLandmark in MapLandmarks_Sector) if (MapLandmark.Sector == Event.Sector) LandmarkId = MapLandmark.Id;
 		if (LandmarkId != CenterGoalLandmarkId) continue;
 		
-		declare Boolean PlayerHasWeapon for Event.Player;
-		if (PlayerHasWeapon) continue;
-		PlayerHasWeapon = True;
+		// Register the Goal touch
+		if (G_LoginsTouchedGoal.exists(Event.Player.Login)) continue;
+		G_LoginsTouchedGoal.add(Event.Player.Login);
 		
 		// Set the player skills
 		foreach (SkillType => SkillPoints in C_SkillsPointsOnGoal)
@@ -514,7 +517,6 @@ foreach (Event in PendingEvents) {
 	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
 		declare Boolean PlayerRequestsRespawn for Event.Player;
 		declare Integer PlayerRespawnStartTime for Event.Player;
-		declare Boolean PlayerHasWeapon for Event.Player;
 		
 		// ---------------------------------- //
 		// Cancel ongoing respawn request
@@ -529,7 +531,7 @@ foreach (Event in PendingEvents) {
 			Translations::SendStatusMessage(Event.Player, "Respawn is not allowed on this server", 3000, 0);
 		
 		// Player must touch the Goal first
-		else if (!PlayerHasWeapon)
+		else if (!G_LoginsTouchedGoal.exists(Event.Player.Login))
 			Translations::SendStatusMessage(Event.Player, "You must touch the Goal before respawning!", 3000, 0);
 		
 		// No checkpoints available for respawn
@@ -559,13 +561,6 @@ if (Now >= StartTime - 1500 && UIManager.UIAll.UISequence != CUIConfig::EUISeque
 }
 
 // ---------------------------------- //
-// Initialize Toads
-if (S_ToadsFirstSpawnDelay >= 0 && !G_IsOffZoneActivated && !SpawnedToads && Now >= StartTime + S_ToadsFirstSpawnDelay * 1000) {
-	GalaxyTitles::InitToads(S_ToadsSpawnRatio);
-	SpawnedToads = True;
-}
-
-// ---------------------------------- //
 // Tornado is not active yet
 if (!G_IsOffZoneActivated) {
 	// ---------------------------------- //
@@ -576,6 +571,13 @@ if (!G_IsOffZoneActivated) {
 		if (S_OffZoneActivationTime <= 0) UIManager.UIAll.CountdownEndTime = -1;
 		else UIManager.UIAll.CountdownEndTime = StartTime + (S_OffZoneActivationTime * 1000);
 		Interfancy::SetModuleVisibility("Countdown", Now >= StartTime - 1500 && Now < UIManager.UIAll.CountdownEndTime);
+	}
+	
+	// ---------------------------------- //
+	// Initialize Toads
+	if (S_ToadsFirstSpawnDelay >= 0 && !SpawnedToads && Now >= StartTime + S_ToadsFirstSpawnDelay * 1000) {
+		GalaxyTitles::InitToads(S_ToadsSpawnRatio);
+		SpawnedToads = True;
 	}
 	
 	// ---------------------------------- //
@@ -725,8 +727,27 @@ foreach (Player in Players) {
 		// ---------------------------------- //
 		// Successfully respawn the player
 		else if (Now >= PlayerRespawnStartTime + C_RespawnWaitingDuration) {
-			declare MapLandmark <=> MapLandmarks[G_RespawnLandmarks[ML::Rand(0, G_RespawnLandmarks.count - 1)]];
-			RespawnPlayer(Player, MapLandmark);
+			// ---------------------------------- //
+			// Get nearest player distance for all Checkpoints 
+			declare Real[Ident] LandmarksDistances;
+			foreach (MapLandmark in MapLandmarks_Gauge) {
+				if (!G_RespawnLandmarks.exists(MapLandmark.Id)) continue;
+				declare NearestPlayerDistance = 0.;
+				foreach (Player2 in Players) if (Player2.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+					declare Distance = ML::Distance(Player2.Position, MapLandmark.Position);
+					if (NearestPlayerDistance <= 0 || Distance < NearestPlayerDistance) NearestPlayerDistance = Distance;
+				}
+				if (NearestPlayerDistance > 0) LandmarksDistances[MapLandmark.Id] = -NearestPlayerDistance;
+			}
+			
+			// ---------------------------------- //
+			// Respawn the player on the Checkpoint furthest from any players
+			LandmarksDistances = LandmarksDistances.sort();
+			foreach (MapLandmarkId => Distance in LandmarksDistances) {
+				RespawnPlayer(Player, MapLandmarks[MapLandmarkId]);
+				break;
+			}
+			
 			PlayerRequestsRespawn = False;
 			PlayerRespawnStartTime = -1;
 		}
@@ -946,10 +967,7 @@ Void HG_SpawnPlayer(CSmPlayer _Player) {
 	
 	// ---------------------------------- //
 	// Reset variables
-	declare Boolean PlayerHasWeapon for _Player;
 	declare Text[] ObjectsToDrop for _Player;
-	
-	PlayerHasWeapon = False;
 	ObjectsToDrop.clear();
 	
 	// Initialize player skills
@@ -1144,7 +1162,7 @@ Boolean PickUpObject(CSmModeEvent _Event) {
 			Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1", WeaponName[WeaponName.count - 1]], 2000);
 			
 			// Heal the player (if object was naturally generated)
-			if (!DroppedByPlayer) AddPlayerArmor(_Event.Player, C_WeaponItemArmorBonus, Null, 0);
+			if (!DroppedByPlayer) GalaxyTitles::GivePlayerArmor(_Event.Player, C_WeaponItemArmorBonus);
 		}
 		// ---------------------------------- //
 		// Charge: increase reload, stamina gain and max

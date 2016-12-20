@@ -1,14 +1,15 @@
 // -------------------------------------- //
 //  INVASION INTERFACE LIB by domino54    //
-//  script version: 2016-11-06            //
+//  script version: 2016-12-20            //
 // -------------------------------------- //
 
-#Const Version		"2016-11-06"
+#Const Version		"2016-12-20"
 #Const ScriptName	"InvasionUI.Script.txt"
 
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
@@ -28,7 +29,7 @@
 /// Modules positions
 #Const C_LibInvasionUI_CountdownPos		<0., 90., 5.>
 #Const C_LibInvasionUI_PoleGaugePos 	<-160., 90., 5.>
-#Const C_LibInvasionUI_ToadsArmorPos	<155., -74., 3.>
+#Const C_LibInvasionUI_ToadsArmorPos	<-87.5, 84.25, 3.>
 #Const C_LibInvasionUI_ScorePos			<-159., 72.5, 5.>
 #Const C_LibInvasionUI_MedalScorePos	<160., 85.5, 5.>
 #Const C_LibInvasionUI_EvolutionPos		<-159.5, 55., 5.>
@@ -160,23 +161,12 @@ if (PrevWavesToInvasion != WavesToInvasion) {
 		default : CountdownInfo = "%1 waves to Invasion";
 	}
 	
-	Label_CountdownInfo.SetText(Translate([CountdownInfo, TL::ToText(WavesToInvasion)]));
+	Label_CountdownInfo.SetText(ReplaceChars(Translate([CountdownInfo, TL::ToText(WavesToInvasion)])));
 }
 ***
 
-// ---------------------------------- //
-/** Compute width of the label text
- *
- *	@param	_Label	Label to check text length
- *
- *	@return		Width of the label text
- */
-Real ComputeWidth(CMlLabel _Label) {
-	if (_Label == Null) return 0.;
-	return _Label.ComputeWidth(_Label.Value) * _Label.RelativeScale;
-}
-
 {{{Translations::InsertToManialink(["1 wave to Invasion", "Invasion mode!", "Preparation time", "%1 waves to Invasion"])}}}
+{{{ManialinkTools::Functions(["ReplaceChars"])}}}
 
 main() {
 	---Main---
@@ -221,7 +211,7 @@ Text Private_CreateMLPoleGauge() {
 
 #Const C_FrameHideaway	-70.
 #Const C_GaugeQuadSize	<64., 7.>
-#Const C_GaugeColors	[0. => <0., 1., 0.>, .5 => <1., 1., 0.>, 1. => <1., 0., 0.>]
+#Const C_GaugeColors	[0. => <.5, 1., 0.>, .75 => <1., 1., 0.>, 1. => <1., 0., 0.>]
 
 // ---------------------------------- //
 // Main
@@ -234,8 +224,9 @@ declare Frame_PoleGauge		<=> (Page.GetFirstChild("Frame_PoleGauge")		as CMlFrame
 declare Quad_PoleGaugeBar	<=> (Page.GetFirstChild("Quad_PoleGaugeBar")	as CMlQuad);
 declare Label_ToadsReached	<=> (Page.GetFirstChild("Label_ToadsReached")	as CMlLabel);
 declare Label_NbPoleLimit	<=> (Page.GetFirstChild("Label_NbPoleLimit")	as CMlLabel);
+declare Label_GaugeInfo		<=> (Page.GetFirstChild("Label_GaugeInfo")		as CMlLabel);
 
-Translate("Label_GaugeInfo", "Toads reached pole");
+Label_GaugeInfo.SetText(ReplaceChars(Translate("Toads reached pole")));
 
 // ---------------------------------- //
 // Netcode
@@ -336,45 +327,9 @@ if (AnimateGaugeBar) {
 }
 ***
 
-// ---------------------------------- //
-/** Get the color depending on a ratio
- *
- *	@param	_Ratio			The ratio of the color
- *	@param	_ColorRatios	List of the colors for each ratio
- *
- *	@return		The Blend color according to the ratio
- */
-Vec3 ColorTransition(Real _Ratio, Vec3[Real] _ColorRatios) {
-	if (_ColorRatios.count <= 0) return <0., 0., 0.>;
-	if (_ColorRatios.count == 1) foreach (Color in _ColorRatios) return Color;
-	if (_ColorRatios.existskey(_Ratio)) return _ColorRatios[_Ratio];
-	
-	// Sort all colors ratios in ascending order
-	declare Real[] SortedRatios;
-	foreach (Ratio => Color in _ColorRatios) SortedRatios.add(Ratio);
-	SortedRatios = SortedRatios.sort();
-	
-	// Get the lowest color ratio
-	declare MinimumRatio = SortedRatios[0];
-	foreach (Ratio in SortedRatios) if (Ratio > MinimumRatio && Ratio < _Ratio) MinimumRatio = Ratio;
-	
-	// Get the highest color ratio
-	declare MaximumRatio = SortedRatios[SortedRatios.count - 1];
-	foreach (Ratio in SortedRatios) if (Ratio < MaximumRatio && Ratio > _Ratio) MaximumRatio = Ratio;
-	
-	// Get the colors blend properties
-	declare BlendRatio = (_Ratio - MinimumRatio) / (MaximumRatio - MinimumRatio);
-	declare MinimumColor = _ColorRatios[MinimumRatio];
-	declare MaximumColor = _ColorRatios[MaximumRatio];
-	
-	// Compute the final color
-	declare Vec3 OutputColor;
-	for (I, 0, 2) OutputColor[I] = MinimumColor[I] + (MaximumColor[I] - MinimumColor[I]) * BlendRatio;
-	return OutputColor;
-}
-
 {{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
 {{{Translations::InsertToManialink(["Toads reached pole"])}}}
+{{{ManialinkTools::Functions(["Pulse", "ReplaceChars", "ColorTransition"])}}}
 
 main() {
 	---Main---
@@ -434,10 +389,12 @@ declare netread Text[Text] Net_LibInvasionUI_Settings for Teams[0];
 declare DisplayInterface = False;
 declare ShowToadsArmor = False;
 declare ToadsArmor = 0;
+declare PoleLimit = 0;
 
 declare PrevSettingsUpdate = -1;
 declare PrevShowToadsArmor = False;
 declare PrevToadsArmor = -1;
+declare PrevPoleLimit = -1;
 ***
 
 // ---------------------------------- //
@@ -454,6 +411,7 @@ if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
 		switch (SettingName) {
 			case "DisplayInterface" : DisplayInterface = SettingValue == "True";
 			case "ToadsArmor" : ToadsArmor = TL::ToInteger(SettingValue);
+			case "PoleLimit" : PoleLimit = TL::ToInteger(SettingValue);
 		}
 	}
 }
@@ -498,6 +456,15 @@ if (PrevToadsArmor != ToadsArmor) {
 	}
 	
 	PrevToadsArmor = ToadsArmor;
+}
+
+// ---------------------------------- //
+// Update position of the icon
+if (PrevPoleLimit != PoleLimit) {
+	PrevPoleLimit = PoleLimit;
+	
+	Frame_ToadsArmor.RelativePosition.X = {{{C_LibInvasionUI_ToadsArmorPos.X}}};
+	if (PoleLimit <= 0) Frame_ToadsArmor.RelativePosition.X -= 68.;
 }
 ***
 
@@ -1065,26 +1032,9 @@ if (AnimGauge) {
 }
 ***
 
-// ---------------------------------- //
-/** Change color brightness
- *
- *	@param	_Color			Input color
- *	@param	_Brightness		Target brightness
- *
- *	@return		New color
- */
-Vec3 Brightness(Vec3 _Color, Real _Brightness) {
-	if (_Brightness == 1) return _Color;
-	if (_Brightness <= 0) return Vec3;
-	
-	declare Vec3 OutputColor;
-	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
-	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
-	return OutputColor;
-}
-
 {{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutCirc"])}}}
 {{{Translations::InsertToManialink(["Evolution"])}}}
+{{{ManialinkTools::Functions(["Brightness"])}}}
 
 main() {
 	---Main---
@@ -1230,44 +1180,8 @@ for (I, 0, 7) {
 }
 ***
 
-// ---------------------------------- //
-/** Get the color depending on a ratio
- *
- *	@param	_Ratio			The ratio of the color
- *	@param	_ColorRatios	List of the colors for each ratio
- *
- *	@return		The Blend color according to the ratio
- */
-Vec3 ColorTransition(Real _Ratio, Vec3[Real] _ColorRatios) {
-	if (_ColorRatios.count <= 0) return <0., 0., 0.>;
-	if (_ColorRatios.count == 1) foreach (Color in _ColorRatios) return Color;
-	if (_ColorRatios.existskey(_Ratio)) return _ColorRatios[_Ratio];
-	
-	// Sort all colors ratios in ascending order
-	declare Real[] SortedRatios;
-	foreach (Ratio => Color in _ColorRatios) SortedRatios.add(Ratio);
-	SortedRatios = SortedRatios.sort();
-	
-	// Get the lowest color ratio
-	declare MinimumRatio = SortedRatios[0];
-	foreach (Ratio in SortedRatios) if (Ratio > MinimumRatio && Ratio < _Ratio) MinimumRatio = Ratio;
-	
-	// Get the highest color ratio
-	declare MaximumRatio = SortedRatios[SortedRatios.count - 1];
-	foreach (Ratio in SortedRatios) if (Ratio < MaximumRatio && Ratio > _Ratio) MaximumRatio = Ratio;
-	
-	// Get the colors blend properties
-	declare BlendRatio = (_Ratio - MinimumRatio) / (MaximumRatio - MinimumRatio);
-	declare MinimumColor = _ColorRatios[MinimumRatio];
-	declare MaximumColor = _ColorRatios[MaximumRatio];
-	
-	// Compute the final color
-	declare Vec3 OutputColor;
-	for (I, 0, 2) OutputColor[I] = MinimumColor[I] + (MaximumColor[I] - MinimumColor[I]) * BlendRatio;
-	return OutputColor;
-}
-
 {{{Manialink::Animations(["EaseInBack", "EaseOutBack"])}}}
+{{{ManialinkTools::Functions(["ColorTransition"])}}}
 
 main() {
 	---Main---
@@ -1412,7 +1326,8 @@ Frame_CustomWeaponBar.RelativePosition.Y = {{{C_LibInvasionUI_WeaponBarPos.Y}}};
 if (IsSpectatorMode) Frame_CustomWeaponBar.RelativePosition.Y += C_SpectatorOffset;
 
 // Magic!
-Quad_ScreenEdgeGlow.RelativeScale = 1. + (.5 + ML::Sin((Now / 50.) / ML::PI()) * .5) * .125;
+Quad_ScreenEdgeGlow.RelativeScale = 1.1 + .1 * Pulse(Now, 1.);
+Quad_ScreenEdgeGlow.RelativeRotation = (Pulse(Now + 250, 1.) - .5) * 2.5;
 
 // ---------------------------------- //
 // Update interface color
@@ -1432,7 +1347,7 @@ else CurWeaponName = Net_LibInvasionUI_PlayerWeaponName[GUIPlayer.User.Login];
 
 if (PrevWeaponName != CurWeaponName) {
 	PrevWeaponName = CurWeaponName;
-	Translate("Label_CustomWeaponName", CurWeaponName);
+	Label_CustomWeaponName.SetText(ReplaceChars(Translate(CurWeaponName)));
 }
 
 // ---------------------------------- //
@@ -1453,8 +1368,9 @@ if (PrevEvolutionBonus != PlayerWeaponEvolutionBonus) {
 }
 ***
 
-{{{Translations::InsertToManialink([""])}}}
+{{{Translations::InsertToManialink(["Handheld Charge", "Frozen Arrow", "Plasma Grenade", "Torpede", "Wide Rail"])}}}
 {{{Manialink::Animations(["EaseInOutSine", "EaseInBack", "EaseOutBack"])}}}
+{{{ManialinkTools::Functions(["Pulse", "ReplaceChars"])}}}
 
 main() {
 	---Main---
@@ -1840,42 +1756,7 @@ foreach (I => Frame in Frame_BossHealthBars) {
 }
 ***
 
-// ---------------------------------- //
-/** Get the color depending on a ratio
- *
- *	@param	_Ratio			The ratio of the color
- *	@param	_ColorRatios	List of the colors for each ratio
- *
- *	@return		The Blend color according to the ratio
- */
-Vec3 ColorTransition(Real _Ratio, Vec3[Real] _ColorRatios) {
-	if (_ColorRatios.count <= 0) return <0., 0., 0.>;
-	if (_ColorRatios.count == 1) foreach (Color in _ColorRatios) return Color;
-	if (_ColorRatios.existskey(_Ratio)) return _ColorRatios[_Ratio];
-	
-	// Sort all colors ratios in ascending order
-	declare Real[] SortedRatios;
-	foreach (Ratio => Color in _ColorRatios) SortedRatios.add(Ratio);
-	SortedRatios = SortedRatios.sort();
-	
-	// Get the lowest color ratio
-	declare MinimumRatio = SortedRatios[0];
-	foreach (Ratio in SortedRatios) if (Ratio > MinimumRatio && Ratio < _Ratio) MinimumRatio = Ratio;
-	
-	// Get the highest color ratio
-	declare MaximumRatio = SortedRatios[SortedRatios.count - 1];
-	foreach (Ratio in SortedRatios) if (Ratio < MaximumRatio && Ratio > _Ratio) MaximumRatio = Ratio;
-	
-	// Get the colors blend properties
-	declare BlendRatio = (_Ratio - MinimumRatio) / (MaximumRatio - MinimumRatio);
-	declare MinimumColor = _ColorRatios[MinimumRatio];
-	declare MaximumColor = _ColorRatios[MaximumRatio];
-	
-	// Compute the final color
-	declare Vec3 OutputColor;
-	for (I, 0, 2) OutputColor[I] = MinimumColor[I] + (MaximumColor[I] - MinimumColor[I]) * BlendRatio;
-	return OutputColor;
-}
+{{{ManialinkTools::Functions(["ColorTransition"])}}}
 
 main() {
 	---Main---
@@ -1891,13 +1772,13 @@ main() {
 // ---------------------------------- //
 /** Create the manialink for the weapons statistics module
  *
- *	@return		The manialink
+ *	@return		The weapons statistics manialink 
  */
 Text Private_CreateMLWeaponStats() {
 	return """
 <manialink version="2" name="LibInvasionUI:WeaponStats">
 <frame id="Frame_Overheating" posn="148 -75" rot="2" hidden="1">
-	<gauge posn="-1" sizen="48 8" halign="right" valign="center" color="FF0" drawbg="0" drawblockbg="0" id="Gauge_Overheating"/>
+	<gauge posn="-1" sizen="48 8" halign="right" valign="center" drawbg="0" drawblockbg="0" id="Gauge_Overheating"/>
 	<quad sizen="6 6" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/Heating.png" id="Quad_Overheating"/>
 </frame>
 
@@ -1906,46 +1787,70 @@ Text Private_CreateMLWeaponStats() {
 
 #Const C_OverheatingWeapons [3, 5]
 
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
 ***Main***
 ***
+// ---------------------------------- //
+// Load interface elements
 declare Frame_Overheating <=> (Page.GetFirstChild("Frame_Overheating") as CMlFrame);
 declare Gauge_Overheating <=> (Page.GetFirstChild("Gauge_Overheating") as CMlGauge);
 declare Quad_Overheating <=> (Page.GetFirstChild("Quad_Overheating") as CMlQuad);
 
+// ---------------------------------- //
+// Netcode
 declare netread Int3[Text] Net_LibInvasionUI_PlayersOverheating for Teams[0];
 
+// ---------------------------------- //
+// Variables
 declare OverheatingMaxDuration = 20000.;
-***
+declare InterfaceColor = LocalUser.Color;
 
-***Yield***
-***
-Frame_Overheating.Visible = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && C_OverheatingWeapons.exists(GUIPlayer.CurWeapon);
-
-if (Frame_Overheating.Visible) {
-	declare CurPlayerHeatRatio = 0.;
-	declare WeaponCode = 0; if (GUIPlayer.CurWeapon == 3) WeaponCode = 1;
-	
-	if (Net_LibInvasionUI_PlayersOverheating.existskey(GUIPlayer.User.Login))
-		CurPlayerHeatRatio = ML::Clamp((Net_LibInvasionUI_PlayersOverheating[GUIPlayer.User.Login][WeaponCode] - GameTime) / OverheatingMaxDuration, 0., 1.);
-
-	SetGaugeRatio(Gauge_Overheating, CurPlayerHeatRatio);
-	Quad_Overheating.Visible = CurPlayerHeatRatio > 0;
-}
+/// Update
+declare PrevGUIPlayerLogin = "";
+declare PrevInterfaceColor = Vec3;
 ***
 
 // ---------------------------------- //
-/** Set gauge ratio with value cut fix
- *
- *	@param	_Gauge		The gauge to set ratio
- *	@param	_Ratio		Ratio to set
- */
-Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
-	if (_Gauge == Null) return;
-	if (_Ratio <= 0.) { _Gauge.Ratio = 0.; return; }
-	if (_Ratio >= 1.) { _Gauge.Ratio = 1.; return; }
-	declare GaugeCutOff = 4 / _Gauge.Size.X;
-	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Set overheating bar visibility
+Frame_Overheating.Visible = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && C_OverheatingWeapons.exists(GUIPlayer.CurWeapon);
+
+if (!Frame_Overheating.Visible) continue;
+
+// ---------------------------------- //
+// Update the interface color
+if (GUIPlayer != Null && PrevGUIPlayerLogin != GUIPlayer.User.Login) {
+	PrevGUIPlayerLogin != GUIPlayer.User.Login;
+	if (Teams.existskey(GUIPlayer.CurrentClan - 1)) InterfaceColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+	else InterfaceColor = GUIPlayer.User.Color;
 }
+
+// ---------------------------------- //
+// Set interface color
+if (PrevInterfaceColor != InterfaceColor) {
+	PrevInterfaceColor = InterfaceColor;
+	Gauge_Overheating.Color = InterfaceColor;
+}
+
+// ---------------------------------- //
+// Set overheating bar ratio
+declare CurPlayerHeatRatio = 0.;
+declare WeaponCode = 0; if (GUIPlayer.CurWeapon == 3) WeaponCode = 1;
+
+if (Net_LibInvasionUI_PlayersOverheating.existskey(GUIPlayer.User.Login))
+	CurPlayerHeatRatio = ML::Clamp((Net_LibInvasionUI_PlayersOverheating[GUIPlayer.User.Login][WeaponCode] - GameTime) / OverheatingMaxDuration, 0., 1.);
+
+SetGaugeRatio(Gauge_Overheating, CurPlayerHeatRatio);
+Quad_Overheating.Visible = CurPlayerHeatRatio > 0;
+***
+
+{{{ManialinkTools::Functions(["SetGaugeRatio"])}}}
 
 main() {
 	---Main---

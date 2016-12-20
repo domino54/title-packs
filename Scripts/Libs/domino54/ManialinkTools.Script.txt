@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MANIALINK TOOLS by domino54   //
-//  script version: 2016-12-12            //
+//  script version: 2016-12-20            //
 // -------------------------------------- //
 
 /**
@@ -14,15 +14,16 @@
  *	-	ComputeWidth	Compute the width of a label faster.
  *	-	Brightness		Used to adjust brightness of a given color.
  *	-	ReplaceChars	Replaces diacritic characters with characters they are based on.
+ *	-	ColorTransition	Creates smooth transition between 2 or more colors according to a given ratio.
  */
 
-#Const Version		"2016-12-12"
+#Const Version		"2016-12-20"
 #Const ScriptName	"ManialinkTools.Script.txt"
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_ManialinkTools_AvailableFunctions ["Pulse", "SetGaugeRatio", "ComputeWidth", "Brightness", "ReplaceChars"]
+#Const C_ManialinkTools_AvailableFunctions ["Pulse", "SetGaugeRatio", "ComputeWidth", "Brightness", "ReplaceChars", "ColorTransition"]
 
 /// Code of the Pulse() function
 #Const C_ManialinkTools_Pulse """
@@ -116,6 +117,46 @@ Text ReplaceChars(Text _Input) {
 }
 """
 
+/// Code of the ColorTransition() function
+#Const C_ManialinkTools_ColorTransition """
+// ---------------------------------- //
+/** Get the color depending on a ratio
+ *
+ *	@param	_Ratio			The ratio of the color
+ *	@param	_ColorRatios	List of the colors for each ratio
+ *
+ *	@return		The Blend color according to the ratio
+ */
+Vec3 ColorTransition(Real _Ratio, Vec3[Real] _ColorRatios) {
+	if (_ColorRatios.count <= 0) return <0., 0., 0.>;
+	if (_ColorRatios.count == 1) foreach (Color in _ColorRatios) return Color;
+	if (_ColorRatios.existskey(_Ratio)) return _ColorRatios[_Ratio];
+	
+	// Sort all colors ratios in ascending order
+	declare Real[] SortedRatios;
+	foreach (Ratio => Color in _ColorRatios) SortedRatios.add(Ratio);
+	SortedRatios = SortedRatios.sort();
+	
+	// Get the lowest color ratio
+	declare MinimumRatio = SortedRatios[0];
+	foreach (Ratio in SortedRatios) if (Ratio > MinimumRatio && Ratio < _Ratio) MinimumRatio = Ratio;
+	
+	// Get the highest color ratio
+	declare MaximumRatio = SortedRatios[SortedRatios.count - 1];
+	foreach (Ratio in SortedRatios) if (Ratio < MaximumRatio && Ratio > _Ratio) MaximumRatio = Ratio;
+	
+	// Get the colors blend properties
+	declare BlendRatio = (_Ratio - MinimumRatio) / (MaximumRatio - MinimumRatio);
+	declare MinimumColor = _ColorRatios[MinimumRatio];
+	declare MaximumColor = _ColorRatios[MaximumRatio];
+	
+	// Compute the final color
+	declare Vec3 OutputColor;
+	for (I, 0, 2) OutputColor[I] = MinimumColor[I] + (MaximumColor[I] - MinimumColor[I]) * BlendRatio;
+	return OutputColor;
+}
+"""
+
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
@@ -138,6 +179,7 @@ Text Private_GetFunctionCode(Text _FunctionName) {
 		case "ComputeWidth"		: return C_ManialinkTools_ComputeWidth;
 		case "Brightness"		: return C_ManialinkTools_Brightness;
 		case "ReplaceChars"		: return C_ManialinkTools_ReplaceChars;
+		case "ColorTransition"	: return C_ManialinkTools_ColorTransition;
 	}
 	return "";
 }

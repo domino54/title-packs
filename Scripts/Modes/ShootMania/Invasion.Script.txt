@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  INVASION by domino54                  //
-//  script version: v3.1 @2016-12-15      //
+//  script version: v3.1 @2016-12-20      //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"InvasionArena, HordeArena"
-#Const Version				"2016-12-15"
+#Const Version				"2016-12-20"
 #Const ScriptName			"Invasion.Script.txt"
 
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
@@ -41,6 +41,7 @@
 #Const C_WeaponHeatTimePerCombo	750		///< Overheating time given by every combo performed
 #Const C_WeaponHeatTimeMax		20000	///< Maximum overheating duration
 #Const C_WeaponBaseReloadBonus	.333	///< Normal reload bonus on hit
+#Const C_WeaponCustomBonus		.5		///< Ammo bonus on custom weapon hit
 
 #Const Description _("TYPE: Cooperation\nOBJECTIVE: Protect Pole from Toads attack as long as it's possible. Game is over when 20 Toads reach the Pole.")
 
@@ -231,7 +232,6 @@ PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Protect Pole from Toads attack 
 // Load objects
 G_ObjectId["Toad"]	= ItemList_Add("Characters\\ToadSample.Item.Gbx");
 G_ObjectId["Giant"]	= ItemList_Add("Characters\\StormManBig.Item.Gbx");
-G_ObjectId["Fuel"]	= ItemList_Add("SMCommon\\Collectibles\\Fuel.Item.gbx");
 G_ObjectId["Gold"]	= ItemList_Add("SMCommon\\Collectibles\\Gold.Item.gbx");
 
 // ---------------------------------- //
@@ -241,14 +241,6 @@ G_ActionId["FrozenArrow"]	= ActionList_Add("Invasion\\FrozenArrow.Action.Gbx");
 G_ActionId["PlasmaGrenade"]	= ActionList_Add("Invasion\\PlasmaGrenade.Action.Gbx");
 G_ActionId["Torpede"]		= ActionList_Add("Invasion\\Torpede.Action.Gbx");
 G_ActionId["WideRail"]		= ActionList_Add("Invasion\\WideRail.Action.Gbx");
-
-Interfancy::SetGaugesIconsImages([
-	"Handheld Charge" => C_ImgBase^"Icons/HandheldCharge.png",
-	"Frozen Arrow" => C_ImgBase^"Icons/FrozenArrow.png",
-	"Plasma Grenade" => C_ImgBase^"Icons/PlasmaGrenade.png",
-	"Torpede" => C_ImgBase^"Icons/Torpede.png",
-	"Wide Rail" => C_ImgBase^"Icons/WideRail.png"
-]);
 
 // ---------------------------------- //
 // Scores table
@@ -312,6 +304,16 @@ declare GoldCrystalUnspawnTime = 0;	///< Lifetime of the Gold object
 declare PrevUseEvolution = False;
 declare PrevPoleLimit = -1;
 declare PrevLeadingClan = -1;
+
+// ---------------------------------- //
+// Set weapons icons
+Interfancy::SetGaugesIconsImages([
+	"Handheld Charge" => C_ImgBase^"Icons/HandheldCharge.png",
+	"Frozen Arrow" => C_ImgBase^"Icons/FrozenArrow.png",
+	"Plasma Grenade" => C_ImgBase^"Icons/PlasmaGrenade.png",
+	"Torpede" => C_ImgBase^"Icons/Torpede.png",
+	"Wide Rail" => C_ImgBase^"Icons/Laser.png"
+]);
 
 // ---------------------------------- //
 // Clear Evolution
@@ -458,9 +460,7 @@ foreach (Event in PendingEvents) {
 		else {
 			declare Text ToadType for Event.Victim;
 			if (ToadType == "Gimp" && ML::Rand(0., 1.) <= C_ToadGimpFuelDropChance) {
-				declare Object = ObjectCreate(G_ObjectId["Fuel"]);
-				Object.SetPosition(Event.Victim.Position);
-				declare LibGalaxyTitles_Tag for Object = "Fuel";
+				declare Object = GalaxyTitles::SpawnObject(Event.Victim.Position, "Fuel");
 			}
 			
 			// Track elimination statistics
@@ -555,6 +555,11 @@ foreach (Event in PendingEvents) {
 			declare Text ToadType for Event.Victim;
 			Statistics::TrackEvent(Event.Shooter, "InvasionDamageToad"^ToadType, Points);
 		}
+		
+		// ---------------------------------- //
+		// Force reload ammo in the action
+		declare Real Action_EnergyToReload for Event.Shooter;
+		Action_EnergyToReload += C_WeaponCustomBonus;
 		
 		SendCritNotification(Event.Shooter, EventDamage);
 		RemovePlayerArmor(Event.Victim, EventDamage, Event.Shooter, Points);
@@ -1202,9 +1207,9 @@ Void InvasionSpawnPlayer(CSmPlayer _Player) {
 	// Set Rocket without auto-switch for the first time
 	if (_Player.AutoSwitchWeapon) SetPlayerWeapon(_Player, ::EWeapon::Rocket, False);
 	
+	GalaxyTitles::InitPlayer(_Player);
 	Interfancy::ForceColor(_Player, _Player.User.Color);
 	SetPlayerReloadAllWeapons(_Player, True);
-	GalaxyTitles::ClearReloadBoost(_Player);
 	
 	_Player.AmmoGain = C_PlayerBaseAmmoGain;
 	_Player.StaminaMax = C_PlayerStaminaMax;

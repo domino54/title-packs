@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2016-12-12            //
+//  script version: 2017-01-12            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2016-12-12"
+#Const	Version		"2017-01-12"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -37,6 +37,7 @@
 #Const C_LibInterfancy_FrameHideawayPos		-16.
 #Const C_LibInterfancy_GaugeSoundVolume		-10.
 #Const C_LibInterfancy_NearMissDisplayTime	1000
+#Const C_LibInterfancy_UICleaningPeriod		500
 
 #Const C_LibInterfancy_ArmorPos			<-154., -84., 5.>
 #Const C_LibInterfancy_StaminaPos		<0., -85., 5.>
@@ -55,6 +56,7 @@ declare Boolean[Text]	G_LibInterfancy_ModuleVisibility;
 declare Vec3[Text]		G_LibInterfancy_ModulePosition;
 declare Integer G_LibInterfancy_PrevStartTime;
 declare Integer G_LibInterfancy_PrevEndTime;
+declare Integer G_LibInterfancy_NextUICleaningTime;
 
 // ---------------------------------- //
 // Functions
@@ -72,7 +74,7 @@ declare Integer G_LibInterfancy_PrevEndTime;
  *	@return					True if the given module is loaded, False otherwise
  */
 Boolean Private_ModuleIsLoaded(Text _ModuleId) {
-	return (G_LibInterfancy_ModulesLoaded.exists(_ModuleId));
+	return G_LibInterfancy_ModulesLoaded.exists(_ModuleId);
 }
 
 // ---------------------------------- //
@@ -246,6 +248,10 @@ foreach (Module in C_AvailableModules) {
 }
 
 // ---------------------------------- //
+// Persistent settings
+declare persistent Persistent_LibInterfancy_AlwaysShowStamina for LocalUser = False;
+
+// ---------------------------------- //
 // Netcode
 declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
@@ -385,7 +391,7 @@ foreach (Module in C_AvailableModules) {
 	declare ShowModule = False;
 	switch (Module) {
 		case "Armor" : ShowModule = GUIPlayer != Null && DisplayArmor && GUIPlayer.ArmorMax > 0;
-		case "Stamina" : ShowModule = GUIPlayer != Null && DisplayStamina && !GUIPlayer.IsOnTechNoWeapon && Now < StaminaDisplayEndTime;
+		case "Stamina" : ShowModule = GUIPlayer != Null && DisplayStamina && !GUIPlayer.IsOnTechNoWeapon && (Now < StaminaDisplayEndTime || Persistent_LibInterfancy_AlwaysShowStamina);
 		case "Ammo" : ShowModule = GUIPlayer != Null && DisplayAmmo && GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0 && !GUIPlayer.IsOnTechNoWeapon;
 	}
 	
@@ -1595,19 +1601,6 @@ Void SetRoundPointsVisibility(Boolean _Visible) {
 }
 
 // ---------------------------------- //
-/// Update Start and End time in Countdown module
-Void UpdateTime() {
-	if (G_LibInterfancy_PrevStartTime != StartTime) {
-		G_LibInterfancy_PrevStartTime = StartTime;
-		Private_SetModuleSetting("StartTime", TL::ToText(StartTime));
-	}
-	if (G_LibInterfancy_PrevEndTime != EndTime) {
-		G_LibInterfancy_PrevEndTime = EndTime;
-		Private_SetModuleSetting("EndTime", TL::ToText(EndTime));
-	}
-}
-
-// ---------------------------------- //
 /** Display crosshair message
  *
  *	@param	_Player			The player to display message
@@ -1778,4 +1771,48 @@ Void Load() { Unload(); }
 Void Load(Text[] _AutoLoadModules) {
 	Load();
 	LoadModules(_AutoLoadModules);
+}
+
+// ---------------------------------- //
+/// Loop
+Void Loop() {
+	// ---------------------------------- //
+	// Update Start and End time in Countdown module
+	if (G_LibInterfancy_PrevStartTime != StartTime) {
+		G_LibInterfancy_PrevStartTime = StartTime;
+		Private_SetModuleSetting("StartTime", TL::ToText(StartTime));
+	}
+	if (G_LibInterfancy_PrevEndTime != EndTime) {
+		G_LibInterfancy_PrevEndTime = EndTime;
+		Private_SetModuleSetting("EndTime", TL::ToText(EndTime));
+	}
+	
+	if (Now < G_LibInterfancy_NextUICleaningTime) return;
+	G_LibInterfancy_NextUICleaningTime = Now + C_LibInterfancy_UICleaningPeriod;
+	
+	// ---------------------------------- //
+	// Remove no longer visible crosshair notes
+	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
+	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
+	
+	declare Text[] LoginsToRemove;
+	foreach (Login => EndTime in Net_LibInterfancy_CrosshairNoteTime) if (Now >= EndTime) LoginsToRemove.add(Login);
+	
+	foreach (Login in LoginsToRemove) {
+		declare Boolean Tmp;
+		Tmp = Net_LibInterfancy_CrosshairNote.removekey(Login);
+		Tmp = Net_LibInterfancy_CrosshairNoteTime.removekey(Login);
+	}
+	
+	// ---------------------------------- //
+	// Remove no longer needed reload boost data
+	declare netwrite Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
+	
+	if (LoginsToRemove.count > 0) LoginsToRemove.clear();
+	foreach (Login => Data in Net_LibInterfancy_ReloadData)
+		if (Now >= Data[0] + Data[1]) LoginsToRemove.add(Login);
+	
+	foreach (Login in LoginsToRemove) {
+		declare Tmp = Net_LibInterfancy_ReloadData.removekey(Login);
+	}
 }

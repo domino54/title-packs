@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2016-10-14            //
+//  script version: 2017-01-12            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2016-10-14"
+#Const Version		"2017-01-12"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "TextLib" as TL
@@ -23,7 +23,7 @@
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/Minimap/"
 #Const C_LibMinimap_LayerWindowId		"LibMinimap:Window"
-#Const C_LibMinimap_WindowPosition		<-139., 69., -3.>
+#Const C_LibMinimap_WindowPosition		<-137.5, 67.5, -3.>
 #Const C_LibMinimap_WindowHideOffset	<-50., 0., 0.>
 #Const C_LibMinimap_WindowMinimapSize	<40., 40.>
 #Const C_LibMinimap_NbPlayersMarkers	32
@@ -101,6 +101,7 @@ Text Private_CreateManialinkMinimapWindow() {
 	/>
 	<quad posn="0 0 -.1" sizen="{{{MapSize.X^" "^MapSize.Y}}}" halign="center" valign="center" bgcolor="000" opacity=".5"/>
 	<quad posn="0 0 -.1" sizen="{{{MapSize.X^" "^MapSize.Y}}}" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0"/>
+	<quad posn="0 0 2" sizen="{{{MapSize.X + 5^" "^MapSize.Y + 5}}}" halign="center" valign="center" image="{{{C_ImgBase}}}Overlay.png"/>
 	<minimap sizen="{{{MapSize.X^" "^MapSize.Y}}}" halign="center" valign="center" id="Minimap_Main"/>
 	<quad
 		posn="0 0 1.1" sizen="7 7" halign="center" valign="center" image="{{{C_ImgBase}}}GUIPlayer.png"
@@ -192,6 +193,7 @@ declare persistent Boolean Persistent_LibMinimap_HideCones for LocalUser;
 // Netcode
 declare netread Integer Net_LibMinimap_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibMinimap_Settings for Teams[0];
+declare netread Text Net_LibMinimap_IconsPathPrefix for Teams[0];
 
 /// Custom markers
 declare netread Vec3[Text] Net_LibMinimap_CustomMarkers for Teams[0];
@@ -605,7 +607,9 @@ foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
 	declare ImageUrl = Net_LibMinimap_MarkersImages[MarkerId];
 	if (ImageUrl == "") continue;
 	
-	declare Player <=> GetPlayer(Net_LibMinimap_MarkersPlayer[MarkerId]);
+	declare Login = "";
+	if (Net_LibMinimap_MarkersPlayer.existskey(MarkerId)) Login = Net_LibMinimap_MarkersPlayer[MarkerId];
+	declare Player <=> GetPlayer(Login);
 	if (Player != Null && Player == GUIPlayer) continue;
 	
 	// ---------------------------------- //
@@ -651,8 +655,10 @@ foreach (MarkerId => Pos in Net_LibMinimap_CustomMarkers) {
 	Quad.RelativeScale = C_MarkerScales[IsOverviewMode];
 	
 	// Set marker image and color
-	Quad.ImageUrl = ImageUrl;
-	declare Colorize = Net_LibMinimap_MarkersColors[MarkerId];
+	Quad.ImageUrl = Net_LibMinimap_IconsPathPrefix^ImageUrl;
+	
+	declare Vec3 Colorize;
+	if (Net_LibMinimap_MarkersColors.existskey(MarkerId)) Colorize = Net_LibMinimap_MarkersColors[MarkerId];
 	if (Colorize != <0., 0., 0.>) Quad.Colorize = Colorize;
 	else Quad.Colorize = <1., 1., 1.>;
 }
@@ -915,6 +921,16 @@ Void SetOpponentsVisibility(Boolean _DisplayOpponents) {
 }
 
 // ---------------------------------- //
+/** Set the base path for the minimap icons
+ *
+ *	@param	_ImgBase	Icons base path
+ */
+Void SetIconsBasePath(Text _ImgBase) {
+	declare netwrite Text Net_LibMinimap_IconsPathPrefix for Teams[0];
+	Net_LibMinimap_IconsPathPrefix = _ImgBase;
+}
+
+// ---------------------------------- //
 /** Create or update custom marker
  *
  *	@param	_MarkerId			Id of the marker
@@ -933,8 +949,8 @@ Void SetMarker(Text _MarkerId, Text _MarkerIcon, Vec3 _Colorize, Vec3 _MarkerPos
 	
 	Net_LibMinimap_CustomMarkers[_MarkerId] = _MarkerPosition;
 	Net_LibMinimap_MarkersImages[_MarkerId] = _MarkerIcon;
-	Net_LibMinimap_MarkersColors[_MarkerId] = _Colorize;
-	Net_LibMinimap_MarkersPlayer[_MarkerId] = _PlayerLogin;
+	if (_Colorize != <0., 0., 0.>) Net_LibMinimap_MarkersColors[_MarkerId] = _Colorize;
+	if (_PlayerLogin != "") Net_LibMinimap_MarkersPlayer[_MarkerId] = _PlayerLogin;
 }
 
 Void SetMarker(Text _MarkerId, Text _MarkerIcon, Vec3 _Colorize, Vec3 _MarkerPosition) {
@@ -978,7 +994,6 @@ Void DestroyMarkers() {
 	Net_LibMinimap_MarkersColors.clear();
 	Net_LibMinimap_MarkersPlayer.clear();
 }
-
 
 // ---------------------------------- //
 /// Unload the library

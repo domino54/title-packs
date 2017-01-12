@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2016-11-15            //
+//  script version: 2017-01-12            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2016-11-15"
+#Const Version		"2017-01-12"
 #Const ScriptName	"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -55,6 +55,15 @@ declare Ident[Text] G_ObjectsIds;	///< Ids of the objects used by the game mode
 declare Boolean G_IsOvertime;		///< True, if game is in overtime mode
 
 // ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+***
+
+// ---------------------------------- //
 // Set the scores table
 // ---------------------------------- //
 ***ScoresTable***
@@ -75,11 +84,6 @@ GT_AutoManageOnArmorEmpty = False;
 
 declare ClanRoundScores = [0 => 0, 1 => 0, 2 => 0];
 declare netwrite Net_GoldenDunk_IsOvertime for Teams[0] = False;
-
-GT_LogScriptsVersions = [
-	ScriptName => Version,
-	Map::GetScriptName() => Map::GetScriptVersion()
-];
 
 // ---------------------------------- //
 // Set the rules in the SpawnScreen
@@ -284,6 +288,7 @@ DropBall(Event.Player);
 // ---------------------------------- //
 ***OnPlayerTouchesObject***
 ***
+if (Event.Object == CentralBall) { Discard(Event); continue; }
 if (PickUpBall(Event)) continue;
 ***
 
@@ -394,7 +399,7 @@ foreach (Player in Players) {
 		GT_InitPlayer(Player);
 		
 		// Add ball to the inventory
-		Inventory::CreateItemSlot(Player, "Ball", CSmModeEvent::EActionInput::Consumable2, 0, C_ImgBase^"Icons/Ball.png");
+		Inventory::CreateItemSlot(Player, "Ball", CSmModeEvent::EActionInput::Consumable2, 0, "Ball.png");
 		
 		// Clear forbidden items
 		ForbiddenPositions.clear();
@@ -723,7 +728,7 @@ Void UpdateMarkers() {
 		if (G_NbBallsTotal < G_NbBallsMax) {
 			declare MarkerId = "CenterCheckpoint";
 			G_CreatedUIMarkers.add(MarkerId);
-			MiniMap::SetMarker(MarkerId, C_ImgBase^"Minimap/Ball.png", <1., 1., 1.>, G_CentralCheckpointLandmark.Position);
+			MiniMap::SetMarker(MarkerId, "Ball.png", <1., 1., 1.>, G_CentralCheckpointLandmark.Position);
 		}
 		
 		// ---------------------------------- //
@@ -744,7 +749,7 @@ Void UpdateMarkers() {
 		// Minimap marker
 		declare MarkerId = "HoopArea#"^Clan;
 		G_CreatedUIMarkers.add(MarkerId);
-		MiniMap::SetMarker(MarkerId, C_ImgBase^"Minimap/Drop.png", Teams[Clan - 1].ColorPrimary, Position);
+		MiniMap::SetMarker(MarkerId, "Drop.png", Teams[Clan - 1].ColorPrimary, Position);
 		
 		// ---------------------------------- //
 		// World marker
@@ -764,7 +769,7 @@ Void UpdateMarkers() {
 		// Minimap marker
 		declare MarkerId = "GoalPost#"^Clan;
 		G_CreatedUIMarkers.add(MarkerId);
-		MiniMap::SetMarker(MarkerId, C_ImgBase^"Minimap/Goal.png", Teams[Clan - 1].ColorPrimary, MapLandmark.Position);
+		MiniMap::SetMarker(MarkerId, "Goal.png", Teams[Clan - 1].ColorPrimary, MapLandmark.Position);
 		
 		// ---------------------------------- //
 		// World marker
@@ -791,7 +796,7 @@ Void UpdateMarkers() {
 		declare MarkerId = "Ball:"^Player.User.Login;
 		G_CreatedUIMarkers.add(MarkerId);
 		MiniMap::SetMarker(
-			MarkerId, C_ImgBase^"Minimap/Ball.png",
+			MarkerId, "Ball.png",
 			Teams[Player.CurrentClan -1].ColorPrimary, Player.User.Login
 		);
 		
@@ -816,7 +821,7 @@ Void UpdateMarkers() {
 		// Minimap marker
 		declare MarkerId = "Ball:"^Object.Position;
 		G_CreatedUIMarkers.add(MarkerId);
-		MiniMap::SetMarker(MarkerId, C_ImgBase^"Minimap/Ball.png", <1., 1., 1.>, Object.Position);
+		MiniMap::SetMarker(MarkerId, "Ball.png", <1., 1., 1.>, Object.Position);
 		
 		// ---------------------------------- //
 		// World marker

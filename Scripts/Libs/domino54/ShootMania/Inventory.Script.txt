@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2016-11-14            //
+//  script version: 2017-01-12            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2016-11-14"
+#Const Version		"2017-01-12"
 #Const ScriptName	"Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -32,6 +32,7 @@
 #Const C_LibInventory_UIItemColorEmpty		<.5, .5, .5>
 #Const C_LibInventory_UIItemColorDefault	<1., 1., 1.>
 #Const C_LibInventory_UIItemColorCooldown	<.25, .25, .25>
+#Const C_LibInventory_UICleaningPeriod		1000
 
 /// Sort items depending on their hotkeys order
 #Const C_LibInventory_OrganizedOrder [
@@ -52,10 +53,10 @@
 
 /// Names of the items representing players weapons
 #Const C_LibInventory_WeaponsPredefinedNames [
-	CSmMode::EWeapon::Laser		=> "LibInventory_WeaponLaser",
-	CSmMode::EWeapon::Nucleus	=> "LibInventory_WeaponNucleus",
-	CSmMode::EWeapon::Arrow		=> "LibInventory_WeaponArrow",
-	CSmMode::EWeapon::Rocket	=> "LibInventory_WeaponRocket"
+	CSmMode::EWeapon::Laser		=> "LInv_WpnLaser",
+	CSmMode::EWeapon::Nucleus	=> "LInv_WpnNucleus",
+	CSmMode::EWeapon::Arrow		=> "LInv_WpnArrow",
+	CSmMode::EWeapon::Rocket	=> "LInv_WpnRocket"
 ]
 
 /// Weapons switch keyboard keys
@@ -92,6 +93,7 @@
 // ---------------------------------- //
 declare Boolean G_LibInventory_IsLoaded;	///< True, if the library has been loaded
 declare Text[CSmMode::EWeapon] G_LibInventory_WeaponsIcons;
+declare Integer G_LibInventory_NextUICleaningTime;
 
 // ---------------------------------- //
 // Functions
@@ -161,6 +163,7 @@ for (I, 0, {{{C_LibInventory_UINbItemsDisplayed - 1}}})
 // Netcode
 declare netread Integer Net_LibInventory_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInventory_Settings for Teams[0];
+declare netread Text Net_LibInventory_IconsPathPrefix for Teams[0];
 
 /// Players colours
 declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
@@ -408,7 +411,7 @@ if (InterfaceVisible) {
 			
 			// ---------------------------------- //
 			// Apply information to the interface model
-			Quad_ItemIcon.ImageUrl = ItemIcon;
+			Quad_ItemIcon.ImageUrl = Net_LibInventory_IconsPathPrefix^ItemIcon;
 			Label_ItemHotkey.SetText(ItemHotkey);
 			
 			// Display amount
@@ -1441,6 +1444,16 @@ Void FormatQuadHighlight(Text _Format) {
 }
 
 // ---------------------------------- //
+/** Set the base path for the inventory items icons
+ *
+ *	@param	_ImgBase	Icons base path
+ */
+Void SetIconsBasePath(Text _ImgBase) {
+	declare netwrite Text Net_LibInventory_IconsPathPrefix for Teams[0];
+	Net_LibInventory_IconsPathPrefix = _ImgBase;
+}
+
+// ---------------------------------- //
 /** Change default images of the weapons icons
  *
  *	@param	_Icons		Weapons icons images
@@ -1449,3 +1462,69 @@ Void SetWeaponsIcons(Text[CSmMode::EWeapon] _Icons) {
 	if (_Icons.count <= 0) return;
 	foreach (Weapon => Icon in _Icons) G_LibInventory_WeaponsIcons[Weapon] = Icon;
 }
+
+// ---------------------------------- //
+/// Loop - cleaning up utilities
+Void Loop() {
+	if (Now < G_LibInventory_NextUICleaningTime) return;
+	G_LibInventory_NextUICleaningTime = Now + C_LibInventory_UICleaningPeriod;
+	
+	declare netwrite Integer[Text] Net_LibInventory_PlayerUpdate for Teams[0];
+	declare Text[] LoginsToRemove;
+	
+	// ---------------------------------- //
+	// Look for data logins of players who left the game
+	foreach (Login => UpdateTime in Net_LibInventory_PlayerUpdate) {
+		declare IsPlayerAvailable = False;
+		foreach (Player in Players) if (Player.User.Login == Login && Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) {
+			IsPlayerAvailable = True;
+			break;
+		}
+		if (!IsPlayerAvailable) LoginsToRemove.add(Login);
+	}
+	
+	// ---------------------------------- //
+	// Remove net data of players who are no longer playing on the server
+	if (LoginsToRemove.count > 0) {
+		declare netwrite Text[][Text] Net_LibInventory_PlayerItems for Teams[0];
+		declare netwrite Text[Text][Text] Net_LibInventory_PlayerItemHotkey for Teams[0];
+		declare netwrite Text[Text][Text] Net_LibInventory_PlayerItemIcon for Teams[0];
+		declare netwrite Integer[Text][Text] Net_LibInventory_PlayerItemAmount for Teams[0];
+		declare netwrite Integer[Text][Text] Net_LibInventory_PlayerItemWeaponNum for Teams[0];
+		declare netwrite Integer[Text][Text] Net_LibInventory_PlayerItemCooldownStart for Teams[0];
+		declare netwrite Integer[Text][Text] Net_LibInventory_PlayerItemCooldownDuration for Teams[0];
+		
+		foreach (Login in LoginsToRemove) {
+			declare Boolean Tmp;
+			Tmp = Net_LibInventory_PlayerItems.removekey(Login);
+			Tmp = Net_LibInventory_PlayerItemHotkey.removekey(Login);
+			Tmp = Net_LibInventory_PlayerItemIcon.removekey(Login);
+			Tmp = Net_LibInventory_PlayerItemAmount.removekey(Login);
+			Tmp = Net_LibInventory_PlayerItemWeaponNum.removekey(Login);
+			Tmp = Net_LibInventory_PlayerItemCooldownStart.removekey(Login);
+			Tmp = Net_LibInventory_PlayerItemCooldownDuration.removekey(Login);
+		}
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY STREAKS by domino54           //
-//  script version: 2016-11-11            //
+//  script version: 2017-01-12            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	Killfeed library.
  */
 
-#Const Version		"2016-11-11"
+#Const Version		"2017-01-12"
 #Const ScriptName	"Streaks.Script.txt"
 
 #Include "MathLib" as ML
@@ -24,18 +24,20 @@
 // Constants
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/Streaks/"
-#Const C_LibStreaks_StreakTimeBase		2000
-#Const C_LibStreaks_StreakTimePerKill	750
+#Const C_LibStreaks_StreakTimeBase		3000
+#Const C_LibStreaks_StreakTimePerKill	500
 #Const C_LibStreaks_KillsForDomination	4
 #Const C_LibStreaks_InterfaceLayerName	"LibStreaks:Notices"
-#Const C_LibStreaks_NoticeDisplayTime	1250
+#Const C_LibStreaks_NoticeDisplayTime	2000
 #Const C_LibStreaks_DisplayTimePerKill	125
 #Const C_LibStreaks_NoticePosition		<0., 30., 0.>
+#Const C_LibStreaks_UICleaningPeriod	1000
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
 declare Boolean G_LibStreaks_LibraryIsLoaded;
+declare Integer G_LibStreaks_NextUICleaningTime;
 
 // ---------------------------------- //
 // Functions
@@ -120,7 +122,7 @@ else if (CurrentPlayerStreak > 0) {
 	StreakDisplayEndTime = -1;
 }
 
-StreakNotice_IsVisible = GameTime <= StreakDisplayEndTime;
+StreakNotice_IsVisible = GUIPlayer != Null && UI.UISequence == CUIConfig::EUISequence::Playing && GameTime <= StreakDisplayEndTime;
 
 // ---------------------------------- //
 // Change the streak notice style
@@ -337,8 +339,6 @@ Void OnArmorEmpty(CSmModeEvent _Event) {
 	}
 }
 
-declare CSmPlayer domino54;
-
 // ---------------------------------- //
 /// Library loop
 Void Loop() {
@@ -364,5 +364,22 @@ Void Loop() {
 			LibStreaks_StreakEndTime = -1;
 			LibStreaks_KillStreak = 0;
 		}
+	}
+	
+	// ---------------------------------- //
+	// Clear net data
+	if (Now < G_LibStreaks_NextUICleaningTime) return;
+	G_LibStreaks_NextUICleaningTime = Now + C_LibStreaks_UICleaningPeriod;
+	
+	declare netwrite Integer[Text] Net_LibStreaks_PlayersKillStreaks for Teams[0];
+	declare netwrite Integer[Text] Net_LibStreaks_PlayersStreaksTime for Teams[0];
+	
+	declare Text[] LoginsToRemove;
+	foreach (Login => EndTime in Net_LibStreaks_PlayersStreaksTime) if (Now >= EndTime) LoginsToRemove.add(Login);
+	
+	foreach (Login in LoginsToRemove) {
+		declare Boolean Tmp;
+		Tmp = Net_LibStreaks_PlayersKillStreaks.removekey(Login);
+		Tmp = Net_LibStreaks_PlayersStreaksTime.removekey(Login);
 	}
 }

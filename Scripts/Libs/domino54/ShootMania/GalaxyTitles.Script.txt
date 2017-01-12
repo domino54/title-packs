@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2016-12-20            //
+//  script version: 2017-01-12            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2016-12-20"
+#Const Version		"2017-01-12"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -258,6 +258,9 @@ Void Load() {
 	// Load actions
 	G_LibGalaxyTitles_Actions["Replie"] = ActionList_Add("HungerGames\\ReplieParticles.Action.gbx");
 	
+	// Minimap
+	MiniMap::SetIconsBasePath(C_ImgBase^"Minimap/");
+	
 	// ---------------------------------- //
 	// Load and format Inventory
 	Inventory::Load();
@@ -265,18 +268,17 @@ Void Load() {
 		<158., -74., 5.>, <8., 8.>, 1., 2.,
 		CMlControl::AlignHorizontal::Right, CMlControl::AlignVertical::VCenter
 	);
-	
 	Inventory::FormatLabelAmount("<label posn='4 -2.5' valign='center2' textfont='Eurostile_Bold'/>");
 	Inventory::FormatLabelHotkey("<label posn='-3.5 3' valign='center2' textfont='Eurostile_Bold'/>");
 	Inventory::FormatLabelCooldown("<label textsize=3 textfont='Eurostile_Bold'/>");
 	Inventory::FormatQuadBackground("<quad sizen='8 8' image='"^C_ImgBase^"UiItemShadow.png'/>");
 	Inventory::FormatQuadHighlight("<quad sizen='10 10' image='"^C_ImgBase^"UiCurrentWeapon.png'/>");
-	
+	Inventory::SetIconsBasePath(C_ImgBase^"Icons/");
 	Inventory::SetWeaponsIcons([
-		CSmMode::EWeapon::Laser		=> C_ImgBase^"Icons/Laser.png",
-		CSmMode::EWeapon::Nucleus	=> C_ImgBase^"Icons/Nucleus.png",
-		CSmMode::EWeapon::Arrow		=> C_ImgBase^"Icons/Arrow.png",
-		CSmMode::EWeapon::Rocket	=> C_ImgBase^"Icons/Rocket.png"
+		CSmMode::EWeapon::Laser		=> "Laser.png",
+		CSmMode::EWeapon::Nucleus	=> "Nucleus.png",
+		CSmMode::EWeapon::Arrow		=> "Arrow.png",
+		CSmMode::EWeapon::Rocket	=> "Rocket.png"
 	]);
 }
 
@@ -519,7 +521,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
 				declare MarkerTag = "Object#"^MapLandmark.Id;
 				MiniMap::SetMarker(
-					MarkerTag, C_ImgBase^"Minimap/"^MapLandmark.Tag^".png",
+					MarkerTag, MapLandmark.Tag^".png",
 					C_LibGalaxyTitles_MinimapColors[MapLandmark.Tag], Position
 				);
 				G_LibGalaxyTitles_MinimapMarkers.add(MarkerTag);
@@ -605,7 +607,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
 			declare MarkerTag = "Object#"^MapLandmark.Id;
 			MiniMap::SetMarker(
-				MarkerTag, C_ImgBase^"Minimap/"^MapLandmark.Tag^".png",
+				MarkerTag, MapLandmark.Tag^".png",
 				C_LibGalaxyTitles_MinimapColors[MapLandmark.Tag], MapLandmark.Position
 			);
 			G_LibGalaxyTitles_MinimapMarkers.add(MarkerTag);
@@ -908,11 +910,11 @@ Void InitToads() { InitToads(C_LibGalaxyTitles_ToadLandmarksRatio); }
  *	@param	_ToadsRespawnTime	Time before Toad will respawn after elimination
  */
 Void ToadsLoop(Integer _ToadsRespawnTime) {
-	if (!G_LibGalaxyTitles_LibraryLoaded || OffZoneRadius > 0) return;
+	if (!G_LibGalaxyTitles_LibraryLoaded) return;
 	
 	// ---------------------------------- //
 	// Spawn Toads
-	foreach (MapLandmark in MapLandmarks_BotPath) {
+	if (OffZoneRadius <= 0) foreach (MapLandmark in MapLandmarks_BotPath) {
 		if (_ToadsRespawnTime <= 0 || !G_LibGalaxyTitles_ToadsSpawns.exists(MapLandmark.Id)) continue;
 		
 		declare LibGalaxyTitles_ToadSpawned for MapLandmark = False;
@@ -1138,9 +1140,7 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Load Replies in the Inventory
 	if (G_LibGalaxyTitles_RepliesAvailable) {
-		Inventory::CreateItemSlot(
-			_Player, "LibGalaxyTitles_Replie", CSmModeEvent::EActionInput::Consumable1, 0, C_ImgBase^"Icons/Replie.png"
-		);
+		Inventory::CreateItemSlot(_Player, "LibGalaxyTitles_Replie", CSmModeEvent::EActionInput::Consumable1, 0, "Replie.png");
 	}
 
 	// Load action used to show particle effect on the player
@@ -1152,11 +1152,7 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Get the available weapons
 	declare PlayerWeapons = [CSmMode::EWeapon::Rocket];
-	declare TextToWeapon = [
-		"Laser"		=> CSmMode::EWeapon::Laser,
-		"Nucleus"	=> CSmMode::EWeapon::Nucleus,
-		"Arrow"		=> CSmMode::EWeapon::Arrow
-	];
+	declare TextToWeapon = ["Laser" => CSmMode::EWeapon::Laser, "Nucleus" => CSmMode::EWeapon::Nucleus, "Arrow" => CSmMode::EWeapon::Arrow];
 	
 	foreach (WeaponName in G_LibGalaxyTitles_AvailableWeapons) {
 		if (!TextToWeapon.existskey(WeaponName)) continue;

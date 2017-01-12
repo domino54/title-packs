@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2016-12-15            //
+//  script version: 2017-01-12            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2016-12-15"
+#Const BaseVersion		"2017-01-12"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -26,7 +26,6 @@
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
 #Include "Libs/domino54/Translations.Script.txt" as Translations
-#Include "Libs/domino54/UpdateChecker.Script.txt" as UpdateChecker
 #Include "Libs/domino54/WebLayers.Script.txt" as WebLayers
 #Include "Libs/domino54/ShootMania/GalaxyTitles.Script.txt" as GalaxyTitles
 #Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
@@ -86,7 +85,6 @@
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Text[Text] GT_LogScriptsVersions;	///< Scripts to log and check updates in the Update Checker library
 declare Text[] GT_KillfeedTranslations;		///< Translations to be loaded with the Killfeed library
 declare Text GT_SpawnScreenModeName;		///< Name of the mode displayed in the spawn screen
 declare Text GT_SpawnScreenModeType;		///< Spawn screen mode type (free for all, teams, cooperation)
@@ -112,36 +110,30 @@ declare Boolean GT_DisableOffZoneDamage;	///< Disable OffZone eliminations (Torn
 declare Boolean GT_DisableTornadoDamage;	///< Disable Tornado eliminations (only if OffZone is disabled)
 
 // ---------------------------------- //
-// Log scripts versions
+// Extend
 // ---------------------------------- //
-***UpdateChecker***
+***LogVersion***
 ***
-declare UC_ScriptsVersions = [
-	BaseScriptName => BaseVersion,
-	WarmUp2::GetScriptName()		=> WarmUp2::GetScriptVersion(),
-	Score::GetScriptName()			=> Score::GetScriptVersion(),
-	Blacklist::GetScriptName()		=> Blacklist::GetScriptVersion(),
-	CupAdmin::GetScriptName()		=> CupAdmin::GetScriptVersion(),
-	FakeUsers::GetScriptName()		=> FakeUsers::GetScriptVersion(),
-	FancyMessages::GetScriptName()	=> FancyMessages::GetScriptVersion(),
-	GalaxyTitles::GetScriptName()	=> GalaxyTitles::GetScriptVersion(),
-	Interfancy::GetScriptName()		=> Interfancy::GetScriptVersion(),
-	Inventory::GetScriptName()		=> Inventory::GetScriptVersion(),
-	Killfeed::GetScriptName()		=> Killfeed::GetScriptVersion(),
-	ManialinkTools::GetScriptName()	=> ManialinkTools::GetScriptVersion(),
-	MiniMap::GetScriptName()		=> MiniMap::GetScriptVersion(),
-	PauseMenu::GetScriptName()		=> PauseMenu::GetScriptVersion(),
-	SentenceBank::GetScriptName()	=> SentenceBank::GetScriptVersion(),
-	Statistics::GetScriptName()		=> Statistics::GetScriptVersion(),
-	Streaks::GetScriptName()		=> Streaks::GetScriptVersion(),
-	TopScores::GetScriptName()		=> TopScores::GetScriptVersion(),
-	Translations::GetScriptName()	=> Translations::GetScriptVersion(),
-	UpdateChecker::GetScriptName()	=> UpdateChecker::GetScriptVersion(),
-	WebLayers::GetScriptName()		=> WebLayers::GetScriptVersion()
-];
-
-foreach (ScriptName => ScriptVersion in GT_LogScriptsVersions) UC_ScriptsVersions[ScriptName] = ScriptVersion;
-UpdateChecker::SetAndLogScriptVersions(UC_ScriptsVersions);
+MB_LogVersion(BaseScriptName, BaseVersion);
+MB_LogVersion(WarmUp2::GetScriptName(), WarmUp2::GetScriptVersion());
+MB_LogVersion(Score::GetScriptName(), Score::GetScriptVersion());
+MB_LogVersion(Blacklist::GetScriptName(), Blacklist::GetScriptVersion());
+MB_LogVersion(CupAdmin::GetScriptName(), CupAdmin::GetScriptVersion());
+MB_LogVersion(FakeUsers::GetScriptName(), FakeUsers::GetScriptVersion());
+MB_LogVersion(FancyMessages::GetScriptName(), FancyMessages::GetScriptVersion());
+MB_LogVersion(GalaxyTitles::GetScriptName(), GalaxyTitles::GetScriptVersion());
+MB_LogVersion(Interfancy::GetScriptName(), Interfancy::GetScriptVersion());
+MB_LogVersion(Inventory::GetScriptName(), Inventory::GetScriptVersion());
+MB_LogVersion(Killfeed::GetScriptName(), Killfeed::GetScriptVersion());
+MB_LogVersion(ManialinkTools::GetScriptName(), ManialinkTools::GetScriptVersion());
+MB_LogVersion(MiniMap::GetScriptName(), MiniMap::GetScriptVersion());
+MB_LogVersion(PauseMenu::GetScriptName(), PauseMenu::GetScriptVersion());
+MB_LogVersion(SentenceBank::GetScriptName(), SentenceBank::GetScriptVersion());
+MB_LogVersion(Statistics::GetScriptName(), Statistics::GetScriptVersion());
+MB_LogVersion(Streaks::GetScriptName(), Streaks::GetScriptVersion());
+MB_LogVersion(TopScores::GetScriptName(), TopScores::GetScriptVersion());
+MB_LogVersion(Translations::GetScriptName(), Translations::GetScriptVersion());
+MB_LogVersion(WebLayers::GetScriptName(), WebLayers::GetScriptVersion());
 ***
 
 // ---------------------------------- //
@@ -270,11 +262,6 @@ WarmUp2::Load();
 WarmUp2::SetLayerPosition(<0., -58.>);
 
 // ---------------------------------- //
-// Load the Update Checker library
-UpdateChecker::Load();
----UpdateChecker---
-
-// ---------------------------------- //
 // Create the scores table
 ST2::SetStyle("LibST_SMBaseSolo");
 ST2::SetStyle("LibST_SMBasePoints");
@@ -349,7 +336,6 @@ if (UseClans && !UseForcedClans) {
 ***
 Score::MatchBegin();
 TopScores::MatchBegin();
-UpdateChecker::CheckUpdate();
 Interfancy::ClearData();
 GalaxyTitles::ResetAll();
 CupAdmin::StartMap();
@@ -446,7 +432,8 @@ WebLayers::Update(S_CustomLayersURLs);
 Blacklist::Loop(S_CustomBlacklistURL);
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
 CupAdmin::Loop(S_AdminEnableCupMode, S_AdminPauseCompetition, S_AdminCupModeNbMaps, S_AdminCupName);
-Interfancy::UpdateTime();
+Interfancy::Loop();
+Inventory::Loop();
 Message::Loop();
 Killfeed::Loop();
 FancyMessages::Loop();
@@ -858,7 +845,6 @@ if (MM_IsMatchServer()) {
 // ---------------------------------- //
 ***EndServer***
 ***
-UpdateChecker::Unload();
 GalaxyTitles::Unload();
 Interfancy::Unload();
 Killfeed::Unload();

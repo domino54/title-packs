@@ -1,12 +1,12 @@
 // -------------------------------------- //
-//  HUNGER GAMES 3.1.0 by domino54        //
-//  script version: 2016-12-16            //
+//  HUNGER GAMES 3.1.1 by domino54        //
+//  script version: 2017-01-12            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2016-12-16"
+#Const Version		"2017-01-12"
 #Const ScriptName	"HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -91,6 +91,15 @@ declare Ident[] G_SpawnsList;	///< List of Spawns available to toss
 declare Ident G_LatestSpawnId;	///< Previously tossed Spawn
 
 // ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+***
+
+// ---------------------------------- //
 // Scores table
 // ---------------------------------- //
 ***ScoresTable***
@@ -116,12 +125,6 @@ GT_UseRandomToads = False; ///< Toads are initialized later manually
 GT_AutoManageOnRespawn = False;
 GT_AutoManageOnObjectTouch = False;
 GT_AllowMatchmakingMode = False;
-
-GT_LogScriptsVersions = [
-	ScriptName => Version,
-	Map::GetScriptName() => Map::GetScriptVersion()
-];
-
 GT_KillfeedTranslations = ["$<%1$> is now playing in Games", "$<%1$> tried to escape arena"];
 
 // ---------------------------------- //
@@ -146,6 +149,7 @@ G_ObjectId["Mini"]		= ItemList_Add("HungerGames\\Mini.Item.Gbx");
 // ---------------------------------- //
 // Create custom interfaces
 MB_NeutralEmblemUrl = C_ImgBase^"EmblemHungerGames.dds";
+UIManager.UIAll.SpectatorForceCameraType = 1; ///< Disables the free-cam ("Cam 7")
 Layers::Create("HungerGames:Interface", CreateManialinkInterface());
 Layers::Attach("HungerGames:Interface");
 Layers::Create("HungerGames:Statistics", CreateManialinkStatistics());
@@ -316,6 +320,7 @@ G_LoginsTouchedGoal.clear();
 G_RespawnLandmarks.clear();
 G_SpawnsList.clear();
 G_LatestSpawnId = NullId;
+SpawnedToads = False;
 
 // ---------------------------------- //
 // Init OffZone
@@ -326,13 +331,13 @@ OffZoneRadius = 0.;
 // ---------------------------------- //
 // Initialize the central Goal
 if (CenterGoal != Null) {
-	UIManager.UIAll.SpectatorAutoTarget = CenterGoal.Id;
+	UIManager.UIAll.SpectatorForcedTarget = CenterGoal.Id;
 	CenterGoalLandmarkId = CenterGoal.Id;
 	CenterGoal.Gauge.ValueReal = 1.;
 	CenterGoal.Gauge.Captured = True;
 	
 	G_CenterGoalPosition = CenterGoal.Position;
-	MiniMap::SetMarker("Goal", C_ImgBase^"Minimap/Goal.png", Vec3, G_CenterGoalPosition);
+	MiniMap::SetMarker("Goal", "Goal.png", Vec3, G_CenterGoalPosition);
 }
 
 // ---------------------------------- //
@@ -488,7 +493,9 @@ if (PlayerRequestsRespawn) {
 // ---------------------------------- //
 ***PlayLoop***
 ***
-SpawnObjects();
+// ---------------------------------- //
+// Spawn the objects (only after players are spawned)
+if (Now >= StartTime) SpawnObjects();
 
 // ---------------------------------- //
 // Manage events
@@ -556,7 +563,7 @@ foreach (Event in PendingEvents) {
 if (Now >= StartTime - 1500 && UIManager.UIAll.UISequence != CUIConfig::EUISequence::Playing) {
 	Interfancy::SetModuleVisibility("Countdown", Now < UIManager.UIAll.CountdownEndTime);
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
-	UIManager.UIAll.SpectatorAutoTarget = NullId;
+	UIManager.UIAll.SpectatorForcedTarget = NullId;
 	MiniMap::Show();
 }
 

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-01-12            //
+//  script version: 2017-02-15            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-01-12"
+#Const Version		"2017-02-15"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -874,8 +874,15 @@ Void InitToads(Real _ToadsSpawnRatio) {
 	if (MapLandmarks_BotPath.count <= 0 || _ToadsSpawnRatio <= 0 || !G_LibGalaxyTitles_LibraryLoaded) return;
 	
 	// ---------------------------------- //
+	// Use only BotPaths with the default tag
+	declare Ident[] CompatibleLandmarks;
+	foreach (MapLandmark in MapLandmarks_BotPath) if (MapLandmark.Tag == "BotPath") CompatibleLandmarks.add(MapLandmark.Id);
+	if (CompatibleLandmarks.count <= 0) return;
+	
+	// ---------------------------------- //
 	// Reset Toads information in landmarks
 	foreach (MapLandmark in MapLandmarks_BotPath) {
+		if (!CompatibleLandmarks.exists(MapLandmark.Id)) continue;
 		declare Boolean LibGalaxyTitles_ToadSpawned for MapLandmark;
 		declare Integer LibGalaxyTitles_ToadNextSpawn for MapLandmark;
 		LibGalaxyTitles_ToadSpawned = False;
@@ -890,13 +897,13 @@ Void InitToads(Real _ToadsSpawnRatio) {
 		LandmarkId = NullId;
 		
 		while (True) {
-			LandmarkId = MapLandmarks_BotPath[ML::Rand(0, MapLandmarks_BotPath.count - 1)].Id;
+			LandmarkId = CompatibleLandmarks[ML::Rand(0, CompatibleLandmarks.count - 1)];
 			if (!G_LibGalaxyTitles_ToadsSpawns.exists(LandmarkId)) break;
 		}
 		
 		G_LibGalaxyTitles_ToadsSpawns.add(LandmarkId);
-		LandmarksRatio = ML::ToReal(G_LibGalaxyTitles_ToadsSpawns.count) / MapLandmarks_BotPath.count;
-		if (LandmarksRatio >= _ToadsSpawnRatio || G_LibGalaxyTitles_ToadsSpawns.count >= MapLandmarks_BotPath.count) break;
+		LandmarksRatio = ML::ToReal(G_LibGalaxyTitles_ToadsSpawns.count) / CompatibleLandmarks.count;
+		if (LandmarksRatio >= _ToadsSpawnRatio || G_LibGalaxyTitles_ToadsSpawns.count >= CompatibleLandmarks.count) break;
 	}
 }
 

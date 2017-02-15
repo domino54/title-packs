@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-01-12            //
+//  script version: 2017-01-15            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-01-12"
+#Const	Version		"2017-01-15"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -1004,6 +1004,7 @@ Frame_Countdown.Visible = Countdown_Display && StartTime >= 0;
 // Display current time
 if (Frame_Countdown.Visible) {
 	declare Integer Time;
+	declare Countdown = True;
 	
 	// ---------------------------------- //
 	// UI.CountdownEndTime is greater than zero
@@ -1024,10 +1025,11 @@ if (Frame_Countdown.Visible) {
 	else {
 		Time = GameTime - StartTime;
 		CurrentTick = -1;
+		Countdown = False;
 	}
 	
 	// Set label value
-	Label_Countdown.Value = TimeToText(Time);
+	Label_Countdown.Value = TimeToText(Time, Countdown);
 }
 
 // ---------------------------------- //
@@ -1055,14 +1057,16 @@ if (PrevTick != CurrentTick) {
 // ---------------------------------- //
 /** Compose text from given time
  *
- *	@param	_Time	Time to transform
+ *	@param	_Time		Time to transform
+ *	@param	_Decimal	Display decimal part when under minute
  *
  *	@return		Composed text
  */
-Text TimeToText(Integer _Time) {
-	if (_Time == 0) return "0:00";
+Text TimeToText(Integer _Time, Boolean _Decimal) {
+	if (_Time == 0) return "0.00";
 	declare Time = ML::Abs(_Time);
-	if (_Time < 0) Time += 1000;
+	
+	if (_Decimal && Time < 60000) return Time / 1000^"."^(Time / 100) % 10;
 	
 	declare Seconds = (Time / 1000) % 60;
 	declare Minutes = (Time / 60000) % 60;
@@ -1073,6 +1077,8 @@ Text TimeToText(Integer _Time) {
 		if (Time % 1000 < 500) Separator = " ";
 		return Hours^Separator^TL::FormatInteger(Minutes, 2);
 	}
+	
+	//if (Hours > 0) return Hours^":"^TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2);
 	return Minutes^":"^TL::FormatInteger(Seconds, 2);
 }
 

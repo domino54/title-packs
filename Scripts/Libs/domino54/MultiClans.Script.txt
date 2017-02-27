@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MULTICLANS by domino54        //
-//  script version: 2016-09-25            //
+//  script version: 2017-02-27            //
 // -------------------------------------- //
 
 /**
@@ -9,8 +9,9 @@
  */
 
 #Include "MathLib" as ML
+#Include "TextLib" as TL
 
-#Const	Version		"2016-09-25"
+#Const	Version		"2017-02-27"
 #Const	ScriptName	"MultiClans.Script.txt"
 
 // ---------------------------------- //
@@ -42,6 +43,25 @@ declare Integer[Integer] G_LibMultiClans_ClansRoundPoints;	///< Round points of 
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get array of TrackMania players
+ *
+ *	@return		TrackMania players
+ */
+CTmPlayer[] AllPlayers_TM() {
+	if (!(This is CTmMode)) return CTmPlayer[];
+	declare CPlayer[] CommonPlayers;
+	foreach (Player in AllPlayers) CommonPlayers.add(Player);
+	
+	declare CTmPlayer[] TMPlayers;
+	foreach (Player in TMPlayers) TMPlayers.add((Player as CTmPlayer));
+	return TMPlayers;
+}
 
 // ---------------------------------- //
 // Public
@@ -96,6 +116,44 @@ Integer GetPlayerClan(CPlayer _Player) {
 	declare Integer LibMultiClans_PlayerClan for _Player;
 	return LibMultiClans_PlayerClan;
 }
+
+// ---------------------------------- //
+/** Reset clan of a player
+ *
+ *	@param	_Player		The player to reset clan
+ */
+Void ResetPlayerClan(CPlayer _Player) { SetPlayerClan(_Player, 0); }
+
+// ---------------------------------- //
+/// Reset all players clans
+Void ResetAllPlayersClans() { foreach (Player in AllPlayers) ResetPlayerClan(Player); }
+
+// ---------------------------------- //
+/** Check if two players are teammates
+ *
+ *	@param	_Player1	First Player to check
+ *	@param	_Player2	Second player to check
+ *
+ *	@return		True, if players are teammates
+ */
+Boolean AreTeammates(CPlayer _Player1, CPlayer _Player2) {
+	if (_Player1 == Null || _Player2 == Null) return False;
+	declare Player1Clan = GetPlayerClan(_Player1);
+	declare Player2Clan = GetPlayerClan(_Player2);
+	
+	if (Player1Clan == 0 || Player2Clan == 0) return False;
+	return Player1Clan == Player2Clan;
+}
+
+// ---------------------------------- //
+/** Check if two players are opponents
+ *
+ *	@param	_Player1	First Player to check
+ *	@param	_Player2	Second player to check
+ *
+ *	@return		True, if players are opponents
+ */
+Boolean AreOpponents(CPlayer _Player1, CPlayer _Player2) { return !AreTeammates(_Player1, _Player2); }
 
 // ---------------------------------- //
 /** Set the name of a clan
@@ -177,6 +235,18 @@ Vec3 GetClanColor(Integer _Clan) {
 	if (G_LibMultiClans_TeamsColors.existskey(_Clan)) return G_LibMultiClans_TeamsColors[_Clan];
 	if (C_LibMultiClans_DefaultTeamsColors.existskey(_Clan - 1)) return C_LibMultiClans_DefaultTeamsColors[_Clan - 1];
 	return Vec3;
+}
+
+// ---------------------------------- //
+/** Get the colorized name of a clan
+ *
+ *	@param	_Clan	The clan to get colorized name
+ *
+ *	@return		Colorized name of the clan
+ */
+Text GetClanColorizedName(Integer _Clan) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return "";
+	return "$"^TL::ColorToText(GetClanColor(_Clan))^GetClanName(_Clan);
 }
 
 // ---------------------------------- //
@@ -347,7 +417,7 @@ Void ResetClans() {
  */
 Integer GetClanNbPlayers(Integer _Clan) {
 	declare Count = 0;
-	foreach (Player in AllPlayers) if (GetPlayerClan(Player) == _Clan) Count += 1;
+	foreach (Player in Players) if (GetPlayerClan(Player) == _Clan) Count += 1;
 	return Count;
 }
 
@@ -430,10 +500,8 @@ Integer GetClanPosition(Integer _Clan) {
  */
 Integer GetClanNbPlayersRacing(Integer _Clan) {
 	declare Count = 0;
-	foreach (Player in AllPlayers) {
-		if (!(Player is CTmPlayer)) return 0;
-		declare TmPlayer = (Player as CTmPlayer);
-		if (TmPlayer.IsSpawned && TmPlayer.RaceStartTime >= 0 && GetPlayerClan(Player) == _Clan) Count += 1;
+	foreach (Player in AllPlayers_TM()) {
+		if (Player.IsSpawned && Player.RaceStartTime >= 0 && GetPlayerClan(Player) == _Clan) Count += 1;
 	}
 	return Count;
 }
@@ -447,9 +515,7 @@ Integer GetClanNbPlayersRacing(Integer _Clan) {
  */
 Integer GetClanNbPlayersWaiting(Integer _Clan) {
 	declare Count = 0;
-	foreach (Player in AllPlayers) {
-		if (!(Player is CTmPlayer)) return 0;
-		declare TmPlayer = (Player as CTmPlayer);
+	foreach (Player in AllPlayers_TM()) {
 		if (!Player.IsSpawned && Player.RaceStartTime <= 0 && GetPlayerClan(Player) == _Clan) Count += 1;
 	}
 	return Count;

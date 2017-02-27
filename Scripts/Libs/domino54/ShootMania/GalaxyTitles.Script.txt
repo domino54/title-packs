@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-02-15            //
+//  script version: 2017-02-27            //
 // -------------------------------------- //
 
 /**
@@ -13,12 +13,13 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-02-15"
+#Const Version		"2017-02-27"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
+#Include "Libs/domino54/MultiClans.Script.txt" as Clans
 #Include "Libs/domino54/Statistics.Script.txt" as Statistics
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
 #Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
@@ -661,7 +662,8 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 					ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius ||
 					!(
 						G_LibGalaxyTitles_ObjectsAffectEveryone ||
-						(_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan)
+						(_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) ||
+						Clans::AreTeammates(Player, _Event.Player)
 					)
 				) continue;
 				
@@ -741,7 +743,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 		// Armor - heal players
 		case "Armor" : {
 			foreach (Player in Players) {
-				declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan);
+				declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) || Clans::AreTeammates(Player, _Event.Player);
 				
 				if (
 					!Affected || Player.Armor >= Player.ArmorMax ||
@@ -775,7 +777,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 		// Fuel - reload boost and stamina
 		case "Fuel" : {
 			foreach (Player in Players) {
-				declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan);
+				declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) || Clans::AreTeammates(Player, _Event.Player);
 				
 				if (!Affected || ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
 				
@@ -1198,17 +1200,79 @@ Void InitPlayer(CSmPlayer _Player) {
 Void UseConsumableItems(CSmModeEvent _Event) {
 	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnActionEvent || _Event.Player == Null) return;
 	
+	declare NbOtherPlayersAffected = 0;
+	declare Message = Text[];
+	
 	// ---------------------------------- //
 	// Use a Replie
 	if (_Event.ActionInput == CSmModeEvent::EActionInput::Consumable1) {
-		if (_Event.Player.Armor >= _Event.Player.ArmorMax) return;
+		// ---------------------------------- //
+		// Check if the replie can be used
+		declare CanUseReplie = _Event.Player.Armor < _Event.Player.ArmorMax;
+			
+		// Check if players nearby can be healed
+		if (!CanUseReplie) foreach (Player in Players) {
+			if (
+				Player.Armor >= Player.ArmorMax ||
+				ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius ||
+				!(
+					G_LibGalaxyTitles_ObjectsAffectEveryone ||
+					(_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) ||
+					Clans::AreTeammates(Player, _Event.Player)
+				)
+			) continue;
+			
+			CanUseReplie = True;
+			break;
+		}
 		
-		// Use a Replie (ignore code below if Replie was not used)
+		// Replie can't be used
+		if (!CanUseReplie) return;
+		
+		// Use Replie
 		if (!Inventory::UseItem(_Event.Player, "LibGalaxyTitles_Replie", C_LibGalaxyTitles_ReplieUseCooldown, False)) return;
-		
-		// Heal the player
-		GivePlayerArmor(_Event.Player, C_LibGalaxyTitles_ArmorHealAmount);
 		Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
+		
+		// ---------------------------------- //
+		// Heal player and their teammates
+		foreach (Player in Players) {
+			declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) || Clans::AreTeammates(Player, _Event.Player);
+			
+			if (
+				!Affected || Player.Armor >= Player.ArmorMax ||
+				ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius
+			)
+				continue;
+			
+			// Heal the player
+			GivePlayerArmor(Player, C_LibGalaxyTitles_ArmorHealAmount);
+			
+			// ---------------------------------- //
+			// Notify player about who healed them
+			if (Player == _Event.Player) continue;
+			NbOtherPlayersAffected += 1;
+			
+			Interfancy::SendCrosshairNote(
+				Player, ["$<%1$> healed you!", _Event.Player.Name],
+				C_LibGalaxyTitles_NoteDisplayTime
+			);
+		}
+		
+		// ---------------------------------- //
+		// Notify player how many teammates they've healed
+		if (NbOtherPlayersAffected > 0) {
+			if (NbOtherPlayersAffected > 1) Message = ["Healed %1 players", TL::ToText(NbOtherPlayersAffected)];
+			else Message = ["Healed 1 player"];
+			Statistics::TrackEvent(_Event.Player, "PlayersHealed", NbOtherPlayersAffected);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Send notice and give points if player has affected somebody
+	if (NbOtherPlayersAffected > 0) {
+		Interfancy::SendCrosshairNote(_Event.Player, Message, C_LibGalaxyTitles_NoteDisplayTime);
+		Score::AddPoints(_Event.Player, NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
+		TopScores::AddPoints(_Event.Player.Score, "Support", NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
 	}
 }
 

@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-01-15            //
+//  script version: 2017-02-27            //
 // -------------------------------------- //
 
 /**
  *	Works only in the title pack "GalaxyTitles@domino54".
- *	This library features a lot of custom interface
- *	replacement modules, which can be used in all game modes.
+ *	This library features a lot of custom interface replacement
+ *	modules, which can be used in all game modes.
  *
  *	Available modules:
  *	- Gauges		Replaces gauges, moves chat and features reload boost indicator
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-01-15"
+#Const	Version		"2017-02-27"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -104,9 +104,9 @@ Text Private_CreateUnivarsalGaugeModel() {
 }
 
 // ---------------------------------- //
-/** Create the Gauge module manialink
+/** Create the gauges module manialink
  *
- *	@return		The Gauges module manialink
+ *	@return		The gauges module manialink
  */
 Text Private_CreateManialinkGauges() {
 	return """
@@ -270,10 +270,11 @@ declare DisplayArmor = True;
 declare DisplayAmmo = True;
 declare DisplayStamina = True;
 
-declare Vec3 InterfaceColor;
+declare InterfaceColor = <1., 1., 1.>;
 declare StaminaDisplayEndTime = -1;
 declare Integer[Text] PlayerIsOnTechArmor;
 declare ShowReloadBoost = False;
+declare GUIPlayerClan = 0;
 
 declare Boolean[Text] FrameVisible;
 declare Real[Text] ModuleRatio;
@@ -283,9 +284,12 @@ declare Text[Text] ModuleIcon;
 
 /// Update
 declare PrevGauges_Display = False;
-declare Text PrevGUIPlayerLogin;
-declare Integer PrevGUIPlayerCurWeapon;
-declare Vec3 PrevInterfaceColor;
+declare PrevGUIPlayerLogin = "";
+declare PrevGUIPlayerCurWeapon = 0;
+declare PrevGUIPlayerClan = 0;
+declare PrevGUIPlayerUserColor = Vec3;
+declare PrevGUIPlayerForcedColor = Vec3;
+declare PrevInterfaceColor = Vec3;
 declare PrevShowReloadBoost = False;
 
 declare Boolean[Text] PrevFrameVisible;
@@ -329,17 +333,33 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 }
 
 // ---------------------------------- //
-// Update interface colour
+// Get the interface color from the player
 if (GUIPlayer != Null) {
-	// Use the colour of current clan
-	if (GUIPlayer.CurrentClan > 0) InterfaceColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+	if (GUIPlayer.CurrentClan != GUIPlayerClan) GUIPlayerClan = GUIPlayer.CurrentClan;
 	
-	// Use colour forced by the mode
-	else if (Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.Login))
-		InterfaceColor = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
-	
-	// Use the player favourite colour
-	else InterfaceColor = GUIPlayer.User.Color;
+	if (GUIPlayerClan == 0) {
+		// ---------------------------------- //
+		// Use the player's forced color
+		if (Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login)) {
+			if (Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login] != PrevGUIPlayerForcedColor) {
+				PrevGUIPlayerForcedColor = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
+				InterfaceColor = PrevGUIPlayerForcedColor;
+			}
+		}
+		// ---------------------------------- //
+		// Uer player's profile color
+		else if (PrevGUIPlayerUserColor != GUIPlayer.User.Color) {
+			PrevGUIPlayerUserColor = GUIPlayer.User.Color;
+			InterfaceColor = PrevGUIPlayerUserColor;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update color on player clan change
+if (PrevGUIPlayerClan != GUIPlayerClan) {
+	PrevGUIPlayerClan = GUIPlayerClan;
+	if (Teams.existskey(GUIPlayerClan - 1)) InterfaceColor = Teams[GUIPlayerClan - 1].ColorPrimary;
 }
 
 // ---------------------------------- //
@@ -349,18 +369,16 @@ if (PrevInterfaceColor != InterfaceColor) {
 	
 	foreach (Module in C_AvailableModules) {
 		foreach (Gauge in G_Gauges[Module]) Gauge.Color = InterfaceColor;
-		
 		declare BrightTextColor = Brightness(InterfaceColor, 4.);
 		Label_ModuleInfoText[Module].TextColor = BrightTextColor;
 		Label_ModuleInfoGhost[Module].TextColor = BrightTextColor;
 	}
+	
 	Gauge_ReloadBoost.Color = InterfaceColor;
 }
 
-// ---------------------------------- //
 // Hide full stamina bar after some delay
-if (GUIPlayer != Null && GUIPlayer.Stamina < GUIPlayer.StaminaMax * 3600)
-	StaminaDisplayEndTime = Now + C_StaminaDisplayTime;
+if (GUIPlayer != Null && GUIPlayer.Stamina < GUIPlayer.StaminaMax * 3600) StaminaDisplayEndTime = Now + C_StaminaDisplayTime;
 
 // ---------------------------------- //
 // Set the chat offset
@@ -374,13 +392,14 @@ if (PrevGauges_Display != Gauges_Display) {
 // ---------------------------------- //
 // Get for how long players are loading their armor
 foreach (Player in Players) {
-	if (Player.RequestsSpectate || Player.IsBot || Player.Position == <0., 0., 0.>) continue;
+	if (Player.RequestsSpectate || Player.IsBot || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 	
-	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && Player.Armor > 0 && Player.IsOnTechArmor) {
-		if (!PlayerIsOnTechArmor.existskey(Player.Login) || PlayerIsOnTechArmor[Player.Login] <= 0)
-			PlayerIsOnTechArmor[Player.Login] = GameTime;
+	if (Player.IsOnTechArmor) {
+		if (!PlayerIsOnTechArmor.existskey(Player.User.Login)) PlayerIsOnTechArmor[Player.User.Login] = GameTime;
 	}
-	else PlayerIsOnTechArmor[Player.Login] = -1;
+	else if (PlayerIsOnTechArmor.existskey(Player.User.Login)) {
+		declare Removed = PlayerIsOnTechArmor.removekey(Player.User.Login);
+	}
 }
 
 // ---------------------------------- //
@@ -406,9 +425,9 @@ foreach (Module in C_AvailableModules) {
 		declare Real PosY;
 		
 		switch (Module) {
-			case "Armor" : PosY = {{{C_LibInterfancy_ArmorPos.Y}}};
-			case "Stamina" : PosY = {{{C_LibInterfancy_StaminaPos.Y}}};
-			case "Ammo" : PosY = {{{C_LibInterfancy_AmmunitionPos.Y}}};
+			case "Armor"	: PosY = {{{C_LibInterfancy_ArmorPos.Y}}};
+			case "Stamina"	: PosY = {{{C_LibInterfancy_StaminaPos.Y}}};
+			case "Ammo"		: PosY = {{{C_LibInterfancy_AmmunitionPos.Y}}};
 		}
 		
 		if (!FrameVisible[Module]) {
@@ -429,11 +448,8 @@ foreach (Module in C_AvailableModules) {
 		// Armor module
 		case "Armor" : {
 			declare GUIPlayerArmorLoaded = 0.;
-			if (
-				GUIPlayer.Armor % 100 == 0 &&
-				PlayerIsOnTechArmor.existskey(GUIPlayer.Login) && PlayerIsOnTechArmor[GUIPlayer.Login] >= 0
-			)
-				GUIPlayerArmorLoaded = (GameTime - PlayerIsOnTechArmor[GUIPlayer.Login]) % 1850 / 1850.;
+			if (PlayerIsOnTechArmor.existskey(GUIPlayer.User.Login))
+				GUIPlayerArmorLoaded = (GameTime - PlayerIsOnTechArmor[GUIPlayer.User.Login]) % 1850 / 1850.;
 			
 			ModuleRatio[Module] = GUIPlayer.Armor / 100. + GUIPlayerArmorLoaded;
 			ModuleSlots[Module] = GUIPlayer.ArmorMax / 100;
@@ -498,11 +514,6 @@ foreach (Module in C_AvailableModules) {
 	}
 	
 	// ---------------------------------- //
-	// Format counter
-	if (Module != "Stamina")
-		Label_ModuleCounter[Module].Value = ML::FloorInteger(ModuleRatio[Module])^"$777/"^ModuleSlots[Module];
-	
-	// ---------------------------------- //
 	// Update gauges ratio
 	if (
 		!PrevModuleRatio.existskey(Module) || !PrevModuleSlots.existskey(Module) ||
@@ -511,9 +522,12 @@ foreach (Module in C_AvailableModules) {
 	) {
 		SetModuleRatio(Module, ModuleRatio[Module], ModuleSlots[Module]);
 		
+		if (Module != "Stamina")
+			Label_ModuleCounter[Module].Value = ML::FloorInteger(ModuleRatio[Module])^"$777/"^ModuleSlots[Module];
+		
 		// ---------------------------------- //
 		// Play the interface sounds
-		if (PrevGUIPlayerLogin == GUIPlayer.Login && PrevModuleRatio.existskey(Module) && PrevModuleRatio[Module] > -1) {
+		if (PrevGUIPlayerLogin == GUIPlayer.User.Login && PrevModuleRatio.existskey(Module) && PrevModuleRatio[Module] > -1) {
 			if (ML::FloorInteger(ModuleRatio[Module]) > PrevModuleRatio[Module]) {
 				switch (Module) {
 					// ---------------------------------- //
@@ -585,8 +599,8 @@ foreach (Module in C_AvailableModules) {
 // ---------------------------------- //
 // Reload boost
 ShowReloadBoost = (
-	GUIPlayer != Null && Net_LibInterfancy_ReloadData.existskey(GUIPlayer.Login) &&
-	GameTime <= Net_LibInterfancy_ReloadData[GUIPlayer.Login].X + Net_LibInterfancy_ReloadData[GUIPlayer.Login].Y
+	GUIPlayer != Null && Net_LibInterfancy_ReloadData.existskey(GUIPlayer.User.Login) &&
+	GameTime <= Net_LibInterfancy_ReloadData[GUIPlayer.User.Login].X + Net_LibInterfancy_ReloadData[GUIPlayer.User.Login].Y
 );
 
 // ---------------------------------- //
@@ -612,15 +626,15 @@ if (PrevShowReloadBoost != ShowReloadBoost) {
 // ---------------------------------- //
 // Setup boost gauge
 if (ShowReloadBoost) {
-	declare BoostStartTime = Net_LibInterfancy_ReloadData[GUIPlayer.Login].X;
-	declare BoostDuration = Net_LibInterfancy_ReloadData[GUIPlayer.Login].Y;
+	declare BoostStartTime = Net_LibInterfancy_ReloadData[GUIPlayer.User.Login].X;
+	declare BoostDuration = Net_LibInterfancy_ReloadData[GUIPlayer.User.Login].Y;
 	Gauge_ReloadBoost.Size.X = 20 * (1. - ML::ToReal(GameTime - BoostStartTime) / BoostDuration) + 4.;
 	Label_BoostTimer.Value = TL::ToText((BoostStartTime + BoostDuration - GameTime) / 1000 + 1);
 }
 
 // Update player
 if (GUIPlayer != Null) {
-	if (PrevGUIPlayerLogin != GUIPlayer.Login) PrevGUIPlayerLogin = GUIPlayer.Login;
+	if (PrevGUIPlayerLogin != GUIPlayer.User.Login) PrevGUIPlayerLogin = GUIPlayer.User.Login;
 	if (PrevGUIPlayerCurWeapon != GUIPlayer.CurWeapon) PrevGUIPlayerCurWeapon = GUIPlayer.CurWeapon;
 }
 ***
@@ -661,6 +675,7 @@ Void SetIconImage(CMlQuad _Quad, Text _Image) {
  */
 Void SetModuleRatio(Text _Module, Real _Energy, Integer _Slots) {
 	if (!G_Gauges.existskey(_Module)) return;
+	declare persistent Persistent_LibInterfancy_ShowGaugesBgs for LocalUser = False;
 	declare Gauges = G_Gauges[_Module];
 	
 	// ---------------------------------- //
@@ -684,6 +699,7 @@ Void SetModuleRatio(Text _Module, Real _Energy, Integer _Slots) {
 			
 			Gauge.Size.X = GaugeSlotSize;
 			Gauge.RelativePosition.X = (GaugeSlotSize - C_GaugePositionFix) * I - C_GaugePositionFix / 2;
+			Gauge.DrawBlockBackground = Persistent_LibInterfancy_ShowGaugesBgs;
 			if (I > 0) Gauge.RelativePosition.X += C_GaugeSpacingWidth * I;
 		}
 	}
@@ -734,9 +750,9 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the score summary module
+/** Create the manialink for the score summary module.
  *
- *	@return		The manialink
+ *	@return		The score summary manialink.
  */
 Text Private_CreateManialinkScoreSummary() {
 	return """
@@ -850,15 +866,14 @@ ClanRoundScores = [1 => UI.ScoreSummary_RoundPoints1, 2 => UI.ScoreSummary_Round
 // ---------------------------------- //
 // Update teams colors
 foreach (TeamId => Team in Teams) {
-	if (PrevTeamsColors[TeamId] != Team.ColorPrimary) {
-		PrevTeamsColors[TeamId] = Team.ColorPrimary;
+	if (PrevTeamsColors[TeamId] == Team.ColorPrimary) continue;
+	PrevTeamsColors[TeamId] = Team.ColorPrimary;
+
+	LibManialink_AnimStop(Quad_SummaryBgLeft);
+	LibManialink_AnimStop(Quad_SummaryBgRight);
 	
-		LibManialink_AnimStop(Quad_SummaryBgLeft);
-		LibManialink_AnimStop(Quad_SummaryBgRight);
-		
-		Quad_SummaryBgLeft.Colorize = Brightness(Teams[0].ColorPrimary, 1.5);
-		Quad_SummaryBgRight.Colorize = Brightness(Teams[1].ColorPrimary, 1.5);
-	}
+	Quad_SummaryBgLeft.Colorize = Brightness(Teams[0].ColorPrimary, 1.5);
+	Quad_SummaryBgRight.Colorize = Brightness(Teams[1].ColorPrimary, 1.5);
 }
 
 // ---------------------------------- //
@@ -898,8 +913,8 @@ for (Clan, 1, 2) {
 	// ---------------------------------- //
 	// Set round scores
 	if (
-		ClanRoundScores.existskey(Clan) && (!PrevClanRoundScores.existskey(Clan) ||
-		PrevClanRoundScores[Clan] != ClanRoundScores[Clan])
+		ClanRoundScores.existskey(Clan) &&
+		(!PrevClanRoundScores.existskey(Clan) || PrevClanRoundScores[Clan] != ClanRoundScores[Clan])
 	) {
 		PrevClanRoundScores[Clan] = ClanRoundScores[Clan];
 		
@@ -932,9 +947,9 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the countdown module
+/** Create the manialink for the countdown module.
  *
- *	@return		The manialink
+ *	@return		The countdown manialink.
  */
 Text Private_CreateManialinkCountdown() {
 	return """
@@ -950,6 +965,8 @@ Text Private_CreateManialinkCountdown() {
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
+
+#Const C_CountdownSongsNames ["Countdown1Compressed.ogg"]
 
 // ---------------------------------- //
 // Main
@@ -969,12 +986,15 @@ declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 // ---------------------------------- //
 // Varialbes
 declare Countdown_Display = False;
+declare ScoreSummary_Display = False;
 declare StartTime = -1;
 declare EndTime = -1;
 declare CurrentTick = -1;
 
 declare PrevSettingsUpdate = -1;
 declare PrevTick = -1;
+
+//declare CountdownMusic = Audio.CreateSound("{{{C_ImgBase}}}Sounds/"^C_CountdownSongsNames[0], 0., True, False, False);
 ***
 
 // ---------------------------------- //
@@ -990,6 +1010,7 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
 			case "Countdown_Display" : Countdown_Display = SettingValue == "True";
+			case "ScoreSummary_Display" : ScoreSummary_Display = SettingValue == "True";
 			case "StartTime" : StartTime = TL::ToInteger(SettingValue);
 			case "EndTime" : EndTime = TL::ToInteger(SettingValue);
 		}
@@ -1029,7 +1050,7 @@ if (Frame_Countdown.Visible) {
 	}
 	
 	// Set label value
-	Label_Countdown.Value = TimeToText(Time, Countdown);
+	Label_Countdown.Value = TimeToText(Time, Countdown, ScoreSummary_Display && UseClans);
 }
 
 // ---------------------------------- //
@@ -1048,6 +1069,15 @@ if (PrevTick != CurrentTick) {
 		LibManialink_Anim(Label_Countdown, "<label scale=1 textcolor=FB0 rot=0 />", 1000, "EaseOutCirc");
 	}
 }
+
+/*
+if (EndTime > 0 && EndTime - GameTime < 30000 && GameTime < EndTime) {
+	if (!CountdownMusic.IsPlaying) {
+		CountdownMusic.Play();
+		CountdownMusic.PlayCursor = (30 - EndTime - GameTime) / 1000.;
+	}
+}
+*/
 ***
 
 // ---------------------------------- //
@@ -1059,10 +1089,11 @@ if (PrevTick != CurrentTick) {
  *
  *	@param	_Time		Time to transform
  *	@param	_Decimal	Display decimal part when under minute
+ *	@param	_CompactHr	Show campact version of hour time
  *
  *	@return		Composed text
  */
-Text TimeToText(Integer _Time, Boolean _Decimal) {
+Text TimeToText(Integer _Time, Boolean _Decimal, Boolean _CompactHr) {
 	if (_Time == 0) return "0.00";
 	declare Time = ML::Abs(_Time);
 	
@@ -1072,13 +1103,13 @@ Text TimeToText(Integer _Time, Boolean _Decimal) {
 	declare Minutes = (Time / 60000) % 60;
 	declare Hours = Time / 3600000;
 	
-	if (Hours > 0) {
+	if (_CompactHr && Hours > 0) {
 		declare Separator = ":";
 		if (Time % 1000 < 500) Separator = " ";
 		return Hours^Separator^TL::FormatInteger(Minutes, 2);
 	}
 	
-	//if (Hours > 0) return Hours^":"^TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2);
+	if (Hours > 0) return Hours^":"^TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2);
 	return Minutes^":"^TL::FormatInteger(Seconds, 2);
 }
 
@@ -1100,9 +1131,9 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the spectator information module
+/** Create the manialink for the spectator information module.
  *
- *	@return		The manialink
+ *	@return		The spectator information manialink.
  */
 Text Private_CreateManialinkSpecInfo() {
 	return """
@@ -1200,12 +1231,12 @@ for (I, 0, 1) if (PrevTeamsColors[I] != Teams[I].ColorPrimary) {
 
 // ---------------------------------- //
 // Update player information
-if (PrevGUIPlayerLogin != GUIPlayer.Login) {
-	PrevGUIPlayerLogin = GUIPlayer.Login;
+if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
+	PrevGUIPlayerLogin = GUIPlayer.User.Login;
 	
 	// ---------------------------------- //
 	// Update name
-	declare PlayerName = GUIPlayer.Login;
+	declare PlayerName = GUIPlayer.User.Login;
 	if (TL::Length(TL::StripFormatting(GUIPlayer.User.Name)) > 3) PlayerName = GUIPlayer.User.Name;
 	Label_PlayerName.SetText(PlayerName);
 	
@@ -1263,9 +1294,9 @@ main() {
 }
 
 // ---------------------------------- //
-/** Create the manialink for the crosshair module
+/** Create the manialink for the crosshair module.
  *
- *	@return		The manialink
+ *	@return		The crosshair manialink.
  */
 Text Private_CreateManialinkCrosshair() {
 	return """
@@ -1338,6 +1369,8 @@ declare persistent Persistent_LibInterfancy_UseCustomCrosshair for LocalUser = T
 
 // ---------------------------------- //
 // Netcode
+declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
+declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 declare netread Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
 declare netread Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
 
@@ -1348,12 +1381,14 @@ declare AnimateCrosshair = False;
 declare UpdateNote = True;
 declare CrosshairNote = "";
 declare CrosshairNoteTime = -1;
+declare SpawnInvulnerabilityDuration = 2000;
 
 declare PrevGUIPlayerLogin = "";
 declare PrevAmmoCount = 0;
 declare PrevCurWeapon = 0;
 declare PrevCrosshairNote = "";
 declare PrevCrosshairNoteTime = -1;
+declare PrevSettingsUpdate = -1;
 ***
 
 // ---------------------------------- //
@@ -1370,6 +1405,18 @@ foreach (Event in PendingEvents) {
 }
 
 // ---------------------------------- //
+// Update settings
+if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
+	PrevSettingsUpdate = Net_LibInterfancy_SettingsUpdate;
+	
+	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
+		switch (SettingName) {
+			case "SpawnInvulnerabilityDuration" : SpawnInvulnerabilityDuration = TL::ToInteger(SettingValue);
+		}
+	}
+}
+
+// ---------------------------------- //
 // Set crosshair visibility
 ClientUI.OverlayHideCrosshair = !Crosshair_Display || Persistent_LibInterfancy_UseCustomCrosshair;
 Frame_Crosshair.Visible =
@@ -1379,8 +1426,8 @@ Frame_Crosshair.Visible =
 
 // ---------------------------------- //
 // Update GUIPlayer
-if (GUIPlayer != Null && PrevGUIPlayerLogin != GUIPlayer.Login) {
-	PrevGUIPlayerLogin = GUIPlayer.Login;
+if (GUIPlayer != Null && PrevGUIPlayerLogin != GUIPlayer.User.Login) {
+	PrevGUIPlayerLogin = GUIPlayer.User.Login;
 	PrevAmmoCount = 0;
 	PrevCurWeapon = 0;
 }
@@ -1389,7 +1436,7 @@ if (GUIPlayer != Null && PrevGUIPlayerLogin != GUIPlayer.Login) {
 // Manage crosshair
 if (Frame_Crosshair.Visible) {
 	Quad_CrosshairDot.Visible = GUIPlayer.CurWeapon != 5;
-	Frame_CrosshairGauge.Visible = GUIPlayer.CurAmmo < GUIPlayer.CurAmmoUnit;
+	Frame_CrosshairGauge.Visible = GUIPlayer.CurAmmo < GUIPlayer.CurAmmoUnit || GameTime - GUIPlayer.StartTime < SpawnInvulnerabilityDuration;
 	
 	Quad_CrosshairLaser.Visible = GUIPlayer.CurWeapon == 1;
 	Quad_CrosshairRocket.Visible = GUIPlayer.CurWeapon == 2;
@@ -1414,6 +1461,8 @@ if (Frame_Crosshair.Visible) {
 	// Display Gauge
 	if (Frame_CrosshairGauge.Visible) {
 		declare Ratio = ML::ToReal(GUIPlayer.CurAmmo) / GUIPlayer.CurAmmoUnit;
+		if (GameTime - GUIPlayer.StartTime < 2000) Ratio = ML::ToReal(GameTime - GUIPlayer.StartTime) / SpawnInvulnerabilityDuration;
+		
 		Quad_GaugeRight.RelativeRotation = ML::Clamp(Ratio, 0., .5) * 360 - 180;
 		Quad_GaugeLeft.RelativeRotation = ML::Clamp(Ratio, .5, 1.) * 360 - 180;
 		
@@ -1447,8 +1496,8 @@ if (AnimateCrosshair) {
 // ---------------------------------- //
 // Update note on GUIPlayer change
 if (GUIPlayer != Null) {
-	if (PrevGUIPlayerLogin != GUIPlayer.Login) {
-		PrevGUIPlayerLogin = GUIPlayer.Login;
+	if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
+		PrevGUIPlayerLogin = GUIPlayer.User.Login;
 		UpdateNote = True;
 	}
 } else if (PrevGUIPlayerLogin != "") {
@@ -1458,9 +1507,9 @@ if (GUIPlayer != Null) {
 
 // ---------------------------------- //
 // Get the current player crosshair note end time
-if (GUIPlayer != Null && Net_LibInterfancy_CrosshairNoteTime.existskey(GUIPlayer.Login)) {
-	if (GameTime < Net_LibInterfancy_CrosshairNoteTime[GUIPlayer.Login]) {
-		CrosshairNoteTime = Net_LibInterfancy_CrosshairNoteTime[GUIPlayer.Login];
+if (GUIPlayer != Null && Net_LibInterfancy_CrosshairNoteTime.existskey(GUIPlayer.User.Login)) {
+	if (GameTime < Net_LibInterfancy_CrosshairNoteTime[GUIPlayer.User.Login]) {
+		CrosshairNoteTime = Net_LibInterfancy_CrosshairNoteTime[GUIPlayer.User.Login];
 	} else CrosshairNoteTime = -1;
 } else CrosshairNoteTime = -1;
 
@@ -1475,8 +1524,8 @@ if (PrevCrosshairNoteTime != CrosshairNoteTime) {
 // Update note text
 if (UpdateNote) {
 	UpdateNote = False;
-	if (PrevCrosshairNoteTime > 0 && Net_LibInterfancy_CrosshairNote.existskey(GUIPlayer.Login))
-		CrosshairNote = TL::GetTranslatedText(Translate(Net_LibInterfancy_CrosshairNote[GUIPlayer.Login]));
+	if (PrevCrosshairNoteTime > 0 && Net_LibInterfancy_CrosshairNote.existskey(GUIPlayer.User.Login))
+		CrosshairNote = TL::GetTranslatedText(Translate(Net_LibInterfancy_CrosshairNote[GUIPlayer.User.Login]));
 	else
 		CrosshairNote = "";
 }
@@ -1527,26 +1576,26 @@ main() {
 // ---------------------------------- //
 
 // ---------------------------------- //
-/** Return the version number of the script
+/** Return the version number of the script.
  *
- *	@return		The version number of the script
+ *	@return		The version number of the script.
  */
 Text GetScriptVersion() { return Version; }
 
 // ---------------------------------- //
-/** Return the name of the script
+/** Return the name of the script.
  *
- *	@return		The name of the script
+ *	@return		The name of the script.
  */
 Text GetScriptName() { return ScriptName; }
 
 // ---------------------------------- //
-/** Display a module
+/** Set visibility of a module.
  *
- *	@param	_ModuleName		The name of the module to set
- *	@param	_Display		Show or not the module
+ *	@param	_ModuleName		Name of the module to set visibilty.
+ *	@param	_Visible		If True, the module will be visible.
  */
-Void SetModuleVisibility(Text _ModuleName, Boolean _Display) {
+Void SetModuleVisibility(Text _ModuleName, Boolean _Visible) {
 	if (Private_ModuleIsLoaded(_ModuleName)) {
 		switch (_ModuleName) {
 			case "Gauges"		: UIManager.UIAll.OverlayHideGauges = True;
@@ -1556,23 +1605,23 @@ Void SetModuleVisibility(Text _ModuleName, Boolean _Display) {
 		}
 	} else {
 		switch (_ModuleName) {
-			case "Gauges"		: UIManager.UIAll.OverlayHideGauges = !_Display;
-			case "Countdown"	: UIManager.UIAll.OverlayHideCountdown = !_Display;
-			case "SpecInfo"		: UIManager.UIAll.OverlayHideSpectatorInfos = !_Display;
-			case "Crosshair"	: UIManager.UIAll.OverlayHideCrosshair = !_Display;
-			case "321Go"		: UIManager.UIAll.OverlayHide321Go = !_Display;
+			case "Gauges"		: UIManager.UIAll.OverlayHideGauges = !_Visible;
+			case "Countdown"	: UIManager.UIAll.OverlayHideCountdown = !_Visible;
+			case "SpecInfo"		: UIManager.UIAll.OverlayHideSpectatorInfos = !_Visible;
+			case "Crosshair"	: UIManager.UIAll.OverlayHideCrosshair = !_Visible;
+			case "321Go"		: UIManager.UIAll.OverlayHide321Go = !_Visible;
 		}
 	}
-	G_LibInterfancy_ModuleVisibility[_ModuleName] = _Display;
-	Private_SetModuleSetting(_ModuleName^"_Display", TL::ToText(_Display));
+	G_LibInterfancy_ModuleVisibility[_ModuleName] = _Visible;
+	Private_SetModuleSetting(_ModuleName^"_Display", TL::ToText(_Visible));
 }
 
 // ---------------------------------- //
-/** Get the visibility of a module
+/** Get visibility of a module.
  *
- *	@param	_ModuleName		The name of the module to get
+ *	@param	_ModuleName		Name of the module to get its visibility.
  *
- *	@return					True if the module is visible, False otherwise
+ *	@return		True when the module is visible, False otherwise.
  */
 Boolean GetModuleVisibility(Text _ModuleName) {
 	if (Private_ModuleIsLoaded(_ModuleName) && G_LibInterfancy_ModuleVisibility.existskey(_ModuleName))
@@ -1588,46 +1637,50 @@ Boolean GetModuleVisibility(Text _ModuleName) {
 }
 
 // ---------------------------------- //
-/** Set icon images used in the Gauges module
+/** Load new or replace existing icons in the gauges module.
+ *	You can load custom weapons icons, they will appear when
+ *	player has custom weapon name specified and icon with such
+ *	name has been set.
  *
- *	@param	_IconImages		Icon images. Can be both image or style.
+ *	@param	_IconsImages	Array of gauges icons keyed by their names. Images can be both links
+ *							to icons files or an existing game style in format "Style|Substyle".
  */
-Void SetGaugesIconsImages(Text[Text] _IconImages) {
-	if (_IconImages.count <= 0) return;
-	foreach (Icon => Image in _IconImages) Private_SetModuleSetting("Gauges_Icon"^Icon, Image);
+Void SetGaugesIconsImages(Text[Text] _IconsImages) {
+	if (_IconsImages.count <= 0) return;
+	foreach (Icon => Image in _IconsImages) Private_SetModuleSetting("Gauges_Icon"^Icon, Image);
 }
 
 // ---------------------------------- //
-/** Set round points visibility in scores summary
+/** Set visibility of the round points in scores summary.
  *
- *	@param	_Visible	Round points visibility
+ *	@param	_Visible	If True, round points will be seen aside of the normal points.
  */
 Void SetRoundPointsVisibility(Boolean _Visible) {
 	Private_SetModuleSetting("ScoreSummary_ShowRoundPoints", TL::ToText(_Visible));
 }
 
 // ---------------------------------- //
-/** Display crosshair message
+/** Display a notice under player's crosshair.
  *
- *	@param	_Player			The player to display message
- *	@param	_NoteParams		Message parameters
- *	@param	_Duration		Duration of the message
+ *	@param	_Player		The player to display crosshair notice.
+ *	@param	_Message	Array of message elements to by the client, first one being the base of the message.
+ *	@param	_Duration	Display duration of the crosshair notice.
  */
-Void SendCrosshairNote(CSmPlayer _Player, Text[] _NoteParams, Integer _Duration) {
-	if (_Player == Null || _Player.IsBot || _Player.IsFakePlayer || _NoteParams.count <= 0 || _NoteParams[0] == "") return;
+Void SendCrosshairNote(CSmPlayer _Player, Text[] _Message, Integer _Duration) {
+	if (_Player == Null || _Player.IsBot || _Player.IsFakePlayer || _Message.count <= 0 || _Message[0] == "") return;
 	
 	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
 	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
 	
-	Net_LibInterfancy_CrosshairNote[_Player.User.Login] = _NoteParams;
+	Net_LibInterfancy_CrosshairNote[_Player.User.Login] = _Message;
 	Net_LibInterfancy_CrosshairNoteTime[_Player.User.Login] = Now + _Duration;
 }
 
 // ---------------------------------- //
-/** Display near miss message
+/** Display near miss notice under player's crosshair.
  *
- *	@param	_Player		The player to display message
- *	@param	_Distance	Miss distance
+ *	@param	_Player		The player to display near miss notice.
+ *	@param	_Distance	Distance of the near miss event.
  */
 Void DisplayNearMiss(CSmPlayer _Player, Real _Distance) {
 	if (_Player == Null || _Player.IsBot || _Player.IsFakePlayer || _Distance <= 0 || _Distance > 1) return;
@@ -1649,11 +1702,11 @@ Void DisplayNearMiss(CSmPlayer _Player, Real _Distance) {
 }
 
 // ---------------------------------- //
-/** Set player reload boost data
+/** Update player's reload speed boost information.
  *
- *	@param	_Player			Player to set data
- *	@param	_StartTime		Reload boost start time
- *	@param	_Duration		Reload boost duration
+ *	@param	_Player			The player to update boost information.
+ *	@param	_StartTime		Reload speed boost start time.
+ *	@param	_Duration		Duration of the reload speed boost.
  */
 Void SetPlayerReloadData(CSmPlayer _Player, Integer _StartTime, Integer _Duration) {
 	if (_Player == Null) return;
@@ -1662,36 +1715,70 @@ Void SetPlayerReloadData(CSmPlayer _Player, Integer _StartTime, Integer _Duratio
 }
 
 // ---------------------------------- //
-/** Force interface colour for a player
+/** Change player's interface and character color.
  *
- *	@param	_Player		The player to force colour
- *	@param	_Color		The colour to force
+ *	@param	_Player		The player to set color.
+ *	@param	_Color		Color to apply to the player.
  */
 Void ForceColor(CSmPlayer _Player, Vec3 _Color) {
 	if (_Player == Null) return;
-	
-	declare Color = _Color;
-	for (I, 0, 2) Color[I] = ML::Clamp(Color[I], 0., 1.);
-	_Player.ForceColor = _Color;
-	
 	declare netwrite Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
-	Net_LibInterfancy_ForcedColors[_Player.User.Login] = Color;
+	
+	// Set player forced color
+	if (_Color != <-1., -1., -1.>) {
+		declare Color = _Color;
+		for (I, 0, 2) Color[I] = ML::Clamp(Color[I], 0., 1.);
+		Net_LibInterfancy_ForcedColors[_Player.User.Login] = Color;
+		_Player.ForceColor = Color;
+	}
+	
+	// Reset forced color
+	else {
+		declare Removed = Net_LibInterfancy_ForcedColors.removekey(_Player.User.Login);
+		_Player.ForceColor = <-1., -1., -1.>;
+	}
 }
 
-Void SetPlayerCustomWeapon(CSmPlayer _Player, Text _CustomWeapon) {
+// ---------------------------------- //
+/** Reset custom color of a player.
+ *
+ *	@param	_Player		The player to reset custom forced color.
+ */
+Void ResetColor(CSmPlayer _Player) {
+	ForceColor(_Player, <-1., -1., -1.>);
+}
+
+// ---------------------------------- //
+/** Change the name of weapon currently worn by a player.
+ *
+ *	@param	_Player		The player to change current weapon name.
+ *	@param	_Name		The custom name of weapon to set.
+ */
+Void SetPlayerCustomWeapon(CSmPlayer _Player, Text _Name) {
 	if (_Player == Null || _Player.IsBot) return;
-	
 	declare netwrite Text[Text] Net_LibInterfancy_PlayersWeaponsNames for Teams[0];
 	
-	if (_CustomWeapon != "") Net_LibInterfancy_PlayersWeaponsNames[_Player.User.Login] = _CustomWeapon;
+	// Set custom name
+	if (_Name != "") Net_LibInterfancy_PlayersWeaponsNames[_Player.User.Login] = _Name;
 	
+	// Remove custom name
 	else if (Net_LibInterfancy_PlayersWeaponsNames.existskey(_Player.User.Login)) {
 		declare Removed = Net_LibInterfancy_PlayersWeaponsNames.removekey(_Player.User.Login);
 	}
 }
 
 // ---------------------------------- //
-/// Reset all library net data
+/** Set spawn invulnerability duration.
+ *
+ *	@param	_Duration	Time for how long all players are unable to interact with otherss after being spawned.
+ */
+Void SetSpawnInvulnerabilityDuration(Integer _Duration) {
+	SpawnInvulnerabilityDuration = _Duration;
+	Private_SetModuleSetting("SpawnInvulnerabilityDuration", TL::ToText(_Duration));
+}
+
+// ---------------------------------- //
+/// Reset all data sent through network by the library.
 Void ClearData() {
 	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
 	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
@@ -1707,9 +1794,9 @@ Void ClearData() {
 }
 
 // ---------------------------------- //
-/** Load a module
+/** Load a module by its name.
  *
- *	@param	_ModuleId		The name of the module to load
+ *	@param	_ModuleId	Name of the module to load.
  */
 Void LoadModule(Text _ModuleId) {
 	if (Private_ModuleIsLoaded(_ModuleId)) return;
@@ -1728,16 +1815,16 @@ Void LoadModule(Text _ModuleId) {
 }
 
 // ---------------------------------- //
-/** Load several modules
+/** Load several modules by their names.
  *
- *	@param	_ModulesIds		A list of modules to load with the library
+ *	@param	_ModulesIds		An array with names of modules to load with the library.
  */
 Void LoadModules(Text[] _ModulesIds) { foreach (ModuleId in _ModulesIds) LoadModule(ModuleId); }
 
 // ---------------------------------- //
-/** Unload a module
+/** Unload a module by its name.
  *
- *	@param	_ModuleId		The name of the module to unload
+ *	@param	_ModuleId		Name of the module to unload.
  */
 Void UnloadModule(Text _ModuleId) {
 	declare Removed = G_LibInterfancy_ModulesLoaded.remove(_ModuleId);
@@ -1750,9 +1837,10 @@ Void UnloadModule(Text _ModuleId) {
 }
 
 // ---------------------------------- //
-/// Unload the library
+/// Unload the library.
 Void Unload() {
-	foreach (ModuleId in G_LibInterfancy_ModulesLoaded) UnloadModule(ModuleId);		
+	foreach (ModuleId in G_LibInterfancy_ModulesLoaded) UnloadModule(ModuleId);
+	ClearData();	
 	
 	declare netwrite Net_LibInterfancy_SettingsUpdate for Teams[0] = 0;
 	declare netwrite Net_LibInterfancy_Settings for Teams[0] = Text[Text];
@@ -1766,13 +1854,13 @@ Void Unload() {
 }
 
 // ---------------------------------- //
-/// Load the library
+/// Load the library.
 Void Load() { Unload(); }
 
 // ---------------------------------- //
-/** (Overload) Load the library with some modules
+/** (Overload) Load the library with some modules.
  *
- *	@param	_AutoLoadModules	A list of modules to load with the library
+ *	@param	_AutoLoadModules	A list of modules to load with the library.
  */
 Void Load(Text[] _AutoLoadModules) {
 	Load();
@@ -1780,7 +1868,7 @@ Void Load(Text[] _AutoLoadModules) {
 }
 
 // ---------------------------------- //
-/// Loop
+/// Loop containing functions erasing unnecessary data and automatically updating the game start and end time.
 Void Loop() {
 	// ---------------------------------- //
 	// Update Start and End time in Countdown module
@@ -1798,16 +1886,18 @@ Void Loop() {
 	
 	// ---------------------------------- //
 	// Remove no longer visible crosshair notes
-	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
 	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
 	
 	declare Text[] LoginsToRemove;
 	foreach (Login => EndTime in Net_LibInterfancy_CrosshairNoteTime) if (Now >= EndTime) LoginsToRemove.add(Login);
 	
-	foreach (Login in LoginsToRemove) {
-		declare Boolean Tmp;
-		Tmp = Net_LibInterfancy_CrosshairNote.removekey(Login);
-		Tmp = Net_LibInterfancy_CrosshairNoteTime.removekey(Login);
+	if (LoginsToRemove.count > 0) {
+		declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
+		foreach (Login in LoginsToRemove) {
+			declare Boolean Tmp;
+			Tmp = Net_LibInterfancy_CrosshairNote.removekey(Login);
+			Tmp = Net_LibInterfancy_CrosshairNoteTime.removekey(Login);
+		}
 	}
 	
 	// ---------------------------------- //

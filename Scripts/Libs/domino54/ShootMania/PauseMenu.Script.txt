@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PAUSE MENU by domino54        //
-//  script version: 2016-06-30            //
+//  script version: 2017-02-27            //
 // -------------------------------------- //
 
 /**
@@ -12,9 +12,10 @@
  *	time.
  */
 
-#Const Version		"2016-06-30"
+#Const Version		"2017-02-27"
 #Const ScriptName	"PauseMenu.Script.txt"
 
+#Include "MathLib" as ML
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
 #Include "Libs/domino54/Translations.Script.txt" as Translations
@@ -23,6 +24,11 @@
 // Constants
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Integer[Ident] G_LibPauseMenu_TeamChangeRequests;
 
 // ---------------------------------- //
 // Functions
@@ -110,14 +116,14 @@ Text Private_CreateManialinkPauseMenu() {
 </framemodel>
 
 <!-- Team selection window -->
-<frame id="Frame_TeamSelection" posn="-50 36 50" hidden="1">
-	<quad sizen="100 72" bgcolor="000" opacity=".75" ScriptEvents="1"/>
-	<quad sizen="100 72" style="Bgs1" substyle="BgDialogBlur"/>
-	<quad posn="-2.5 2.5 -.1" sizen="210 154" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow"/>
+<frame id="Frame_TeamSelection" posn="0 36 50" hidden="1">
+	<quad sizen="100 72" halign="center" bgcolor="000" opacity=".75" ScriptEvents="1" id="Quad_TeamsWindowBg" />
+	<quad sizen="100 72" halign="center" style="Bgs1" substyle="BgDialogBlur" id="Quad_TeamsWindowBlur" />
+	<quad posn="0 2.5 -.1" sizen="210 154" halign="center" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow" id="Quad_TeamsWindowShad" />
 	
 	<!-- Title block -->
-	<frame posn="50 -5 1">
-		<quad sizen="99 9" halign="center" valign="center" bgcolor="FFF"/>
+	<frame posn="0 -5 1">
+		<quad sizen="99 9" halign="center" valign="center" bgcolor="FFF" id="Quad_TeamsHeaderBg" />
 		<label
 			posn="0 0 .1" sizen="90" halign="center" valign="center2"
 			textsize="2" textcolor="000" textfont="Eurostile_Bold" textprefix="$t" text="Choose your team" translate="1"
@@ -125,15 +131,23 @@ Text Private_CreateManialinkPauseMenu() {
 	</frame>
 	
 	<!-- Teams cards -->
-	<frame posn="50 -11 1">
-		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#0" posn="-25"/>
-		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#1" posn="25"/>
+	<frame id="Frame_TeamsCardsCon" posn="0 -11 1">
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#0" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#1" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#2" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#3" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#4" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#5" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#6" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#7" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#8" />
+		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#9" />
 	</frame>
 	
 	<!-- Return button -->
-	<frame id="Frame_TeamsButtonReturn" posn="38 -62 1">
-		<quad sizen="24 8" class="hoverButton colorizable" opacity="0" id="Quad_TeamsButtonReturn" ScriptEvents="1"/>
-		<label posn="12 -4 .2" class="buttonFont" text="Return" translate="1" id="Label_ButtonText"/>
+	<frame id="Frame_TeamsButtonReturn" posn="0 -62 1">
+		<quad sizen="48 8" halign="center" class="hoverButton colorizable" opacity="0" id="Quad_TeamsButtonReturn" ScriptEvents="1"/>
+		<label posn="0 -4 .2" class="buttonFont" text="Return" translate="1" id="Label_ButtonText"/>
 	</frame>
 </frame>
 
@@ -198,8 +212,16 @@ declare Frame_HelpWindow <=> (Page.GetFirstChild("Frame_HelpWindow") as CMlFrame
 declare CMlFrame[] Frame_PauseButtons;
 for (I, 0, 5) Frame_PauseButtons.add((Page.GetFirstChild("Frame_PauseButton#"^I) as CMlFrame));
 
+// ---------------------------------- //
+// Teams window
+declare Frame_TeamsCardsCon <=> (Page.GetFirstChild("Frame_TeamsCardsCon") as CMlFrame);
+declare Quad_TeamsWindowBg <=> (Page.GetFirstChild("Quad_TeamsWindowBg") as CMlQuad);
+declare Quad_TeamsWindowBlur <=> (Page.GetFirstChild("Quad_TeamsWindowBlur") as CMlQuad);
+declare Quad_TeamsWindowShad <=> (Page.GetFirstChild("Quad_TeamsWindowShad") as CMlQuad);
+declare Quad_TeamsHeaderBg <=> (Page.GetFirstChild("Quad_TeamsHeaderBg") as CMlQuad);
+
 declare CMlFrame[] Frame_TeamsCards;
-for (I, 0, 1) Frame_TeamsCards.add((Page.GetFirstChild("Frame_TeamCard#"^I) as CMlFrame));
+for (I, 0, 9) Frame_TeamsCards.add((Page.GetFirstChild("Frame_TeamCard#"^I) as CMlFrame));
 
 // ---------------------------------- //
 // Help window
@@ -229,7 +251,7 @@ Frame_Buttons.add((Page.GetFirstChild("Frame_TeamsButtonReturn") as CMlFrame));
 Frame_Buttons.add(Frame_ButtonHelpResume);
 
 // ---------------------------------- //
-// 
+// Persistent settings
 declare persistent Text[] Persistent_LibPauseMenu_ModesWithRulesRead for LocalUser;
 
 // ---------------------------------- //
@@ -237,6 +259,15 @@ declare persistent Text[] Persistent_LibPauseMenu_ModesWithRulesRead for LocalUs
 declare netread Text Net_LibPauseMenu_HelpModeName for Teams[0];
 declare netread Text Net_LibPauseMenu_HelpModeObjectives for Teams[0];
 declare netread Text Net_LibPauseMenu_HelpModeImage for Teams[0];
+
+// ---------------------------------- //
+// Custom teams
+declare netread Integer Net_LibPauseMenu_CustomTeams for Teams[0];
+declare netread Vec3[Integer] Net_LibPauseMenu_TeamsColors for Teams[0];
+declare netread Text[Integer] Net_LibPauseMenu_TeamsNames for Teams[0];
+
+/// Players colors
+declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -260,6 +291,9 @@ declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
 declare PrevTeamsNames = [0 => "", 1 => ""];
 declare PrevClansNbPlayers = [0 => 0, 1 => 0, 2 => 0];
 declare PrevModeName = "";
+declare PrevNbCustomTeams = 0;
+declare PrevCustomTeamsNames = Text[Integer];
+declare PrevCustomTeamsColors = Vec3[Integer];
 
 // ---------------------------------- //
 // Initialize
@@ -373,9 +407,21 @@ foreach (Event in PendingEvents) {
 			}
 			(Event.Control as CMlQuad).Opacity = .125;
 			
-			switch (RequestedClan) {
-				case 1 : JoinTeam1();
-				case 2 : JoinTeam2();
+			// ---------------------------------- //
+			// Normal team change
+			if (Net_LibPauseMenu_CustomTeams <= 0) {
+				switch (RequestedClan) {
+					case 1 : JoinTeam1();
+					case 2 : JoinTeam2();
+				}
+			}
+			// ---------------------------------- //
+			// Custom team change
+			else {
+				declare netwrite Integer Net_LibPauseMenu_LastReqTime for UI;
+				declare netwrite Integer Net_LibPauseMenu_ReqTeamNum for UI;
+				Net_LibPauseMenu_LastReqTime = Now;
+				Net_LibPauseMenu_ReqTeamNum = RequestedClan;
 			}
 			
 			UpdateWindowsVisibility = True;
@@ -532,7 +578,7 @@ if (PageIsVisible) {
 					UI.SpectatorObserverMode != CUIConfig::EObserverMode::Forbidden;
 				
 				// Change team
-				case 2 : Frame.Visible = !IsSpectatorMode && UseClans && !UseForcedClans;
+				case 2 : Frame.Visible = !IsSpectatorMode && ((UseClans && !UseForcedClans) || Net_LibPauseMenu_CustomTeams > 0);
 				
 				// Other
 				default : Frame.Visible = True;
@@ -558,7 +604,10 @@ if (PageIsVisible) {
 	// ---------------------------------- //
 	// Set interface color
 	if (GUIPlayer != Null) {
-		if (GUIPlayer.CurrentClan == 0) G_InterfaceColor = GUIPlayer.User.Color;
+		if (GUIPlayer.CurrentClan == 0) {
+			if (!Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login)) G_InterfaceColor = GUIPlayer.User.Color;
+			else G_InterfaceColor = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
+		}
 		else G_InterfaceColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
 	}
 	else if (LocalUser != Null) G_InterfaceColor = LocalUser.Color;
@@ -590,6 +639,29 @@ if (PageIsVisible) {
 			}
 			
 			// ---------------------------------- //
+			// Update on custom teams amount change
+			if (PrevNbCustomTeams != Net_LibPauseMenu_CustomTeams) {
+				PrevNbCustomTeams = Net_LibPauseMenu_CustomTeams;
+				UpdateTeamsCards = True;
+			}
+			
+			// ---------------------------------- //
+			// Update on custom team name change
+			foreach (Team => Name in Net_LibPauseMenu_TeamsNames) {
+				if (PrevCustomTeamsNames.existskey(Team) && PrevCustomTeamsNames[Team] == Name) continue;
+				PrevCustomTeamsNames[Team] = Name;
+				UpdateTeamsCards = True;
+			}
+			
+			// ---------------------------------- //
+			// Update on custom team color change
+			foreach (Team => Color in Net_LibPauseMenu_TeamsColors) {
+				if (PrevCustomTeamsColors.existskey(Team) && PrevCustomTeamsColors[Team] == Color) continue;
+				PrevCustomTeamsColors[Team] = Color;
+				UpdateTeamsCards = True;
+			}
+			
+			// ---------------------------------- //
 			// Update players amount
 			declare ClansNbPlayers = [0 => 0, 1 => 0, 2 => 0];
 			foreach (Player in Players)
@@ -604,26 +676,61 @@ if (PageIsVisible) {
 			// Update cards
 			if (UpdateTeamsCards) {
 				UpdateTeamsCards = False;
+				
+				// Get number of teams
+				declare NbTeams = Teams.count;
+				if (Net_LibPauseMenu_CustomTeams > 0) NbTeams = Net_LibPauseMenu_CustomTeams;
+				
+				// Get teams colors
+				declare TeamsColors = [1 => Teams[0].ColorPrimary, 2 => Teams[1].ColorPrimary];
+				foreach (Team => Color in Net_LibPauseMenu_TeamsColors) TeamsColors[Team] = Color;
+				
+				// Get teams names
+				declare TeamsNames = [1 => Teams[0].Name, 2 => Teams[1].Name];
+				foreach (Team => Name in Net_LibPauseMenu_TeamsNames) TeamsNames[Team] = Name;
+				
+				// ---------------------------------- //
+				// Format the teams window
+				Quad_TeamsWindowBg.Size.X = NbTeams * 50.;
+				Quad_TeamsWindowBlur.Size.X = Quad_TeamsWindowBg.Size.X;
+				Quad_TeamsWindowShad.Size.X = Quad_TeamsWindowBg.Size.X * 2. + 10.;
+				Quad_TeamsHeaderBg.Size.X = Quad_TeamsWindowBg.Size.X - 1;
+				Frame_TeamsCardsCon.RelativePosition.X = 25. + Quad_TeamsWindowBg.Size.X / -2.;
+				
 				foreach (I => Frame in Frame_TeamsCards) {
+					declare Clan = I + 1;
+					Frame.Visible = Clan <= NbTeams;
+					if (!Frame.Visible) continue;
+					
+					// Frame position
+					Frame.RelativePosition.X = I * 50.;
+					
 					// ---------------------------------- //
 					// Set card background color
 					declare Quad_CardBackground <=> (Frame.GetFirstChild("Quad_CardBackground") as CMlQuad);
-					Quad_CardBackground.BgColor = Teams[I].ColorPrimary;
+					if (TeamsColors.existskey(Clan)) Quad_CardBackground.BgColor = TeamsColors[Clan];
+					else Quad_CardBackground.BgColor = <1., 1., 1.>;
 					
 					// ---------------------------------- //
 					// Set team emblem
 					declare Quad_TeamEmblem <=> (Frame.GetFirstChild("Quad_TeamEmblem") as CMlQuad);
-					Quad_TeamEmblem.Substyle = "#"^I + 1;
+					declare Emblem = Clan;
+					if (Net_LibPauseMenu_CustomTeams > 0) Emblem = 0;
+					Quad_TeamEmblem.Substyle = "#"^Emblem;
 					
 					// ---------------------------------- //
 					// Set team name
 					declare Label_TeamName <=> (Frame.GetFirstChild("Label_TeamName") as CMlLabel);
-					Label_TeamName.SetText(Teams[I].ColorizedName);
+					declare TeamName = "???";
+					if (TeamsNames.existskey(Clan)) TeamName = TeamsNames[Clan];
+					Label_TeamName.SetText("$"^TL::ColorToText(Quad_CardBackground.BgColor)^TeamName);
 					
 					// ---------------------------------- //
 					// Set players amount
 					declare Label_TeamNbPlayers <=> (Frame.GetFirstChild("Label_TeamNbPlayers") as CMlLabel);
-					Label_TeamNbPlayers.SetText(TL::Compose("$t%1: %2", _("Players"), TL::ToText(ClansNbPlayers[I + 1])));
+					Label_TeamNbPlayers.Visible = Net_LibPauseMenu_CustomTeams <= 0;
+					if (Label_TeamNbPlayers.Visible)
+						Label_TeamNbPlayers.SetText(TL::Compose("$t%1: %2", _("Players"), TL::ToText(ClansNbPlayers[Clan])));
 				}
 			}
 		}
@@ -848,6 +955,66 @@ Void SetModeRules(Text _ModeName, Text _ModeObjectives, Text _ModeImage) {
 	Net_LibPauseMenu_HelpModeName = _ModeName;
 	Net_LibPauseMenu_HelpModeObjectives = _ModeObjectives;
 	if (Http.IsValidUrl(_ModeImage)) Net_LibPauseMenu_HelpModeImage = _ModeImage;
+}
+
+// ---------------------------------- //
+/** Set amount of custom teams
+ *
+ *	@param	_Count	Custom teams amount
+ */
+Void SetCustomTeamsCount(Integer _Count) {
+	declare netwrite Integer Net_LibPauseMenu_CustomTeams for Teams[0];
+	Net_LibPauseMenu_CustomTeams = ML::Max(_Count, 0);
+}
+
+// ---------------------------------- //
+/** Set color of a custom team
+ *
+ *	@param	_Team	The team to tweak
+ *	@param	_Color	Color of the team
+ */
+Void SetCustomTeamColor(Integer _Team, Vec3 _Color) {
+	declare netwrite Vec3[Integer] Net_LibPauseMenu_TeamsColors for Teams[0];
+	Net_LibPauseMenu_TeamsColors[_Team] = _Color;
+}
+
+// ---------------------------------- //
+/** Set name of a custom team
+ *
+ *	@param	_Team	The team to tweak
+ *	@param	_Name	Name of the team
+ */
+Void SetCustomTeamName(Integer _Team, Text _Name) {
+	declare netwrite Text[Integer] Net_LibPauseMenu_TeamsNames for Teams[0];
+	Net_LibPauseMenu_TeamsNames[_Team] = _Name;
+}
+
+// ---------------------------------- //
+/** Get players team change requests
+ *
+ *	@return		Array of requested teams numbers, keyed by players Ids
+ */
+Integer[Ident] CustomTeamsRequests() {
+	if (G_LibPauseMenu_TeamChangeRequests.count > 0) G_LibPauseMenu_TeamChangeRequests.clear();
+	
+	// ---------------------------------- //
+	// Get the new requests
+	foreach (Player in AllPlayers) {
+		if (Player.IsBot || Player.IsFakePlayer) continue;
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+		
+		declare Integer LastReqTime for Player;
+		declare netread Integer Net_LibPauseMenu_LastReqTime for UI;
+		
+		if (LastReqTime == Net_LibPauseMenu_LastReqTime) continue;
+		LastReqTime = Net_LibPauseMenu_LastReqTime;
+		
+		declare netread Integer Net_LibPauseMenu_ReqTeamNum for UI;
+		G_LibPauseMenu_TeamChangeRequests[Player.Id] = Net_LibPauseMenu_ReqTeamNum;
+	}
+	
+	return G_LibPauseMenu_TeamChangeRequests;
 }
 
 // ---------------------------------- //

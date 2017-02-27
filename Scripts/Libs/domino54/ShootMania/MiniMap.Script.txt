@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2017-01-12            //
+//  script version: 2017-02-25            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2017-01-12"
+#Const Version		"2017-02-25"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "TextLib" as TL
@@ -188,6 +188,11 @@ declare persistent Boolean Persistent_LibMinimap_HideImage for LocalUser;
 declare persistent Boolean Persistent_LibMinimap_HidePlayers for LocalUser;
 declare persistent Boolean Persistent_LibMinimap_HideNames for LocalUser;
 declare persistent Boolean Persistent_LibMinimap_HideCones for LocalUser;
+declare persistent Boolean Persistent_LibMinimap_HideHeight for LocalUser;
+declare persistent Integer Persistent_LibMinimap_RenderSmoothness for LocalUser = 2;
+
+if (Persistent_LibMinimap_RenderSmoothness < 1) Persistent_LibMinimap_RenderSmoothness = 1;
+if (Persistent_LibMinimap_RenderSmoothness > 60) Persistent_LibMinimap_RenderSmoothness = 60;
 
 // ---------------------------------- //
 // Netcode
@@ -232,6 +237,7 @@ declare PrevMinimapPosition = Vec3;
 declare PrevMinimapYaw = -1.;
 declare PrevGUIPlayerLogin = "";
 declare PrevGUIPlayerClan = 0;
+declare PrevForcedColor = Vec3;
 declare PrevTeamsColors = [Vec3, Vec3];
 declare PrevSettingsUpdate = -1;
 declare PrevZoomState = 0;
@@ -291,7 +297,7 @@ foreach (Event in PendingEvents) {
 }
 
 // Reduce the CPU usage by updating minimap only 30 times per second
-if (Ticks % 2 != 0) continue;
+if (Ticks % Persistent_LibMinimap_RenderSmoothness != 0) continue;
 
 // ---------------------------------- //
 // Update settings
@@ -464,6 +470,16 @@ if (GUIPlayer != Null) {
 	}
 	
 	// ---------------------------------- //
+	// Update color on forced color change
+	if (
+		Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login) &&
+		PrevForcedColor != Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login]
+	) {
+		PrevForcedColor = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
+		UpdateGUIPlayerColor = True;
+	}
+	
+	// ---------------------------------- //
 	// Update GUIPlayer marker color
 	if (UpdateGUIPlayerColor) {
 		UpdateGUIPlayerColor = False;
@@ -571,6 +587,22 @@ foreach (Player in Players) {
 		else if (Net_LibInterfancy_ForcedColors.existskey(Player.User.Login))
 			MarkerColor = Net_LibInterfancy_ForcedColors[Player.User.Login];
 		
+		// ---------------------------------- //
+		// Marker icon depending on height difference
+		declare PlayerIconImage = "Player.png";
+		if (!IsOverviewMode && !Persistent_LibMinimap_HideHeight) {
+			declare HeightDifference = Player.Position.Y - GUIPlayer.Position.Y;
+			
+			// Low height difference limit if underground
+			declare MaxDiff = 12.5;
+			if (GUIPlayer.IsUnderground || Player.IsUnderground) MaxDiff = 2.5;
+			
+			if (HeightDifference >= MaxDiff) PlayerIconImage = "PlayerUp.png";
+			if (HeightDifference <= -MaxDiff) PlayerIconImage = "PlayerDown.png";
+		}
+		Quad_MarkerIcon.ImageUrl = "{{{C_ImgBase}}}"^PlayerIconImage;
+		
+		// Marker opacity
 		Quad_MarkerIcon.Opacity = MarkerOpacity;
 		Quad_MarkerIcon.Colorize = MarkerColor;
 	}

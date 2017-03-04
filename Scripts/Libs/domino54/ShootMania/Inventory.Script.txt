@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2017-01-14            //
+//  script version: 2017-03-04            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2017-01-14"
+#Const Version		"2017-03-04"
 #Const ScriptName	"Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -49,6 +49,14 @@
 
 #Const C_LibInventory_Weapons [
 	CSmMode::EWeapon::Laser, CSmMode::EWeapon::Nucleus, CSmMode::EWeapon::Arrow, CSmMode::EWeapon::Rocket
+]
+
+/// Default amount of ammo for each weapon
+#Const C_LibInventory_WeaponsDefualtAmmo [
+	CSmMode::EWeapon::Laser		=> 1,
+	CSmMode::EWeapon::Nucleus	=> 2,
+	CSmMode::EWeapon::Arrow		=> 3,
+	CSmMode::EWeapon::Rocket	=> 4
 ]
 
 /// Names of the items representing players weapons
@@ -1311,13 +1319,6 @@ Void ResetInventory(CSmPlayer _Player) {
 	LibInventory_PlayerItemAmount.clear();
 	LibInventory_PlayerItemWeaponNum.clear();
 	
-	// Reset player weapons
-	SetPlayerWeapon(_Player, CSmMode::EWeapon::Rocket, True);
-	SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Laser, 1);
-	SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Nucleus, 2);
-	SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Arrow, 3);
-	SetPlayerAmmoMax(_Player, CSmMode::EWeapon::Rocket, 4);
-	
 	// Update interface
 	Private_UpdatePlayerUI(_Player);
 }
@@ -1327,6 +1328,22 @@ Void ResetInventory(CSmPlayer _Player) {
 Void ResetAllInventories() {
 	if (!G_LibInventory_IsLoaded) return;
 	foreach (Player in AllPlayers) if (!Player.IsBot) ResetInventory(Player);
+}
+
+// ---------------------------------- //
+/** Reset weapons of a player.
+ *
+ *	@param	_Player		The player to reset their weapons.
+ */
+Void ResetPlayerWeapons(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	// Reset player main weapon
+	if (_Player.CurWeapon != GetWeaponNum(CSmMode::EWeapon::Rocket) || !_Player.AutoSwitchWeapon)
+		SetPlayerWeapon(_Player, CSmMode::EWeapon::Rocket, True);
+	
+	// Reset to default ammo max
+	foreach (Weapon => MaxAmmo in C_LibInventory_WeaponsDefualtAmmo) SetPlayerAmmoMax(_Player, Weapon, MaxAmmo);
 }
 
 // ---------------------------------- //

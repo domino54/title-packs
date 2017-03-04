@@ -1,11 +1,12 @@
 // -------------------------------------- //
 //  LIBRARY STORAGE PLAYER by domino54    //
-//  script version: 2016-06-30            //
+//  script version: 2017-03-04            //
 // -------------------------------------- //
 
-#Const Version		"2016-06-30"
+#Const Version		"2017-03-04"
 #Const ScriptName	"StoragePlayer.Script.txt"
 
+#Include "MathLib" as ML
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
@@ -173,6 +174,9 @@ Text Private_CreateManialinkMusicPlayer(Text _MediaBasePath, Text _ThinTextFont,
 // ---------------------------------- //
 #Const C_Storage_RequestTimeOut			15000	///< Time before unfinished request is destroyed
 #Const C_Storage_DefaultPlayerColor		<.75, .75, .75>
+#Const C_Storage_PostCountdownTime		5000
+#Const C_Storage_CountdownFadeIn		5000
+#Const C_Storage_CountdownFadeOut		3000
 
 // ---------------------------------- //
 // Global variables
@@ -575,6 +579,10 @@ if (G_Storage_CurrentSong != Null) {
 	else if (G_Storage_CurrentSong.IsPlaying) G_Storage_CurrentSong.Stop();
 	
 	// ---------------------------------- //
+	// Somg volume depending on game countdown
+	if (G_Storage_CurrentSong.IsPlaying) G_Storage_CurrentSong.Volume = GetCountdownVolume();
+	
+	// ---------------------------------- //
 	// Current song is being downloaded
 	if (G_Storage_CurrentSong.DownloadInProgress) {
 		if (!CurrentSongIsDownloading) {
@@ -922,6 +930,42 @@ Void GoToSong(Integer _SongIndex) {
 	Persistent_Storage_PreviousPlayPoint = 0.;
 }
 
+// ---------------------------------- //
+/** Get the music volume factor depending on the countdown time.
+ *
+ *	@return		The music volume factor.
+ */
+Real GetCountdownVolume() {
+	declare persistent Boolean Persistent_LibInterfancy_DisableCountdownSong for LocalUser;
+	if (Persistent_LibInterfancy_DisableCountdownSong) return 1.;
+	
+	declare netread Integer Net_LibStoragePlayer_EndTime for Teams[0];
+	declare netread Integer Net_LibStoragePlayer_CountdownDuration for Teams[0];
+	if (Net_LibStoragePlayer_EndTime <= 0 || Net_LibStoragePlayer_CountdownDuration <= 0) return 1.;
+	
+	// ---------------------------------- //
+	// Time above the limit
+	if (GameTime >= Net_LibStoragePlayer_EndTime) {
+		if (GameTime <= Net_LibStoragePlayer_EndTime + C_Storage_PostCountdownTime) return 0.;
+		
+		// Coutdown music stopped
+		if (GameTime >= Net_LibStoragePlayer_EndTime + C_Storage_PostCountdownTime + C_Storage_CountdownFadeOut) return 1.;
+		
+		// Fade in the Storage music
+		return ML::ToReal(GameTime - Net_LibStoragePlayer_EndTime - C_Storage_PostCountdownTime) / C_Storage_CountdownFadeOut;
+	}
+	
+	// ---------------------------------- //
+	// Time below the limit
+	if (GameTime <= Net_LibStoragePlayer_EndTime - Net_LibStoragePlayer_CountdownDuration - C_Storage_CountdownFadeIn) return 1.;
+	
+	// Countdown music is playing
+	if (GameTime >= Net_LibStoragePlayer_EndTime - Net_LibStoragePlayer_CountdownDuration) return 0.;
+	
+	// Fade out the Storage music
+	return ML::ToReal(Net_LibStoragePlayer_EndTime - Net_LibStoragePlayer_CountdownDuration - GameTime) / C_Storage_CountdownFadeIn;
+}
+
 {{{Translations::InsertToManialink(["Storage Music Player", "Custom playlist URL:"])}}}
 
 // ---------------------------------- //
@@ -1000,4 +1044,17 @@ Void UpdatePlaylistURL(Text _PlaylistURL) {
 	
 	declare netwrite Text Net_LibStoragePlayer_ServerPlaylistURL for Teams[0];
 	Net_LibStoragePlayer_ServerPlaylistURL = PlaylistURL;
+}
+
+// ---------------------------------- //
+/** Update countdown properties.
+ *
+ *	@param	_NewEndTime		The games end time.
+ *	@param	_Duration		Duration of the countdown.
+ */
+Void SetCountdown(Integer _NewEndTime, Integer _Duration) {
+	declare netwrite Integer Net_LibStoragePlayer_EndTime for Teams[0];
+	declare netwrite Integer Net_LibStoragePlayer_CountdownDuration for Teams[0];
+	Net_LibStoragePlayer_EndTime = ML::Max(_NewEndTime, -1);
+	Net_LibStoragePlayer_CountdownDuration = ML::Max(_Duration, 0);
 }

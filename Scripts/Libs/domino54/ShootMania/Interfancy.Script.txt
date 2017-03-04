@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-02-27            //
+//  script version: 2017-03-04            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-02-27"
+#Const	Version		"2017-03-04"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -804,8 +804,9 @@ declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 
 // ---------------------------------- //
 // Variables
-declare Boolean ScoreSummary_Display;
-declare Boolean ShowScoreSummary;
+declare ScoreSummary_Display = False;
+declare ShowScoreSummary = False;
+declare ShowRoundPoints = False;
 declare ClanRoundScores = [1 => 0, 2 => 0];
 
 declare PrevSettingsUpdate = -1;
@@ -813,6 +814,7 @@ declare PrevShowScoreSummary = False;
 declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
 declare PrevClanScores = Integer[Integer];
 declare PrevClanRoundScores = Integer[Integer];
+declare PrevShowRoundPoints = False;
 ***
 
 // ---------------------------------- //
@@ -828,11 +830,7 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
 			case "ScoreSummary_Display" : ScoreSummary_Display = SettingValue == "True";
-			case "ScoreSummary_ShowRoundPoints" : {
-				declare ShowRoundPoints = SettingValue == "True";
-				Label_SummaryRoundLeft.Visible = ShowRoundPoints;
-				Label_SummaryRoundRight.Visible = ShowRoundPoints;
-			}
+			case "ScoreSummary_ShowRoundPoints" : ShowRoundPoints = SettingValue == "True";
 		}
 	}
 }
@@ -860,6 +858,15 @@ if (PrevShowScoreSummary != ShowScoreSummary) {
 }
 
 if (!ShowScoreSummary) continue;
+
+// ---------------------------------- //
+//Set round points visibility
+if (PrevShowRoundPoints != ShowRoundPoints) {
+	PrevShowRoundPoints = ShowRoundPoints;
+	
+	Label_SummaryRoundLeft.Visible = ShowRoundPoints;
+	Label_SummaryRoundRight.Visible = ShowRoundPoints;
+}
 
 ClanRoundScores = [1 => UI.ScoreSummary_RoundPoints1, 2 => UI.ScoreSummary_RoundPoints2];
 
@@ -966,7 +973,8 @@ Text Private_CreateManialinkCountdown() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const C_CountdownSongsNames ["Countdown1Compressed.ogg"]
+#Const C_CountdownSongsNames 	["Countdown1Compressed.ogg"]
+#Const C_CountdownSongDuration	30000
 
 // ---------------------------------- //
 // Main
@@ -984,8 +992,15 @@ declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 
 // ---------------------------------- //
+// Persistent settings
+declare persistent Boolean Persistent_LibInterfancy_DisableCountdownSong for LocalUser;
+declare persistent Text[] Persistent_LibInterfancy_TimerMusics for LocalUser;
+declare persistent Text Persistent_LibInterfancy_PrevCountdownSong for LocalUser;
+
+// ---------------------------------- //
 // Varialbes
 declare Countdown_Display = False;
+declare Countdown_UseMusic = True;
 declare ScoreSummary_Display = False;
 declare StartTime = -1;
 declare EndTime = -1;
@@ -994,7 +1009,26 @@ declare CurrentTick = -1;
 declare PrevSettingsUpdate = -1;
 declare PrevTick = -1;
 
-//declare CountdownMusic = Audio.CreateSound("{{{C_ImgBase}}}Sounds/"^C_CountdownSongsNames[0], 0., True, False, False);
+// ---------------------------------- //
+// Countdown soundtrack
+declare CAudioSound CountdownMusic;
+declare NewMusicName = "";
+
+if (Persistent_LibInterfancy_TimerMusics.count <= 0)
+	Persistent_LibInterfancy_TimerMusics = C_CountdownSongsNames;
+
+while (Persistent_LibInterfancy_TimerMusics.count > 0) {
+	NewMusicName = Persistent_LibInterfancy_TimerMusics[ML::Rand(0, Persistent_LibInterfancy_TimerMusics.count - 1)];
+	if (NewMusicName != Persistent_LibInterfancy_PrevCountdownSong) break;
+	if (Persistent_LibInterfancy_TimerMusics.count <= 1) break;
+}
+
+if (NewMusicName != "") {
+	declare Removed = Persistent_LibInterfancy_TimerMusics.remove(NewMusicName);
+	Persistent_LibInterfancy_PrevCountdownSong = NewMusicName;
+	CountdownMusic = Audio.CreateSound("{{{C_ImgBase}}}Sounds/"^NewMusicName, 10., True, False, False);
+	CountdownMusic.Stop();
+}
 ***
 
 // ---------------------------------- //
@@ -1010,9 +1044,13 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
 			case "Countdown_Display" : Countdown_Display = SettingValue == "True";
+			case "Countdown_UseMusic" : Countdown_UseMusic = SettingValue == "True";
 			case "ScoreSummary_Display" : ScoreSummary_Display = SettingValue == "True";
 			case "StartTime" : StartTime = TL::ToInteger(SettingValue);
-			case "EndTime" : EndTime = TL::ToInteger(SettingValue);
+			case "EndTime" : {
+				EndTime = TL::ToInteger(SettingValue);
+				if (CountdownMusic != Null && GameTime < EndTime - C_CountdownSongDuration) CountdownMusic.Stop();
+			}
 		}
 	}
 }
@@ -1036,10 +1074,11 @@ if (Frame_Countdown.Visible) {
 	}
 	// ---------------------------------- //
 	// EndTime is greater than zero
-	else if (EndTime > 0 && GameTime < EndTime) {
+	else if (EndTime > 0) {
 		Time = GameTime - EndTime;
-		CurrentTick = ML::Abs(Time) / 1000 + 1;
-		if (CurrentTick > 14 || CurrentTick < 1) CurrentTick = -1;
+		CurrentTick = (-Time + 1000) / 1000;
+		if (CurrentTick > 31 || CurrentTick < -1) CurrentTick = -1;
+		Countdown = GameTime < EndTime;
 	}
 	// ---------------------------------- //
 	// Display game duration
@@ -1054,14 +1093,52 @@ if (Frame_Countdown.Visible) {
 }
 
 // ---------------------------------- //
+// Countdown soundtrack
+if (
+	Countdown_UseMusic && !Persistent_LibInterfancy_DisableCountdownSong && CountdownMusic != Null &&
+	EndTime > 0 && EndTime - GameTime < C_CountdownSongDuration && GameTime < EndTime
+) {
+	declare NewPlayCursor = (C_CountdownSongDuration - (EndTime - GameTime)) / 1000.;
+	
+	// ---------------------------------- //
+	// Start the music when countdown begins
+	if (!CountdownMusic.IsPlaying) {
+		CountdownMusic.Play();
+		CountdownMusic.PlayCursor = NewPlayCursor;
+	}
+	
+	// Adjust the music play cursor if not matching countdown time
+	if (ML::Abs(CountdownMusic.PlayCursor - NewPlayCursor) > .0625) CountdownMusic.PlayCursor = NewPlayCursor;
+}
+
+// ---------------------------------- //
 // Show animation when last tick changes
 if (PrevTick != CurrentTick) {
 	PrevTick = CurrentTick;
+	declare AnimStartTick = 0;
 	
-	if (CurrentTick != -1) {
+	// ---------------------------------- //
+	// Play countdown sounds when the music is not playing
+	if (Countdown_UseMusic && UI.CountdownEndTime <= 0 && (CountdownMusic == Null || CountdownMusic.PlayCursor <= 0)) {
+		AnimStartTick = 15;
+		
+		switch (CurrentTick) {
+			case 15 : PlayUiSound(::EUISound::Warning, 0, 1.);
+			case 1 : Audio.PlaySoundEvent("{{{C_ImgBase}}}/Sounds/UITimeTick_D.wav", -12.5);
+			case 0 : PlayUiSound(::EUISound::TimeOut, 1, 1.);
+			default : if (CurrentTick < 15) {
+				if (CurrentTick > 5) Audio.PlaySoundEvent("{{{C_ImgBase}}}/Sounds/UITimeTick_B.wav", -12.5);
+				else Audio.PlaySoundEvent("{{{C_ImgBase}}}/Sounds/UITimeTick_C.wav", -12.5);
+			}
+		}
+	}
+	
+	// ---------------------------------- //
+	// Display tick animation
+	if (CurrentTick > 0 && (AnimStartTick == 0 || CurrentTick < AnimStartTick)) {
 		LibManialink_AnimStop(Label_Countdown);
 		
-		Label_Countdown.RelativeScale = 1.75;
+		Label_Countdown.RelativeScale = 2.;
 		Label_Countdown.RelativeRotation = 7.5;
 		if (UI.CountdownEndTime > 0) Label_Countdown.TextColor = <0., 1., 0.>;
 		else Label_Countdown.TextColor = <1., 0., 0.>;
@@ -1069,15 +1146,6 @@ if (PrevTick != CurrentTick) {
 		LibManialink_Anim(Label_Countdown, "<label scale=1 textcolor=FB0 rot=0 />", 1000, "EaseOutCirc");
 	}
 }
-
-/*
-if (EndTime > 0 && EndTime - GameTime < 30000 && GameTime < EndTime) {
-	if (!CountdownMusic.IsPlaying) {
-		CountdownMusic.Play();
-		CountdownMusic.PlayCursor = (30 - EndTime - GameTime) / 1000.;
-	}
-}
-*/
 ***
 
 // ---------------------------------- //
@@ -1778,6 +1846,25 @@ Void SetSpawnInvulnerabilityDuration(Integer _Duration) {
 }
 
 // ---------------------------------- //
+/** Set new value for the end time (visuals only).
+ *
+ *	@param	_NewEndTime		The new end time to set.
+ */
+Void SetEndTime(Integer _NewEndTime) {
+	declare NewEndTime = ML::Max(_NewEndTime, -1);
+	Private_SetModuleSetting("EndTime", TL::ToText(NewEndTime));
+}
+
+// ---------------------------------- //
+/** Set if the countdown module should play the countdown soundtrack.
+ *
+ *	@param	_UseMusic	If True, special music during the countdown will be played.
+ */
+Void SetUseMusic(Boolean _UseMusic) {
+	Private_SetModuleSetting("Countdown_UseMusic", TL::ToText(_UseMusic));
+}
+
+// ---------------------------------- //
 /// Reset all data sent through network by the library.
 Void ClearData() {
 	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
@@ -1868,15 +1955,18 @@ Void Load(Text[] _AutoLoadModules) {
 }
 
 // ---------------------------------- //
-/// Loop containing functions erasing unnecessary data and automatically updating the game start and end time.
-Void Loop() {
+/** Loop containing functions erasing unnecessary data and automatically updating the game start and end time.
+ *
+ *	@param	_UseDefaultEndTime		Wherher the library should use the default end time value.
+ */
+Void Loop(Boolean _UseDefaultEndTime) {
 	// ---------------------------------- //
 	// Update Start and End time in Countdown module
 	if (G_LibInterfancy_PrevStartTime != StartTime) {
 		G_LibInterfancy_PrevStartTime = StartTime;
 		Private_SetModuleSetting("StartTime", TL::ToText(StartTime));
 	}
-	if (G_LibInterfancy_PrevEndTime != EndTime) {
+	if (_UseDefaultEndTime && G_LibInterfancy_PrevEndTime != EndTime) {
 		G_LibInterfancy_PrevEndTime = EndTime;
 		Private_SetModuleSetting("EndTime", TL::ToText(EndTime));
 	}
@@ -1912,3 +2002,7 @@ Void Loop() {
 		declare Tmp = Net_LibInterfancy_ReloadData.removekey(Login);
 	}
 }
+
+// ---------------------------------- //
+/// Loop without using the system end time.
+Void Loop() { Loop(False); }

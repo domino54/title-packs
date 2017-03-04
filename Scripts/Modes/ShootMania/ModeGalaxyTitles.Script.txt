@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-02-27            //
+//  script version: 2017-03-04            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2017-02-27"
+#Const BaseVersion		"2017-03-04"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -91,6 +91,7 @@ declare Text[] GT_KillfeedTranslations;		///< Translations to be loaded with the
 declare Text GT_SpawnScreenModeName;		///< Name of the mode displayed in the spawn screen
 declare Text GT_SpawnScreenModeType;		///< Spawn screen mode type (free for all, teams, cooperation)
 declare Text GT_SpawnScreenObjectives;		///< Rules of the game mode displayed in the spawn screen
+declare Integer GT_EndTime;					///< Custom end time (used to remove timer ticking sound)
 
 // ---------------------------------- //
 // Developer settings
@@ -234,28 +235,9 @@ GT_AutoManageOnRespawn = True;
 GT_AutoManageOnObjectTouch = True;
 GT_AllowMatchmakingMode = True;
 
-// Variables
-declare Integer GT_NoCollisionsEndTime;
-declare PrevMaximumNbWeapons = S_MaximumNbWeapons;
-declare PrevMaximumNbReplies = S_MaximumNbReplies;
-***
-
-// ---------------------------------- //
-// Server start
-// ---------------------------------- //
-***StartServer***
-***
-// ---------------------------------- //
-// Stop the script if server is in matchmaking mode and mode doesn't support it
-assert(!(MM_IsMatchmakingServer() && !GT_AllowMatchmakingMode), "This game mode does not support matchmaking mode!");
-
----Rules---
-
 // ---------------------------------- //
 // Download translations
-declare TranslationsFilesURLs = [C_OfflineTranslationsURL, C_OnlineTranslationsURL];
-
-Translations::Load(TranslationsFilesURLs);
+Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
 while (!Translations::LoadingLoop()) MB_Yield();
 
 // ---------------------------------- //
@@ -270,17 +252,8 @@ WarmUp2::Load();
 WarmUp2::SetLayerPosition(<0., -58.>);
 
 // ---------------------------------- //
-// Create the scores table
-ST2::SetStyle("LibST_SMBaseSolo");
-ST2::SetStyle("LibST_SMBasePoints");
-+++ScoresTable+++
-MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
-ST2::Build("SM");
-
-// ---------------------------------- //
 // Create custom interface
 Interfancy::Load(["Gauges", "Countdown", "SpecInfo", "Crosshair", "ScoreSummary"]);
-Interfancy::SetModuleVisibility("ScoreSummary", UseClans && !UseForcedClans);
 PauseMenu::Load();
 SM::SetupDefaultVisibility();
 
@@ -323,6 +296,35 @@ FancyMessages::FormatStatusMessage(<0., 62., 0.>, "Eurostile_Bold", 3);
 // ---------------------------------- //
 // Load GalaxyTitles library
 GalaxyTitles::Load();
+
+// ---------------------------------- //
+// Variables
+declare Integer GT_NoCollisionsEndTime;
+declare PrevMaximumNbWeapons = S_MaximumNbWeapons;
+declare PrevMaximumNbReplies = S_MaximumNbReplies;
+***
+
+// ---------------------------------- //
+// Server start
+// ---------------------------------- //
+***StartServer***
+***
+// ---------------------------------- //
+// Create the scores table
+ST2::SetStyle("LibST_SMBaseSolo");
+ST2::SetStyle("LibST_SMBasePoints");
++++ScoresTable+++
+MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
+ST2::Build("SM");
+
+// Update scores summary visibility
+Interfancy::SetModuleVisibility("ScoreSummary", UseClans && !UseForcedClans);
+
+// ---------------------------------- //
+// Stop the script if server is in matchmaking mode and mode doesn't support it
+assert(!(MM_IsMatchmakingServer() && !GT_AllowMatchmakingMode), "This game mode does not support matchmaking mode!");
+
+---Rules---
 ***
 
 // ---------------------------------- //
@@ -399,6 +401,15 @@ MiniMap::Show();
 GT_AutoBalance();
 foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 
+// Update the rules now, if a change occured in the settings
+---Rules---
+***
+
+// ---------------------------------- //
+// Round start
+// ---------------------------------- //
+***StartRound***
+***
 // ---------------------------------- //
 // Init GalaxyTitles functions
 declare ToadsSpawnRatio = 0.;
@@ -414,15 +425,6 @@ GalaxyTitles::Init(
 	ToadsSpawnRatio
 );
 
-// Update the rules now, if a change occured in the settings
----Rules---
-***
-
-// ---------------------------------- //
-// Round start
-// ---------------------------------- //
-***StartRound***
-***
 // No collisions at the beginning of the round
 if (GT_UseNoCollisionsStart) UsePvPCollisions = False;
 if (!UsePvPCollisions) GT_NoCollisionsEndTime = StartTime + C_NoCollisionsDuration;
@@ -1041,6 +1043,50 @@ Void GT_SkipInvalidMap() {
 	Translations::SendChat("This map is not valid, moving to the next one.");
 	if (!ServerShutdownRequested) MB_Sleep(10000);
 	MB_StopMap = True;
+}
+
+// ---------------------------------- //
+/** Set the new time limit.
+ *
+ *	@param	_NewEndTime		New value for the time limit.
+ *	@param	_EnableSounds	If True, ticking sound will be heard when time is running out.
+ */
+Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
+	GT_EndTime = ML::Max(_NewEndTime, -1);
+	Interfancy::SetEndTime(GT_EndTime);
+	Interfancy::SetUseMusic(!_EnableSounds);
+	
+	if (_EnableSounds) {
+		StoragePlayer::SetCountdown(-1, 0);
+		EndTime = GT_EndTime;
+	} else {
+		StoragePlayer::SetCountdown(GT_EndTime, 30000);
+		EndTime = -1;
+	}
+}
+
+// ---------------------------------- //
+/** Set the new time limit without using ticking sounds.
+ *
+ *	@param	_NewEndTime		New value for the time limit.
+ */
+Void GT_SetTimeLimit(Integer _NewEndTime) {
+	GT_SetTimeLimit(_NewEndTime, False);
+}
+
+// ---------------------------------- //
+/** Check if the time has reached its limit.
+ *
+ *	@return		True, if time has reached its limit.
+ */
+Boolean GT_TimeReachedLimit() {
+	return GT_EndTime > 0 && Now > GT_EndTime;
+}
+
+// ---------------------------------- //
+/// Disable the time limit.
+Void GT_DisableTimeLimit() {
+	GT_SetTimeLimit(-1);
 }
 
 // ---------------------------------- //

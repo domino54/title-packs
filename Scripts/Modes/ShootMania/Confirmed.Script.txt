@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  CONFIRMED by domino54                 //
-//  script version: 2017-01-12            //
+//  script version: 2017-03-04            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"MeleeArena TeamMeleeArena"
-#Const Version		"2017-01-12"
+#Const Version		"2017-03-04"
 #Const ScriptName	"Confirmed.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -172,8 +172,8 @@ Clublink::SyncUpdate();
 UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
 
 StartTime = Now + S_RespawnTime;
-if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
-else EndTime = -1;
+if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+else GT_DisableTimeLimit();
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 ***
 
@@ -246,17 +246,17 @@ if (PrevPointsLimit != S_PointsLimit) {
 // Update time limit
 if (!G_IsOvertime && CurrentTimeLimit != S_TimeLimit) {
 	CurrentTimeLimit = S_TimeLimit;
-	if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
-	else EndTime = -1;
+	if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else GT_DisableTimeLimit();
 }
 
 // ---------------------------------- //
 // Victory conditions
 if (S_PointsLimit > 0) for (Clan, 1, 2) if (ClanScores[Clan] >= S_PointsLimit) MB_StopMap = True;
-if (EndTime > 0 && Now > EndTime) {
+if (GT_TimeReachedLimit()) {
 	if (ClanScores[1] != ClanScores[2]) MB_StopMap = True;
 	else {
-		EndTime = -1;
+		GT_DisableTimeLimit();
 		G_IsOvertime = True;
 	}
 }

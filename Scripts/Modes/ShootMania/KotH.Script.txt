@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-02-27            //
+//  script version: 2017-03-04            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-02-27"
+#Const Version		"2017-03-04"
 #Const ScriptName	"KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -73,6 +73,8 @@ ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerR
 // Set the mode options
 UseClans = False;
 GT_UseAutoEndSequence = False;
+GT_AllowMatchmakingMode = False;
+GT_DisableTimeLimit();
 
 // ---------------------------------- //
 // Set the mode rules
@@ -176,6 +178,7 @@ PrevLeadingTeam = 0;
 CentralGoal.Gauge.Max = ML::Max(S_GoalCaptureDuration, C_GoalCaptureDurationMin) * C_GoalCaptureSpeedBase * 1000;
 CentralGoal.Gauge.Value = 0;
 CentralGoal.Gauge.Captured = False;
+if (CentralGoal.Base != Null) CentralGoal.Base.Clan = 1;
 
 // ---------------------------------- //
 // Wait for enough players to start game
@@ -203,8 +206,8 @@ foreach (Player in Players) {
 UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
 
 StartTime = Now + S_RespawnTime;
-if (S_TimeLimit > 0) EndTime = StartTime + S_TimeLimit * 1000;
-else EndTime = -1;
+if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+else GT_DisableTimeLimit();
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 
 Layers::Attach("KotH:Gauges");
@@ -298,9 +301,11 @@ if (PrevCapturingTeam != CapturingTeam) {
 	PrevCapturingTeam = CapturingTeam;
 	UISetCapturingTeam(CapturingTeam);
 	
-	// Set Goal Base clan to 1 if is being captured
+	// Enable the Goal's Base when capturing
+	if (CentralGoal.Base != Null) CentralGoal.Base.IsActive = CapturingTeam > 0;
+	
+	// Enable or disable color depending if the Goal is being captured
 	CentralGoal.Gauge.Clan = ML::Clamp(CapturingTeam, 0, 1);
-	if (CentralGoal.Base != Null) CentralGoal.Base.Clan = CentralGoal.Gauge.Clan;
 	
 	// ---------------------------------- //
 	// Update Goal color and restore team's capture progres
@@ -393,8 +398,8 @@ if (PrevTeamsSetting != S_NbTeams) {
 // Update time limit
 if (CurrentTimeLimit != S_TimeLimit) {
 	CurrentTimeLimit = S_TimeLimit;
-	if (S_TimeLimit > 0) EndTime = StartTime + S_TimeLimit * 1000;
-	else EndTime = -1;
+	if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else GT_DisableTimeLimit();
 }
 
 // ---------------------------------- //
@@ -413,7 +418,7 @@ if (PrevRoundsToWin != S_RoundsToWin) {
 
 // ---------------------------------- //
 // Victory conditions
-if (EndTime > 0 && Now > EndTime) MB_StopRound = True;
+if (GT_TimeReachedLimit()) MB_StopRound = True;
 ***
 
 // ---------------------------------- //
@@ -689,7 +694,7 @@ Text CreateManialinkGauges() {
 	declare PlayersIcons = "";
 	for (I, 0, 9) PlayersIcons ^= """<quad
 		posn="{{{I * 5}}}" sizen="5 5" halign="center" valign="center" autoscale="0" id="Quad_PlayerIcon#{{{I}}}"
-		image="file://Media/Manialinks/ShootMania/Common/DefendersLeft.dds" scale="0"
+		image="file://Media/Manialinks/ShootMania/Common/DefendersLeft.dds" colorize="000" scale="0"
 	/>""";
 	
 	return """
@@ -821,7 +826,7 @@ main() {
 				LibManialink_Anim(Quad_CaptureAlert, "<quad scale='1.75' opacity=0 />", 1500, "EaseOutCirc");
 			}
 			
-			declare Color = <1., 1., 1.>;
+			declare Color = <.125, .125, .125>;
 			if (PrevTeamsColors.existskey(PrevCapturingTeam)) Color = PrevTeamsColors[PrevCapturingTeam];
 			foreach (I => Quad in Quad_PlayersIcons) Quad.Colorize = Color;
 		}

@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2017-01-12            //
+//  script version: 2017-03-04            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2017-01-12"
+#Const Version		"2017-03-04"
 #Const ScriptName	"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -103,7 +103,6 @@ PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Pick up a ball from the checkpo
 Layers::Create("GoldenDunk:Interface", CreateManialinkInterface());
 Layers::Create("GoldenDunk:Markers", CreateManialinkMarkers());
 Layers::SetType("GoldenDunk:Markers", CUILayer::EUILayerType::Markers);
-Interfancy::SetModuleVisibility("ScoreSummary", True);
 Interfancy::SetRoundPointsVisibility(True);
 
 // ---------------------------------- //
@@ -257,8 +256,8 @@ Layers::Attach("GoldenDunk:Markers");
 UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
 
 StartTime = Now + S_RespawnTime;
-if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
-else EndTime = -1;
+if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+else GT_DisableTimeLimit();
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 ***
 
@@ -563,16 +562,16 @@ if (PrevLeadClan != LeadClan && !G_IsOvertime) {
 // Update time limit
 if (!G_IsOvertime && CurrentTimeLimit != S_TimeLimit) {
 	CurrentTimeLimit = S_TimeLimit;
-	if (S_TimeLimit > 0) EndTime = StartTime + (S_TimeLimit * 1000);
-	else EndTime = -1;
+	if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else GT_DisableTimeLimit();
 }
 
 // ---------------------------------- //
 // Victory conditions
-if (EndTime > 0 && Now > EndTime) {
+if (GT_TimeReachedLimit()) {
 	if (ClanScores[1] != ClanScores[2]) MB_StopRound = True;
 	else {
-		EndTime = -1;
+		GT_DisableTimeLimit();
 		G_IsOvertime = True;
 		Net_GoldenDunk_IsOvertime = True;
 	}

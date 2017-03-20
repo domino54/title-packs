@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-03-18            //
+//  script version: 2017-03-20            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-03-18"
+#Const	Version		"2017-03-20"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -1080,6 +1080,8 @@ foreach (TeamId => Team in Teams) {
 // Update teams cards
 if (UpdateSummaryCards) {
 	UpdateSummaryCards = False;
+	PrevClanScores.clear();
+	PrevClanRoundScores.clear();
 	
 	// Get the colors of the teams
 	TeamColors = [1 => Teams[0].ColorPrimary, 2 => Teams[1].ColorPrimary];
@@ -1373,14 +1375,12 @@ if (PrevTick != CurrentTick) {
 	// ---------------------------------- //
 	// Display tick animation
 	if (CurrentTick > 0 && (AnimStartTick == 0 || CurrentTick < AnimStartTick)) {
-		LibManialink_AnimStop(Label_Countdown);
-		
 		Label_Countdown.RelativeScale = 2.;
 		Label_Countdown.RelativeRotation = 7.5;
 		if (UI.CountdownEndTime > 0) Label_Countdown.TextColor = <0., 1., 0.>;
 		else Label_Countdown.TextColor = <1., 0., 0.>;
 		
-		LibManialink_Anim(Label_Countdown, "<label scale=1 textcolor=FB0 rot=0 />", 1000, "EaseOutCirc");
+		AnimMgr.Add(Label_Countdown, "<label scale='1' textcolor='FB0' rot='0' />", 1000, CAnimManager::EAnimManagerEasing::CircOut);
 	}
 }
 ***
@@ -1418,8 +1418,6 @@ Text TimeToText(Integer _Time, Boolean _Decimal, Boolean _CompactHr) {
 	return Minutes^":"^TL::FormatInteger(Seconds, 2);
 }
 
-{{{Manialink::Animations(["EaseOutCirc"])}}}
-
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
@@ -1427,7 +1425,6 @@ main() {
 	+++Main+++
 	while (True) {
 		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
 	}
 }
@@ -1550,8 +1547,8 @@ if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
 	// ---------------------------------- //
 	// Update position
 	Label_PlayerZone.SetText(ZoneName);
-	Label_PlayerZone.RelativePosition.X = Quad_PlayerZone.Size.X + .5;
-	Frame_PlayerZone.RelativePosition.X = -(Label_PlayerZone.RelativePosition.X + ComputeWidth(Label_PlayerZone)) / 2;
+	Label_PlayerZone.RelativePosition_V3.X = Quad_PlayerZone.Size.X + .5;
+	Frame_PlayerZone.RelativePosition_V3.X = -(Label_PlayerZone.RelativePosition_V3.X + ComputeWidth(Label_PlayerZone)) / 2;
 }
 ***
 
@@ -1829,8 +1826,8 @@ if (PrevCrosshairNoteValue != CrosshairNoteValue) {
 	
 	Label_CrosshairNote.Opacity = 0.;
 	Label_CrosshairNote2.Opacity = 1.;
-	Label_CrosshairNote.RelativePosition.Y = 2.;
-	Label_CrosshairNote2.RelativePosition.Y = 0.;
+	Label_CrosshairNote.RelativePosition_V3.Y = 2.;
+	Label_CrosshairNote2.RelativePosition_V3.Y = 0.;
 	
 	AnimMgr.Add(Label_CrosshairNote, "<label pos='0 0' opacity='1' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 	AnimMgr.Add(Label_CrosshairNote2, "<label pos='0 -2' opacity='0' />", 125, CAnimManager::EAnimManagerEasing::Linear);

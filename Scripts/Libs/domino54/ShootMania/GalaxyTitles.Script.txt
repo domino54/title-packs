@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-02-27            //
+//  script version: 2017-03-20            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-02-27"
+#Const Version		"2017-03-20"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -49,6 +49,7 @@
 #Const C_LibGalaxyTitles_ReplieUseCooldown		2000	///< Time before Replie can be used again
 #Const C_LibGalaxyTitles_DefaultMaxWeapons		2		///< Default maximum amount of each weapon in the Inventory
 #Const C_LibGalaxyTitles_DefaultMaxReplies		3		///< Default maximum amount of Replies in the Inventory
+#Const C_LibGalaxyTitles_ParticlesDuration		15		///< Duration of the Replie particles effect
 
 /// Toads
 #Const C_LibGalaxyTitles_ToadLandmarksRatio		.5		///< Minimal amount of landmark spawning Toads
@@ -343,13 +344,16 @@ Void AddReloadBoost(CSmPlayer _Player) {
 
 // ---------------------------------- //
 /** Show healing particle effect
+ *	Since MP4 uses ArmorReplenishGain as a flag to trigger
+ *	particle effect in the ReplieParticles action.
  *
  *	@param	_Player		The player to show particles on
  */
 Void ShowHealingParticles(CSmPlayer _Player) {
 	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return;
-	declare Boolean Replie_TriggerParticles for _Player;
-	Replie_TriggerParticles = True;
+	declare Integer ReplieParticlesEndTime for _Player;
+	ReplieParticlesEndTime = Now + C_LibGalaxyTitles_ParticlesDuration;
+	_Player.ArmorReplenishGain = 1;
 }
 
 // ---------------------------------- //
@@ -432,11 +436,14 @@ Void InitObjects() { InitObjects(True); }
  *	@return		The created object
  */
 CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag, Ident _AnchorId) {
-	if (_Position == <0., 0., 0.> || !C_LibGalaxyTitles_AcceptedObjects.exists(_ObjectTag)) return Null;
+	if (!C_LibGalaxyTitles_AcceptedObjects.exists(_ObjectTag)) return Null;
 	
 	// Check if the given id belongs to a real object anchor landmark
 	declare AnchorId = NullId;
 	if (MapLandmarks_ObjectAnchor.existskey(_AnchorId)) AnchorId = _AnchorId;
+	
+	// Incorrect attributes
+	if (_Position == <0., 0., 0.> && AnchorId == NullId) return Null;
 	
 	// ---------------------------------- //
 	// Create the object
@@ -460,7 +467,11 @@ CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag, Ident _AnchorId) {
 	LibGalaxyTitles_ObjectTag = _ObjectTag;
 	
 	// Spawn object
-	Object.SetPosition(_Position);
+	if (_AnchorId != NullId) {
+		declare MapLandmark <=> MapLandmarks[AnchorId];
+		Object.SetAnchor(MapLandmark.ObjectAnchor);
+	}
+	else Object.SetPosition(_Position);
 	G_LibGalaxyTitles_CreatedObjects.add(Object.Id);
 	return Object;
 }
@@ -474,6 +485,16 @@ CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag, Ident _AnchorId) {
  *	@return		The created object
  */
 CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag) { return SpawnObject(_Position, _ObjectTag, NullId); }
+
+// ---------------------------------- //
+/** Spawn an object
+ *
+ *	@param	_ObjectTag	Type of the object to create
+ *	@param	_AnchorId	Id of the map landmark object is spawned on
+ *
+ *	@return		The created object
+ */
+CSmObject SpawnObject(Ident _AnchorId, Text _ObjectTag) { return SpawnObject(Vec3, _ObjectTag, _AnchorId); }
 
 // ---------------------------------- //
 /** Spawn objects on landmarks
@@ -510,7 +531,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			
 			// ---------------------------------- //
 			// Create object
-			declare Object = SpawnObject(Position, MapLandmark.Tag, MapLandmarkId);
+			declare Object = SpawnObject(MapLandmarkId, MapLandmark.Tag);
 			LibGalaxyTitles_ObjectSpawned = Object != Null;
 			if (!LibGalaxyTitles_ObjectSpawned) continue;
 			
@@ -1116,6 +1137,15 @@ Void Loop(Boolean _SpawnObjects, Integer _ToadsRespawnTime) {
 	ReloadBoost();
 	SpawnObjects(_SpawnObjects);
 	ToadsLoop(_ToadsRespawnTime);
+
+	// ---------------------------------- //
+	// Manage Replie particles action
+	foreach (Player in Players) {
+		if (Player.ArmorReplenishGain != 1) continue;
+		declare Integer ReplieParticlesEndTime for Player;
+		if (Now < ReplieParticlesEndTime) continue;
+		Player.ArmorReplenishGain = 0;
+	}
 }
 
 Void Loop(Boolean _SpawnObjects) {

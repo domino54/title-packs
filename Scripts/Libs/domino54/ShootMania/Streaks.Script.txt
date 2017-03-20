@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY STREAKS by domino54           //
-//  script version: 2017-01-12            //
+//  script version: 2017-03-20            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	Killfeed library.
  */
 
-#Const Version		"2017-01-12"
+#Const Version		"2017-03-20"
 #Const ScriptName	"Streaks.Script.txt"
 
 #Include "MathLib" as ML
@@ -63,9 +63,9 @@ Boolean Private_IsValidPlayer(CSmPlayer _Player) { return _Player != Null && !_P
  */
 Text Private_CreateManialinkNotices() {
 	return """
-<manialink version="2" name="{{{C_LibStreaks_InterfaceLayerName}}}">
-<frame posn="{{{C_LibStreaks_NoticePosition.X^" "^C_LibStreaks_NoticePosition.Y^" "^C_LibStreaks_NoticePosition.Z}}}">
-	<quad sizen="60 15" halign="center" valign="center" opacity="0" id="Quad_StreakNotice"/>
+<manialink version="3" name="{{{C_LibStreaks_InterfaceLayerName}}}">
+<frame pos="{{{C_LibStreaks_NoticePosition.X^" "^C_LibStreaks_NoticePosition.Y^" "^C_LibStreaks_NoticePosition.Z}}}">
+	<quad size="60 15" halign="center" valign="center" opacity="0" id="Quad_StreakNotice" />
 </frame>
 
 <script><!--
@@ -106,6 +106,8 @@ declare PrevStreakIsVisible = False;
 // ---------------------------------- //
 ***Yield***
 ***
+if (!PageIsVisible) continue;
+
 // ---------------------------------- //
 // Get the data of current player
 if (GUIPlayer != Null) {
@@ -140,11 +142,10 @@ if (PrevPlayerStreak != CurrentPlayerStreak) {
 // Display streak notice to a player
 if (PrevStreakIsVisible != StreakNotice_IsVisible) {
 	PrevStreakIsVisible = StreakNotice_IsVisible;
-	LibManialink_AnimStop(Quad_StreakNotice);
 	
 	declare TargetOpacity = 0.;
 	declare TargetScale = .75;
-	declare Easing = "EaseInSine";
+	declare Easing = CAnimManager::EAnimManagerEasing::SineIn;
 	
 	Quad_StreakNotice.RelativeScale = 1.;
 	Quad_StreakNotice.Opacity = 1.;
@@ -152,13 +153,13 @@ if (PrevStreakIsVisible != StreakNotice_IsVisible) {
 	if (StreakNotice_IsVisible) {
 		TargetOpacity = 1.;
 		TargetScale = 1.;
-		Easing = "EaseOutCirc";
+		Easing = CAnimManager::EAnimManagerEasing::CircOut;
 		
 		Quad_StreakNotice.RelativeScale = 2.;
 		Quad_StreakNotice.Opacity = 0.;
 	}
 	
-	LibManialink_Anim(Quad_StreakNotice, "<quad scale="^TargetScale^" opacity="^TargetOpacity^"/>", 250, Easing);
+	AnimMgr.Add(Quad_StreakNotice, "<quad scale='"^TargetScale^"' opacity='"^TargetOpacity^"' />", 250, Easing);
 }
 ***
 
@@ -212,17 +213,14 @@ Vec3 GetStreakColor(Integer _Eliminations) {
 	return <.25, .75, 1.>;
 }
 
-{{{Manialink::Animations(["EaseOutCirc", "EaseInSine"])}}}
-
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
 main() {
 	+++Main+++
 	while (True) {
-		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
+		+++Yield+++
 	}
 }
 

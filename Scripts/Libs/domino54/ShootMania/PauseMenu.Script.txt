@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PAUSE MENU by domino54        //
-//  script version: 2017-02-27            //
+//  script version: 2017-03-20            //
 // -------------------------------------- //
 
 /**
@@ -12,12 +12,13 @@
  *	time.
  */
 
-#Const Version		"2017-02-27"
+#Const Version		"2017-03-20"
 #Const ScriptName	"PauseMenu.Script.txt"
 
 #Include "MathLib" as ML
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
@@ -46,92 +47,88 @@ declare Integer[Ident] G_LibPauseMenu_TeamChangeRequests;
 Text Private_CreateManialinkPauseMenu() {
 	declare netwrite Text Net_LibPauseMenu_HelpModeObjectives for Teams[0];
 	return """
-<manialink version="2" name="LibPauseMenu:Pause">
+<manialink version="3" name="LibPauseMenu:Pause">
 <stylesheet>
-	<style class="buttonFont" halign="center" valign="center2" textsize="2" textcolor="BBB" textfont="Eurostile" textprefix="$t"/>
+	<style class="buttonFont" halign="center" valign="center2" textsize="2" textcolor="BBB" textfont="Eurostile" textprefix="$t" />
 </stylesheet>
 
-<!-- Pause menu button model -->
-<framemodel id="FrameModel_PauseButton">
-	<quad sizen="60 7" class="hoverButton colorizable" opacity="0" ScriptEvents="1"/>
-	<label posn="30 -3.5 .2" sizen="52" class="buttonFont" id="Label_ButtonText"/>
-	<quad posn="58 -3.5 .2" sizen="3 3" halign="right" valign="center" colorize="AAA" id="Quad_ButtonCheck"/>
-</framemodel>
-
 <!-- Background blur -->
-<quad posn="0 0 49" sizen="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur"/>
+<quad z-index="20" size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" />
 
 <!-- Pause menu window -->
-<frame id="Frame_PauseWindow" posn="-30 32 50">
-	<quad sizen="60 64" bgcolor="000" opacity=".75" ScriptEvents="1"/>
-	<quad sizen="60 64" style="Bgs1" substyle="BgDialogBlur"/>
-	<quad posn="-2.5 2.5 -.1" sizen="130 138" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow"/>
-	
+<frame id="Frame_PauseWindow" pos="-30 32" z-index="21">
 	<!-- Title block -->
-	<frame posn="30 -5 1">
-		<quad sizen="59 9" halign="center" valign="center" bgcolor="FFF"/>
+	<frame pos="30 -5">
 		<label
-			posn="0 0 .1" sizen="50" halign="center" valign="center2"
-			textsize="2" textcolor="000" textfont="Eurostile_Bold" textprefix="$t" text="Pause" translate="1"
+			size="50" halign="center" valign="center2" textsize="2" textcolor="000"
+			textfont="Eurostile_Bold" textprefix="$t" text="Pause" translate="1"
 		/>
+		<quad size="59 9" halign="center" valign="center" bgcolor="FFF" />
 	</frame>
+
+	<!-- Pause menu button model -->
+	<framemodel id="FrameModel_PauseButton">
+		<label pos="30 -3.5" size="52" class="buttonFont" id="Label_ButtonText" />
+		<quad pos="58 -3.5" size="3 3" halign="right" valign="center" colorize="AAA" id="Quad_ButtonCheck" />
+		<quad size="60 7" class="hoverButton colorizable" opacity="0" ScriptEvents="1" />
+	</framemodel>
 	
 	<!-- Pause buttons -->
-	<frame id="Frame_PauseButtons" posn="0 -11 1">
-		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#0" hidden="1"/>
-		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#1" hidden="1"/>
-		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#2" hidden="1"/>
-		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#3" hidden="1"/>
-		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#4" hidden="1"/>
-		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#5" hidden="1"/>
+	<frame id="Frame_PauseButtons" pos="0 -11">
+		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#0" hidden="1" />
+		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#1" hidden="1" />
+		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#2" hidden="1" />
+		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#3" hidden="1" />
+		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#4" hidden="1" />
+		<frameinstance modelid="FrameModel_PauseButton" id="Frame_PauseButton#5" hidden="1" />
 	</frame>
 	
 	<!-- Resume and quit buttons -->
-	<frame id="Frame_ButtonResume" posn="6 -54 1">
-		<quad sizen="24 8" class="hoverButton colorizable" opacity="0" id="Quad_ButtonResume" ScriptEvents="1"/>
-		<label posn="12 -4 .2" class="buttonFont" text="Resume" translate="1" id="Label_ButtonText"/>
+	<frame id="Frame_ButtonResume" pos="6 -54">
+		<label pos="12 -4" class="buttonFont" text="Resume" translate="1" id="Label_ButtonText" />
+		<quad size="24 8" class="hoverButton colorizable" opacity="0" id="Quad_ButtonResume" ScriptEvents="1" />
 	</frame>
-	<frame id="Frame_ButtonQuit" posn="30 -54 1">
-		<quad sizen="24 8" class="hoverButton colorizable" opacity="0" id="Quad_ButtonQuit" ScriptEvents="1"/>
-		<label posn="12 -4 .2" class="buttonFont" text="Quit" translate="1" id="Label_ButtonText"/>
+	<frame id="Frame_ButtonQuit" pos="30 -54">
+		<label pos="12 -4" class="buttonFont" text="Quit" translate="1" id="Label_ButtonText" />
+		<quad size="24 8" class="hoverButton colorizable" opacity="0" id="Quad_ButtonQuit" ScriptEvents="1" />
 	</frame>
+
+	<quad size="60 64" bgcolor="000" opacity=".75" ScriptEvents="1" />
+	<quad size="60 64" style="Bgs1" substyle="BgDialogBlur" />
+	<quad pos="-2.5 2.5" size="130 138" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow" />
 </frame>
 
-<!-- Team card frame model -->
-<framemodel id="FrameModel_TeamCard">
-	<quad halign="center" sizen="49 49" opacity=".125" id="Quad_CardBackground" ScriptEvents="1"/>
-	<quad posn="0 -16 .1" sizen="18 18" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_TeamEmblem"/>
-	<label
-		posn="0 -28 .1" sizen="44" halign="center" valign="center2" id="Label_TeamName"
-		textemboss="1" textcolor="FFF" textfont="Eurostile"
-	/>
-	<label
-		posn="0 -33 .1" halign="center" valign="center2" id="Label_TeamNbPlayers"
-		textsize="1" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"
-	/>
-	<label
-		posn="0 -40 .1" halign="center" valign="center2" id="Label_JoinTeamText" opacity="0"
-		textsize="2" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" textprefix="$t" text="Join" translate="1"
-	/>
-</framemodel>
-
 <!-- Team selection window -->
-<frame id="Frame_TeamSelection" posn="0 36 50" hidden="1">
-	<quad sizen="100 72" halign="center" bgcolor="000" opacity=".75" ScriptEvents="1" id="Quad_TeamsWindowBg" />
-	<quad sizen="100 72" halign="center" style="Bgs1" substyle="BgDialogBlur" id="Quad_TeamsWindowBlur" />
-	<quad posn="0 2.5 -.1" sizen="210 154" halign="center" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow" id="Quad_TeamsWindowShad" />
-	
+<frame id="Frame_TeamSelection" pos="0 36" z-index="21" hidden="1">
 	<!-- Title block -->
-	<frame posn="0 -5 1">
-		<quad sizen="99 9" halign="center" valign="center" bgcolor="FFF" id="Quad_TeamsHeaderBg" />
+	<frame pos="0 -5">
 		<label
-			posn="0 0 .1" sizen="90" halign="center" valign="center2"
-			textsize="2" textcolor="000" textfont="Eurostile_Bold" textprefix="$t" text="Choose your team" translate="1"
+			size="90" halign="center" valign="center2" textsize="2" textcolor="000"
+			textfont="Eurostile_Bold" textprefix="$t" text="Choose your team" translate="1"
 		/>
+		<quad size="99 9" halign="center" valign="center" bgcolor="FFF" id="Quad_TeamsHeaderBg" />
 	</frame>
+
+	<!-- Team card frame model -->
+	<framemodel id="FrameModel_TeamCard">
+		<quad halign="center" size="49 49" opacity=".125" id="Quad_CardBackground" ScriptEvents="1" />
+		<quad pos="0 -16 .1" size="18 18" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_TeamEmblem" />
+		<label
+			pos="0 -28 .1" size="44" halign="center" valign="center2" id="Label_TeamName"
+			textemboss="1" textcolor="FFF" textfont="Eurostile"
+		/>
+		<label
+			pos="0 -33 .1" halign="center" valign="center2" id="Label_TeamNbPlayers"
+			textsize="1" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"
+		/>
+		<label
+			pos="0 -40 .1" halign="center" valign="center2" id="Label_JoinTeamText" opacity="0"
+			textsize="2" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" textprefix="$t" text="Join" translate="1"
+		/>
+	</framemodel>
 	
 	<!-- Teams cards -->
-	<frame id="Frame_TeamsCardsCon" posn="0 -11 1">
+	<frame id="Frame_TeamsCardsCon" pos="0 -11">
 		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#0" />
 		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#1" />
 		<frameinstance modelid="FrameModel_TeamCard" id="Frame_TeamCard#2" />
@@ -145,38 +142,42 @@ Text Private_CreateManialinkPauseMenu() {
 	</frame>
 	
 	<!-- Return button -->
-	<frame id="Frame_TeamsButtonReturn" posn="0 -62 1">
-		<quad sizen="48 8" halign="center" class="hoverButton colorizable" opacity="0" id="Quad_TeamsButtonReturn" ScriptEvents="1"/>
-		<label posn="0 -4 .2" class="buttonFont" text="Return" translate="1" id="Label_ButtonText"/>
+	<frame id="Frame_TeamsButtonReturn" pos="0 -62">
+		<label pos="0 -4" class="buttonFont" text="Return" translate="1" id="Label_ButtonText" />
+		<quad size="48 8" halign="center" class="hoverButton colorizable" opacity="0" id="Quad_TeamsButtonReturn" ScriptEvents="1" />
 	</frame>
+
+	<quad size="100 72" halign="center" bgcolor="000" opacity=".75" ScriptEvents="1" id="Quad_TeamsWindowBg" />
+	<quad size="100 72" halign="center" style="Bgs1" substyle="BgDialogBlur" id="Quad_TeamsWindowBlur" />
+	<quad pos="0 2.5" size="210 154" halign="center" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow" id="Quad_TeamsWindowShad" />
 </frame>
 
 <!-- Mode help window -->
-<frame id="Frame_HelpWindow" posn="-70 0 50" hidden="1">
-	<quad sizen="140" bgcolor="000" opacity=".75" ScriptEvents="1" id="Quad_HelpBgColor"/>
-	<quad sizen="140" style="Bgs1" substyle="BgDialogBlur" id="Quad_HelpBgBlur"/>
-	<quad posn="-2.5 2.5 -.1" sizen="290" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow" id="Quad_HelpBgShadow"/>
-	
+<frame id="Frame_HelpWindow" pos="-70" z-index="21" hidden="1">
 	<!-- Title block -->
-	<frame posn="70 -5 1">
-		<quad sizen="139 9" halign="center" valign="center" bgcolor="FFF"/>
+	<frame pos="70 -5 1">
 		<label
-			posn="0 0 .1" sizen="130" halign="center" valign="center2"
+			size="130" halign="center" valign="center2"
 			textsize="2" textcolor="000" textfont="Eurostile_Bold" textprefix="$t" id="Label_HelpModeName"
 		/>
+		<quad size="139 9" halign="center" valign="center" bgcolor="FFF" />
 	</frame>
 	
 	<!-- Mode objectives -->
 	<label
-		posn="70 0 .1" sizen="120" halign="center" id="Label_HelpModeObjectives"
+		pos="70" size="120" halign="center" id="Label_HelpModeObjectives"
 		textsize="2" textcolor="FFF" textfont="Eurostile" autonewline="1"
 	/>
 	
 	<!-- Resume button -->
-	<frame id="Frame_ButtonHelpResume" posn="58 0 .1">
-		<quad sizen="24 8" class="hoverButton colorizable" opacity="0" id="Quad_ButtonHelpResume" ScriptEvents="1"/>
-		<label posn="12 -4 .2" class="buttonFont" text="OK" id="Label_ButtonText"/>
+	<frame id="Frame_ButtonHelpResume" pos="58 0 .1">
+		<label pos="12 -4 .2" class="buttonFont" text="OK" id="Label_ButtonText" />
+		<quad size="24 8" class="hoverButton colorizable" opacity="0" id="Quad_ButtonHelpResume" ScriptEvents="1" />
 	</frame>
+
+	<quad size="140" bgcolor="000" opacity=".75" ScriptEvents="1" id="Quad_HelpBgColor" />
+	<quad size="140" style="Bgs1" substyle="BgDialogBlur" id="Quad_HelpBgBlur" />
+	<quad pos="-2.5 2.5" size="290" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow" id="Quad_HelpBgShadow" />
 </frame>
 
 <script><!--
@@ -266,9 +267,6 @@ declare netread Integer Net_LibPauseMenu_CustomTeams for Teams[0];
 declare netread Vec3[Integer] Net_LibPauseMenu_TeamsColors for Teams[0];
 declare netread Text[Integer] Net_LibPauseMenu_TeamsNames for Teams[0];
 
-/// Players colors
-declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
-
 // ---------------------------------- //
 // Variables
 declare UpdatePauseButtons = True;
@@ -294,12 +292,13 @@ declare PrevModeName = "";
 declare PrevNbCustomTeams = 0;
 declare PrevCustomTeamsNames = Text[Integer];
 declare PrevCustomTeamsColors = Vec3[Integer];
+declare PrevGUIPlayerHue = -1.;
 
 // ---------------------------------- //
 // Initialize
 HideResumePlayingButton = True;
 CloseInGameMenu(::EInGameMenuResult::Resume);
-EnableMenuNavigation(True, True, Null, 0);
+EnableMenuNavigation(True, False, Null, 0);
 ***
 
 // ---------------------------------- //
@@ -322,8 +321,10 @@ foreach (Event in PendingEvents) {
 	if (Event.Type == CMlEvent::Type::MouseClick) {
 		// ---------------------------------- //
 		// Resume game button
-		if (Event.ControlId == "Quad_ButtonResume")
+		if (Event.ControlId == "Quad_ButtonResume") {
 			CloseInGameMenu(::EInGameMenuResult::Resume);
+			(Event.Control as CMlQuad).Opacity = 0.;
+		}
 		
 		// ---------------------------------- //
 		// Leave server button
@@ -342,14 +343,16 @@ foreach (Event in PendingEvents) {
 		
 		// ---------------------------------- //
 		// Resume game via help menu
-		if (Event.ControlId == "Quad_ButtonHelpResume")
+		if (Event.ControlId == "Quad_ButtonHelpResume") {
 			CloseInGameMenu(::EInGameMenuResult::Resume);
+			(Event.Control as CMlQuad).Opacity = 0.;
+		}
 		
 		// ---------------------------------- //
 		// Functional buttons
-		foreach (I => Frame in Frame_PauseButtons) if (Frame.Controls.exists(Event.Control)) {
+		if (Frame_PauseButtons.exists(Event.Control.Parent)) {
 			(Event.Control as CMlQuad).Opacity = 0.;
-			switch (I) {
+			switch (Frame_PauseButtons.keyof(Event.Control.Parent)) {
 				// ---------------------------------- //
 				// Show mode help
 				case 0 : {
@@ -371,7 +374,7 @@ foreach (Event in PendingEvents) {
 				// Toggle spectator mode
 				case 1 : {
 					CloseInGameMenu(::EInGameMenuResult::Resume);
-					ActionToTrigger = "maniaplanet:togglespec";
+					RequestSpectatorClient(!IsSpectator);
 				}
 				// ---------------------------------- //
 				// Open team selection screen
@@ -435,13 +438,11 @@ foreach (Event in PendingEvents) {
 		// ---------------------------------- //
 		// Hover button background
 		if (Event.Control.HasClass("hoverButton")) {
-			LibManialink_AnimStop(Event.Control);
-			LibManialink_Anim(Event.Control, "<quad opacity=\".2\"/>", 125, "EaseOutSine");
+			AnimMgr.Add(Event.Control, "<quad opacity='.2' />", 125, CAnimManager::EAnimManagerEasing::SineOut);
 			
 			foreach (I => Frame in Frame_Buttons) if (Frame.Controls.exists(Event.Control)) {
 				declare Label_ButtonText <=> (Frame.GetFirstChild("Label_ButtonText") as CMlLabel);
-				LibManialink_AnimStop(Label_ButtonText);
-				LibManialink_Anim(Label_ButtonText, "<label textcolor=\"FFF\"/>", 125, "EaseOutSine");
+				AnimMgr.Add(Label_ButtonText, "<label textcolor='FFF' />", 125, CAnimManager::EAnimManagerEasing::SineOut);
 			}
 		}
 		
@@ -452,10 +453,8 @@ foreach (Event in PendingEvents) {
 				declare Quad = (Event.Control as CMlQuad);
 				declare Label_JoinTeamText <=> (Frame.GetFirstChild("Label_JoinTeamText") as CMlLabel);
 				
-				LibManialink_AnimStop(Quad);
-				LibManialink_AnimStop(Label_JoinTeamText);
-				LibManialink_Anim(Quad, "<quad opacity=\".25\"/>", 250, "EaseOutSine");
-				LibManialink_Anim(Label_JoinTeamText, "<quad opacity=\"1\"/>", 250, "EaseOutSine");
+				AnimMgr.Add(Quad, "<quad opacity='.25' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+				AnimMgr.Add(Label_JoinTeamText, "<quad opacity='1' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
 			}
 		}
 	}
@@ -465,13 +464,11 @@ foreach (Event in PendingEvents) {
 		// ---------------------------------- //
 		// Unfocus button background
 		if (Event.Control.HasClass("hoverButton")) {
-			LibManialink_AnimStop(Event.Control);
-			LibManialink_Anim(Event.Control, "<quad opacity=\"0\"/>", 125, "EaseInSine");
+			AnimMgr.Add(Event.Control, "<quad opacity='0' />", 125, CAnimManager::EAnimManagerEasing::SineIn);
 			
 			foreach (I => Frame in Frame_Buttons) if (Frame.Controls.exists(Event.Control)) {
 				declare Label_ButtonText <=> (Frame.GetFirstChild("Label_ButtonText") as CMlLabel);
-				LibManialink_AnimStop(Label_ButtonText);
-				LibManialink_Anim(Label_ButtonText, "<label textcolor=\"AAA\"/>", 125, "EaseInSine");
+				AnimMgr.Add(Label_ButtonText, "<label textcolor='AAA' />", 125, CAnimManager::EAnimManagerEasing::SineIn);
 			}
 		}
 		
@@ -482,10 +479,8 @@ foreach (Event in PendingEvents) {
 				declare Quad = (Event.Control as CMlQuad);
 				declare Label_JoinTeamText <=> (Frame.GetFirstChild("Label_JoinTeamText") as CMlLabel);
 				
-				LibManialink_AnimStop(Quad);
-				LibManialink_AnimStop(Label_JoinTeamText);
-				LibManialink_Anim(Quad, "<quad opacity=\".125\"/>", 250, "EaseInSine");
-				LibManialink_Anim(Label_JoinTeamText, "<quad opacity=\"0\"/>", 250, "EaseInSine");
+				AnimMgr.Add(Quad, "<quad opacity='.125' />", 250, CAnimManager::EAnimManagerEasing::SineIn);
+				AnimMgr.Add(Label_JoinTeamText, "<quad opacity='0' />", 250, CAnimManager::EAnimManagerEasing::SineIn);
 			}
 		}
 	}
@@ -552,9 +547,17 @@ if (PageIsVisible) {
 	
 	// ---------------------------------- //
 	// Update spectator button check icon
-	if (PrevIsSpectatorMode != IsSpectatorMode) {
-		PrevIsSpectatorMode = IsSpectatorMode;
+	if (PrevIsSpectatorMode != IsSpectator) {
+		PrevIsSpectatorMode = IsSpectator;
 		UpdatePauseButtons = True;
+	}
+
+	// ---------------------------------- //
+	// Update on custom teams amount change
+	if (PrevNbCustomTeams != Net_LibPauseMenu_CustomTeams) {
+		PrevNbCustomTeams = Net_LibPauseMenu_CustomTeams;
+		UpdatePauseButtons = True;
+		UpdateTeamsCards = True;
 	}
 	
 	// ---------------------------------- //
@@ -578,7 +581,7 @@ if (PageIsVisible) {
 					UI.SpectatorObserverMode != CUIConfig::EObserverMode::Forbidden;
 				
 				// Change team
-				case 2 : Frame.Visible = !IsSpectatorMode && ((UseClans && !UseForcedClans) || Net_LibPauseMenu_CustomTeams > 0);
+				case 2 : Frame.Visible = !IsSpectator && !UseForcedClans && (UseClans || Net_LibPauseMenu_CustomTeams > 0);
 				
 				// Other
 				default : Frame.Visible = True;
@@ -587,7 +590,7 @@ if (PageIsVisible) {
 			// ---------------------------------- //
 			// Set the position of visible buttons
 			if (Frame.Visible) {
-				Frame.RelativePosition.Y = TotalHeight;
+				Frame.RelativePosition_V3.Y = TotalHeight;
 				TotalHeight -= 7.;
 			}
 			
@@ -595,7 +598,7 @@ if (PageIsVisible) {
 			// Set the spectator mode check icon
 			if (Frame.Visible && I == 1) {
 				declare Quad_ButtonCheck <=> (Frame.GetFirstChild("Quad_ButtonCheck") as CMlQuad);
-				if (IsSpectatorMode) Quad_ButtonCheck.ImageUrl = "{{{C_ImgBase}}}MenuIconCheck1.png";
+				if (IsSpectator) Quad_ButtonCheck.ImageUrl = "{{{C_ImgBase}}}MenuIconCheck1.png";
 				else Quad_ButtonCheck.ImageUrl = "{{{C_ImgBase}}}MenuIconCheck0.png";
 			}
 		}
@@ -604,11 +607,10 @@ if (PageIsVisible) {
 	// ---------------------------------- //
 	// Set interface color
 	if (GUIPlayer != Null) {
-		if (GUIPlayer.CurrentClan == 0) {
-			if (!Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login)) G_InterfaceColor = GUIPlayer.User.Color;
-			else G_InterfaceColor = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
+		if (PrevGUIPlayerHue != GUIPlayer.GetLinearHue) {
+			PrevGUIPlayerHue = GUIPlayer.GetLinearHue;
+			G_InterfaceColor = HsvToRgb(<ML::Clamp(PrevGUIPlayerHue, 0., 1.), 1., 1.>);
 		}
-		else G_InterfaceColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
 	}
 	else if (LocalUser != Null) G_InterfaceColor = LocalUser.Color;
 	else G_InterfaceColor = C_DefaultInterfaceColor;
@@ -635,13 +637,6 @@ if (PageIsVisible) {
 			// Update on name change
 			if (PrevTeamsNames[I] != Teams[I].Name) {
 				PrevTeamsNames[I] = Teams[I].Name;
-				UpdateTeamsCards = True;
-			}
-			
-			// ---------------------------------- //
-			// Update on custom teams amount change
-			if (PrevNbCustomTeams != Net_LibPauseMenu_CustomTeams) {
-				PrevNbCustomTeams = Net_LibPauseMenu_CustomTeams;
 				UpdateTeamsCards = True;
 			}
 			
@@ -695,7 +690,7 @@ if (PageIsVisible) {
 				Quad_TeamsWindowBlur.Size.X = Quad_TeamsWindowBg.Size.X;
 				Quad_TeamsWindowShad.Size.X = Quad_TeamsWindowBg.Size.X * 2. + 10.;
 				Quad_TeamsHeaderBg.Size.X = Quad_TeamsWindowBg.Size.X - 1;
-				Frame_TeamsCardsCon.RelativePosition.X = 25. + Quad_TeamsWindowBg.Size.X / -2.;
+				Frame_TeamsCardsCon.RelativePosition_V3.X = 25. + Quad_TeamsWindowBg.Size.X / -2.;
 				
 				foreach (I => Frame in Frame_TeamsCards) {
 					declare Clan = I + 1;
@@ -703,7 +698,7 @@ if (PageIsVisible) {
 					if (!Frame.Visible) continue;
 					
 					// Frame position
-					Frame.RelativePosition.X = I * 50.;
+					Frame.RelativePosition_V3.X = I * 50.;
 					
 					// ---------------------------------- //
 					// Set card background color
@@ -759,13 +754,13 @@ if (PageIsVisible) {
 			// ---------------------------------- //
 			// Set the mode objectives
 			Label_HelpModeObjectives.SetText(Translate(Net_LibPauseMenu_HelpModeObjectives));
-			Label_HelpModeObjectives.RelativePosition.Y = -TotalHeight;
+			Label_HelpModeObjectives.RelativePosition_V3.Y = -TotalHeight;
 			TotalHeight += Label_HelpModeObjectives.ValueLineCount * 4.;
 			
 			// ---------------------------------- //
 			// Set the resume button position
 			TotalHeight += 1.;
-			Frame_ButtonHelpResume.RelativePosition.Y = -TotalHeight;
+			Frame_ButtonHelpResume.RelativePosition_V3.Y = -TotalHeight;
 			TotalHeight += 8.;
 			
 			// ---------------------------------- //
@@ -774,7 +769,7 @@ if (PageIsVisible) {
 			Quad_HelpBgColor.Size.Y = TotalHeight;
 			Quad_HelpBgBlur.Size.Y = TotalHeight;
 			Quad_HelpBgShadow.Size.Y = TotalHeight * 2 + 10;
-			Frame_HelpWindow.RelativePosition.Y = TotalHeight / 2;
+			Frame_HelpWindow.RelativePosition_V3.Y = TotalHeight / 2;
 		}
 	}
 }
@@ -790,6 +785,13 @@ if (PrevPageIsVisible != PageIsVisible) {
 		LayerExecutableEvents.add("PlaySound:HideDialog");
 		UpdateWindowsVisibility = True;
 		ActiveSubWindow = "";
+
+		foreach (Control in ColorizableControls) {
+			if (Control is CMlQuad) {
+				declare Quad = (Control as CMlQuad);
+				Quad.Opacity = 0.;
+			}
+		}
 	}
 }
 
@@ -822,15 +824,11 @@ Void ColorizeControls(CMlControl[] _Controls, Vec3 _Color) {
 				Quad.BgColor = _Color;
 				Quad.Colorize = _Color;
 			}
-			case CMlGauge : {
-				declare Gauge = (Control as CMlGauge);
-				Gauge.Color = _Color;
-			}
 		}
 	}
 }
 
-{{{Manialink::Animations(["EaseInSine", "EaseOutSine"])}}}
+{{{ManialinkTools::Function("HsvToRgb")}}}
 {{{Translations::InsertToManialink([Net_LibPauseMenu_HelpModeObjectives])}}}
 
 // ---------------------------------- //
@@ -839,9 +837,8 @@ Void ColorizeControls(CMlControl[] _Controls, Vec3 _Color) {
 main() {
 	+++Main+++
 	while (True) {
-		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
+		+++Yield+++
 	}
 }
 --></script>
@@ -1024,6 +1021,20 @@ Void Unload() {
 	Layers::Detach("LibPauseMenu:Executable");
 	Layers::Destroy("LibPauseMenu:Pause");
 	Layers::Destroy("LibPauseMenu:Executable");
+	
+	declare netwrite Text Net_LibPauseMenu_HelpModeName for Teams[0];
+	declare netwrite Text Net_LibPauseMenu_HelpModeObjectives for Teams[0];
+	declare netwrite Text Net_LibPauseMenu_HelpModeImage for Teams[0];
+	declare netwrite Integer Net_LibPauseMenu_CustomTeams for Teams[0];
+	declare netwrite Vec3[Integer] Net_LibPauseMenu_TeamsColors for Teams[0];
+	declare netwrite Text[Integer] Net_LibPauseMenu_TeamsNames for Teams[0];
+	
+	Net_LibPauseMenu_HelpModeName = "";
+	Net_LibPauseMenu_HelpModeObjectives = "";
+	Net_LibPauseMenu_HelpModeImage = "";
+	Net_LibPauseMenu_CustomTeams = -1;
+	Net_LibPauseMenu_TeamsColors.clear();
+	Net_LibPauseMenu_TeamsNames.clear();
 }
 
 // ---------------------------------- //

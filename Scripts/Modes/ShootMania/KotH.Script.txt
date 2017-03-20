@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-03-04            //
+//  script version: 2017-03-15            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-03-04"
+#Const Version		"2017-03-15"
 #Const ScriptName	"KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -19,6 +19,7 @@
 #Setting S_TimeLimit			600		as _("Time limit (seconds)")
 #Setting S_RoundsToWin			2		as _("Number of rounds to win a map")
 #Setting S_GoalCaptureDuration	100		as _("Time team requires to capture the Goal (min. 15)")
+#Setting S_DarkerGoalColor		False	as "<hidden>"
 #Setting S_UseAutoBalance		True
 
 // ---------------------------------- //
@@ -92,16 +93,10 @@ PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Multiple teams try to capture s
 // ---------------------------------- //
 // Initialize teams
 for (Clan, 1, 10) {
-	if (C_TeamsNames.existskey(Clan - 1)) {
-		declare TeamName = C_TeamsNames[Clan - 1];
-		Clans::SetClanName(Clan, TeamName);
-		PauseMenu::SetCustomTeamName(Clan, TeamName);
-	}
-	if (C_TeamsColors.existskey(Clan - 1)) {
-		declare TeamColor = C_TeamsColors[Clan - 1];
-		Clans::SetClanColor(Clan, TeamColor);
-		PauseMenu::SetCustomTeamColor(Clan, TeamColor);
-	}
+	if (C_TeamsNames.existskey(Clan - 1)) Clans::SetClanName(Clan, C_TeamsNames[Clan - 1]);
+	if (C_TeamsColors.existskey(Clan - 1)) Clans::SetClanColor(Clan, C_TeamsColors[Clan - 1]);
+	
+	PauseMenu::SetCustomTeamName(Clan, Clans::GetClanName(Clan));
 	UISetTeamColor(Clan, Clans::GetClanColor(Clan));
 }
 
@@ -130,6 +125,14 @@ declare PrevRoundsToWin = S_RoundsToWin;
 ***
 
 // ---------------------------------- //
+// Server start
+// ---------------------------------- //
+***StartServer***
+***
+Interfancy::SetModuleVisibility("ScoreSummary", True);
+***
+
+// ---------------------------------- //
 // Map begin
 // ---------------------------------- //
 ***InitMap***
@@ -151,6 +154,7 @@ if (!MapValidated) GT_SkipInvalidMap();
 ***StartMap***
 ***
 Clans::ResetClansPoints();
+for (Clan, 1, C_TeamsNbMax) Interfancy::ResetCustomTeamPoints(Clan);
 UpdateScoresTableFooter();
 G_SpawnsList.clear();
 G_LatestSpawnId = NullId;
@@ -178,7 +182,7 @@ PrevLeadingTeam = 0;
 CentralGoal.Gauge.Max = ML::Max(S_GoalCaptureDuration, C_GoalCaptureDurationMin) * C_GoalCaptureSpeedBase * 1000;
 CentralGoal.Gauge.Value = 0;
 CentralGoal.Gauge.Captured = False;
-if (CentralGoal.Base != Null) CentralGoal.Base.Clan = 1;
+if (CentralGoal.Base != Null) CentralGoal.Base.Clan = 0;
 
 // ---------------------------------- //
 // Wait for enough players to start game
@@ -301,11 +305,14 @@ if (PrevCapturingTeam != CapturingTeam) {
 	PrevCapturingTeam = CapturingTeam;
 	UISetCapturingTeam(CapturingTeam);
 	
-	// Enable the Goal's Base when capturing
-	if (CentralGoal.Base != Null) CentralGoal.Base.IsActive = CapturingTeam > 0;
-	
 	// Enable or disable color depending if the Goal is being captured
 	CentralGoal.Gauge.Clan = ML::Clamp(CapturingTeam, 0, 1);
+	
+	// Enable the Goal's Base when capturing
+	if (CentralGoal.Base != Null) {
+		CentralGoal.Base.IsActive = !S_DarkerGoalColor && CapturingTeam > 0;
+		CentralGoal.Base.Clan = CentralGoal.Gauge.Clan;
+	}
 	
 	// ---------------------------------- //
 	// Update Goal color and restore team's capture progres
@@ -329,9 +336,7 @@ if (PrevCapturingTeam != CapturingTeam) {
 
 // ---------------------------------- //
 // Set capturing speed depending on capturing players amount
-if (CapturingTeam > 0) {
-	CentralGoal.Gauge.Speed = C_GoalCaptureSpeedBase + (NbPlayersCapturing - 1) * C_GoalCaptureSpeedPerPlayer;
-}
+if (CapturingTeam > 0) CentralGoal.Gauge.Speed = C_GoalCaptureSpeedBase + (NbPlayersCapturing - 1) * C_GoalCaptureSpeedPerPlayer;
 
 // ---------------------------------- //
 // Gauge value change
@@ -431,6 +436,7 @@ SM::UnspawnAllPlayers();
 
 // Give points for the winning team
 Clans::AddClanPoints(LeadingTeamNum, 1);
+for (Clan, 1, C_TeamsNbMax) Interfancy::SetCustomTeamPoints(Clan, Clans::GetClanPoints(Clan));
 UpdateScoresTableFooter();
 
 MB_Sleep(3000);
@@ -626,10 +632,7 @@ Void KotH_AutoBalance() {
 // ---------------------------------- //
 /// Update scores table footer
 Void UpdateScoresTableFooter() {
-	declare Text[] TeamsScores;
-	for (I, 1, G_NbTeams) TeamsScores.add("$<$"^TL::ColorToText(Clans::GetClanColor(I))^Clans::GetClanPoints(I)^"$>");
-	declare ScoresText = TL::Join(" - ", TeamsScores);
-	ST2::SetFooterText(TL::Compose("First to reach %1\t|\t%2", TL::ToText(S_RoundsToWin), ScoresText));
+	ST2::SetFooterText(TL::Compose("%1 #"^MB_SectionRoundNb+1^"\t$<$777///$>\tFirst to reach "^S_RoundsToWin, _("Round")));
 }
 
 // ---------------------------------- //
@@ -640,6 +643,9 @@ Void UpdateScoresTableFooter() {
 Void UISetNbTeams(Integer _NbTeams) {
 	declare netwrite Integer Net_KotH_NbTeams for Teams[0];
 	Net_KotH_NbTeams = _NbTeams;
+	
+	PauseMenu::SetCustomTeamsCount(G_NbTeams);
+	Interfancy::SetNbCustomTeams(G_NbTeams);
 }
 
 // ---------------------------------- //
@@ -672,13 +678,15 @@ Void UISetTeamProgress(Integer _Team, Real _Progress) {
 Void UISetTeamColor(Integer _Team, Vec3 _Color) {
 	declare netwrite Vec3[Integer] Net_KotH_TeamsColors for Teams[0];
 	Net_KotH_TeamsColors[_Team] = _Color;
+	
+	PauseMenu::SetCustomTeamColor(_Team, _Color);
+	Interfancy::SetCustomTeamColor(_Team, _Color);
 }
 
 // ---------------------------------- //
 // Update the teams amount
 Void UpdateTeamsAmount() {
 	G_NbTeams = GetNewNbTeams();
-	PauseMenu::SetCustomTeamsCount(G_NbTeams);
 	UISetNbTeams(G_NbTeams);
 }
 
@@ -693,44 +701,44 @@ Text CreateManialinkGauges() {
 	
 	declare PlayersIcons = "";
 	for (I, 0, 9) PlayersIcons ^= """<quad
-		posn="{{{I * 5}}}" sizen="5 5" halign="center" valign="center" autoscale="0" id="Quad_PlayerIcon#{{{I}}}"
+		pos="{{{I * 5}}}" size="5 5" halign="center" valign="center" autoscale="0" id="Quad_PlayerIcon#{{{I}}}"
 		image="file://Media/Manialinks/ShootMania/Common/DefendersLeft.dds" colorize="000" scale="0"
 	/>""";
 	
 	return """
-<manialink version="2" name="KotH:Gauges">
+<manialink version="3" name="KotH:Gauges">
 <stylesheet>
 	<style class="EscapeMessage" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF" />
-	<style class="CircGauge" sizen="16 16" halign="center" valign="center" colorize="FFF" />
+	<style class="CircGauge" size="16 16" halign="center" valign="center" colorize="FFF" />
 </stylesheet>
 
 <framemodel id="FrameModel_PoleGauge">
-	<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeBg.png" id="Quad_GaugeBg" />
-	<frame posn="-.05 0 1" clip="1" clipposn="4" clipsizen="8 16">
+	<label pos="0 -2.75" class="EscapeMessage" textsize="2" text="0%" id="Label_Ratio" />
+	<quad pos="0 1.25" size="6 6" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_Emblem" />
+	<frame size="8 16" halign="left" valign="center">
 		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeL" hidden="1" />
 	</frame>
-	<frame posn="0 0 1" clip="1" clipposn="-4" clipsizen="8 16">
+	<frame size="8 16" halign="right" valign="center">
 		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeR" hidden="1" rot="180" />
 	</frame>
-	<quad posn="0 1.25 2" sizen="6 6" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_Emblem" />
-	<label posn="0 -2.75 2" class="EscapeMessage" textsize="2" text="0%" id="Label_Ratio" />
+	<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeBg.png" id="Quad_GaugeBg" />
 	<quad
-		posn="0 0 -1" sizen="14 14" halign="center" valign="center"
+		size="14 14" halign="center" valign="center"
 		image="file://Media/Manialinks/Common/disc.dds" colorize="FFF" opacity="0" id="Quad_CaptureAlert"
 	/>
 </framemodel>
 
-<frame posn="0 75 5">{{{TeamsGauges}}}</frame>
+<frame pos="0 75 5">{{{TeamsGauges}}}</frame>
 
-<frame id="Frame_GaugeMessage" posn="0 -54 5">
+<frame id="Frame_GaugeMessage" pos="0 -54 5">
 	<frame id="Frame_GaugeMessageAnim">
-		<quad posn="0 8 -.1" sizen="12 12" halign="center" valign="center" id="Quad_CurLandmarkIcon" />
+		<quad pos="0 8" size="12 12" halign="center" valign="center" id="Quad_CurLandmarkIcon" />
 		<label class="EscapeMessage" id="Label_CurLandmarkMessage" />
-		<gauge posn="0 -3 -.1" sizen="52 8" halign="center" valign="center" drawbg="0" id="Gauge_CurLandmarkValue" hidden="1" />
+		<gauge pos="0 -3" size="52 8" halign="center" valign="center" drawbg="0" id="Gauge_CurLandmarkValue" hidden="1" />
 	</frame>
 </frame>
 
-<frame posn="0 64 5"><frame id="Frame_CapturingPlayers">{{{PlayersIcons}}}</frame></frame>
+<frame pos="0 64 5"><frame id="Frame_CapturingPlayers">{{{PlayersIcons}}}</frame></frame>
 
 <script><!--
 /**
@@ -743,7 +751,6 @@ Text CreateManialinkGauges() {
 #Const C_GaugeToGaugeDist	14.
 #Const C_GoalIconsPath		"file://Media/Manialinks/ShootMania/Common/"
 
-{{{Manialink::Animations(["EaseInCirc", "EaseOutCirc"])}}}
 {{{ManialinkTools::Functions(["SetGaugeRatio"])}}}
 {{{Translations::InjectInManialink(["Control point captured!", "Pole blocked by enemy", "Capturing control point..."])}}}
 
@@ -797,7 +804,6 @@ main() {
 	// ---------------------------------- //
 	while (True) {
 		yield;
-		LibManialink_AnimLoop();
 		
 		// ---------------------------------- //
 		// Teams number change
@@ -807,7 +813,7 @@ main() {
 			
 			foreach (Clan => Frame in Frame_PoleGauges) {
 				Frame.Visible = Clan + 1 <= Net_KotH_NbTeams;
-				Frame.RelativePosition.X = -TotalWidth / 2 + Clan * C_GaugeToGaugeDist;
+				Frame.RelativePosition_V3.X = -TotalWidth / 2 + Clan * C_GaugeToGaugeDist;
 			}
 		}
 		
@@ -820,10 +826,9 @@ main() {
 				declare Frame = Frame_PoleGauges[PrevCapturingTeam - 1];
 				declare Quad_CaptureAlert <=> (Frame.GetFirstChild("Quad_CaptureAlert") as CMlQuad);
 				
-				LibManialink_AnimStop(Quad_CaptureAlert);
 				Quad_CaptureAlert.RelativeScale = 1.;
 				Quad_CaptureAlert.Opacity = .75;
-				LibManialink_Anim(Quad_CaptureAlert, "<quad scale='1.75' opacity=0 />", 1500, "EaseOutCirc");
+				AnimMgr.Add(Quad_CaptureAlert, "<quad scale='1.75' opacity=0 />", 1500, CAnimManager::EAnimManagerEasing::CircOut);
 			}
 			
 			declare Color = <.125, .125, .125>;
@@ -895,26 +900,23 @@ main() {
 		if (PrevGaugeMessageVisible != GaugeMessageVisible) {
 			PrevGaugeMessageVisible = GaugeMessageVisible;
 			
-			LibManialink_AnimStop(Frame_GaugeMessageAnim);
-			LibManialink_AnimStop(Label_CurLandmarkMessage);
-			LibManialink_AnimStop(Quad_CurLandmarkIcon);
 			Gauge_CurLandmarkValue.Visible = GaugeMessageVisible;
 			
 			declare PositionY = -2.;
-			Frame_GaugeMessageAnim.RelativePosition.Y = 0.;
+			Frame_GaugeMessageAnim.RelativePosition_V3.Y = 0.;
 			declare Opacity = 0.;
 			Label_CurLandmarkMessage.Opacity = 1.;
 			
 			if (GaugeMessageVisible) {
-				Frame_GaugeMessageAnim.RelativePosition.Y = -PositionY;
+				Frame_GaugeMessageAnim.RelativePosition_V3.Y = -PositionY;
 				PositionY = 0.;
 				Label_CurLandmarkMessage.Opacity = 0.;
 				Opacity = 1.;
 			}
 			
-			LibManialink_Anim(Frame_GaugeMessageAnim, "<frame posn='0 "^PositionY^"' />", 125, "EaseLinear");
-			LibManialink_Anim(Label_CurLandmarkMessage, "<label opacity='"^Opacity^"' />", 125, "EaseLinear");
-			LibManialink_Anim(Quad_CurLandmarkIcon, "<quad opacity='"^Opacity^"' />", 125, "EaseLinear");
+			AnimMgr.Add(Frame_GaugeMessageAnim, "<frame pos='0 "^PositionY^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+			AnimMgr.Add(Label_CurLandmarkMessage, "<label opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+			AnimMgr.Add(Quad_CurLandmarkIcon, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 		}
 		
 		// ---------------------------------- //
@@ -956,9 +958,8 @@ main() {
 			if (PrevGaugeSpeed > 0) Audio.PlaySoundEvent(CAudioManager::ELibSound::ScoreIncrease, 0, -5.);
 			
 			// Move players icons frame
-			LibManialink_AnimStop(Frame_CapturingPlayers);
 			declare PosX = -5. * ML::Max(PrevGaugeSpeed - 1, 0) / 2;
-			LibManialink_Anim(Frame_CapturingPlayers, "<frame posn='"^PosX^" 0' />", 250, "EaseOutCirc");
+			AnimMgr.Add(Frame_CapturingPlayers, "<frame pos='"^PosX^" 0' />", 250, CAnimManager::EAnimManagerEasing::CircOut);
 			
 			// ---------------------------------- //
 			// Animate players icons
@@ -971,8 +972,7 @@ main() {
 				}
 				if (Quad.RelativeScale == Scale) continue;
 				
-				LibManialink_AnimStop(Quad);
-				LibManialink_Anim(Quad, "<quad scale='"^Scale^"' />", 250, "EaseOutCirc");
+				AnimMgr.Add(Quad, "<quad scale='"^Scale^"' />", 250, CAnimManager::EAnimManagerEasing::CircOut);
 			}
 		}
 	}
@@ -990,15 +990,15 @@ Text CreateManialinkMarkers() {
 	declare R = 9/16.;
 
 	return """
-<manialink version="2" name="KotH:Markers">
+<manialink version="3" name="KotH:Markers">
 <stylesheet>
-	<style class="text" halign="center" valign="center2" textsize="0" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
+	<style class="text" halign="center" valign="center2" textsize=".125" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
 </stylesheet>
 
 <frame id="Frame_GoalMarker" hidden="1">
-	<label posn="0 2.5" class="text" id="Label_MarkerDistance" />
-	<label posn="0 .5" class="text" scale="1.5" id="Label_MarkerGoalName" />
-	<quad posn="0 3" sizen="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" colorize="FFF" />
+	<label pos="0 2.5" class="text" id="Label_MarkerDistance" />
+	<label pos="0 .5" class="text" scale="1.5" id="Label_MarkerGoalName" />
+	<quad pos="0 3" size="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" colorize="FFF" />
 </frame>
 
 <script><!--

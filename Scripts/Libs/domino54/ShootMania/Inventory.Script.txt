@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2017-03-18            //
+//  script version: 2017-03-21            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2017-03-18"
+#Const Version		"2017-03-21"
 #Const ScriptName	"Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -110,7 +110,6 @@
 // ---------------------------------- //
 declare Boolean G_LibInventory_IsLoaded;	///< True, if the library has been loaded
 declare Text[CSmMode::EWeapon] G_LibInventory_WeaponsIcons;
-declare Integer G_LibInventory_NextUICleaningTime;
 
 // ---------------------------------- //
 // Functions
@@ -294,7 +293,11 @@ if (PrevInterfaceColor != GUIPlayer.GetLinearHue) {
 
 	declare Color = HsvToRgb(<GUIPlayer.GetLinearHue, 1., 1.>);
 	foreach (I => Frame in Frame_InventoryItems) {
-		declare Quads = [(Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad)];
+		declare Quads = [
+			(Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad),
+			(Frame.GetFirstChild("Quad_ItemBackground") as CMlQuad),
+			(Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad)
+		];
 		foreach (Quad in Quads) Quad.Colorize = Color;
 	}
 }
@@ -504,12 +507,12 @@ Void FormatControl(CMlControl _Control, Text _Format) {
 	
 	// ---------------------------------- //
 	// Position
-	declare PositionText = TL::Split(" ", XMLDocument.Root.GetAttributeText("posn", ""));
+	declare PositionText = TL::Split(" ", XMLDocument.Root.GetAttributeText("pos", ""));
 	if (PositionText.count > 0) for (I, 0, 1) if (PositionText.existskey(I)) _Control.RelativePosition_V3[I] = TL::ToReal(PositionText[I]);
 	
 	// ---------------------------------- //
 	// Size
-	declare SizeText = TL::Split(" ", XMLDocument.Root.GetAttributeText("sizen", ""));
+	declare SizeText = TL::Split(" ", XMLDocument.Root.GetAttributeText("size", ""));
 	if (SizeText.count > 0) for (I, 0, 1) if (SizeText.existskey(I)) _Control.Size[I] = TL::ToReal(SizeText[I]);
 	
 	// ---------------------------------- //

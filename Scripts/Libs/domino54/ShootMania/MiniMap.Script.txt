@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2017-03-20            //
+//  script version: 2017-03-21            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2017-03-20"
+#Const Version		"2017-03-21"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "TextLib" as TL
@@ -209,6 +209,7 @@ declare IsOverviewMode = True;
 declare IsPlayerSpawned = False;
 declare AdjustMarkersPositions = True;
 declare UpdateMarkersPositions = True;
+declare MarkersPositioning = Vec2;
 declare ReassignPlayersMarkers = True;
 declare NbPlayersDisplayed = 0;
 declare NbCustomDisplayed = 0;
@@ -417,6 +418,10 @@ if (!PositionsMatch(PrevMinimapPosition, MinimapPosition)) {
 if (PrevMinimapZoom != Minimap_Main.ZoomFactor) {
 	PrevMinimapZoom = Minimap_Main.ZoomFactor;
 	AdjustMarkersPositions = True;
+	MarkersPositioning = <
+		Minimap_Main.Size.X / (G_EnvironmentSize / Minimap_Main.ZoomFactor),
+		Minimap_Main.Size.Y / (G_EnvironmentSize / Minimap_Main.ZoomFactor)
+	>;
 }
 
 // Reset the trigger
@@ -428,8 +433,8 @@ if (AdjustMarkersPositions) {
 	AdjustMarkersPositions = False;
 	UpdateMarkersPositions = True;
 	Frame_MarkersPosition.RelativePosition_V3 = <
-		MinimapPosition.X * Minimap_Main.Size.X / (G_EnvironmentSize / Minimap_Main.ZoomFactor),
-		-MinimapPosition.Z * Minimap_Main.Size.Y / (G_EnvironmentSize / Minimap_Main.ZoomFactor)
+		MinimapPosition.X * MarkersPositioning.X,
+		-MinimapPosition.Z * MarkersPositioning.Y
 	>;
 }
 
@@ -538,7 +543,10 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	declare Player <=> Players[FramePlayer];
 
 	// Don't bother showing the player outside of the visible area
-	if (!IsOverviewMode && Distance2D(GUIPlayer.Position, Player.Position) > 60.) continue;
+	if (!IsOverviewMode && Distance2D(GUIPlayer.Position, Player.Position) > 60.) {
+		if (Frame.Visible) Frame.Visible = False;
+		continue;
+	}
 
 	// Show the marker
 	Frame.Visible = True;
@@ -568,8 +576,8 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	if (UpdateMarkersPositions || !PositionsMatch(PreviousPosition, Player.Position)) {
 		PreviousPosition = Player.Position;
 		Frame.RelativePosition_V3 = <
-			-PreviousPosition.X * Minimap_Main.Size.X / (G_EnvironmentSize / Minimap_Main.ZoomFactor),
-			PreviousPosition.Z * Minimap_Main.Size.Y / (G_EnvironmentSize / Minimap_Main.ZoomFactor)
+			-PreviousPosition.X * MarkersPositioning.X,
+			PreviousPosition.Z * MarkersPositioning.Y
 		>;
 	}
 
@@ -730,7 +738,10 @@ foreach (I => Quad in Quad_CustomMarkers) {
 	}
 
 	// Don't bother showing the marker outside of the visible area
-	if (!IsOverviewMode && Distance2D(GUIPlayer.Position, QuadPosition) > 60.) continue;
+	if (!IsOverviewMode && Distance2D(GUIPlayer.Position, QuadPosition) > 60.) {
+		if (Quad.Visible) Quad.Visible = False;
+		continue;
+	}
 
 	// ---------------------------------- //
 	// Get the markar opacity
@@ -755,8 +766,8 @@ foreach (I => Quad in Quad_CustomMarkers) {
 	if (UpdateMarkersPositions || !PositionsMatch(PreviousPosition, QuadPosition)) {
 		PreviousPosition = QuadPosition;
 		Quad.RelativePosition_V3 = <
-			-PreviousPosition.X * Minimap_Main.Size.X / (G_EnvironmentSize / Minimap_Main.ZoomFactor),
-			PreviousPosition.Z * Minimap_Main.Size.Y / (G_EnvironmentSize / Minimap_Main.ZoomFactor)
+			-PreviousPosition.X * MarkersPositioning.X,
+			PreviousPosition.Z * MarkersPositioning.Y
 		>;
 	}
 

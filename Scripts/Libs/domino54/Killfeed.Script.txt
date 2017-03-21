@@ -23,7 +23,7 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_LibKillfeed_DefaultWidgetPosn		<159., 89., 5.>
+#Const C_LibKillfeed_DefaultWidgetPosn		<159., 89.>
 #Const C_LibKillfeed_DefaultSizeVertical	5.
 #Const C_LibKillfeed_MinimumSizeVertical	3.
 #Const C_LibKillfeed_DefaultTextScale		.85
@@ -51,7 +51,7 @@ declare Text[Integer] G_LibKillfeed_WeaponsIcons;
 declare Text[] G_LibKillfeed_PreloadedTranslations;
 declare Boolean G_LibKillfeed_AlignLeft;
 declare Boolean G_LibKillfeed_AlignBottom;
-declare Vec3 G_LibKillfeed_WidgetPosn;
+declare Vec2 G_LibKillfeed_WidgetPosn;
 declare Real G_LibKillfeed_SizeVertical;
 declare Real G_LibKillfeed_TextScale;
 declare Text G_LibKillfeed_TextFont;
@@ -75,33 +75,33 @@ declare Boolean G_LibKillfeed_IsMapSwitching;
 Text Private_CreateManialinkKillfeed() {
 	declare NoticeModels = "";
 	for (I, 0, C_LibKillfeed_MaxNbNotifications - 1)
-		NoticeModels ^= """<frameinstance modelid="FrameModel_Notice" id="Frame_Notice#{{{I}}}" hidden="1"/>""";
+		NoticeModels ^= """<frameinstance modelid="FrameModel_Notice" id="Frame_Notice#{{{I}}}" hidden="1" />""";
 	
 	declare SY = G_LibKillfeed_SizeVertical;
 	
 	return """
-<manialink version="2" name="LibKillfeed:Notices">
+<manialink version="3" name="LibKillfeed:Notices">
 <stylesheet>
 	<style
 		class="noticeText" halign="right" valign="center2" textsize="2" textcolor="FFF"
 		scale="{{{G_LibKillfeed_TextScale}}}" textfont="{{{G_LibKillfeed_TextFont}}}"
-	/>
+	 />
 </stylesheet>
 
 <framemodel id="FrameModel_Notice">
-	<quad sizen="0 {{{SY}}}" halign="right" bgcolor="000" opacity=".625" id="Quad_NoticeBg"/>
-	<quad posn="0 -{{{SY/2}}} .1" sizen="{{{SY}}} {{{SY}}}" halign="right" valign="center" id="Quad_NoticeIcon"/>
-	<label posn="-1.5 -{{{SY/2}}}" class="noticeText" id="Label_PrimaryText"/>
-	<label posn="0 -{{{SY/2}}}" class="noticeText" id="Label_SecondaryText"/>
-	<label posn="0 -{{{SY/2}}}" class="noticeText" id="Label_ReplacementText"/>
+	<label pos="-1.5 -{{{SY/2}}}" class="noticeText" id="Label_PrimaryText" />
+	<label pos="0 -{{{SY/2}}}" class="noticeText" id="Label_SecondaryText" />
+	<label pos="0 -{{{SY/2}}}" class="noticeText" id="Label_ReplacementText" />
+	<quad pos="0 -{{{SY/2}}}" size="{{{SY}}} {{{SY}}}" halign="right" valign="center" id="Quad_NoticeIcon" />
+	<quad size="0 {{{SY}}}" halign="right" bgcolor="000" opacity=".625" id="Quad_NoticeBg" />
 </framemodel>
 
-<frame id="Frame_NoticesWidget" posn="{{{G_LibKillfeed_WidgetPosn.X^" "^G_LibKillfeed_WidgetPosn.Y^" "^G_LibKillfeed_WidgetPosn.Z}}}">
+<frame id="Frame_NoticesWidget" pos="{{{G_LibKillfeed_WidgetPosn.X^" "^G_LibKillfeed_WidgetPosn.Y}}}">
 	<frame id="Frame_NoticesAnim">{{{NoticeModels}}}</frame>
 	<frame id="Frame_GhostsAnim">{{{NoticeModels}}}</frame>
 </frame>
 
-<label id="Label_GhostDebug"/>
+<label id="Label_GhostDebug" />
 
 <script><!--
 /**
@@ -179,8 +179,8 @@ if (LastUpdateTime != Net_LibKillfeed_LastUpdateTime) {
 
 // ---------------------------------- //
 // Let the ghost models follow main frame
-if (Frame_GhostsAnim.RelativePosition.Y != Frame_NoticesAnim.RelativePosition.Y)
-	Frame_GhostsAnim.RelativePosition.Y = Frame_NoticesAnim.RelativePosition.Y;
+if (Frame_GhostsAnim.RelativePosition_V3.Y != Frame_NoticesAnim.RelativePosition_V3.Y)
+	Frame_GhostsAnim.RelativePosition_V3.Y = Frame_NoticesAnim.RelativePosition_V3.Y;
 
 foreach (Frame in G_GhostsModels) if (Frame.Visible) {
 	// ---------------------------------- //
@@ -211,7 +211,6 @@ G_NbGhostsInCurrentTick = 0;
 // Functions
 // ---------------------------------- //
 
-{{{Manialink::Animations(["EaseOutSine", "EaseInCirc", "EaseOutCirc"])}}}
 {{{ManialinkTools::Functions(["ComputeWidth", "Brightness"])}}}
 {{{Translations::InsertToManialink(G_LibKillfeed_PreloadedTranslations)}}}
 
@@ -299,7 +298,7 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 	
 	// Set frame visibility and position
 	_Frame.Show();
-	_Frame.RelativePosition.Y = _Index * (Quad_NoticeBg.Size.Y + .5);
+	_Frame.RelativePosition_V3.Y = _Index * (Quad_NoticeBg.Size.Y + .5);
 	
 	// ---------------------------------- //
 	// Obtain notice data
@@ -336,7 +335,7 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 		Label_PrimaryText.SetText(TL::GetTranslatedText(LabelText));
 		
 		TotalLength += C_NoticeElementsSpacing / 2;
-		Label_PrimaryText.RelativePosition.X = -TotalLength;
+		Label_PrimaryText.RelativePosition_V3.X = -TotalLength;
 		TotalLength += ComputeWidth(Label_PrimaryText) + C_NoticeElementsSpacing / 2;
 	}
 	
@@ -347,7 +346,7 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 		Quad_NoticeIcon.ImageUrl = TextReplacement;
 		
 		TotalLength += C_NoticeElementsSpacing / 2;
-		Quad_NoticeIcon.RelativePosition.X = -TotalLength;
+		Quad_NoticeIcon.RelativePosition_V3.X = -TotalLength;
 		TotalLength += Quad_NoticeIcon.Size.X + C_NoticeElementsSpacing / 2;
 	}
 	
@@ -360,7 +359,7 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 		Label_ReplacementText.SetText(Translate(TextReplacement));
 		
 		TotalLength += C_NoticeElementsSpacing / 2;
-		Label_ReplacementText.RelativePosition.X = -TotalLength;
+		Label_ReplacementText.RelativePosition_V3.X = -TotalLength;
 		TotalLength += ComputeWidth(Label_ReplacementText) + C_NoticeElementsSpacing / 2;
 	}
 	
@@ -384,7 +383,7 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 		Label_SecondaryText.SetText(TL::GetTranslatedText(LabelText));
 		
 		TotalLength += C_NoticeElementsSpacing / 2;
-		Label_SecondaryText.RelativePosition.X = -TotalLength;
+		Label_SecondaryText.RelativePosition_V3.X = -TotalLength;
 		TotalLength += ComputeWidth(Label_SecondaryText) + C_NoticeElementsSpacing / 2;
 	}
 	
@@ -412,8 +411,8 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 	
 	// ---------------------------------- //
 	// Align frame to the left edge
-	if ({{{G_LibKillfeed_AlignLeft}}}) _Frame.RelativePosition.X = TotalLength;
-	else _Frame.RelativePosition.X = 0.;
+	if ({{{G_LibKillfeed_AlignLeft}}}) _Frame.RelativePosition_V3.X = TotalLength;
+	else _Frame.RelativePosition_V3.X = 0.;
 	
 	// ---------------------------------- //
 	// New notice animation
@@ -422,12 +421,12 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 		declare TargetPosX = 0.;
 		
 		if ({{{G_LibKillfeed_AlignLeft}}}) {
-			_Frame.RelativePosition.X = -EdgeDiff;
+			_Frame.RelativePosition_V3.X = -EdgeDiff;
 			TargetPosX = TotalLength;
 		}
-		else _Frame.RelativePosition.X = EdgeDiff + TotalLength;
+		else _Frame.RelativePosition_V3.X = EdgeDiff + TotalLength;
 		
-		LibManialink_Anim(_Frame, "<frame posn=\""^TargetPosX^" "^_Frame.RelativePosition.Y^"\"/>", 250, "EaseOutCirc");
+		AnimMgr.Add(_Frame, "<frame pos='"^TargetPosX^" "^_Frame.RelativePosition_V3.Y^"' />", 250, CAnimManager::EAnimManagerEasing::CircOut);
 	}
 }
 
@@ -454,13 +453,12 @@ Void SetNoticesValue(Text[][Integer] _Notices, Integer[] _NewNotices, Integer _G
 	// ---------------------------------- //
 	// Animate whole frame
 	declare NewPos = _GhostsCount * {{{SY + .5}}} * -Negative;
-	declare IsLower = (Frame_NoticesAnim.RelativePosition.Y > NewPos);
-	if ({{{G_LibKillfeed_AlignBottom}}}) IsLower = (Frame_NoticesAnim.RelativePosition.Y < NewPos);
+	declare IsLower = (Frame_NoticesAnim.RelativePosition_V3.Y > NewPos);
+	if ({{{G_LibKillfeed_AlignBottom}}}) IsLower = (Frame_NoticesAnim.RelativePosition_V3.Y < NewPos);
 	
 	if (IsLower) {
-		LibManialink_AnimStop(Frame_NoticesAnim);
-		Frame_NoticesAnim.RelativePosition.Y = NewPos;
-		LibManialink_Anim(Frame_NoticesAnim, "<frame posn=\"0 0\"/>", 500, "EaseOutSine");
+		Frame_NoticesAnim.RelativePosition_V3.Y = NewPos;
+		AnimMgr.Add(Frame_NoticesAnim, "<frame pos='0 0' />", 500, CAnimManager::EAnimManagerEasing::SineOut);
 	}
 	
 	// There is nothing to do without notices
@@ -539,8 +537,7 @@ Void CreateGhost(Text[] _NoticeData) {
 	// Animate notices ghosts
 	declare Label_GhostDebug <=> (Page.GetFirstChild("Label_GhostDebug") as CMlLabel);
 	Label_GhostDebug.Opacity = 1.;
-	LibManialink_AnimStop(Label_GhostDebug);
-	LibManialink_Anim(Label_GhostDebug, "<label opacity=\"0\"/>", 250, "EaseLinear");
+	AnimMgr.Add(Label_GhostDebug, "<label opacity='0' />", 250, CAnimManager::EAnimManagerEasing::Linear);
 }
 
 // ---------------------------------- //
@@ -550,7 +547,6 @@ main() {
 	+++Main+++
 	while (True) {
 		yield;
-		LibManialink_AnimLoop();
 		+++Yield+++
 	}
 }
@@ -602,7 +598,16 @@ Text GetScriptName() { return ScriptName; }
  * 
  *	@param	_Position	Killfeed new position
  */
-Void SetPosition(Vec3 _Position) { G_LibKillfeed_WidgetPosn = _Position; }
+Void SetPosition(Vec2 _Position) { G_LibKillfeed_WidgetPosn = _Position; }
+
+// ---------------------------------- //
+/** Set new killfeed position
+ *
+ *	@deprecated		Use this function with Vec2 as the position argument.
+ * 
+ *	@param	_Position	Killfeed new position
+ */
+Void SetPosition(Vec3 _Position) { SetPosition(<_Position.X, _Position.Y>); }
 
 // ---------------------------------- //
 /** Set new killfeed icons path

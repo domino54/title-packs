@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY FANCY MESSAGES by domino54    //
-//  script version: 2017-03-20            //
+//  script version: 2017-03-29            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
  *	position, text font and text size.
  */
 
-#Const Version		"2017-03-20"
+#Const Version		"2017-03-29"
 #Const ScriptName	"FancyMessages.Script.txt"
 
 #Include "TextLib" as TL
@@ -345,11 +345,32 @@ Void FormatStatusMessage(Vec3 _Position, Text _TextFont, Integer _TextSize) {
 }
 
 // ---------------------------------- //
+/// Reset the whole net data.
+Void ResetData() {
+	foreach (Player in AllPlayers) {
+		if (Player.IsBot || Player.IsFakePlayer) continue;
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+
+		declare netwrite Text Net_LibFancyMessages_BigMessage for UI;
+		declare netwrite Text Net_LibFancyMessages_BigMessageSound for UI;
+		declare netwrite Text Net_LibFancyMessages_StatusMessage for UI;
+		declare netwrite Integer Net_LibFancyMessages_BigMessageSoundVariant for UI;
+
+		Net_LibFancyMessages_BigMessage = "";
+		Net_LibFancyMessages_BigMessageSound = "";
+		Net_LibFancyMessages_StatusMessage = "";
+		Net_LibFancyMessages_BigMessageSoundVariant = 0;
+	}
+}
+
+// ---------------------------------- //
 /// Unload the library.
 Void Unload() {
 	Layers::Detach("LibFancyMessages");
 	Layers::Destroy("LibFancyMessages");
-	
+	ResetData();
+
 	declare netwrite Integer Net_LibFancyMessages_SettingsUpdate for Teams[0];
 	declare netwrite Text[Text] Net_LibFancyMessages_Settings for Teams[0];
 	Net_LibFancyMessages_SettingsUpdate = -1;
@@ -373,6 +394,7 @@ Void Loop() {
 	foreach (Player in AllPlayers) {
 		if (Player.IsBot || Player.IsFakePlayer) continue;
 		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
 		
 		declare Text PrevBigMessage for Player;
 		declare Text PrevStatusMessage for Player;

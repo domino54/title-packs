@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-03-15            //
+//  script version: 2017-03-29            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-03-15"
+#Const Version		"2017-03-29"
 #Const ScriptName	"KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -21,6 +21,7 @@
 #Setting S_GoalCaptureDuration	100		as _("Time team requires to capture the Goal (min. 15)")
 #Setting S_DarkerGoalColor		False	as "<hidden>"
 #Setting S_UseAutoBalance		True
+#Setting S_UsePlayerClublinks	False
 
 // ---------------------------------- //
 // Constants
@@ -258,6 +259,8 @@ foreach (Player in Players) {
 foreach (PlayerId => Clan in PauseMenu::CustomTeamsRequests()) {
 	if (!Players.existskey(PlayerId)) continue;
 	declare Player = Players[PlayerId];
+	if (Clans::GetPlayerClan(Player) == Clan) continue;
+
 	UnspawnPlayer(Player);
 	KotH_SetPlayerClan(Player, Clan);
 }
@@ -459,6 +462,7 @@ Message::SendBigMessage(Msg, 5000, 1, CUIConfig::EUISound::EndRound, 0);
 MB_Sleep(5000);
 
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+UIManager.UIAll.BigMessage = "";
 
 // ---------------------------------- //
 // Map end conditions
@@ -621,11 +625,14 @@ Void KotH_AutoBalance() {
 	// Move players to new clans
 	foreach (Player in Players) {
 		declare Integer TeamBeforeBalance for Player;
+		TeamBeforeBalance = Clans::GetPlayerClan(Player);
+
 		declare NewClan = GetNextPlayerClan();
-		KotH_SetPlayerClan(Player, NewClan);
+		if (NewClan == TeamBeforeBalance) continue;
 		
 		// Unspawn players changing clan
-		if (NewClan != TeamBeforeBalance) UnspawnPlayer(Player);
+		UnspawnPlayer(Player);
+		KotH_SetPlayerClan(Player, NewClan);
 	}
 }
 

@@ -1,10 +1,97 @@
+// -------------------------------------- //
+//  INVASION SOLO by domino54             //
+//  script version: v3.2 @2017-03-29      //
+// -------------------------------------- //
+
 #Extends "Modes/ShootMania/Invasion.Script.txt"
 
-#Setting S_AutoManageAFK	False
+#Const DeluxeVersion	"2017-03-29"
+#Const DeluxeScriptName	"Invasion.Script.txt"
 
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_UseEvolutionLevels	False	///< Evolution levels are disabled in solo mode
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(DeluxeScriptName, DeluxeVersion);
+***
+
+// ---------------------------------- //
+// Initialize server
+// ---------------------------------- //
 ***InitServer***
 ***
+GT_UseAutoEndSequence = False;
 G_IsSoloMode = True;
+InvasionUI::SetSoloMode(G_IsSoloMode);
+
+// ---------------------------------- //
+// Hide name tags
+UIManager.UIAll.AlliesLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+
+// Hide unnecessary buttons in pause menu
+PauseMenu::SetSoloMode(G_IsSoloMode);
+
+// ---------------------------------- //
+// Unload the scores table
+ST2::Unload();
+UIManager.UIAll.ScoreTableOnlyManialink = True;
+UIManager.UIAll.AltMenuNoDefaultScores = True;
+
+// ---------------------------------- //
+// Unload the Killfeed library
+Killfeed::Unload();
+UIManager.UIAll.OverlayHideNotices = True;
+UIManager.UIAll.OverlayHideMapInfo = True;
 ***
 
-Void DoNothing() { return; }
+// ---------------------------------- //
+// Round end
+// ---------------------------------- //
+***EndRound***
+***
+// ---------------------------------- //
+// Solo mode sequence
+if (Players.existskey(0)) {
+	declare Player <=> Players[0];
+	AddScorePoints(Player, SoloTimeScore / 10);
+	declare DisplayPoints = Player.Score.Points * 10;
+	
+	// Save the local score
+	InvasionSolo_SavePersonalBest(DisplayPoints);
+	
+	// Award player medal
+	// ScoreMgr.Map_SetNewRecord(Player.Id, Map.MapInfo.MapUid, "", Null);
+	// InvasionUI::DisplaySoloScore(True, AwardedMedal, Player.Score.Points * 10);
+	
+	// Infinite loop
+	while (!ServerShutdownRequested) MB_Yield();
+}
+***
+
+// ---------------------------------- //
+/** Save personal record of a player.
+ *
+ *	@param	_ScorePoints		Scored points.
+ */
+Void InvasionSolo_SavePersonalBest(Integer _ScorePoints) {
+	if (!Users.existskey(0) || Map == Null) return;
+	declare Points = ML::Max(_ScorePoints, 0);
+	declare UID = Map.MapInfo.MapUid;
+	
+	declare persistent Integer[Text] Persistent_Invasion_PersonalRecords for Users[0];
+	declare persistent Integer Persistent_Invasion_LastRecordsUpdate for Users[0];
+	
+	// Don't save score if smaller than current personal best
+	if (Persistent_Invasion_PersonalRecords.existskey(UID) && Persistent_Invasion_PersonalRecords[UID] >= Points) return;
+	
+	Persistent_Invasion_PersonalRecords[UID] = Points;
+	Persistent_Invasion_LastRecordsUpdate = Now;
+}

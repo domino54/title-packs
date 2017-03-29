@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-03-20            //
+//  script version: 2017-03-29            //
 // -------------------------------------- //
 
 /**
@@ -16,13 +16,12 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-03-20"
+#Const	Version		"2017-03-29"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
-#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
@@ -327,16 +326,13 @@ declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 declare netread Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
 
-/// Custom weapons
-declare netread Text[Text] Net_LibInterfancy_PlayersWeaponsNames for Teams[0];
-
 // ---------------------------------- //
 // Variables
 declare Gauges_Display = True;
 
 declare InterfaceColor = 0.;
 declare StaminaDisplayEndTime = -1;
-declare Integer[Text] PlayerIsOnTechArmor;
+declare Integer[Ident] PlayerIsOnTechArmor;
 declare ShowReloadBoost = False;
 declare GUIPlayerClan = 0;
 
@@ -386,10 +382,10 @@ foreach (Player in Players) {
 	if (Player.RequestsSpectate || Player.IsBot || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 	
 	if (Player.IsOnTechArmor) {
-		if (!PlayerIsOnTechArmor.existskey(Player.User.Login)) PlayerIsOnTechArmor[Player.User.Login] = GameTime;
+		if (!PlayerIsOnTechArmor.existskey(Player.Id)) PlayerIsOnTechArmor[Player.Id] = GameTime;
 	}
-	else if (PlayerIsOnTechArmor.existskey(Player.User.Login)) {
-		declare Removed = PlayerIsOnTechArmor.removekey(Player.User.Login);
+	else if (PlayerIsOnTechArmor.existskey(Player.Id)) {
+		declare Removed = PlayerIsOnTechArmor.removekey(Player.Id);
 	}
 }
 
@@ -488,6 +484,13 @@ if (ModuleVisibility_Armor) {
 	// Get the Armor module ratio and slots
 	ModuleRatio_Armor = GUIPlayer.Armor / 100.;
 	ModuleSlots_Armor = GUIPlayer.ArmorMax / 100;
+
+	// Armor loading on Armor pads
+	if (GUIPlayer.IsOnTechArmor && PlayerIsOnTechArmor.existskey(GUIPlayer.Id))
+		ModuleRatio_Armor += (GameTime - PlayerIsOnTechArmor[GUIPlayer.Id]) % 1875 / 1875.;
+
+	// Clamp the ratio
+	ModuleRatio_Armor = ML::Clamp(ModuleRatio_Armor, 0., ML::ToReal(ModuleSlots_Armor));
 
 	// ---------------------------------- //
 	// Update Armor module on ratio change

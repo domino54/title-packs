@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2017-03-21            //
+//  script version: 2017-03-29            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2017-03-21"
+#Const Version		"2017-03-29"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "TextLib" as TL
@@ -133,6 +133,7 @@ Text Private_CreateManialinkMinimapWindow() {
 #Const C_EnvironmentSize ["Storm" => 384.]
 #Const C_MapZoomWhenSpawned		5.
 #Const C_MapWeightedSizeOffset	12.
+#Const C_PlayerSpawnDelay		1500
 
 #Const C_MarkerScaleDefault		1.
 #Const C_MarkerScaleOverview	.75
@@ -556,8 +557,10 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	declare MarkerOpacity = 1.;
 	if (!IsOverviewMode) {
 		declare Real[] Distances;
-		if (GUIPlayer.CurrentClan == 0 || Player.CurrentClan != GUIPlayer.CurrentClan) Distances = G_MarkersDistances["Enemies"];
-		else if (!Player.IsBot) Distances = G_MarkersDistances["Teammates"];
+		if (!Player.IsBot) {
+			if (GUIPlayer.CurrentClan == 0 || Player.CurrentClan != GUIPlayer.CurrentClan) Distances = G_MarkersDistances["Enemies"];
+			else Distances = G_MarkersDistances["Teammates"];
+		}
 		MarkerOpacity = GetMarkerFade(Distance2D(GUIPlayer.Position, Player.Position), Distances);
 	}
 
@@ -621,7 +624,12 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 		// ---------------------------------- //
 		// Marker icon depending on the height difference
 		declare PlayerIconImage = "Player.png";
-		if (IsPlayerSpawned && !Persistent_LibMinimap_HideHeight) {
+		declare IsEliminated = Player.StartTime > 0 && (Player.Armor <= 0 || GameTime < Player.StartTime - C_PlayerSpawnDelay);
+
+		// Cross icon for eliminated players
+		if (IsEliminated) PlayerIconImage = "Eliminated.png";
+
+		else if (IsPlayerSpawned && !Persistent_LibMinimap_HideHeight) {
 			declare HeightDifference = Player.Position.Y - GUIPlayer.Position.Y;
 			declare MaxDiff = 11.875;
 

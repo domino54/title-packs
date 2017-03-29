@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PAUSE MENU by domino54        //
-//  script version: 2017-03-21            //
+//  script version: 2017-03-29            //
 // -------------------------------------- //
 
 /**
@@ -12,7 +12,7 @@
  *	time.
  */
 
-#Const Version		"2017-03-21"
+#Const Version		"2017-03-29"
 #Const ScriptName	"PauseMenu.Script.txt"
 
 #Include "MathLib" as ML
@@ -111,7 +111,6 @@ Text Private_CreateManialinkPauseMenu() {
 
 	<!-- Team card frame model -->
 	<framemodel id="FrameModel_TeamCard">
-		<quad halign="center" size="49 49" opacity=".125" id="Quad_CardBackground" ScriptEvents="1" />
 		<quad pos="0 -16 .1" size="18 18" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_TeamEmblem" />
 		<label
 			pos="0 -28 .1" size="44" halign="center" valign="center2" id="Label_TeamName"
@@ -125,6 +124,7 @@ Text Private_CreateManialinkPauseMenu() {
 			pos="0 -40 .1" halign="center" valign="center2" id="Label_JoinTeamText" opacity="0"
 			textsize="2" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" textprefix="$t" text="Join" translate="1"
 		/>
+		<quad halign="center" size="49 49" opacity=".125" id="Quad_CardBackground" ScriptEvents="1" />
 	</framemodel>
 	
 	<!-- Teams cards -->
@@ -260,6 +260,7 @@ declare persistent Text[] Persistent_LibPauseMenu_ModesWithRulesRead for LocalUs
 declare netread Text Net_LibPauseMenu_HelpModeName for Teams[0];
 declare netread Text Net_LibPauseMenu_HelpModeObjectives for Teams[0];
 declare netread Text Net_LibPauseMenu_HelpModeImage for Teams[0];
+declare netread Boolean Net_LibPauseMenu_IsSoloMode for Teams[0];
 
 // ---------------------------------- //
 // Custom teams
@@ -293,6 +294,7 @@ declare PrevNbCustomTeams = 0;
 declare PrevCustomTeamsNames = Text[Integer];
 declare PrevCustomTeamsColors = Vec3[Integer];
 declare PrevGUIPlayerHue = -1.;
+declare PrevIsSoloMode = False;
 
 // ---------------------------------- //
 // Initialize
@@ -560,6 +562,13 @@ if (PageIsVisible) {
 		UpdatePauseButtons = True;
 		UpdateTeamsCards = True;
 	}
+
+	// ---------------------------------- //
+	// Solo mode update
+	if (PrevIsSoloMode != Net_LibPauseMenu_IsSoloMode) {
+		PrevIsSoloMode = Net_LibPauseMenu_IsSoloMode;
+		UpdatePauseButtons = True;
+	}
 	
 	// ---------------------------------- //
 	// Set up pause menu buttons frames
@@ -578,11 +587,18 @@ if (PageIsVisible) {
 			switch (I) {
 				// Toggle spectator mode
 				case 1 : Frame.Visible =
+					!Net_LibPauseMenu_IsSoloMode &&
 					UI.SpectatorObserverMode != CUIConfig::EObserverMode::Forced &&
 					UI.SpectatorObserverMode != CUIConfig::EObserverMode::Forbidden;
 				
 				// Change team
 				case 2 : Frame.Visible = !IsSpectator && !UseForcedClans && (UseClans || Net_LibPauseMenu_CustomTeams > 0);
+
+				// Server management
+				case 4 : Frame.Visible = !Net_LibPauseMenu_IsSoloMode;
+
+				// Advanced options
+				case 5 : Frame.Visible = !Net_LibPauseMenu_IsSoloMode;
 				
 				// Other
 				default : Frame.Visible = True;
@@ -613,8 +629,11 @@ if (PageIsVisible) {
 			G_InterfaceColor = HsvToRgb(<ML::Clamp(PrevGUIPlayerHue, 0., 1.), 1., 1.>);
 		}
 	}
-	else if (LocalUser != Null) G_InterfaceColor = LocalUser.Color;
-	else G_InterfaceColor = C_DefaultInterfaceColor;
+	else {
+		if (LocalUser != Null) G_InterfaceColor = LocalUser.Color;
+		else G_InterfaceColor = C_DefaultInterfaceColor;
+		PrevGUIPlayerHue = -1.;
+	}
 	
 	// ---------------------------------- //
 	// Update interface color
@@ -985,6 +1004,11 @@ Void SetCustomTeamColor(Integer _Team, Vec3 _Color) {
 Void SetCustomTeamName(Integer _Team, Text _Name) {
 	declare netwrite Text[Integer] Net_LibPauseMenu_TeamsNames for Teams[0];
 	Net_LibPauseMenu_TeamsNames[_Team] = _Name;
+}
+
+Void SetSoloMode(Boolean _IsSolo) {
+	declare netwrite Boolean Net_LibPauseMenu_IsSoloMode for Teams[0];
+	Net_LibPauseMenu_IsSoloMode = _IsSolo;
 }
 
 // ---------------------------------- //

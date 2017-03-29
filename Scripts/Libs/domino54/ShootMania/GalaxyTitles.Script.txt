@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-03-21            //
+//  script version: 2017-03-29            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-03-21"
+#Const Version		"2017-03-29"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -62,6 +62,9 @@
 #Const C_LibGalaxyTitles_ToadArmorMax			200		///< Amount of Toads armor points
 #Const C_LibGalaxyTitles_ToadAggroRadius		8.		///< Distance within shoot provokes Toad
 #Const C_LibGalaxyTitles_ToadPeaceDistance		16.		///< Distance within Toad will follow Player
+
+/// Other
+#Const C_LibGalaxyTitles_ReplieActionSlot	CSmMode::EActionSlot::Slot_H
 
 /// Colors of the weapons items shown in the Minimap library
 #Const C_LibGalaxyTitles_MinimapColors [
@@ -353,7 +356,7 @@ Void ShowHealingParticles(CSmPlayer _Player) {
 	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return;
 	declare Integer ReplieParticlesEndTime for _Player;
 	ReplieParticlesEndTime = Now + C_LibGalaxyTitles_ParticlesDuration;
-	_Player.ArmorReplenishGain = 1;
+	ActionSetVariant(_Player, C_LibGalaxyTitles_ReplieActionSlot, 1);
 }
 
 // ---------------------------------- //
@@ -1141,10 +1144,9 @@ Void Loop(Boolean _SpawnObjects, Integer _ToadsRespawnTime) {
 	// ---------------------------------- //
 	// Manage Replie particles action
 	foreach (Player in Players) {
-		if (Player.ArmorReplenishGain != 1) continue;
 		declare Integer ReplieParticlesEndTime for Player;
 		if (Now < ReplieParticlesEndTime) continue;
-		Player.ArmorReplenishGain = 0;
+		ActionSetVariant(Player, C_LibGalaxyTitles_ReplieActionSlot, 0);
 	}
 }
 
@@ -1183,8 +1185,8 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	}
 
 	// Load action used to show particle effect on the player
-	ActionLoad(_Player, CSmMode::EActionSlot::Slot_H, G_LibGalaxyTitles_Actions["Replie"]);
-	ActionBind(_Player, CSmMode::EActionSlot::Slot_H, CSmMode::EActionInput::None);
+	ActionLoad(_Player, C_LibGalaxyTitles_ReplieActionSlot, G_LibGalaxyTitles_Actions["Replie"]);
+	ActionBind(_Player, C_LibGalaxyTitles_ReplieActionSlot, CSmMode::EActionInput::None);
 	
 	if (!G_LibGalaxyTitles_WeaponItemsAvailable) return;
 	

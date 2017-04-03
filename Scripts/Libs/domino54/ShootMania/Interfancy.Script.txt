@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-03-29            //
+//  script version: 2017-04-03            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-03-29"
+#Const	Version		"2017-04-03"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -253,7 +253,7 @@ declare Label_ModuleCounterArmor	<=> (Frame_WidgetArmor.GetFirstChild("Label_Mod
 declare Label_ModuleInfoTextArmor	<=> (Frame_WidgetArmor.GetFirstChild("Label_ModuleInfoText") as CMlLabel);
 declare Label_ModuleInfoGhostArmor	<=> (Frame_WidgetArmor.GetFirstChild("Label_ModuleInfoGhost") as CMlLabel);
 declare Quad_ModuleIconArmor		<=> (Frame_WidgetArmor.GetFirstChild("Quad_ModuleIcon") as CMlQuad);
-Quad_ModuleIconArmor.ImageUrl = C_ModulesIcons["Armor"];
+declare Quad_ModuleIconGhostArmor	<=> (Frame_WidgetArmor.GetFirstChild("Quad_ModuleIconGhost") as CMlQuad);
 
 declare CMlGauge[] Gauge_ModuleArmor;
 for (I, 0, C_NbGaugesInModel - 1) Gauge_ModuleArmor.add((Frame_WidgetArmor.GetFirstChild("Gauge_Step#"^I) as CMlGauge));
@@ -264,11 +264,13 @@ declare ModuleRatio_Armor = 0.;
 declare ModuleSlots_Armor = 0;
 declare ModuleUpdateGauges_Armor = True;
 declare ModuleDescription_Armor = "";
+declare ModuleIcon_Armor = C_ModulesIcons["Armor"];
 
 declare PrevModuleVisibility_Armor = False;
 declare PrevModuleRatio_Armor = -1.;
 declare PrevModuleSlots_Armor = -1;
 declare PrevModuleDescription_Armor = "";
+declare PrevModuleIcon_Armor = "";
 
 // ---------------------------------- //
 // Ammo module
@@ -399,7 +401,7 @@ if (PrevGauges_Display != Gauges_Display) {
 
 // ---------------------------------- //
 // Set the gauges visibility
-GaugesModulesVisibility = UI.OverlayHideGauges && Gauges_Display && GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>;
+GaugesModulesVisibility = UI.OverlayHideGauges && Gauges_Display && GUIPlayer != Null;
 
 // ---------------------------------- //
 // Get the interface color from the player
@@ -460,7 +462,7 @@ if (ShowReloadBoost) {
 
 // ---------------------------------- //
 // Update the Armor module visibility
-ModuleVisibility_Armor = GaugesModulesVisibility && ModuleDisplay_Armor && GUIPlayer.ArmorMax > 0;
+ModuleVisibility_Armor = GaugesModulesVisibility && ModuleDisplay_Armor && GUIPlayer.ArmorMax > 0 && (GUIPlayer.Position != <0., 0., 0.> || GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned);
 
 if (PrevModuleVisibility_Armor != ModuleVisibility_Armor) {
 	PrevModuleVisibility_Armor = ModuleVisibility_Armor;
@@ -525,6 +527,8 @@ if (ModuleVisibility_Armor) {
 
 	// ---------------------------------- //
 	// Set the Armor module dynamic description
+	declare netread Text Net_LibInterfancy_ArmorReplacement for GUIPlayer;
+
 	if (GUIPlayer.IsOnTechArmor) {
 		// Healing on the Armor pad
 		if (GUIPlayer.Armor < GUIPlayer.ArmorMax) ModuleDescription_Armor = "Healing...";
@@ -545,6 +549,9 @@ if (ModuleVisibility_Armor) {
 	// While underground or in bunkers
 	else if (GUIPlayer.IsUnderground) ModuleDescription_Armor = "Tunnels";
 
+	// Custom text
+	else if (Net_LibInterfancy_ArmorReplacement != "") ModuleDescription_Armor = Net_LibInterfancy_ArmorReplacement;
+
 	// Default text
 	else ModuleDescription_Armor = "Armor";
 
@@ -564,11 +571,32 @@ if (ModuleVisibility_Armor) {
 		AnimMgr.Add(Label_ModuleInfoTextArmor, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
 		AnimMgr.Add(Label_ModuleInfoGhostArmor, "<label pos='0 -1.5' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
 	}
+
+	// ---------------------------------- //
+	// Get the icon of the module
+	declare ModuleIcon_Armor = G_ModulesIcons["Armor"];
+	if (G_ModulesIcons.existskey(ModuleDescription_Armor)) ModuleIcon_Armor = G_ModulesIcons[ModuleDescription_Armor];
+
+	// ---------------------------------- //
+	// Update Armor module icon
+	if (PrevModuleIcon_Armor != ModuleIcon_Armor) {
+		SetIconImage(Quad_ModuleIconArmor, ModuleIcon_Armor);
+		SetIconImage(Quad_ModuleIconGhostArmor, PrevModuleIcon_Armor);
+		PrevModuleIcon_Armor = ModuleIcon_Armor;
+
+		Quad_ModuleIconArmor.Opacity = 0.;
+		Quad_ModuleIconArmor.RelativeScale = 1.5;
+		Quad_ModuleIconGhostArmor.Opacity = 1.;
+		Quad_ModuleIconGhostArmor.RelativeScale = 1.;
+		
+		AnimMgr.Add(Quad_ModuleIconArmor, "<quad opacity='1' scale='1' />", 200, CAnimManager::EAnimManagerEasing::CircOut);
+		AnimMgr.Add(Quad_ModuleIconGhostArmor, "<quad opacity='0' scale='.5' />", 100, CAnimManager::EAnimManagerEasing::Linear);
+	}
 }
 
 // ---------------------------------- //
 // Update the Ammo module visibility
-ModuleVisibility_Ammo = GaugesModulesVisibility && ModuleDisplay_Ammo && GUIPlayer.CurWeapon > 0 && GUIPlayer.CurAmmoMax > 0;
+ModuleVisibility_Ammo = GaugesModulesVisibility && ModuleDisplay_Ammo && (GUIPlayer.Position != <0., 0., 0.> || GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) && GUIPlayer.CurWeapon > 0 && GUIPlayer.CurAmmoMax > 0;
 
 if (PrevModuleVisibility_Ammo != ModuleVisibility_Ammo) {
 	PrevModuleVisibility_Ammo = ModuleVisibility_Ammo;
@@ -679,7 +707,7 @@ if (GUIPlayer != Null && GUIPlayer.Stamina < GUIPlayer.StaminaMax * 3600) Stamin
 
 // ---------------------------------- //
 // Update the Stamina module visibility
-ModuleVisibility_Stamina = GaugesModulesVisibility && ModuleDisplay_Stamina && Now <= StaminaDisplayEndTime;
+ModuleVisibility_Stamina = GaugesModulesVisibility && GUIPlayer.Position != <0., 0., 0.> && ModuleDisplay_Stamina && Now <= StaminaDisplayEndTime;
 
 if (PrevModuleVisibility_Stamina != ModuleVisibility_Stamina) {
 	PrevModuleVisibility_Stamina = ModuleVisibility_Stamina;
@@ -1660,6 +1688,7 @@ declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 // Variables
 declare Crosshair_Display = True;
 declare AnimateCrosshair = False;
+declare CrosshairVisible = True;
 declare UpdateCrosshairNoteText = True;
 declare CrosshairNoteValue = "";
 declare CrosshairNoteEndTime = -1;
@@ -1698,11 +1727,13 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	}
 }
 
+CrosshairVisible = !IsInGameMenuDisplayed;
+
 // ---------------------------------- //
 // Set crosshair visibility
-ClientUI.OverlayHideCrosshair = !Crosshair_Display || Persistent_LibInterfancy_UseCustomCrosshair;
+ClientUI.OverlayHideCrosshair = !Crosshair_Display || Persistent_LibInterfancy_UseCustomCrosshair || !CrosshairVisible;
 Frame_Crosshair.Visible =
-	ClientUI.OverlayHideCrosshair && GUIPlayer != Null && !GUIPlayer.IsOnTechNoWeapon && !GUIPlayer.IsInWater &&
+	ClientUI.OverlayHideCrosshair && CrosshairVisible && GUIPlayer != Null && !GUIPlayer.IsOnTechNoWeapon && !GUIPlayer.IsInWater &&
 	GUIPlayer.Position != <0., 0., 0.> && GameTime >= GUIPlayer.StartTime - 1500 &&
 	GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0;
 
@@ -1948,6 +1979,33 @@ Void SetRoundPointsVisibility(Boolean _Visible) {
 }
 
 // ---------------------------------- //
+/** Set visibility of the armor gauge.
+ *
+ *	@param	_Visible	If True, armor will be visible.
+ */
+Void SetArmorVisibility(Boolean _Visible) {
+	Private_SetModuleSetting("Armor_Display", TL::ToText(_Visible));
+}
+
+// ---------------------------------- //
+/** Set visibility of the ammo gauge.
+ *
+ *	@param	_Visible	If True, ammo will be visible.
+ */
+Void SetAmmoVisibility(Boolean _Visible) {
+	Private_SetModuleSetting("Ammo_Display", TL::ToText(_Visible));
+}
+
+// ---------------------------------- //
+/** Set visibility of the stamina gauge.
+ *
+ *	@param	_Visible	If True, stamina will be visible.
+ */
+Void SetStaminaVisibility(Boolean _Visible) {
+	Private_SetModuleSetting("Stamina_Display", TL::ToText(_Visible));
+}
+
+// ---------------------------------- //
 /** Display a notice under player's crosshair.
  *
  *	@param	_Player		The player to display crosshair notice.
@@ -2045,6 +2103,18 @@ Void SetPlayerCustomWeapon(CSmPlayer _Player, Text _Name) {
 	if (_Player == Null || _Player.IsBot) return;
 	declare netwrite Text Net_LibInterfancy_CustomWeaponName for _Player;
 	Net_LibInterfancy_CustomWeaponName = _Name;
+}
+
+// ---------------------------------- //
+/** Set custom text displayed on the armor module.
+ *
+ *	@param	_Player		The player to change the armor text.
+ *	@param	_Name		The custom text to set.
+ */
+Void SetArmorText(CSmPlayer _Player, Text _Value) {
+	if (_Player == Null || _Player.IsBot) return;
+	declare netwrite Text Net_LibInterfancy_ArmorReplacement for _Player;
+	Net_LibInterfancy_ArmorReplacement = _Value;
 }
 
 // ---------------------------------- //

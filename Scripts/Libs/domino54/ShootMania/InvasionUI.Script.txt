@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  INVASION INTERFACE LIB by domino54    //
-//  script version: 2017-03-29            //
+//  script version: 2017-04-03            //
 // -------------------------------------- //
 
-#Const Version		"2017-03-29"
+#Const Version		"2017-04-03"
 #Const ScriptName	"InvasionUI.Script.txt"
 
 #Include "MathLib" as ML
@@ -1438,11 +1438,6 @@ Text Private_CreateMLSoloScore() {
 
 <frame id="Frame_SoloScore" pos="{{{C_LibInvasionUI_SoloScorePos.X^" "^C_LibInvasionUI_SoloScorePos.Y}}}" scale="0">
 	<frame pos="-40 43">
-		<quad
-			id="Quad_SoloScoreBgImage" pos="0 0 -1" size="80 86"
-			image="file://Media/Manialinks/ShootMania/Common/ColoredScreen.dds"
-		 />
-		
 		<label pos="40 -7" class="fontB" textsize="5" id="Label_CurrentMapName" />
 		<label pos="40 -12" halign="center" class="fontB" textsize="2" id="Label_CurrentMapAuthor" />
 		<quad pos="40 -16" size="26 26" halign="center" style="MedalsBig" substyle="MedalSlot" id="Quad_SoloScoreMedal" />
@@ -1463,6 +1458,11 @@ Text Private_CreateMLSoloScore() {
 		
 		<label pos="40 -76" size="76 3" class="fontB" textsize="1" textprefix="$t" id="Label_Tip1" />
 		<label pos="40 -79" size="76 3" class="fontB" textsize="1" textprefix="$t" id="Label_Tip2" />
+
+		<quad
+			id="Quad_SoloScoreBgImage" pos="0 0 -1" size="80 86"
+			image="file://Media/Manialinks/ShootMania/Common/ColoredScreen.dds"
+		/>
 	</frame>
 </frame>
 
@@ -1512,7 +1512,7 @@ Label_ScoreAuthor.SetText(Map.ObjectiveTextAuthor);
 
 // ---------------------------------- //
 // Persistent settings
-declare persistent Integer[Text] Persistent_Invasion_MapBestScores for LocalUser;
+declare persistent Integer[Text] Persistent_Invasion_PersonalRecords for LocalUser;
 
 // ---------------------------------- //
 // Netcode
@@ -1552,20 +1552,21 @@ if (PrevSettingsUpdate != Net_LibInvasionUI_SettingsUpdate) {
 			// Display map scores
 			case "SoloScorePoints" : {
 				declare SoloScore = ML::Max(TL::ToInteger(SettingValue), 0);
-				declare MapID = Map.MapInfo.MapUid^"";
-				
+				declare MapUid = Map.MapInfo.MapUid;
+
 				// ---------------------------------- //
-				// Save map best score
+				// Get the best score
+				declare BestScore = SoloScore;
 				if (
-					!Persistent_Invasion_MapBestScores.existskey(MapID) ||
-					Persistent_Invasion_MapBestScores[MapID] < SoloScore
-				) 
-					Persistent_Invasion_MapBestScores[MapID] = SoloScore;
-				
+					Persistent_Invasion_PersonalRecords.existskey(MapUid) &&
+					Persistent_Invasion_PersonalRecords[MapUid] > BestScore
+				)
+					BestScore = Persistent_Invasion_PersonalRecords[MapUid];
+
 				// ---------------------------------- //
 				// Display scores
 				Label_ScorePointsTotal.SetText(TL::ToText(SoloScore));
-				Label_ScorePointsBest.SetText(TL::Compose(_("Best: %1"), ""^Persistent_Invasion_MapBestScores[MapID]));
+				Label_ScorePointsBest.SetText(TL::Compose(_("Best: %1"), TL::ToText(BestScore)));
 			}
 		}
 	}

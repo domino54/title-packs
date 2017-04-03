@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  INVASION by domino54                  //
-//  script version: v3.2 @2017-03-29      //
+//  script version: v3.2.1 @2017-04-03    //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"InvasionArena, HordeArena"
-#Const Version				"2017-03-29"
+#Const Version				"2017-04-03"
 #Const ScriptName			"Invasion.Script.txt"
 
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
@@ -27,6 +27,7 @@
 #Setting S_UseTeamsMode				False	as _("Teams mode (require server restart)")
 #Setting S_MaxNbToadsAtOnce			60		as "<hidden>" ///< Maximum amount of Toads spawned at once
 #Setting S_MaximumNbReplies			5		///< Increased Replies limit
+#Setting S_UsePlayerClublinks		False	///< Disable Clublinks
 
 // ---------------------------------- //
 // Constants
@@ -325,10 +326,6 @@ foreach (Score in Scores) {
 }
 
 // ---------------------------------- //
-// Wait for enough players to start game
-WaitForPlayers();
-
-// ---------------------------------- //
 // Init landmarks
 foreach (MapLandmark in MapLandmarks) {
 	// Bases
@@ -343,6 +340,13 @@ foreach (MapLandmark in MapLandmarks) {
 	// Gates
 	if (MapLandmark.Gate != Null) MapLandmark.Gauge.Clan = 1;
 }
+
+// Init teams emblems
+foreach (Team in Teams) Team.EmblemUrl = MB_NeutralEmblemUrl;
+
+// ---------------------------------- //
+// Wait for enough players to start game
+WaitForPlayers();
 
 // ---------------------------------- //
 // Check if there are Gold crystals on the map
@@ -1015,33 +1019,49 @@ if (MapCanSpawnGoldCrystal && Now >= GoldNextSpawnTime) {
 	G_CurGoldItemSpawnId += 1;
 	
 	// ---------------------------------- //
-	// Select nearest landmark
-	declare LandmarkDistances = Real[Ident];
-	declare DistancesList = Real[];
+	// Compute weighted center of the players group
+	declare Vec3 PlayersPositionCenter;
+	declare Vec3 PlayerPositionMin;
+	declare Vec3 PlayerPositionMax;
+
+	foreach (Player in Players) {
+		if (Player.Position == <0., 0., 0.>) continue;
+		for (I, 0, 2) {
+			if (PlayerPositionMin[I] == 0 || Player.Position[I] < PlayerPositionMin[I]) PlayerPositionMin[I] = Player.Position[I];
+			if (PlayerPositionMax[I] == 0 || Player.Position[I] > PlayerPositionMax[I]) PlayerPositionMax[I] = Player.Position[I];
+		}
+	}
+
+	if (PlayerPositionMin == PlayerPositionMax) PlayersPositionCenter = PlayerPositionMin;
+	else {
+		PlayersPositionCenter = PlayerPositionMin + PlayerPositionMax;
+		for (I, 0, 2) PlayersPositionCenter[I] /= 2;
+	}
 	
+	// ---------------------------------- //
+	// Select landmark near the center of players group
+	declare Real[Ident] LandmarkDistances;
+
 	foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
 		if (MapLandmark.Tag != "Gold") continue;
-		
-		if (!LandmarkDistances.existskey(MapLandmark.Id)) LandmarkDistances[MapLandmark.Id] = 0.;
-		
-		foreach (Player in Players) {
-			if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) continue;
-			LandmarkDistances[MapLandmark.Id] += ML::Distance(MapLandmark.Position, Player.Position);
-		}
-		
-		DistancesList.add(LandmarkDistances[MapLandmark.Id]);
+		LandmarkDistances[MapLandmark.Id] = ML::Distance(MapLandmark.Position, PlayersPositionCenter);
 	}
 	
 	// ---------------------------------- //
 	// Create item
-	if (LandmarkDistances.count > 0) {
-		DistancesList = DistancesList.sort();
-		declare MapLandmark <=> MapLandmarks_ObjectAnchor[LandmarkDistances.keyof(DistancesList[0])];
+	LandmarkDistances = LandmarkDistances.sort();
+
+	foreach (MapLandmarkId => Distance in LandmarkDistances) {
+		if (!MapLandmarks_ObjectAnchor.existskey(MapLandmarkId)) continue;
+		declare MapLandmark <=> MapLandmarks_ObjectAnchor[MapLandmarkId];
+
 		InvasionUI::UpdateGoldMarker(MapLandmark.Position, Now, C_GoldLifeDuration, G_CurGoldItemSpawnId);
-		
 		G_GoldCrystalObject = ObjectCreate(G_ObjectId["Gold"]);
-		declare Tag for G_GoldCrystalObject = "Gold";
 		G_GoldCrystalObject.SetPosition(MapLandmark.Position);
+		declare Tag for G_GoldCrystalObject = "Gold";
+
+		// Break the loop
+		break;
 	}
 }
 
@@ -1114,7 +1134,8 @@ else if (Players.count <= 0) {
 ***EndRound***
 ***
 UIManager.UIAll.CountdownEndTime = -1;
-SoloTimeScore = ((Now - StartTime - C_SafePhaseDuration) / 1000) * 10;
+SoloTimeScore = (Now - StartTime - C_SafePhaseDuration) / 1000;
+InvasionUI::SetTimeScoreCounting(False);
 
 // ---------------------------------- //
 // Destroy everything
@@ -1127,8 +1148,8 @@ MB_Sleep(2000);
 // ---------------------------------- //
 // Compute final time score
 InvasionUI::SetDisplayInterface(False);
-InvasionUI::SetTimeScoreCounting(False);
 Message::CleanAllMessages();
+StartTime = -1;
 
 // ---------------------------------- //
 // Do a proper end sequence

@@ -1,0 +1,300 @@
+// -------------------------------------- //
+//  OVERRUNNING by domino54               //
+//  script version: 2017-04-03            //
+// -------------------------------------- //
+
+#Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
+
+#Const CompatibleMapTypes	"OverrunningArena"
+#Const Version		"2017-04-03"
+#Const ScriptName	"Overrunning.Script.txt"
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit			600 	as _("Time limit (seconds)")
+#Setting S_PointsLimit			120		as _("Points limit")
+#Setting S_PlayerArmorPoints	5		///< Increase default armor points
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_PlayerAmmoGain	3.		///< Ammunition reload speed
+
+#Const Description _("TYPE: Free for all\nOBJECTIVE: Hit your opponents to score points. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.")
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident[] G_SpawnsList;	///< List of Spawns available to toss
+declare Ident G_LatestSpawnId;	///< Previously tossed Spawn
+declare Ident[Text] G_Vehicles;	///< Ids of vehicle used by the mode
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+// ---------------------------------- //
+// Adjust the scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+ST2::DestroyCol("LibST_SMRoundPoints");
+ST2::SetColWidth("LibST_SMPoints", 5.);
+TopScores::RemoveCategory("Support");
+***
+
+// ---------------------------------- //
+// Initialize server
+// ---------------------------------- //
+***InitServer***
+***
+// ---------------------------------- //
+// Set mode options
+GT_UseAutospawnObjects = False;
+GT_UseComboWeapons = False;
+GT_UseRepliePickups = False;
+GT_UseRandomToads = False;
+GT_AutoManageOnArmorEmpty = False;
+GT_AutoManageOnHit = False;
+
+// ---------------------------------- //
+// Load vehicles
+G_Vehicles["CanyonCar"] = ItemList_Add("Vehicles\\CanyonCar.Item.Gbx");
+G_Vehicles["CanyonCar_Dommy"] = ItemList_Add("Vehicles\\CanyonCar_Dommy.Item.Gbx");
+G_Vehicles["CanyonCar_TeamBlue"] = ItemList_Add("Vehicles\\CanyonCar_TeamBlue.Item.Gbx");
+G_Vehicles["CanyonCar_TeamRed"] = ItemList_Add("Vehicles\\CanyonCar_TeamRed.Item.Gbx");
+
+// ---------------------------------- //
+// Set the rules in the SpawnScreen
+GT_SpawnScreenModeName = "Overrunning";
+GT_SpawnScreenModeType = _("Free for all");
+GT_SpawnScreenObjectives = TL::Compose(
+	_("$<%11. $>Hit your opponents to score points.\n$<%12. $>The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map."),
+	"$"^SpawnScreen::GetModeColor()
+);
+
+// ---------------------------------- //
+// Set the rules in the pause menu
+PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Hit your opponents to score points. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.", "");
+
+// ---------------------------------- //
+// Custom interfaces
+MiniMap::Unload();	///< Minimap doesn't work with vehicles (yet)
+Interfancy::SetArmorVisibility(False);
+***
+
+// ---------------------------------- //
+// Initialize map
+// ---------------------------------- //
+***InitMap***
+***
+declare CurrentTimeLimit = S_TimeLimit;
+declare PrevPointsLimit = -1;
+
+// ---------------------------------- //
+// Check if the map is valid
+declare MapValidated = True;
+if (MapLandmarks_PlayerSpawn.count <= 0) MapValidated = False;
+
+// ---------------------------------- //
+// Skip map if not valid
+if (!MapValidated) GT_SkipInvalidMap();
+***
+
+// ---------------------------------- //
+// Start map
+// ---------------------------------- //
+***StartMap***
+***
+Interfancy::SetGaugesIconsImages(["Canyon Car" => C_ImgBase^"Icons/CanyonCar.png"]);
+G_SpawnsList.clear();
+G_LatestSpawnId = NullId;
+
+// ---------------------------------- //
+// Reset forced models
+foreach (Player in AllPlayers) Player.ForceModelId = NullId;
+
+// Bet the blue side team
+declare BlueTeamSideOrder = MB_SectionRoundNb % 2 + 1;
+
+// ---------------------------------- //
+// Colorize bases
+foreach (MapLandmark in MapLandmarks_Gauge) {
+	if (MapLandmark.Tag != "Base" || MapLandmark.Base == Null) continue;
+	if (MapLandmark.Order == BlueTeamSideOrder) MapLandmark.Base.Clan = 1;
+	else MapLandmark.Base.Clan = 2;
+}
+
+// ---------------------------------- //
+// Wait for enough players to start game
+while (!ServerShutdownRequested && !MatchEndRequested && Players.count <= 0) MB_Yield();
+
+// ---------------------------------- //
+// Init scores
+MB_Sleep(1); ///< Allow the scores array to be sorted
+foreach (Score in Scores) {
+	declare Integer LastPoint for Score;
+	LastPoint = 0;
+}
+declare LeadId = NullId;
+if (Scores.existskey(0)) LeadId = Scores[0].User.Id;
+
+// ---------------------------------- //
+// Start match
+StartTime = Now + S_RespawnTime;
+if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+else GT_DisableTimeLimit();
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***PlayLoop***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On armor empty
+	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		if (Event.Shooter == Null || Event.Victim == Null) { Discard(Event); continue; }
+
+		declare Points = 1;
+		if (Event.Shooter == Event.Victim) Points *= -1;
+		
+		Score::AddPoints(Event.Shooter, Points);
+		TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
+	}
+}
+
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) {
+	if (Player.RequestsSpectate || Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned || !GT_IsValidPlayer(Player)) continue;
+	GT_InitPlayer(Player);
+
+	// Domino is cool
+	if (Player.User.Login == "domino54") Player.ForceModelId = G_Vehicles["CanyonCar_Dommy"];
+
+	// ---------------------------------- //
+	// Use random skin (at the moment)
+	else switch (ML::Rand(0, 2)) {
+		case 0 : Player.ForceModelId = G_Vehicles["CanyonCar"]; ///< Unskinned for poor fuks
+		case 1 : Player.ForceModelId = G_Vehicles["CanyonCar_TeamBlue"];
+		case 2 : Player.ForceModelId = G_Vehicles["CanyonCar_TeamRed"];
+	}
+	
+	Interfancy::SetArmorText(Player, "Canyon Car");
+	
+	Player.AmmoGain = C_PlayerAmmoGain;
+
+	// Need to set weapon if player is spawned inside of a vehicle
+	SetPlayerWeapon(Player, CSmMode::EWeapon::Rocket, False);
+	
+	// Spawn the player
+	OVR_SpawnPlayer(Player);
+}
+
+// ---------------------------------- //
+// Turn all round points into normal points
+foreach (Score in Scores) {
+	if (Score.RoundPoints == 0) continue;
+	Score.Points += Score.RoundPoints;
+	Score.RoundPoints = 0;
+}
+
+// ---------------------------------- //
+// Server info change
+if (PrevPointsLimit != S_PointsLimit) {
+	PrevPointsLimit = S_PointsLimit;
+	ST2::SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+}
+
+// ---------------------------------- //
+// Update time limit
+if (CurrentTimeLimit != S_TimeLimit) {
+	CurrentTimeLimit = S_TimeLimit;
+	if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else GT_DisableTimeLimit();
+}
+
+// ---------------------------------- //
+// Victory conditions
+if (Scores.existskey(0) && Scores[0].Points >= S_PointsLimit) {
+	Message::SendBigMessage(
+		TL::Compose(_("$<%1$> gets the final hit!"), Scores[0].User.Name),
+		3000, 3, CUIConfig::EUISound::VictoryPoint, 0
+	);
+	MB_StopMap = True;
+}
+if (GT_TimeReachedLimit()) MB_StopMap = True;
+***
+
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+***EndMap***
+***
+// Unspawn everyone except the winner
+foreach (I => Player in Players) if (I > 0) UnspawnPlayer(Player);
+
+// Disallow the winner to move after match end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;
+MB_Sleep(1500);
+
+// Cinematic round end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+MB_Sleep(1500);
+
+Message::CleanBigMessages();
+***
+
+// ---------------------------------- //
+/** Get all Player Spawn landmarks with specified attributes
+ *
+ *	@param	_Tag		Landmark tag
+ *	@param	_Order		Landmark order
+ *
+ *	@return		Player Spawn landmarks with specific attributes
+ */
+Ident[] GetLandmarksPlayerSpawn(Text _Tag, Integer _Order) {
+	declare Ident[] PlayerSpawnLandmarks;
+	foreach (MapLandmark in MapLandmarks_PlayerSpawn) {
+		if (MapLandmark.Tag == _Tag && MapLandmark.Order == _Order) PlayerSpawnLandmarks.add(MapLandmark.Id);
+	}
+	return PlayerSpawnLandmarks;
+}
+
+// ---------------------------------- //
+/** Spawn a player
+ *
+ *	@param	_Player		The player to spawn
+ */
+Void OVR_SpawnPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	
+	// Fill the spawns lists
+	if (G_SpawnsList.count == 0) foreach (MapLandmark in MapLandmarks_PlayerSpawn) G_SpawnsList.add(MapLandmark.Id);
+	
+	// ---------------------------------- //
+	// Get new spawn
+	declare SpawnId = NullId;
+	while (True) {
+		SpawnId = G_SpawnsList[ML::Rand(0, G_SpawnsList.count - 1)];
+		if (SpawnId != G_LatestSpawnId || G_SpawnsList.count == 1) break;
+	}
+	G_LatestSpawnId = SpawnId;
+	
+	// ---------------------------------- //
+	// Spawn player
+	SM::SpawnPlayer(_Player, 0, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn, Now + S_RespawnTime);
+	declare Removed = G_SpawnsList.remove(SpawnId);
+}

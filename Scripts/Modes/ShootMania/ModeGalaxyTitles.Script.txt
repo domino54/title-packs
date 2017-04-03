@@ -1,15 +1,15 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-03-29            //
+//  script version: 2017-04-03            //
 // -------------------------------------- //
 
 /**
  *	Base for the game modes in the GalaxyTitles title pack.
  */
 
-#Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
+#Extends "Modes/ShootMania/Base/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2017-03-29"
+#Const BaseVersion		"2017-04-03"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -237,7 +237,7 @@ GT_AllowMatchmakingMode = True;
 
 // ---------------------------------- //
 // Download translations
-Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
+// Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
 while (!Translations::LoadingLoop()) MB_Yield();
 
 // ---------------------------------- //
@@ -590,52 +590,97 @@ foreach (Event in PendingEvents) {
 		// ---------------------------------- //
 		// Automatic hit management
 		if (GT_AutoManageOnHit) {
+			// Reduce Laser damage
+			if (Event.Damage > C_EventMaxDamage) Event.Damage = C_EventMaxDamage;
+
 			// ---------------------------------- //
-			// Discard invalid events
-			if (Event.Shooter == Null || Event.Victim == Null || Event.Shooter == Event.Victim) Discard(Event);
-			
-			// ---------------------------------- //
-			// Teammate hit
-			else if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) Discard(Event);
-			
-			// ---------------------------------- //
-			// A bot has hit someone
-			else if (Event.Shooter.IsBot) {
-				if (Event.Victim.IsBot && Event.Victim.CurrentClan == 0) Discard(Event);
-				else PassOn(Event);
+			// Turret shooter
+			if (Event.ShooterTurret != Null) {
+				// ---------------------------------- //
+				// Invalid events
+				if ((Event.Victim == Null && Event.VictimObject == Null && Event.VictimTurret == Null) || Event.ShooterTurret == Event.VictimTurret) Discard(Event);
+
+				// ---------------------------------- //
+				// Turret hit
+				else if (Event.VictimTurret != Null) {
+					+++OnTurretHitByTurret+++
+					PassOn(Event);
+				}
+				// ---------------------------------- //
+				// Object hit
+				else if (Event.VictimObject != Null) {
+					+++OnObjectHitByTurret+++
+					PassOn(Event);
+				}
+				// ---------------------------------- //
+				// Player hit
+				else if (Event.Victim != Null) {
+					+++OnHitByTurret+++
+					PassOn(Event);
+				}
 			}
-			
 			// ---------------------------------- //
-			// Enemy hit
-			else {
-				+++OnHitConditions+++
-				
-				// Reduce Laser damage
-				if (Event.Damage > C_EventMaxDamage) Event.Damage = C_EventMaxDamage;
-				
-				declare Points = ML::Min(Event.Damage, Event.Victim.Armor) / 100;
-				Score::AddPoints(Event.Shooter, Points);
-				TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
-				Event.ShooterPoints = Points;
-				
-				+++OnHit+++
+			// Player shooter
+			else if (Event.Shooter != Null) {
+				// ---------------------------------- //
+				// Turret hit
+				if (Event.VictimTurret != Null) {
+					+++OnTurretHit+++
+					PassOn(Event);
+				}
+				// ---------------------------------- //
+				// Object hit
+				else if (Event.VictimObject != Null) {
+					+++OnObjectHit+++
+					PassOn(Event);
+				}
+				// ---------------------------------- //
+				// Invalid events
+				else if (Event.Victim == Null || Event.Shooter == Event.Victim) Discard(Event);
 				
 				// ---------------------------------- //
-				// Environmental eliminations
-				declare Ident GT_VictimLastShooter for Event.Victim;
-				declare Integer GT_VictimLastHitTime for Event.Victim;
-				GT_VictimLastShooter = Event.Shooter.Id;
-				GT_VictimLastHitTime = Now;
+				// Teammate hit
+				else if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) Discard(Event);
 				
 				// ---------------------------------- //
-				// Elimination assists
-				declare Ident[] GT_VictimShootHistory for Event.Victim;
-				GT_VictimShootHistory.add(Event.Shooter.Id);
+				// A bot has hit someone
+				else if (Event.Shooter.IsBot) {
+					if (Event.Victim.IsBot && (Event.Victim.CurrentClan == 0 || Event.Shooter.CurrentClan == Event.Victim.CurrentClan)) Discard(Event);
+					else PassOn(Event);
+				}
 				
-				if (GT_IsValidForCallbacks(Event)) XmlRpc::OnHit(Event);
-				Statistics::OnHit(Event);
-				PassOn(Event);
+				// ---------------------------------- //
+				// Enemy hit
+				else {
+					+++OnHitConditions+++
+					
+					declare Points = ML::Min(Event.Damage, Event.Victim.Armor) / 100;
+					Score::AddPoints(Event.Shooter, Points);
+					TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
+					Event.ShooterPoints = Points;
+					
+					+++OnHit+++
+					
+					// ---------------------------------- //
+					// Environmental eliminations
+					declare Ident GT_VictimLastShooter for Event.Victim;
+					declare Integer GT_VictimLastHitTime for Event.Victim;
+					GT_VictimLastShooter = Event.Shooter.Id;
+					GT_VictimLastHitTime = Now;
+					
+					// ---------------------------------- //
+					// Elimination assists
+					declare Ident[] GT_VictimShootHistory for Event.Victim;
+					GT_VictimShootHistory.add(Event.Shooter.Id);
+					
+					if (GT_IsValidForCallbacks(Event)) XmlRpc::OnHit(Event);
+					Statistics::OnHit(Event);
+					PassOn(Event);
+				}
 			}
+			// ---------------------------------- //
+			// Invalid event
+			else Discard(Event);
 		}
 		// ---------------------------------- //
 		// Manual event management
@@ -811,7 +856,7 @@ if (GT_UseAutoEndSequence) {
 		foreach (Clan => Points in ClanScores)
 			if (Clan != 0 && Points > ClanScores[3 - Clan]) WinnerName = Teams[Clan - 1].ColorizedName;
 	}
-	else if (Scores.existskey(0)) WinnerName = Scores[0].User.Name;
+	else if (Scores.existskey(0) && Scores[0].Points > 0) WinnerName = Scores[0].User.Name;
 	
 	// ---------------------------------- //
 	// Display the round winner

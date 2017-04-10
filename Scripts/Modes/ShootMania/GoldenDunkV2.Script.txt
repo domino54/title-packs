@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2017-03-04            //
+//  script version: 2017-04-10            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2017-03-04"
+#Const Version		"2017-04-10"
 #Const ScriptName	"GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -221,11 +221,11 @@ if (G_CentralCheckpointLandmark.Gauge != Null) G_CentralCheckpointLandmark.Gauge
 foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 	if (MapLandmark.Base == Null) continue;
 	MapLandmark.Base.Clan = Clan;
-	MapLandmark.Base.IsActive = True;
 	
 	MapLandmark.Gauge.Clan = Clan;
 	MapLandmark.Gauge.Max = C_GoalPostLoadingTime * ML::Max(C_GoalPostCaptureCoef, C_GoalPostDecaptureCoef);
 	MapLandmark.Gauge.ValueReal = .25;
+	MapLandmark.Base.IsActive = MapLandmark.Gauge.ValueReal >= C_GoalShieldMinRatio;
 	
 	declare Real PrevRatio for MapLandmark;
 	declare Real PrevValueReal for MapLandmark;
@@ -391,12 +391,12 @@ if (PrevCheckpointBallVisible != (G_NbBallsTotal < G_NbBallsMax)) {
 foreach (Player in Players) {
 	declare Boolean JustRespawned for Player;
 	declare Vec3[] ForbiddenPositions for Player;
-	
+
 	// ---------------------------------- //
 	// Spawn players
 	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate && GT_IsValidPlayer(Player)) {
 		GT_InitPlayer(Player);
-		
+
 		// Add ball to the inventory
 		Inventory::CreateItemSlot(Player, "Ball", CSmModeEvent::EActionInput::Consumable2, 0, "Ball.png");
 		
@@ -488,6 +488,9 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 		declare CaptureStateChange = 0;
 		if (PrevRatio < C_GoalShieldMinRatio && MapLandmark.Gauge.ValueReal >= C_GoalShieldMinRatio) CaptureStateChange = 1;
 		if (PrevRatio >= C_GoalShieldMinRatio && MapLandmark.Gauge.ValueReal < C_GoalShieldMinRatio) CaptureStateChange = -1;
+
+		// Brighter lights when Shield is built
+		MapLandmark.Base.IsActive = MapLandmark.Gauge.ValueReal >= C_GoalShieldMinRatio;
 		
 		// ---------------------------------- //
 		// Goal has been captured
@@ -612,6 +615,7 @@ MB_Sleep(3000);
 Layers::Detach("GoldenDunk:Interface");
 Layers::Detach("GoldenDunk:Markers");
 Message::CleanBigMessages();
+StartTime = -1;
 
 // Destroy markers
 foreach (Marker in G_CreatedUIMarkers) MiniMap::DestroyMarker(Marker);

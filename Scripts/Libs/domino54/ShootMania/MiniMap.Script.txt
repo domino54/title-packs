@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2017-03-29            //
+//  script version: 2017-04-10            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2017-03-29"
+#Const Version		"2017-04-10"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "TextLib" as TL
@@ -91,6 +91,7 @@ Text Private_CreateManialinkMinimapWindow() {
 	<quad size="3.5 3.5" halign="center" valign="center" image="{{{C_ImgBase}}}Player.png" id="Quad_MarkerIcon" />
 	<label pos="0 -2" size="16" halign="center" valign="center2" id="Label_MarkerText" />
 	<quad size="14 14" halign="center" valign="center" image="{{{C_ImgBase}}}PlayerFov.png" id="Quad_MarkerCone" />
+	<quad size="5.5 5.5" halign="center" valign="center" image="{{{C_ImgBase}}}Vehicle.png" id="Quad_MarkerVehicle" hidden="1" />
 </framemodel>
 
 <frame id="Frame_HMDClip" size="320 180" halign="center" valign="center">
@@ -132,6 +133,7 @@ Text Private_CreateManialinkMinimapWindow() {
 // ---------------------------------- //
 #Const C_EnvironmentSize ["Storm" => 384.]
 #Const C_MapZoomWhenSpawned		5.
+#Const C_MapZoomInVehicles		3.75
 #Const C_MapWeightedSizeOffset	12.
 #Const C_PlayerSpawnDelay		1500
 
@@ -141,7 +143,8 @@ Text Private_CreateManialinkMinimapWindow() {
 #Const C_MarkerTunnelsOpacity	{{{1/3.}}}
 #Const C_MarkersDistances [
 	"Teammates"	=> [32., 48.],
-	"Enemies"	=> [26., 42.]
+	"Enemies"	=> [26., 42.],
+	"InVehicle"	=> [48., 56.]
 ]
 
 // ---------------------------------- //
@@ -173,6 +176,7 @@ foreach (Frame in Frame_PlayerMarkers) {
 	declare Quad_MarkerIcon for Frame <=> (Frame.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
 	declare Label_MarkerText for Frame <=> (Frame.GetFirstChild("Label_MarkerText") as CMlLabel);
 	declare Quad_MarkerCone for Frame <=> (Frame.GetFirstChild("Quad_MarkerCone") as CMlQuad);
+	declare Quad_MarkerVehicle for Frame <=> (Frame.GetFirstChild("Quad_MarkerVehicle") as CMlQuad);
 }
 
 declare CMlQuad[] Quad_CustomMarkers;
@@ -214,6 +218,7 @@ declare MarkersPositioning = Vec2;
 declare ReassignPlayersMarkers = True;
 declare NbPlayersDisplayed = 0;
 declare NbCustomDisplayed = 0;
+declare GUIPlayerIsInVehicle = False;
 
 /// Update
 declare PrevSettingsUpdate = -1;
@@ -226,6 +231,7 @@ declare PrevGUIPlayerColor = -1.;
 declare PrevIsOverviewMode = False;
 declare PrevNbPlayers = 0;
 declare PrevMarkersUpdate = -1;
+declare PrevGUIPlayerIsInVehicle = False;
 
 // ---------------------------------- //
 // Initialize manialink
@@ -342,8 +348,16 @@ if (IsPlayerSpawned) {
 	Minimap_Main.MapYaw = GUIPlayer.AimYaw;
 	
 	// ---------------------------------- //
+	// Reduced zoom in vehicles
+	if (GUIPlayerIsInVehicle) {
+		if (PrevZoomState != 3) {
+			PrevZoomState = 3;
+			AnimMgr.Add(Label_Debug, "<label scale='"^C_MapZoomInVehicles^"' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
+		}
+	}
+	// ---------------------------------- //
 	// Reduced map zoom on Laser and Arrow pads
-	if (GUIPlayer.IsOnTechLaser || GUIPlayer.IsOnTechArrow) {
+	else if (GUIPlayer.IsOnTechLaser || GUIPlayer.IsOnTechArrow) {
 		if (PrevZoomState != 2) {
 			PrevZoomState = 2;
 			AnimMgr.Add(Label_Debug, "<label scale='"^C_MapZoomWhenSpawned / 2^"' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
@@ -453,6 +467,19 @@ if (GUIPlayer != Null && PrevGUIPlayerColor != GUIPlayer.GetLinearHue) {
 	Quad_MarkerGUIPlayer.Colorize = HsvToRgb(<ML::Clamp(GUIPlayer.GetLinearHue, 0., 1.), 1., 1.>);
 }
 
+// Check if the player is in a vehicle (in quite ugly way)
+GUIPlayerIsInVehicle = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.Armor > 0 && GameTime >= GUIPlayer.StartTime - 1500 && !GUIPlayer.IsInAir && !GUIPlayer.IsTouchingGround;
+
+// ---------------------------------- //
+// Update player icon on vehicle status change
+if (PrevGUIPlayerIsInVehicle != GUIPlayerIsInVehicle) {
+	PrevGUIPlayerIsInVehicle = GUIPlayerIsInVehicle;
+
+	declare MarkerImage = "GUIPlayer.png";
+	if (GUIPlayerIsInVehicle) MarkerImage = "Vehicle.png";
+	Quad_MarkerGUIPlayer.ImageUrl = "{{{C_ImgBase}}}"^MarkerImage;
+}
+
 // ---------------------------------- //
 // Update the overview mode
 IsOverviewMode = !IsPlayerSpawned || GUIPlayer.IsOnTechLaser || GUIPlayer.IsOnTechArrow;
@@ -558,7 +585,8 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	if (!IsOverviewMode) {
 		declare Real[] Distances;
 		if (!Player.IsBot) {
-			if (GUIPlayer.CurrentClan == 0 || Player.CurrentClan != GUIPlayer.CurrentClan) Distances = G_MarkersDistances["Enemies"];
+			if (GUIPlayerIsInVehicle) Distances = G_MarkersDistances["InVehicle"];
+			else if (GUIPlayer.CurrentClan == 0 || Player.CurrentClan != GUIPlayer.CurrentClan) Distances = G_MarkersDistances["Enemies"];
 			else Distances = G_MarkersDistances["Teammates"];
 		}
 		MarkerOpacity = GetMarkerFade(Distance2D(GUIPlayer.Position, Player.Position), Distances);
@@ -591,35 +619,12 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	// Update the marker icon
 	declare CMlQuad Quad_MarkerIcon for Frame;
 	declare Boolean PlayerHasCustomMarker for Player;
+	declare IsInVehicle = Player.Armor > 0 && GameTime >= Player.StartTime - 1500 && Player.IsInAir == Player.IsTouchingGround;
+	declare Boolean PrevIsInVehicle for Player;
 
-	Quad_MarkerIcon.Visible = !PlayerHasCustomMarker;
+	Quad_MarkerIcon.Visible = !PlayerHasCustomMarker && !IsInVehicle;
 	if (Quad_MarkerIcon.Visible) {
 		Quad_MarkerIcon.Opacity = MarkerOpacity;
-
-		declare PrevPlayerIsBot for Frame = False;
-		declare PrevMarkerColor for Frame = -1.;
-
-		// ---------------------------------- //
-		// Ckeck if the player is bot
-		if (PrevPlayerIsBot != Player.IsBot) {
-			PrevPlayerIsBot = Player.IsBot;
-			PrevMarkerColor = -1.;
-			declare CMlQuad Quad_MarkerCone for Frame;
-
-			declare MarkerScale = C_MarkerScaleDefault;
-			if (Player.IsBot) MarkerScale *= C_MarkerScaleBotPlayer;
-			Quad_MarkerIcon.RelativeScale = MarkerScale;
-			Quad_MarkerCone.RelativeScale = MarkerScale;
-		}
-
-		// ---------------------------------- //
-		// Set marker icon color
-		if (PrevMarkerColor != Player.GetLinearHue) {
-			PrevMarkerColor = Player.GetLinearHue;
-			declare Volume = 1.;
-			if (Player.IsBot) Volume /= 2;
-			Quad_MarkerIcon.Colorize = HsvToRgb(<ML::Clamp(PrevMarkerColor, 0., 1.), 1., Volume>);
-		}
 
 		// ---------------------------------- //
 		// Marker icon depending on the height difference
@@ -645,7 +650,7 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	// ---------------------------------- //
 	// Setup field of view cone image
 	declare CMlQuad Quad_MarkerCone for Frame;
-	Quad_MarkerCone.Visible = !IsOverviewMode && !Persistent_LibMinimap_HideCones;
+	Quad_MarkerCone.Visible = !IsOverviewMode && !IsInVehicle && !Persistent_LibMinimap_HideCones;
 	
 	if (Quad_MarkerCone.Visible) {
 		Quad_MarkerCone.Opacity = MarkerOpacity / 2;
@@ -660,6 +665,46 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	if (Label_MarkerText.Visible) {
 		Label_MarkerText.Opacity = MarkerOpacity;
 		Label_MarkerText.Value = Player.User.Name;
+	}
+
+	// ---------------------------------- //
+	// Update the vehicle icon
+	declare CMlQuad Quad_MarkerVehicle for Frame;
+	if (PrevIsInVehicle != IsInVehicle) {
+		PrevIsInVehicle = IsInVehicle;
+
+		Quad_MarkerVehicle.Visible = IsInVehicle;
+		Label_MarkerText.RelativePosition_V3.Y = -2.;
+		if (IsInVehicle) Label_MarkerText.RelativePosition_V3.Y -= 1.;
+	}
+	if (Quad_MarkerVehicle.Visible) {
+		Quad_MarkerVehicle.Opacity = MarkerOpacity;
+		Quad_MarkerVehicle.RelativeRotation = RadToDeg(-Player.AimYaw) - Frame.RelativeRotation;
+	}
+
+	declare PrevPlayerIsBot for Frame = False;
+	declare PrevMarkerColor for Frame = -1.;
+
+	// ---------------------------------- //
+	// Ckeck if the player is bot
+	if (PrevPlayerIsBot != Player.IsBot) {
+		PrevPlayerIsBot = Player.IsBot;
+		PrevMarkerColor = -1.;
+		
+		declare MarkerScale = C_MarkerScaleDefault;
+		if (Player.IsBot) MarkerScale *= C_MarkerScaleBotPlayer;
+		Quad_MarkerIcon.RelativeScale = MarkerScale;
+		Quad_MarkerCone.RelativeScale = MarkerScale;
+	}
+
+	// ---------------------------------- //
+	// Set marker icon color
+	if (PrevMarkerColor != Player.GetLinearHue) {
+		PrevMarkerColor = Player.GetLinearHue;
+		declare Volume = 1.;
+		if (Player.IsBot) Volume /= 2;
+		Quad_MarkerIcon.Colorize = HsvToRgb(<ML::Clamp(PrevMarkerColor, 0., 1.), 1., Volume>);
+		Quad_MarkerVehicle.Colorize = Quad_MarkerIcon.Colorize;
 	}
 }
 

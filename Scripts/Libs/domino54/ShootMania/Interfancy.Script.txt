@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-04-03            //
+//  script version: 2017-04-10            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-04-03"
+#Const	Version		"2017-04-10"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -331,12 +331,11 @@ declare netread Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
 // ---------------------------------- //
 // Variables
 declare Gauges_Display = True;
-
 declare InterfaceColor = 0.;
 declare StaminaDisplayEndTime = -1;
 declare Integer[Ident] PlayerIsOnTechArmor;
 declare ShowReloadBoost = False;
-declare GUIPlayerClan = 0;
+declare GUIPlayerIsInVehicle = False;
 
 // Update
 declare PrevSettingsUpdate = -1;
@@ -460,9 +459,12 @@ if (ShowReloadBoost) {
 	Label_BoostTimer.Value = TL::ToText((Net_LibInterfancy_BoostStartTime + Net_LibInterfancy_BoostDuration - GameTime) / 1000 + 1);
 }
 
+// Check if the player is in a vehicle (in quite ugly way)
+GUIPlayerIsInVehicle = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.Armor > 0 && GameTime >= GUIPlayer.StartTime - 1500 && !GUIPlayer.IsInAir && !GUIPlayer.IsTouchingGround;
+
 // ---------------------------------- //
 // Update the Armor module visibility
-ModuleVisibility_Armor = GaugesModulesVisibility && ModuleDisplay_Armor && GUIPlayer.ArmorMax > 0 && (GUIPlayer.Position != <0., 0., 0.> || GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned);
+ModuleVisibility_Armor = GaugesModulesVisibility && ModuleDisplay_Armor && GUIPlayer.ArmorMax > 0 && GUIPlayer.Position != <0., 0., 0.> && !GUIPlayerIsInVehicle;
 
 if (PrevModuleVisibility_Armor != ModuleVisibility_Armor) {
 	PrevModuleVisibility_Armor = ModuleVisibility_Armor;
@@ -596,7 +598,7 @@ if (ModuleVisibility_Armor) {
 
 // ---------------------------------- //
 // Update the Ammo module visibility
-ModuleVisibility_Ammo = GaugesModulesVisibility && ModuleDisplay_Ammo && (GUIPlayer.Position != <0., 0., 0.> || GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) && GUIPlayer.CurWeapon > 0 && GUIPlayer.CurAmmoMax > 0;
+ModuleVisibility_Ammo = GaugesModulesVisibility && ModuleDisplay_Ammo && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.CurWeapon > 0 && GUIPlayer.CurAmmoMax > 0;
 
 if (PrevModuleVisibility_Ammo != ModuleVisibility_Ammo) {
 	PrevModuleVisibility_Ammo = ModuleVisibility_Ammo;
@@ -707,7 +709,7 @@ if (GUIPlayer != Null && GUIPlayer.Stamina < GUIPlayer.StaminaMax * 3600) Stamin
 
 // ---------------------------------- //
 // Update the Stamina module visibility
-ModuleVisibility_Stamina = GaugesModulesVisibility && GUIPlayer.Position != <0., 0., 0.> && ModuleDisplay_Stamina && Now <= StaminaDisplayEndTime;
+ModuleVisibility_Stamina = GaugesModulesVisibility && GUIPlayer.Position != <0., 0., 0.> && !GUIPlayerIsInVehicle && ModuleDisplay_Stamina && Now <= StaminaDisplayEndTime;
 
 if (PrevModuleVisibility_Stamina != ModuleVisibility_Stamina) {
 	PrevModuleVisibility_Stamina = ModuleVisibility_Stamina;
@@ -1735,7 +1737,7 @@ ClientUI.OverlayHideCrosshair = !Crosshair_Display || Persistent_LibInterfancy_U
 Frame_Crosshair.Visible =
 	ClientUI.OverlayHideCrosshair && CrosshairVisible && GUIPlayer != Null && !GUIPlayer.IsOnTechNoWeapon && !GUIPlayer.IsInWater &&
 	GUIPlayer.Position != <0., 0., 0.> && GameTime >= GUIPlayer.StartTime - 1500 &&
-	GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0;
+	GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0 && GUIPlayer.IsInAir != GUIPlayer.IsTouchingGround;
 
 // ---------------------------------- //
 // Update GUIPlayer

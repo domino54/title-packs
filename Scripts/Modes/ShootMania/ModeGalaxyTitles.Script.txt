@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-04-03            //
+//  script version: 2017-04-10            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2017-04-03"
+#Const BaseVersion		"2017-04-10"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -21,6 +21,7 @@
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
 #Include "Libs/domino54/Killfeed.Script.txt" as Killfeed
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/MapSelection.Script.txt" as MapSelection
 #Include "Libs/domino54/Statistics.Script.txt" as Statistics
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
@@ -54,6 +55,7 @@
 #Setting S_CustomBlacklistURL	""		as "<hidden>" ///< URL of the custom blacklist file
 #Setting S_KillfeedOffsetY		0.		as "<hidden>" ///< For server hosters: killfeed Y offset
 #Setting S_MusicPlaylistURL		""		as "<hidden>" ///< URL of the server custom music playlist file
+#Setting S_EnableMapSelection	True	as "<hidden>" ///< Allow players to choose which map they want to play next
 
 /// Clublinks settings
 #Setting S_UsePlayerClublinks	True	as _("Use players clublinks")
@@ -129,6 +131,7 @@ MB_LogVersion(Interfancy::GetScriptName(), Interfancy::GetScriptVersion());
 MB_LogVersion(Inventory::GetScriptName(), Inventory::GetScriptVersion());
 MB_LogVersion(Killfeed::GetScriptName(), Killfeed::GetScriptVersion());
 MB_LogVersion(ManialinkTools::GetScriptName(), ManialinkTools::GetScriptVersion());
+MB_LogVersion(MapSelection::GetScriptName(), MapSelection::GetScriptVersion());
 MB_LogVersion(MiniMap::GetScriptName(), MiniMap::GetScriptVersion());
 MB_LogVersion(PauseMenu::GetScriptName(), PauseMenu::GetScriptVersion());
 MB_LogVersion(Statistics::GetScriptName(), Statistics::GetScriptVersion());
@@ -237,7 +240,7 @@ GT_AllowMatchmakingMode = True;
 
 // ---------------------------------- //
 // Download translations
-// Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
+Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
 while (!Translations::LoadingLoop()) MB_Yield();
 
 // ---------------------------------- //
@@ -256,6 +259,8 @@ WarmUp2::SetLayerPosition(<0., -58.>);
 Interfancy::Load(["Gauges", "Countdown", "SpecInfo", "Crosshair", "ScoreSummary"]);
 PauseMenu::Load();
 SM::SetupDefaultVisibility();
+Killfeed::Load();
+MapSelection::Load("Eurostile", "Eurostile_Bold");
 
 UIManager.UIAll.OverlayHide321Go = True;
 UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
@@ -272,7 +277,6 @@ Streaks::Load();
 
 // ---------------------------------- //
 // Load Killfeed library
-Killfeed::Load();
 Killfeed::SetPosition(C_DefaultKillfeedPosn + <0., S_KillfeedOffsetY>);
 Killfeed::AddTranslations(GT_KillfeedTranslations);
 Killfeed::SetTextFont("Eurostile");
@@ -809,7 +813,7 @@ Score::RoundEnd();
 TopScores::RoundEnd();
 MiniMap::Hide();
 GalaxyTitles::ResetAll();
-EndTime = -1;
+GT_SetTimeLimit(-1, False);
 ***
 
 // ---------------------------------- //
@@ -877,6 +881,19 @@ if (GT_UseAutoEndSequence) {
 	
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 	UIManager.UIAll.BigMessage = "";
+}
+
+// ---------------------------------- //
+// Let players vote for the next map
+if (!MM_IsMatchServer() && S_EnableMapSelection && MapSelection::SelectionStart(Now + 10750, True)) {
+	declare PrevSummaryVisibility = Interfancy::GetModuleVisibility("ScoreSummary");
+	Interfancy::SetModuleVisibility("ScoreSummary", False);
+
+	while (!MapSelection::SelectionLoop() && !MatchEndRequested && !ServerShutdownRequested) MB_Yield();
+	MB_Sleep(3000);
+	MapSelection::SelectionEnd();
+
+	Interfancy::SetModuleVisibility("ScoreSummary", PrevSummaryVisibility);
 }
 
 // ---------------------------------- //

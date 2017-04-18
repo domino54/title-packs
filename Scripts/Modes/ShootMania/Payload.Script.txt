@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PAYLOAD by domino54                   //
-//  script version: 2017-02-15            //
+//  script version: 2017-02-18            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"PayloadArena"
-#Const Version		"2017-02-15"
+#Const Version		"2017-02-18"
 #Const ScriptName	"Payload.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -27,6 +27,7 @@
 #Const C_PayloadActivationRadius	8.		///< Radius within the Payload can be interacted with
 #Const C_PayloadReversingTimeLimit	10000	///< Time after which Payload starts going backwards
 #Const C_PayloadReversingSpeed		.5		///< Payload speed in m/s when going backwards
+#Const C_PayloadTimePerPoint		3000	///< Time required for each attack point
 #Const C_SetupPhaseDuration			15000	///< Duration of the preparation phase for defenderss
 
 #Const Description _("TYPE: Team versus Team\nOBJECTIVE: Attacking team is pushing Payload across the map, defenders have to stop them.")
@@ -45,6 +46,23 @@ declare Integer G_AttackingClan;	///< Currently attacking team
 declare Integer G_CapturedSectors;	///< Number of sectors captured by the attackers
 declare Boolean G_IsOvertime;		///< True, if the game is in overtime mode
 declare Ident[Text] G_ObjectsIds;	///< Ids of the objects models
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+***
+
+// ---------------------------------- //
+// Set the scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+TopScores::AddCategory("Attack", "Atk", 2.25, 60.);
+***
 
 // ---------------------------------- //
 // Server start
@@ -75,7 +93,8 @@ Layers::Create("Payload:Interface", CreateManialinkPayloadUI());
 
 // ---------------------------------- //
 // Load objects
-G_ObjectsIds["Crystal"] = ItemList_Add("SMCommon\\Collectibles\\Gold.Item.gbx");
+// G_ObjectsIds["Crystal"] = ItemList_Add("SMCommon\\Collectibles\\Gold.Item.gbx");
+G_ObjectsIds["Crystal"] = ItemList_Add("CrystalPickup.Item.gbx");
 
 // ---------------------------------- //
 // Variables
@@ -85,6 +104,8 @@ declare NbDefendersStoppingPayload = 0;
 declare LastPayloadInteractionTime = 0;
 declare IsPreparationPhase = False;
 declare NextCheckpointDistance = 0.;
+declare CurSectorStartTime = 0;
+
 declare PrevCheckpointDistance = 0.;
 declare PrevPayloadDistance = G_PayloadTrackCurrentDist;
 declare PrevAllowPayloadReversing = S_AllowPayloadReversing;
@@ -288,6 +309,15 @@ foreach (MapLandmark in MapLandmarks_Gate) {
 }
 
 // ---------------------------------- //
+// Reset players Payload time
+foreach (Player in Players) {
+	declare Real TimeNearPayload for Player;
+	declare Real PrevTimeNearPayload for Player;
+	TimeNearPayload = 0.;
+	PrevTimeNearPayload = 0.;
+}
+
+// ---------------------------------- //
 // Wait for enough players to start the game
 WaitForPlayers(S_NbPlayersPerTeamMin);
 
@@ -347,7 +377,7 @@ if (IsPreparationPhase) foreach (MapLandmark in MapLandmarks_Gate) {
 // Stop the preparation phase
 if (IsPreparationPhase && Now >= UIManager.UIAll.CountdownEndTime) {
 	UIManager.UIAll.CountdownEndTime = -1;
-	StartTime = Now;
+	CurSectorStartTime = Now;
 	IsPreparationPhase = False;
 	
 	// ---------------------------------- //
@@ -400,6 +430,19 @@ foreach (Player in Players) {
 	
 	if (Player.CurrentClan == G_AttackingClan) NbAttackersPushingPayload += 1;
 	else NbDefendersStoppingPayload += 1;
+	
+	// ---------------------------------- //
+	// Attack points
+	if (Player.CurrentClan != G_AttackingClan) continue;
+	declare Real TimeNearPayload for Player;
+	declare Real PrevTimeNearPayload for Player;
+	TimeNearPayload += 1000. / C_ScriptTicksPerSecond;
+	
+	if (TimeNearPayload - PrevTimeNearPayload > C_PayloadTimePerPoint) {
+		PrevTimeNearPayload = TimeNearPayload;
+		Score::AddPoints(Player, 1);
+		TopScores::AddPoints(Player.Score, "Attack", 1);
+	}
 }
 
 // UI
@@ -470,8 +513,8 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 			
 			// ---------------------------------- //
 			// Extend the time limit
-			StartTime = Now;
-			if (S_TimeLimit > 0) EndTime = StartTime + S_TimeLimit * 1000;
+			CurSectorStartTime = Now;
+			if (S_TimeLimit > 0) EndTime = CurSectorStartTime + S_TimeLimit * 1000;
 		}
 		// ---------------------------------- //
 		// Stop the round
@@ -516,7 +559,7 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 // Update time limit
 if (CurrentTimeLimit != S_TimeLimit && UIManager.UIAll.CountdownEndTime <= 0) {
 	CurrentTimeLimit = S_TimeLimit;
-	if (S_TimeLimit > 0) EndTime = StartTime + S_TimeLimit * 1000;
+	if (S_TimeLimit > 0) EndTime = CurSectorStartTime + S_TimeLimit * 1000;
 	else EndTime = -1;
 }
 

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2017-04-10            //
+//  script version: 2017-04-18            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2017-04-10"
+#Const Version		"2017-04-18"
 #Const ScriptName	"Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -332,6 +332,7 @@ if (UpdateHotbarItems) {
 	declare netread Integer[Text] Net_LibInventory_PlayerItemWeaponNum for GUIPlayer;
 	declare netread Integer[Text] Net_LibInventory_PlayerItemCooldownStart for GUIPlayer;
 	declare netread Integer[Text] Net_LibInventory_PlayerItemCooldownDuration for GUIPlayer;
+	declare netread Text[] Net_LibInventory_PlayerActiveItems for GUIPlayer;
 
 	// ---------------------------------- //
 	// Configure items slots
@@ -379,11 +380,13 @@ if (UpdateHotbarItems) {
 		declare Integer FrameItemWeaponNum for Frame;
 		declare Integer FrameItemCooldownStart for Frame;
 		declare Integer FrameItemCooldownDuration for Frame;
+		declare Boolean FrameItemIsActive for Frame;
 
 		FrameItemAmount = CurItemAmount;
 		FrameItemWeaponNum = -1;
 		FrameItemCooldownStart = -1;
 		FrameItemCooldownDuration = 0;
+		FrameItemIsActive = Net_LibInventory_PlayerActiveItems.exists(CurItemId);
 
 		if (Net_LibInventory_PlayerItemWeaponNum.existskey(CurItemId)) FrameItemWeaponNum = Net_LibInventory_PlayerItemWeaponNum[CurItemId];
 		if (Net_LibInventory_PlayerItemCooldownStart.existskey(CurItemId)) FrameItemCooldownStart = Net_LibInventory_PlayerItemCooldownStart[CurItemId];
@@ -427,6 +430,7 @@ foreach (I => Frame in Frame_InventoryItems) {
 	declare Integer FrameItemWeaponNum for Frame;
 	declare Integer FrameItemCooldownStart for Frame;
 	declare Integer FrameItemCooldownDuration for Frame;
+	declare Boolean FrameItemIsActive for Frame;
 
 	// Update
 	declare PrevFrameItemIsCurWeapon for Frame = False;
@@ -434,7 +438,7 @@ foreach (I => Frame in Frame_InventoryItems) {
 	declare PrevFrameItemIsCooling for Frame = False;
 
 	// Check if the item is currently equipped weapon
-	declare IsEquippedWeapon = FrameItemWeaponNum > 0 && FrameItemWeaponNum == GUIPlayer.CurWeapon;
+	declare IsEquippedWeapon = FrameItemWeaponNum > 0 && FrameItemWeaponNum == GUIPlayer.CurWeapon || FrameItemIsActive;
 
 	// ---------------------------------- //
 	// On item weapon state change
@@ -647,6 +651,7 @@ Void Private_UpdatePlayerUI(CSmPlayer _Player) {
 	declare Integer[Text] LibInventory_PlayerItemWeaponNum for _Player;
 	declare Integer[Text] LibInventory_PlayerItemCooldownStart for _Player;
 	declare Integer[Text] LibInventory_PlayerItemCooldownDuration for _Player;
+	declare Text[] LibInventory_PlayerActiveItems for _Player;
 	
 	// ---------------------------------- //
 	// Create net variables
@@ -657,6 +662,7 @@ Void Private_UpdatePlayerUI(CSmPlayer _Player) {
 	declare netwrite Integer[Text] Net_LibInventory_PlayerItemWeaponNum for _Player;
 	declare netwrite Integer[Text] Net_LibInventory_PlayerItemCooldownStart for _Player;
 	declare netwrite Integer[Text] Net_LibInventory_PlayerItemCooldownDuration for _Player;
+	declare netwrite Text[] Net_LibInventory_PlayerActiveItems for _Player;
 	
 	// ---------------------------------- //
 	// Update player net data
@@ -671,6 +677,7 @@ Void Private_UpdatePlayerUI(CSmPlayer _Player) {
 	Net_LibInventory_PlayerItemWeaponNum = LibInventory_PlayerItemWeaponNum;
 	Net_LibInventory_PlayerItemCooldownStart = LibInventory_PlayerItemCooldownStart;
 	Net_LibInventory_PlayerItemCooldownDuration = LibInventory_PlayerItemCooldownDuration;
+	Net_LibInventory_PlayerActiveItems = LibInventory_PlayerActiveItems;
 	
 	// Trigger hotbar update in the player's interface
 	declare netwrite Integer Net_LibInventory_PlayerUpdate for _Player;
@@ -842,7 +849,25 @@ Void DestroyItemSlot(CSmPlayer _Player, Text _ItemName) {
 	if (!ItemExists(_Player, _ItemName)) return;
 	
 	declare Text[] LibInventory_PlayerItems for _Player;
-	declare Removed = LibInventory_PlayerItems.remove(_ItemName);
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	declare Text[Text] LibInventory_PlayerItemIcon for _Player;
+	declare Integer[Text] LibInventory_PlayerItemAmount for _Player;
+	declare Integer[Text] LibInventory_PlayerItemWeaponNum for _Player;
+	declare Integer[Text] LibInventory_PlayerItemCooldownStart for _Player;
+	declare Integer[Text] LibInventory_PlayerItemCooldownDuration for _Player;
+	declare Text[] LibInventory_PlayerActiveItems for _Player;
+
+	// ---------------------------------- //
+	// Completely remove the item from a player's inventory.
+	declare Boolean Removed;
+	Removed = LibInventory_PlayerItems.remove(_ItemName);
+	LibInventory_PlayerItemHotkey.removekey(_ItemName);
+	LibInventory_PlayerItemIcon.removekey(_ItemName);
+	LibInventory_PlayerItemAmount.removekey(_ItemName);
+	LibInventory_PlayerItemWeaponNum.removekey(_ItemName);
+	LibInventory_PlayerItemCooldownStart.removekey(_ItemName);
+	LibInventory_PlayerItemCooldownDuration.removekey(_ItemName);
+	LibInventory_PlayerActiveItems.remove(_ItemName);
 	
 	// Organize player inventory
 	Organize(_Player);
@@ -981,7 +1006,7 @@ Void RemoveItems(CSmPlayer _Player, Text _ItemName, Integer _Amount) {
  *	@param	_CooldownDuration	Duration of the cooldown.
  */
 Void SetItemCooldown(CSmPlayer _Player, Text _ItemName, Integer _CooldownStart, Integer _CooldownDuration) {
-	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == ""|| _CooldownDuration <= 0) return;
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "" || _CooldownDuration <= 0) return;
 	if (!ItemExists(_Player, _ItemName)) return;
 	
 	// Set the cooldown duration
@@ -989,6 +1014,45 @@ Void SetItemCooldown(CSmPlayer _Player, Text _ItemName, Integer _CooldownStart, 
 	declare Integer[Text] LibInventory_PlayerItemCooldownDuration for _Player;
 	LibInventory_PlayerItemCooldownStart	[_ItemName] = ML::Max(-1, _CooldownStart);
 	LibInventory_PlayerItemCooldownDuration	[_ItemName] = ML::Max(0, _CooldownDuration);
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Set the item's activity state.
+ *
+ *	@param	_Player		The player to set item activity state.
+ *	@param	_ItemName	Name of the item to set activity state.
+ *	@param	_IsActive	If True, the item will be seen as active.
+ */
+Void SetItemIsActive(CSmPlayer _Player, Text _ItemName, Boolean _IsActive) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return;
+	if (!ItemExists(_Player, _ItemName)) return;
+
+	declare Text[] LibInventory_PlayerActiveItems for _Player;
+	if (_IsActive) {
+		if (!LibInventory_PlayerActiveItems.exists(_ItemName)) LibInventory_PlayerActiveItems.add(_ItemName);
+	} else if (LibInventory_PlayerActiveItems.exists(_ItemName)) {
+		declare Removed = LibInventory_PlayerActiveItems.remove(_ItemName);
+	}
+	
+	// Update interface
+	Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
+/** Set the only active item in a player's inventory.
+ *
+ *	@param	_Player		The player to set active item.
+ *	@param	_ItemName	Name of the only active item in the inventory.
+ */
+Void SetActiveItem(CSmPlayer _Player, Text _ItemName) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+
+	declare Text[] LibInventory_PlayerActiveItems for _Player;
+	if (ItemExists(_Player, _ItemName)) LibInventory_PlayerActiveItems = [_ItemName];
+	else LibInventory_PlayerActiveItems.clear();
 	
 	// Update interface
 	Private_UpdatePlayerUI(_Player);

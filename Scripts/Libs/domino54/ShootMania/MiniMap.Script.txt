@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2017-04-10            //
+//  script version: 2017-04-18            //
 // -------------------------------------- //
 
 /**
@@ -11,9 +11,10 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2017-04-10"
+#Const Version		"2017-04-18"
 #Const ScriptName	"MiniMap.Script.txt"
 
+#Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
@@ -214,6 +215,7 @@ declare IsOverviewMode = True;
 declare IsPlayerSpawned = False;
 declare AdjustMarkersPositions = True;
 declare UpdateMarkersPositions = True;
+declare UpdateGUIPlayerMarker = True;
 declare MarkersPositioning = Vec2;
 declare ReassignPlayersMarkers = True;
 declare NbPlayersDisplayed = 0;
@@ -226,12 +228,16 @@ declare PrevMinimapVisible = False;
 declare PrevMinimapPosition = Vec3;
 declare PrevMinimapYaw = -1.;
 declare PrevMinimapZoom = -1.;
+
 declare PrevZoomState = 0;
-declare PrevGUIPlayerColor = -1.;
 declare PrevIsOverviewMode = False;
 declare PrevNbPlayers = 0;
 declare PrevMarkersUpdate = -1;
+
+declare PrevGUIPlayerColor = -1.;
 declare PrevGUIPlayerIsInVehicle = False;
+declare PrevGUIPlayerVehicleType = -1;
+declare PrevGUIPlayerId = NullId;
 
 // ---------------------------------- //
 // Initialize manialink
@@ -468,15 +474,54 @@ if (GUIPlayer != Null && PrevGUIPlayerColor != GUIPlayer.GetLinearHue) {
 }
 
 // Check if the player is in a vehicle (in quite ugly way)
-GUIPlayerIsInVehicle = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.Armor > 0 && GameTime >= GUIPlayer.StartTime - 1500 && !GUIPlayer.IsInAir && !GUIPlayer.IsTouchingGround;
+GUIPlayerIsInVehicle =
+	GUIPlayer != Null && GUIPlayer.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned &&
+	GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.Armor > 0 &&
+	GameTime >= GUIPlayer.StartTime - 1500 && !GUIPlayer.IsInAir && !GUIPlayer.IsTouchingGround;
 
 // ---------------------------------- //
 // Update player icon on vehicle status change
 if (PrevGUIPlayerIsInVehicle != GUIPlayerIsInVehicle) {
 	PrevGUIPlayerIsInVehicle = GUIPlayerIsInVehicle;
+	UpdateGUIPlayerMarker = True;
+}
 
+// ---------------------------------- //
+// Update player icon on vehicle type change
+if (GUIPlayer != Null) {
+	declare netread Integer Net_LibMinimap_VehicleType for GUIPlayer;
+	if (PrevGUIPlayerVehicleType != Net_LibMinimap_VehicleType) {
+		PrevGUIPlayerVehicleType = Net_LibMinimap_VehicleType;
+		UpdateGUIPlayerMarker = True;
+	}
+}
+
+// ---------------------------------- //
+// Update player icon on player change
+if (GUIPlayer != Null && PrevGUIPlayerId != GUIPlayer.Id) {
+	PrevGUIPlayerId = GUIPlayer.Id;
+	UpdateGUIPlayerMarker = True;
+}
+
+// ---------------------------------- //
+// Update current player icon
+if (UpdateGUIPlayerMarker) {
+	UpdateGUIPlayerMarker = False;
+
+	// Player is on foot
 	declare MarkerImage = "GUIPlayer.png";
-	if (GUIPlayerIsInVehicle) MarkerImage = "Vehicle.png";
+
+	// ---------------------------------- //
+	// Use current vehicle's icon
+	if (GUIPlayerIsInVehicle) {
+		declare netread Integer Net_LibMinimap_VehicleType for GUIPlayer;
+		switch (Net_LibMinimap_VehicleType) {
+			case 2 : MarkerImage = "ValleyCar.png";
+			case 1 : MarkerImage = "StadiumCar.png";
+			default : MarkerImage = "CanyonCar.png";
+		}
+	}
+
 	Quad_MarkerGUIPlayer.ImageUrl = "{{{C_ImgBase}}}"^MarkerImage;
 }
 
@@ -619,7 +664,7 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	// Update the marker icon
 	declare CMlQuad Quad_MarkerIcon for Frame;
 	declare Boolean PlayerHasCustomMarker for Player;
-	declare IsInVehicle = Player.Armor > 0 && GameTime >= Player.StartTime - 1500 && Player.IsInAir == Player.IsTouchingGround;
+	declare IsInVehicle = Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned && Player.Armor > 0 && GameTime >= Player.StartTime - 1500 && Player.IsInAir == Player.IsTouchingGround;
 	declare Boolean PrevIsInVehicle for Player;
 
 	Quad_MarkerIcon.Visible = !PlayerHasCustomMarker && !IsInVehicle;
@@ -670,16 +715,24 @@ foreach (I => Frame in Frame_PlayerMarkers) {
 	// ---------------------------------- //
 	// Update the vehicle icon
 	declare CMlQuad Quad_MarkerVehicle for Frame;
-	if (PrevIsInVehicle != IsInVehicle) {
-		PrevIsInVehicle = IsInVehicle;
+	Quad_MarkerVehicle.Visible = IsInVehicle;
 
-		Quad_MarkerVehicle.Visible = IsInVehicle;
-		Label_MarkerText.RelativePosition_V3.Y = -2.;
-		if (IsInVehicle) Label_MarkerText.RelativePosition_V3.Y -= 1.;
-	}
+	Label_MarkerText.RelativePosition_V3.Y = -2.;
+	if (IsInVehicle) Label_MarkerText.RelativePosition_V3.Y -= 1.;
+
 	if (Quad_MarkerVehicle.Visible) {
 		Quad_MarkerVehicle.Opacity = MarkerOpacity;
 		Quad_MarkerVehicle.RelativeRotation = RadToDeg(-Player.AimYaw) - Frame.RelativeRotation;
+
+		// ---------------------------------- //
+		// Show the correct model
+		declare netread Integer Net_LibMinimap_VehicleType for Player;
+		declare MarkerImage = "CanyonCar.png";
+		switch (Net_LibMinimap_VehicleType) {
+			case 2 : MarkerImage = "ValleyCar.png";
+			case 1 : MarkerImage = "StadiumCar.png";
+		}
+		Quad_MarkerVehicle.ImageUrl = "{{{C_ImgBase}}}"^MarkerImage;
 	}
 
 	declare PrevPlayerIsBot for Frame = False;
@@ -1073,6 +1126,18 @@ Void DestroyMarkers() {
 	// Trigger client-side manialink update
 	declare netwrite Integer Net_LibMinimap_MarkersUpdate for Teams[0];
 	Net_LibMinimap_MarkersUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Set the type of a player's vehicle.
+ *
+ *	@param	_Player			The player to set vehicle type.
+ *	@param	_VehicleType	Type of the vehicle [0 => CanyonCar, 1 => StadiumCar, 2 => ValleyCar].
+ */
+Void SetVehicleType(CSmPlayer _Player, Integer _VehicleType) {
+	if (_Player == Null) return;
+	declare netwrite Integer Net_LibMinimap_VehicleType for _Player;
+	Net_LibMinimap_VehicleType = ML::Clamp(_VehicleType, 0, 2);
 }
 
 // ---------------------------------- //

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-04-10            //
+//  script version: 2017-04-18            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2017-04-10"
+#Const BaseVersion		"2017-04-18"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -813,7 +813,7 @@ Score::RoundEnd();
 TopScores::RoundEnd();
 MiniMap::Hide();
 GalaxyTitles::ResetAll();
-GT_SetTimeLimit(-1, False);
+GT_SetTimeLimit(-1, False, False);
 ***
 
 // ---------------------------------- //
@@ -1123,8 +1123,9 @@ Void GT_SkipInvalidMap() {
  *
  *	@param	_NewEndTime		New value for the time limit.
  *	@param	_EnableSounds	If True, ticking sound will be heard when time is running out.
+ *	@param	_ResetMusic		If True, music will be reset with the timer.
  */
-Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
+Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds, Boolean _ResetMusic) {
 	GT_EndTime = ML::Max(_NewEndTime, -1);
 	Interfancy::SetEndTime(GT_EndTime);
 	Interfancy::SetUseMusic(!_EnableSounds);
@@ -1133,9 +1134,19 @@ Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
 		StoragePlayer::SetCountdown(-1, 0);
 		EndTime = GT_EndTime;
 	} else {
-		StoragePlayer::SetCountdown(GT_EndTime, 30000);
+		if (GT_EndTime > 0 || (GT_EndTime <= 0 && _ResetMusic)) StoragePlayer::SetCountdown(GT_EndTime, 30000);
 		EndTime = -1;
 	}
+}
+
+// ---------------------------------- //
+/** Set the new time limit.
+ *
+ *	@param	_NewEndTime		New value for the time limit.
+ *	@param	_EnableSounds	If True, ticking sound will be heard when time is running out.
+ */
+Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
+	GT_SetTimeLimit(_NewEndTime, _EnableSounds, False);
 }
 
 // ---------------------------------- //
@@ -1144,7 +1155,7 @@ Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
  *	@param	_NewEndTime		New value for the time limit.
  */
 Void GT_SetTimeLimit(Integer _NewEndTime) {
-	GT_SetTimeLimit(_NewEndTime, False);
+	GT_SetTimeLimit(_NewEndTime, False, False);
 }
 
 // ---------------------------------- //
@@ -1159,7 +1170,7 @@ Boolean GT_TimeReachedLimit() {
 // ---------------------------------- //
 /// Disable the time limit.
 Void GT_DisableTimeLimit() {
-	GT_SetTimeLimit(-1);
+	GT_SetTimeLimit(-1, False, True);
 }
 
 // ---------------------------------- //

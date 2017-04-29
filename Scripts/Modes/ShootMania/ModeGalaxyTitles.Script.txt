@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-04-18            //
+//  script version: 2017-04-29            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2017-04-18"
+#Const BaseVersion		"2017-04-29"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -56,6 +56,7 @@
 #Setting S_KillfeedOffsetY		0.		as "<hidden>" ///< For server hosters: killfeed Y offset
 #Setting S_MusicPlaylistURL		""		as "<hidden>" ///< URL of the server custom music playlist file
 #Setting S_EnableMapSelection	True	as "<hidden>" ///< Allow players to choose which map they want to play next
+#Setting S_PodiumTrackDuration	8000	as "<hidden>" ///< Duration of the podium sequence (10 max)
 
 /// Clublinks settings
 #Setting S_UsePlayerClublinks	True	as _("Use players clublinks")
@@ -81,6 +82,7 @@
 #Const C_ScriptTicksPerSecond	100		///< The amount of script ticks per second
 #Const C_NoCollisionsDuration	6000	///< No collision duration at the beginning of the round
 #Const C_EnviroKillTimeOut		7500	///< Time after which environmental elimination won't be performed
+#Const C_MaxPodiumSeqDuration	10000	///< Maximum duration of the podium sequence
 #Const C_DefaultKillfeedPosn	<159., 89.>		///< Default position of the Killfeed layer
 
 #Const C_EventMaxDamage		100		///< Maximum damage amount inflicted by weapons
@@ -322,7 +324,7 @@ MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
 ST2::Build("SM");
 
 // Update scores summary visibility
-Interfancy::SetModuleVisibility("ScoreSummary", UseClans && !UseForcedClans);
+Interfancy::SetModuleVisibility("ScoreSummary", UseClans);
 
 // ---------------------------------- //
 // Stop the script if server is in matchmaking mode and mode doesn't support it
@@ -336,7 +338,7 @@ assert(!(MM_IsMatchmakingServer() && !GT_AllowMatchmakingMode), "This game mode 
 // ---------------------------------- //
 ***UpdateClublinks***
 ***
-if (UseClans && !UseForcedClans) {
+if (UseClans) {
 	Clublink::ResetAll();
 	if (S_ForceClublinkTeam1 == "" && S_ForceClublinkTeam2 == "") Clublink::DefineTeamAuto();
 	else Clublink::DefineTeamFromUrl(S_ForceClublinkTeam1, S_ForceClublinkTeam2);
@@ -856,11 +858,14 @@ if (GT_UseAutoEndSequence) {
 	// ---------------------------------- //
 	// Set the map winner
 	declare Text WinnerName;
-	if (UseClans && !UseForcedClans) {
+	if (UseClans) {
 		foreach (Clan => Points in ClanScores)
 			if (Clan != 0 && Points > ClanScores[3 - Clan]) WinnerName = Teams[Clan - 1].ColorizedName;
 	}
-	else if (Scores.existskey(0) && Scores[0].Points > 0) WinnerName = Scores[0].User.Name;
+	else {
+		declare WinnerScoreId = GT_GetWinnerScoreId();
+		if (Scores.existskey(WinnerScoreId) && Scores[WinnerScoreId].User != Null) WinnerName = Scores[WinnerScoreId].User.Name;
+	}
 	
 	// ---------------------------------- //
 	// Display the round winner
@@ -872,13 +877,17 @@ if (GT_UseAutoEndSequence) {
 	if (WinnerName == "") UIManager.UIAll.BigMessage = _("|Match|Draw");
 	else UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the match!"), WinnerName);
 	
-	MB_Sleep(6000);
+	MB_Sleep(4000);
 	
 	// ---------------------------------- //
-	// Podium
-	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
-	while(!UIManager.UIAll.UISequenceIsCompleted) MB_Yield();
+	// Play the podium sequence
+	if (S_PodiumTrackDuration > 0) {
+		declare PodiumSequenceEndTime = Now + ML::Min(S_PodiumTrackDuration, C_MaxPodiumSeqDuration);
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+		while (Now < PodiumSequenceEndTime && !MatchEndRequested && !ServerShutdownRequested) MB_Yield();
+	}
 	
+	if (!MM_IsMatchServer()) UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 	UIManager.UIAll.BigMessage = "";
 }
@@ -954,16 +963,18 @@ WarmUp2::Unload();
  *	@return		The requested clan of the player
  */
 Integer GT_GetRequestedClan(CSmPlayer _Player) {
-	if (_Player == Null || !UseClans || UseForcedClans) return 0;
+	if (_Player == Null || !UseClans) return 0;
 	
 	// Get the clan in matchmaking
 	if (MM_IsMatchServer()) return MM_GetRequestedClan(_Player);
 	
 	// Get the clan from automatic team balance
+	/*
 	if (S_UseAutoBalance) {
 		declare Integer GT_AutoBalanceClan for _Player;
 		if (GT_AutoBalanceClan >= 1 && GT_AutoBalanceClan <= 2) return GT_AutoBalanceClan;
 	}
+	*/
 	
 	// Get the user requested clan
 	return _Player.User.RequestedClan;
@@ -1066,7 +1077,7 @@ Boolean GT_IsValidPlayer(CSmPlayer _Player) {
 Void GT_InitPlayer(CSmPlayer _Player) {
 	if (_Player == Null) return;
 	
-	if (UseClans && !UseForcedClans) SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
+	if (UseClans) SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
 	GalaxyTitles::InitPlayer(_Player);
 	SetPlayerReloadAllWeapons(_Player, True);
 
@@ -1116,6 +1127,17 @@ Void GT_SkipInvalidMap() {
 	Translations::SendChat("This map is not valid, moving to the next one.");
 	if (!ServerShutdownRequested) MB_Sleep(10000);
 	MB_StopMap = True;
+}
+
+// ---------------------------------- //
+/** Get the Id of the winner's score object.
+ *
+ *	@return		Id of the match winner score.
+ */
+Ident GT_GetWinnerScoreId() {
+	if (Scores.count <= 0 || Scores[0].Points <= 0) return NullId; ///< Draw - no players or the 1st player has 0 points
+	if (Scores.existskey(1) && Scores[1].Points >= Scores[0].Points) return NullId; /// Draw - second player has the same number of points
+	return Scores[0].Id; ///< Return the winner Id
 }
 
 // ---------------------------------- //

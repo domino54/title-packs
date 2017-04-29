@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-04-10            //
+//  script version: 2017-04-29            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-04-10"
+#Const Version		"2017-04-29"
 #Const ScriptName	"KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -15,13 +15,13 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_NbTeams				0		as _("Number of teams (2 - 4, 0 = auto)")
 #Setting S_TimeLimit			600		as _("Time limit (seconds)")
 #Setting S_RoundsToWin			2		as _("Number of rounds to win a map")
+#Setting S_NbTeams				0		as _("Number of teams (2 - 4, 0 = auto)")
+#Setting S_UseDefaultTeams		False	as _("Use default teams (Blue vs Red)")
 #Setting S_GoalCaptureDuration	100		as _("Time team requires to capture the Goal (min. 15)")
 #Setting S_DarkerGoalColor		False	as "<hidden>"
 #Setting S_UseAutoBalance		True
-#Setting S_UsePlayerClublinks	False
 
 // ---------------------------------- //
 // Constants
@@ -63,7 +63,7 @@ MB_LogVersion(Clans::GetScriptName(), Clans::GetScriptVersion());
 ***ScoresTable***
 ***
 TopScores::AddCategory("Capture", "Cap", 3., 75.);
-ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
+if (!UseClans) ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
 ***
 
 // ---------------------------------- //
@@ -73,15 +73,14 @@ ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerR
 ***
 // ---------------------------------- //
 // Set the mode options
-UseClans = False;
-GT_UseAutoEndSequence = False;
-GT_AllowMatchmakingMode = False;
+UseClans = S_UseDefaultTeams || MM_IsMatchServer();
+GT_UseAutoEndSequence = UseClans;
 GT_DisableTimeLimit();
 
 // ---------------------------------- //
 // Set the mode rules
 GT_SpawnScreenModeName = "King of the Hill";
-GT_SpawnScreenModeType = _("3 - 4 teams");
+GT_SpawnScreenModeType = _("2 - 4 teams");
 GT_SpawnScreenObjectives = TL::Compose(
 	_("$<%11. $>Multiple teams try to capture single Goal.\n$<%12. $>Each team has its own capture progress shown below the timer.\n$<%13. $>The first team to capture the Goal by themselves or team with biggest progress when time runs out wins."),
 	"$"^SpawnScreen::GetModeColor()
@@ -97,6 +96,7 @@ for (Clan, 1, 10) {
 	if (C_TeamsNames.existskey(Clan - 1)) Clans::SetClanName(Clan, C_TeamsNames[Clan - 1]);
 	if (C_TeamsColors.existskey(Clan - 1)) Clans::SetClanColor(Clan, C_TeamsColors[Clan - 1]);
 	
+	if (UseClans) continue;
 	PauseMenu::SetCustomTeamName(Clan, Clans::GetClanName(Clan));
 	UISetTeamColor(Clan, Clans::GetClanColor(Clan));
 }
@@ -240,14 +240,16 @@ if (Clans::AreTeammates(Event.Shooter, Event.Victim)) {
 foreach (Player in Players) {
 	// ---------------------------------- //
 	// Spawn players
-	if (!Player.RequestsSpectate && Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+	if (!Player.RequestsSpectate && Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && GT_IsValidPlayer(Player)) {
 		GT_InitPlayer(Player);
 		
 		// ---------------------------------- //
 		// Set player clan
-		declare CurrentClan = Clans::GetPlayerClan(Player);
-		if (CurrentClan < 1 || CurrentClan > G_NbTeams) CurrentClan = GetNextPlayerClan();
-		KotH_SetPlayerClan(Player, CurrentClan);
+		if (!UseClans) {
+			declare CurrentClan = KotH_GetPlayerClan(Player);
+			if (CurrentClan < 1 || CurrentClan > G_NbTeams) CurrentClan = GetNextPlayerClan();
+			KotH_SetPlayerClan(Player, CurrentClan);
+		}
 
 		// Spawn player
 		MeleeSpawnPlayer(Player);
@@ -256,10 +258,10 @@ foreach (Player in Players) {
 
 // ---------------------------------- //
 // Players requesting custom team change
-foreach (PlayerId => Clan in PauseMenu::CustomTeamsRequests()) {
+if (!UseClans) foreach (PlayerId => Clan in PauseMenu::CustomTeamsRequests()) {
 	if (!Players.existskey(PlayerId)) continue;
 	declare Player = Players[PlayerId];
-	if (Clans::GetPlayerClan(Player) == Clan) continue;
+	if (KotH_GetPlayerClan(Player) == Clan) continue;
 
 	UnspawnPlayer(Player);
 	KotH_SetPlayerClan(Player, Clan);
@@ -276,7 +278,7 @@ if (CentralGoal.Sector.PlayersIds.count > 0) {
 		if (!Players.existskey(PlayerId)) continue;
 		declare Player = Players[PlayerId];
 		
-		declare PlayerClan = Clans::GetPlayerClan(Player);
+		declare PlayerClan = KotH_GetPlayerClan(Player);
 		if (CapturingTeam > 0 && PlayerClan != CapturingTeam) { CapturingTeam = 0; break; }
 		
 		CapturingTeam = PlayerClan;
@@ -288,7 +290,7 @@ if (CentralGoal.Sector.PlayersIds.count > 0) {
 	foreach (PlayerId in CentralGoal.Sector.PlayersIds) {
 		if (!Players.existskey(PlayerId)) continue;
 		declare Player = Players[PlayerId];
-		if (Clans::GetPlayerClan(Player) != CapturingTeam) continue; 
+		if (KotH_GetPlayerClan(Player) != CapturingTeam) continue; 
 		
 		declare Integer TimeCapturingGoal for Player;
 		declare Integer PrevTimeCapturingGoal for Player;
@@ -309,7 +311,9 @@ if (PrevCapturingTeam != CapturingTeam) {
 	UISetCapturingTeam(CapturingTeam);
 	
 	// Enable or disable color depending if the Goal is being captured
-	CentralGoal.Gauge.Clan = ML::Clamp(CapturingTeam, 0, 1);
+	declare CentralGoalClan = CapturingTeam;
+	if (!UseClans) CentralGoalClan = ML::Clamp(CapturingTeam, 0, 1);
+	CentralGoal.Gauge.Clan = CentralGoalClan;
 	
 	// Enable the Goal's Base when capturing
 	if (CentralGoal.Base != Null) {
@@ -320,10 +324,17 @@ if (PrevCapturingTeam != CapturingTeam) {
 	// ---------------------------------- //
 	// Update Goal color and restore team's capture progres
 	declare GoalColor = <1., 1., 1.>;
-	
 	if (CapturingTeam > 0) {
-		GoalColor = Clans::GetClanColor(CapturingTeam);
-		Teams[0].ColorPrimary = GoalColor;
+		if (UseClans) {
+			switch (CapturingTeam) {
+				case 1 : GoalColor = Teams[0].ColorPrimary;
+				case 2 : GoalColor = Teams[1].ColorPrimary;
+			}
+		}
+		else {
+			GoalColor = Clans::GetClanColor(CapturingTeam);
+			Teams[0].ColorPrimary = GoalColor;
+		}
 		CentralGoal.Gauge.ValueReal = TeamsCaptureValues[CapturingTeam];
 	}
 	// ---------------------------------- //
@@ -367,10 +378,19 @@ if (PrevGaugeValue != CentralGoal.Gauge.Value) {
 				Null, CUIConfig::EAvatarVariant::Default, 
 				CUIConfig::EUISound::VictoryPoint, 0
 			);
+
+			declare LeadingTeamName = Clans::GetClanColorizedName(LeadingTeamNum);
+			if (UseClans) switch (LeadingTeamNum) {
+				case 1 : LeadingTeamName = Teams[0].ColorizedName;
+				case 2 : LeadingTeamName = Teams[1].ColorizedName;
+			}
+
 			Message::SendBigMessage(
-				TL::Compose(_("$<%1$> captured the checkpoint!"), Clans::GetClanColorizedName(LeadingTeamNum)),
+				TL::Compose(_("$<%1$> captured the checkpoint!"), LeadingTeamName),
 				3000, 1, CUIConfig::EUISound::Capture, 0
 			);
+
+			// Stop the round
 			MB_StopRound();
 		}
 	}
@@ -381,8 +401,14 @@ if (PrevGaugeValue != CentralGoal.Gauge.Value) {
 if (PrevLeadingTeam != LeadingTeamNum) {
 	PrevLeadingTeam = LeadingTeamNum;
 	
+	declare LeadingTeamName = Clans::GetClanColorizedName(LeadingTeamNum);
+	if (UseClans) switch (LeadingTeamNum) {
+		case 1 : LeadingTeamName = Teams[0].ColorizedName;
+		case 2 : LeadingTeamName = Teams[1].ColorizedName;
+	}
+
 	if (LeadingTeamNum > 0) Message::SendBigMessage(
-		TL::Compose(_("$<%1$> takes the lead!"), Clans::GetClanColorizedName(LeadingTeamNum)),
+		TL::Compose(_("$<%1$> takes the lead!"), LeadingTeamName),
 		3000, 1, CUIConfig::EUISound::PhaseChange, 1
 	);
 }
@@ -397,8 +423,8 @@ if (PrevTeamsSetting != S_NbTeams) {
 	
 	// ---------------------------------- //
 	// Move players to new proper clans
-	foreach (Player in Players) {
-		if (Clans::GetPlayerClan(Player) > G_NbTeams) KotH_SetPlayerClan(Player, GetNextPlayerClan());
+	if (!UseClans) foreach (Player in Players) {
+		if (KotH_GetPlayerClan(Player) > G_NbTeams) KotH_SetPlayerClan(Player, GetNextPlayerClan());
 	}
 }
 
@@ -456,7 +482,14 @@ UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
 
 declare Msg = _("|Match|Draw");
-if (LeadingTeamNum > 0) Msg = TL::Compose(_("$<%1$> wins the round!"), Clans::GetClanColorizedName(LeadingTeamNum));
+if (LeadingTeamNum > 0) {
+	declare LeadingTeamName = Clans::GetClanColorizedName(LeadingTeamNum);
+	if (UseClans) switch (LeadingTeamNum) {
+		case 1 : LeadingTeamName = Teams[0].ColorizedName;
+		case 2 : LeadingTeamName = Teams[1].ColorizedName;
+	}
+	Msg = TL::Compose(_("$<%1$> wins the round!"), LeadingTeamName);
+}
 Message::SendBigMessage(Msg, 5000, 1, CUIConfig::EUISound::EndRound, 0);
 
 MB_Sleep(5000);
@@ -466,9 +499,13 @@ UIManager.UIAll.BigMessage = "";
 
 // ---------------------------------- //
 // Map end conditions
-declare Integer[Integer] TeamsScores;
-for (Team, 1, G_NbTeams) TeamsScores[Team] = Clans::GetClanPoints(Team);
-foreach (Team => Points in TeamsScores) if (Points >= S_RoundsToWin) MB_StopMap = True;
+if (UseClans) {
+	foreach (Team => Points in ClanScores) if (Points >= S_RoundsToWin) MB_StopMap = True;
+} else {
+	declare Integer[Integer] TeamsScores;
+	for (Team, 1, G_NbTeams) TeamsScores[Team] = Clans::GetClanPoints(Team);
+	foreach (Team => Points in TeamsScores) if (Points >= S_RoundsToWin) MB_StopMap = True;
+}
 ***
 
 // ---------------------------------- //
@@ -476,42 +513,53 @@ foreach (Team => Points in TeamsScores) if (Points >= S_RoundsToWin) MB_StopMap 
 // ---------------------------------- //
 ***EndMapBeforePodium***
 ***
-// ---------------------------------- //
-// Get the winning team
-declare WinningTeam = 0;
-declare Integer[Integer] TeamsScores;
-declare MaxPoints = 0;
-declare TeamsWithMaxPoints = 0;
+if (!GT_UseAutoEndSequence) {
+	// ---------------------------------- //
+	// Get the winning team
+	declare WinningTeam = 0;
+	declare Integer[Integer] TeamsScores;
+	declare MaxPoints = 0;
+	declare TeamsWithMaxPoints = 0;
 
-for (Team, 1, G_NbTeams) {
-	TeamsScores[Team] = Clans::GetClanPoints(Team);
-	if (TeamsScores[Team] > MaxPoints) {
-		MaxPoints = TeamsScores[Team];
-		TeamsWithMaxPoints = 1;
+	// ---------------------------------- //
+	// Custom teams
+	for (Team, 1, G_NbTeams) {
+		TeamsScores[Team] = Clans::GetClanPoints(Team);
+		if (TeamsScores[Team] > MaxPoints) {
+			MaxPoints = TeamsScores[Team];
+			TeamsWithMaxPoints = 1;
+		}
+		else TeamsWithMaxPoints += 1;
 	}
-	else TeamsWithMaxPoints += 1;
+
+	if (TeamsWithMaxPoints == 1) WinningTeam = TeamsScores.keyof(MaxPoints);
+
+	// ---------------------------------- //
+	// Display the match winner
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
+
+	declare Msg = _("|Match|Draw");
+	if (WinningTeam > 0) {
+		declare LeadingTeamName = ;
+		Msg = TL::Compose(_("$<%1$> wins the match!"), Clans::GetClanColorizedName(WinningTeam));
+	}
+	Message::SendBigMessage(Msg, 6000, 1, CUIConfig::EUISound::EndRound, 0);
+
+	MB_Sleep(6000);
+
+	// ---------------------------------- //
+	// Play the podium sequence
+	if (S_PodiumTrackDuration > 0) {
+		declare PodiumSequenceEndTime = Now + ML::Min(S_PodiumTrackDuration, C_MaxPodiumSeqDuration);
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+		while (Now < PodiumSequenceEndTime && !MatchEndRequested && !ServerShutdownRequested) MB_Yield();
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
+	}
+
+	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
+	UIManager.UIAll.BigMessage = "";
 }
-
-if (TeamsWithMaxPoints == 1) WinningTeam = TeamsScores.keyof(MaxPoints);
-
-// ---------------------------------- //
-// Display the match winner
-UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
-UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
-
-declare Msg = _("|Match|Draw");
-if (LeadingTeamNum > 0) Msg = TL::Compose(_("$<%1$> wins the match!"), Clans::GetClanColorizedName(LeadingTeamNum));
-Message::SendBigMessage(Msg, 6000, 1, CUIConfig::EUISound::EndRound, 0);
-
-MB_Sleep(6000);
-
-// ---------------------------------- //
-// Podium
-UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
-MB_Sleep(10000);
-
-UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
-UIManager.UIAll.BigMessage = "";
 ***
 
 // ---------------------------------- //
@@ -543,7 +591,7 @@ Void MeleeSpawnPlayer(CSmPlayer _Player) {
 	}
 	G_LatestSpawnId = SpawnId;
 	
-	SM::SpawnPlayer(_Player, 0, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+	SM::SpawnPlayer(_Player, _Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
 	declare Removed = G_SpawnsList.remove(SpawnId);
 }
 
@@ -553,6 +601,7 @@ Void MeleeSpawnPlayer(CSmPlayer _Player) {
  *	@return		Amount of teams
  */
 Integer GetNewNbTeams() {
+	if (UseClans) return 2;
 	if (S_NbTeams >= 2) return ML::Min(S_NbTeams, C_TeamsNbMax);
 	
 	// ---------------------------------- //
@@ -566,6 +615,19 @@ Integer GetNewNbTeams() {
 }
 
 // ---------------------------------- //
+/** Get the clan of a player.
+ *
+ *	@param	_Player		The player to get clan.
+ *
+ *	@return		Clan of the player.
+ */
+Integer KotH_GetPlayerClan(CSmPlayer _Player) {
+	if (_Player == Null) return 0;
+	if (UseClans) return _Player.CurrentClan;
+	return Clans::GetPlayerClan(_Player);
+}
+
+// ---------------------------------- //
 /** Set the clan of a player
  *
  *	@param	_Player		The player to set clan
@@ -576,6 +638,7 @@ Void KotH_SetPlayerClan(CSmPlayer _Player, Integer _Clan) {
 	
 	// Set player clan
 	declare Clan = ML::Clamp(_Clan, 1, G_NbTeams);
+	SetPlayerClan(_Player, 0);
 	Clans::SetPlayerClan(_Player, Clan);
 	
 	// Set player color
@@ -611,11 +674,13 @@ Integer GetNextPlayerClan() {
 // ---------------------------------- //
 /// Balance the custom teams
 Void KotH_AutoBalance() {
+	if (UseClans) return;
+
 	// ---------------------------------- //
 	// Save player clan before balancing teams
 	foreach (Player in Players) {
 		declare Integer TeamBeforeBalance for Player;
-		TeamBeforeBalance = Clans::GetPlayerClan(Player);
+		TeamBeforeBalance = KotH_GetPlayerClan(Player);
 	}
 	
 	// Reset all teams
@@ -625,14 +690,14 @@ Void KotH_AutoBalance() {
 	// Move players to new clans
 	foreach (Player in Players) {
 		declare Integer TeamBeforeBalance for Player;
-		TeamBeforeBalance = Clans::GetPlayerClan(Player);
+		TeamBeforeBalance = KotH_GetPlayerClan(Player);
 
 		declare NewClan = GetNextPlayerClan();
 		if (NewClan == TeamBeforeBalance) continue;
+		KotH_SetPlayerClan(Player, NewClan);
 		
 		// Unspawn players changing clan
-		UnspawnPlayer(Player);
-		KotH_SetPlayerClan(Player, NewClan);
+		if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) UnspawnPlayer(Player);
 	}
 }
 
@@ -651,7 +716,9 @@ Void UISetNbTeams(Integer _NbTeams) {
 	declare netwrite Integer Net_KotH_NbTeams for Teams[0];
 	Net_KotH_NbTeams = _NbTeams;
 	
-	PauseMenu::SetCustomTeamsCount(G_NbTeams);
+	declare PauseNbTeams = -1;
+	if (!UseClans) PauseNbTeams = G_NbTeams;
+	PauseMenu::SetCustomTeamsCount(PauseNbTeams);
 	Interfancy::SetNbCustomTeams(G_NbTeams);
 }
 
@@ -758,7 +825,7 @@ Text CreateManialinkGauges() {
 #Const C_GaugeToGaugeDist	14.
 #Const C_GoalIconsPath		"file://Media/Manialinks/ShootMania/Common/"
 
-{{{ManialinkTools::Functions(["SetGaugeRatio"])}}}
+{{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness"])}}}
 {{{Translations::InjectInManialink(["Control point captured!", "Pole blocked by enemy", "Capturing control point..."])}}}
 
 // ---------------------------------- //
@@ -839,16 +906,45 @@ main() {
 			}
 			
 			declare Color = <.125, .125, .125>;
-			if (PrevTeamsColors.existskey(PrevCapturingTeam)) Color = PrevTeamsColors[PrevCapturingTeam];
+			if (PrevTeamsColors.existskey(PrevCapturingTeam)) {
+				Color = PrevTeamsColors[PrevCapturingTeam];
+				if (UseClans) Color = Brightness(Color, 1.5);
+			}
 			foreach (I => Quad in Quad_PlayersIcons) Quad.Colorize = Color;
 		}
 		
 		// ---------------------------------- //
-		// Team color change
-		foreach (Clan => Color in Net_KotH_TeamsColors) {
-			if (PrevTeamsColors.existskey(Clan) && PrevTeamsColors[Clan] == Color) continue;
-			PrevTeamsColors[Clan] = Color;
-			
+		// Team color change in custom teams mode
+		if (!UseClans) {
+			foreach (Clan => Color in Net_KotH_TeamsColors) {
+				if (PrevTeamsColors.existskey(Clan) && PrevTeamsColors[Clan] == Color) continue;
+				PrevTeamsColors[Clan] = Color;
+				
+				// ---------------------------------- //
+				// Get frame
+				if (!Frame_PoleGauges.existskey(Clan - 1)) continue;
+				declare Frame = Frame_PoleGauges[Clan - 1];
+				
+				declare Quad_GaugeBg <=> (Frame.GetFirstChild("Quad_GaugeBg") as CMlQuad);
+				declare Quad_GaugeL <=> (Frame.GetFirstChild("Quad_GaugeL") as CMlQuad);
+				declare Quad_GaugeR <=> (Frame.GetFirstChild("Quad_GaugeR") as CMlQuad);
+				declare Quad_CaptureAlert <=> (Frame.GetFirstChild("Quad_CaptureAlert") as CMlQuad);
+				
+				// ---------------------------------- //
+				// Set color
+				Quad_GaugeBg.Colorize = Color;
+				Quad_GaugeL.Colorize = Color;
+				Quad_GaugeR.Colorize = Color;
+				Quad_CaptureAlert.Colorize = Color;
+			}
+		}
+		// ---------------------------------- //
+		// Team color change in default teams mode
+		else foreach (I => Team in Teams) {
+			declare Clan = I + 1;
+			if (PrevTeamsColors.existskey(Clan) && PrevTeamsColors[Clan] == Team.ColorPrimary) continue;
+			PrevTeamsColors[Clan] = Team.ColorPrimary;
+
 			// ---------------------------------- //
 			// Get frame
 			if (!Frame_PoleGauges.existskey(Clan - 1)) continue;
@@ -861,10 +957,10 @@ main() {
 			
 			// ---------------------------------- //
 			// Set color
-			Quad_GaugeBg.Colorize = Color;
-			Quad_GaugeL.Colorize = Color;
-			Quad_GaugeR.Colorize = Color;
-			Quad_CaptureAlert.Colorize = Color;
+			Quad_GaugeBg.Colorize = Team.ColorPrimary;
+			Quad_GaugeL.Colorize = Team.ColorPrimary;
+			Quad_GaugeR.Colorize = Team.ColorPrimary;
+			Quad_CaptureAlert.Colorize = Team.ColorPrimary;
 		}
 		
 		// ---------------------------------- //
@@ -1068,7 +1164,13 @@ main() {
 			// ---------------------------------- //
 			// Set the marker color
 			declare Color = <.75, .75, .75>;
-			if (Net_KotH_TeamsColors.existskey(PrevCapturingTeam)) Color = Net_KotH_TeamsColors[PrevCapturingTeam];
+			if (UseClans) {
+				switch (PrevCapturingTeam) {
+					case 1 : Color = Brightness(Teams[0].ColorPrimary, 1.5);
+					case 2 : Color = Brightness(Teams[1].ColorPrimary, 1.5);
+				}
+			}
+			else if (Net_KotH_TeamsColors.existskey(PrevCapturingTeam)) Color = Net_KotH_TeamsColors[PrevCapturingTeam];
 			Label_MarkerGoalName.TextColor = Brightness(Color, 2.);
 			Quad_MarkerIcon.Colorize = Color;
 		}

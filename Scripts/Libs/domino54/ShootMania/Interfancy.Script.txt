@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-04-18            //
+//  script version: 2017-04-29            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-04-18"
+#Const	Version		"2017-04-29"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -460,7 +460,7 @@ if (ShowReloadBoost) {
 }
 
 // Check if the player is in a vehicle (in quite ugly way)
-GUIPlayerIsInVehicle = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.Armor > 0 && GameTime >= GUIPlayer.StartTime - 1500 && !GUIPlayer.IsInAir && !GUIPlayer.IsTouchingGround;
+GUIPlayerIsInVehicle = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.Armor > 0 && GameTime >= GUIPlayer.StartTime - 1500 && !GUIPlayer.IsInAir && !GUIPlayer.IsTouchingGround && !GUIPlayer.IsInWater;
 
 // ---------------------------------- //
 // Update the Armor module visibility
@@ -1245,7 +1245,7 @@ Text Private_CreateManialinkCountdown() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const C_CountdownSongsNames 	["Countdown1Compressed.ogg"]
+#Const C_CountdownSongsNames 	["Countdown1Compressed.ogg", "Countdown02.ogg"]
 #Const C_CountdownSongDuration	30000
 
 // ---------------------------------- //
@@ -1266,8 +1266,6 @@ declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 // ---------------------------------- //
 // Persistent settings
 declare persistent Boolean Persistent_LibInterfancy_DisableCountdownSong for LocalUser;
-declare persistent Text[] Persistent_LibInterfancy_TimerMusics for LocalUser;
-declare persistent Text Persistent_LibInterfancy_PrevCountdownSong for LocalUser;
 
 // ---------------------------------- //
 // Varialbes
@@ -1277,29 +1275,10 @@ declare ScoreSummary_Display = False;
 declare StartTime = -1;
 declare EndTime = -1;
 declare CurrentTick = -1;
+declare CountdownMusic = CAudioSource;
 
 declare PrevSettingsUpdate = -1;
 declare PrevTick = -1;
-
-// ---------------------------------- //
-// Countdown soundtrack
-declare CAudioSource CountdownMusic;
-declare NewMusicName = "";
-
-if (Persistent_LibInterfancy_TimerMusics.count <= 0)
-	Persistent_LibInterfancy_TimerMusics = C_CountdownSongsNames;
-
-while (Persistent_LibInterfancy_TimerMusics.count > 0) {
-	NewMusicName = Persistent_LibInterfancy_TimerMusics[ML::Rand(0, Persistent_LibInterfancy_TimerMusics.count - 1)];
-	if (NewMusicName != Persistent_LibInterfancy_PrevCountdownSong) break;
-	if (Persistent_LibInterfancy_TimerMusics.count <= 1) break;
-}
-
-if (NewMusicName != "") {
-	declare Removed = Persistent_LibInterfancy_TimerMusics.remove(NewMusicName);
-	Persistent_LibInterfancy_PrevCountdownSong = NewMusicName;
-	CountdownMusic = Audio.CreateSound("{{{C_ImgBase}}}Sounds/"^NewMusicName, 15., True, False, False);
-}
 ***
 
 // ---------------------------------- //
@@ -1320,7 +1299,15 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 			case "StartTime" : StartTime = TL::ToInteger(SettingValue);
 			case "EndTime" : {
 				EndTime = TL::ToInteger(SettingValue);
-				if (CountdownMusic != Null && GameTime < EndTime - C_CountdownSongDuration) CountdownMusic.Stop();
+				if (
+					CountdownMusic != Null && 
+					((EndTime > 0 && GameTime < EndTime - C_CountdownSongDuration) ||
+					(EndTime <= 0 && CountdownMusic.PlayCursor < C_CountdownSongDuration / 1000.))
+				) {
+					CountdownMusic.Stop();
+					Audio.DestroySound(CountdownMusic);
+					CountdownMusic = Null;
+				}
 			}
 		}
 	}
@@ -1366,18 +1353,29 @@ if (Frame_Countdown.Visible) {
 // ---------------------------------- //
 // Countdown soundtrack
 if (
-	Countdown_UseMusic && !Persistent_LibInterfancy_DisableCountdownSong && CountdownMusic != Null &&
+	Countdown_UseMusic && !Persistent_LibInterfancy_DisableCountdownSong &&
 	EndTime > 0 && EndTime - GameTime < C_CountdownSongDuration && GameTime < EndTime
 ) {
-	declare NewPlayCursor = (C_CountdownSongDuration - (EndTime - GameTime)) / 1000.;
-	
 	// ---------------------------------- //
-	// Start the music when countdown begins
-	if (!CountdownMusic.IsPlaying) CountdownMusic.Play();
+	// Create new soundtrack
+	if (CountdownMusic == Null) {
+		declare NextTrackURL = "{{{C_ImgBase}}}Sounds/"^GetCountdownMusicName();
+		if (Http.IsValidUrl(NextTrackURL)) CountdownMusic = Audio.CreateSound(NextTrackURL, 15., True, False, False);
+	}
+	else {
+		// ---------------------------------- //
+		// Start the music when countdown begins
+		if (!CountdownMusic.IsPlaying) CountdownMusic.Play();
 
-	// Adjust the music play cursor if not matching countdown time
-	if (ML::Abs(CountdownMusic.PlayCursor - NewPlayCursor) > .0625) CountdownMusic.PlayCursor = NewPlayCursor;
+		// Adjust the music play cursor if not matching countdown time
+		declare NewPlayCursor = (C_CountdownSongDuration - (EndTime - GameTime)) / 1000.;
+		if (ML::Abs(CountdownMusic.PlayCursor - NewPlayCursor) > .0625) CountdownMusic.PlayCursor = NewPlayCursor;
+	}
 }
+
+// ---------------------------------- //
+// Stop countdown soundtrack
+if (CountdownMusic != Null && CountdownMusic.IsPlaying && CountdownMusic.PlayCursor > C_CountdownSongDuration / 1000. + 5.) CountdownMusic.Stop();
 
 // ---------------------------------- //
 // Show animation when last tick changes
@@ -1445,6 +1443,42 @@ Text TimeToText(Integer _Time, Boolean _Decimal, Boolean _CompactHr) {
 	
 	if (Hours > 0) return Hours^":"^TL::FormatInteger(Minutes, 2)^":"^TL::FormatInteger(Seconds, 2);
 	return Minutes^":"^TL::FormatInteger(Seconds, 2);
+}
+
+// ---------------------------------- //
+/** Get name of next countdown track
+ *
+ *	@return		Name of the next countdown track.
+ */
+Text GetCountdownMusicName() {
+	if (C_CountdownSongsNames.count <= 0) return "";
+	declare persistent Text[] Persistent_LibInterfancy_TimerMusics for LocalUser;
+	declare persistent Text Persistent_LibInterfancy_PrevCountdownSong for LocalUser;
+
+	// ---------------------------------- //
+	// Check if array includes non-existing tracks
+	declare Text[] ToRemove;
+	foreach (Track in Persistent_LibInterfancy_TimerMusics) if (!C_CountdownSongsNames.exists(Track)) ToRemove.add(Track);
+	foreach (Track in ToRemove) {
+		declare Removed = Persistent_LibInterfancy_TimerMusics.remove(Track);
+	}
+
+	// Fill the list if empty
+	if (Persistent_LibInterfancy_TimerMusics.count <= 0)
+		Persistent_LibInterfancy_TimerMusics = C_CountdownSongsNames;
+
+	// ---------------------------------- //
+	// Get the next track
+	declare CountdownMusicName = "";
+	while (Persistent_LibInterfancy_TimerMusics.count > 0) {
+		CountdownMusicName = Persistent_LibInterfancy_TimerMusics[ML::Rand(0, Persistent_LibInterfancy_TimerMusics.count - 1)];
+		if (CountdownMusicName != Persistent_LibInterfancy_PrevCountdownSong) break;
+		if (Persistent_LibInterfancy_TimerMusics.count <= 1) break;
+	}
+	declare Removed = Persistent_LibInterfancy_TimerMusics.remove(CountdownMusicName);
+	Persistent_LibInterfancy_PrevCountdownSong = CountdownMusicName;
+
+	return CountdownMusicName;
 }
 
 // ---------------------------------- //

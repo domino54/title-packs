@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  OVERRUNNING by domino54               //
-//  script version: 2017-04-18            //
+//  script version: 2017-04-29            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"OverrunningArena"
-#Const Version		"2017-04-18"
+#Const Version		"2017-04-29"
 #Const ScriptName	"Overrunning.Script.txt"
 
 // ---------------------------------- //
@@ -355,14 +355,15 @@ foreach (Player in Players) {
 
 	// ---------------------------------- //
 	// Init player's inventory
-	/*
 	Inventory::ResetInventory(Player);
 	Inventory::SetAvailableWeapons(Player, C_PlayerAvailableWeapons);
 	foreach (Weapon => Amount in C_PlayerWeaponsAmmoMax) Inventory::SetWeaponSlots(Player, Weapon, Amount);
+	Inventory::ChangeWeaponHotkey(Player, CSmMode::EWeapon::Laser, CSmModeEvent::EActionInput::Consumable1);
+	Inventory::ChangeWeaponHotkey(Player, CSmMode::EWeapon::Rocket, CSmModeEvent::EActionInput::Consumable2);
 	Inventory::SetFirstWeapon(Player);
 	SetPlayerReloadAllWeapons(Player, False);
-	*/
-	Inventory::ResetInventory(Player);
+	
+	// Inventory vehicles
 	Inventory::CreateItemSlot(Player, "CanyonCar", CSmModeEvent::EActionInput::Activable1, -1, "CanyonCar.png");
 	Inventory::CreateItemSlot(Player, "StadiumCar", CSmModeEvent::EActionInput::Activable2, -1, "StadiumCar.png");
 	Inventory::CreateItemSlot(Player, "ValleyCar", CSmModeEvent::EActionInput::Activable3, -1, "ValleyCar.png");
@@ -371,7 +372,7 @@ foreach (Player in Players) {
 		case G_Vehicles["StadiumCar"] : Inventory::SetActiveItem(Player, "StadiumCar");
 		case G_Vehicles["ValleyCar"] : Inventory::SetActiveItem(Player, "ValleyCar");
 	}
-	
+
 	// Need to set weapon if player is spawned inside of a vehicle
 	SetPlayerWeapon(Player, CSmMode::EWeapon::Rocket, True);
 	PrevPlayerWeapon = -1;
@@ -429,7 +430,7 @@ if (GT_TimeReachedLimit()) MB_StopMap = True;
 ***EndMapBeforePodium***
 ***
 // Unspawn everyone except the winner
-foreach (I => Player in Players) if (I > 0) UnspawnPlayer(Player);
+foreach (Player in Players) if (Player.Score.Id != GT_GetWinnerScoreId()) UnspawnPlayer(Player);
 
 // Disallow the winner to move after match end
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;

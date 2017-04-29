@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2017-04-18            //
+//  script version: 2017-04-29            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2017-04-18"
+#Const Version		"2017-04-29"
 #Const ScriptName	"Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -157,6 +157,8 @@ Text Private_CreateManialinkInventory() {
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
+
+#Const C_CountriesAZERTY ["France", "Belgium"]
 
 // ---------------------------------- //
 // Main
@@ -360,6 +362,18 @@ if (UpdateHotbarItems) {
 		// Set current item hotkey label
 		declare CurItemHotkey = "";
 		if (Net_LibInventory_PlayerItemHotkey.existskey(CurItemId)) CurItemHotkey = Net_LibInventory_PlayerItemHotkey[CurItemId];
+
+		// Special layouts check
+		if (CurItemHotkey == "Q") {
+			declare ExplodePath = TL::Split("|", LocalUser.ZonePath);
+			declare Country = "";
+			if (ExplodePath.existskey(2)) Country = ExplodePath[2];
+
+			if (LocalUser.Language == "fr" || C_CountriesAZERTY.exists(Country)) CurItemHotkey = "A"; ///< AZERTY
+			if (Country == "Lithuania") CurItemHotkey = "Ą"; ///< ĄŹERTY
+		}
+
+		// Set hotkey name
 		Label_ItemHotkey.Value = TL::ToUpperCase(CurItemHotkey);
 
 		// ---------------------------------- //
@@ -1213,6 +1227,35 @@ Void RemoveWeaponSlots(CSmPlayer _Player, CSmMode::EWeapon _Weapon, Integer _Amo
 }
 
 // ---------------------------------- //
+/** Change action key of a weapon for a player.
+ *
+ *	@param	_Player		The player to change given weapon hotkey.
+ *	@param	_Weapon		The weapon to change hotkey.
+ *	@param	_Hotkey		The new hotkey of the weapon.
+ */
+Void ChangeWeaponHotkey(CSmPlayer _Player, CSmMode::EWeapon _Weapon, CSmModeEvent::EActionInput _Hotkey) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+
+	// Get the name of the given weapon's item slot
+	declare ItemName = "";
+	switch (_Weapon) {
+		case CSmMode::EWeapon::Laser	: ItemName = "LInv_WpnLaser";
+		case CSmMode::EWeapon::Rocket	: ItemName = "LInv_WpnRocket";
+		case CSmMode::EWeapon::Nucleus	: ItemName = "LInv_WpnNucleus";
+		case CSmMode::EWeapon::Arrow	: ItemName = "LInv_WpnArrow";
+		case CSmMode::EWeapon::Missile	: ItemName = "LInv_WpnMissile";
+		default : return; ///< Just in case
+	}
+	if (!ItemExists(_Player, ItemName)) return;
+	
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	LibInventory_PlayerItemHotkey[ItemName] = _Hotkey;
+	
+	// Organize player inventory
+	Organize(_Player);
+}
+
+// ---------------------------------- //
 /** Select first weapon when spawning, depending on weapons slots amount.
  *	Will set Rocket, if player has no weapons or weapons list includes Rocket.
  *	Otherwise last weapon from the list is selected.
@@ -1241,12 +1284,24 @@ Void SetFirstWeapon(CSmPlayer _Player) {
  */
 Boolean SwitchWeapon(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
 	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return False;
-	
+
+	// Check if the player's inventory contains at least one item using the given hotkey
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	log(LibInventory_PlayerItemHotkey);
+	if (!LibInventory_PlayerItemHotkey.exists(_ActionInput)) return False;
+
 	// Get the weapon to set
+	declare HotkeyItemName = LibInventory_PlayerItemHotkey.keyof(_ActionInput);
 	declare CSmMode::EWeapon Weapon;
-	if (!C_LibInventory_GetWeaponHotkey.exists(_ActionInput)) return False;
-	Weapon = C_LibInventory_GetWeaponHotkey.keyof(_ActionInput);
-	
+	switch (HotkeyItemName) {
+		case "LInv_WpnLaser"	: Weapon = CSmMode::EWeapon::Laser;
+		case "LInv_WpnRocket"	: Weapon = CSmMode::EWeapon::Rocket;
+		case "LInv_WpnNucleus"	: Weapon = CSmMode::EWeapon::Nucleus;
+		case "LInv_WpnArrow"	: Weapon = CSmMode::EWeapon::Arrow;
+		case "LInv_WpnMissile"	: Weapon = CSmMode::EWeapon::Missile;
+		default : return False;
+	}
+
 	// Set weapon only if it has at least one ammo slot
 	if (GetWeaponSlots(_Player, Weapon) <= 0) return False;
 	
@@ -1262,23 +1317,38 @@ Boolean SwitchWeapon(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput)
  */
 Void ScrollWeapons(CSmPlayer _Player, Integer _ActionChange) {
 	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ActionChange == 0) return;
-	declare WeaponNum = [
-		CSmMode::EWeapon::Laser => 1,
-		CSmMode::EWeapon::Rocket => 2,
-		CSmMode::EWeapon::Nucleus => 3,
-		CSmMode::EWeapon::Arrow => 5,
-		CSmMode::EWeapon::Missile => 6
-	];
 	declare ActionChange = ML::Clamp(_ActionChange, -1, 1);
+	declare WeaponNumToWeapon = [
+		1 => CSmMode::EWeapon::Laser,
+		2 => CSmMode::EWeapon::Rocket,
+		3 => CSmMode::EWeapon::Nucleus,
+		5 => CSmMode::EWeapon::Arrow,
+		6 => CSmMode::EWeapon::Missile
+	];
 	
 	// Get player weapons
+	declare Text[] LibInventory_PlayerItems for _Player;
 	declare CSmMode::EWeapon[] PlayerWeapons;
-	foreach (Weapon in C_LibInventory_Weapons) if (GetWeaponSlots(_Player, Weapon) > 0) PlayerWeapons.add(Weapon);
+
+	foreach (ItemName in LibInventory_PlayerItems) {
+		if (!C_LibInventory_WeaponsPredefinedNames.exists(ItemName)) continue;
+		declare CSmMode::EWeapon Weapon;
+		switch (ItemName) {
+			case "LInv_WpnLaser"	: Weapon = CSmMode::EWeapon::Laser;
+			case "LInv_WpnRocket"	: Weapon = CSmMode::EWeapon::Rocket;
+			case "LInv_WpnNucleus"	: Weapon = CSmMode::EWeapon::Nucleus;
+			case "LInv_WpnArrow"	: Weapon = CSmMode::EWeapon::Arrow;
+			case "LInv_WpnMissile"	: Weapon = CSmMode::EWeapon::Missile;
+			default : continue;
+		}
+		if (GetWeaponSlots(_Player, Weapon) > 0) PlayerWeapons.add(Weapon);
+	}
 	if (PlayerWeapons.count <= 1) return;
 	
 	// ---------------------------------- //
 	// Select next weapon
-	declare CurrentWeapon = WeaponNum.keyof(_Player.CurWeapon);
+	declare CurrentWeapon = CSmMode::EWeapon::Rocket;
+	if (WeaponNumToWeapon.existskey(_Player.CurWeapon)) CurrentWeapon = WeaponNumToWeapon[_Player.CurWeapon];
 	declare Key = PlayerWeapons.keyof(CurrentWeapon);
 	Key += -_ActionChange;
 	if (Key < 0) Key = PlayerWeapons.count - 1;

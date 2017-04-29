@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-03-29            //
+//  script version: 2017-04-29            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-03-29"
+#Const Version		"2017-04-29"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -65,6 +65,7 @@
 
 /// Other
 #Const C_LibGalaxyTitles_ReplieActionSlot	CSmMode::EActionSlot::Slot_H
+#Const C_LibGalaxyTitles_ReplieItemId		"LibGT_Replie"
 
 /// Colors of the weapons items shown in the Minimap library
 #Const C_LibGalaxyTitles_MinimapColors [
@@ -257,7 +258,7 @@ Void Load() {
 	G_LibGalaxyTitles_Objects["Arrow"]		= ItemList_Add("SMCommon\\Pickups\\Arrow.Item.gbx");
 	G_LibGalaxyTitles_Objects["Rocket"]		= ItemList_Add("SMCommon\\Pickups\\Rocket.Item.gbx");
 	G_LibGalaxyTitles_Objects["Replie"]		= ItemList_Add("HungerGames\\Replie.Item.gbx");
-	G_LibGalaxyTitles_Objects["Toad"]		= ItemList_Add("Characters\\ToadSample.Item.gbx");
+	G_LibGalaxyTitles_Objects["Toad"]		= ItemList_Add("Minion");
 	
 	// ---------------------------------- //
 	// Load actions
@@ -703,7 +704,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 			
 			// Limited Replies amount
 			else if (G_LibGalaxyTitles_InventoryMaxReplies > 0) {
-				declare PlayerReplies = Inventory::GetItemAmount(_Event.Player, "LibGalaxyTitles_Replie");
+				declare PlayerReplies = Inventory::GetItemAmount(_Event.Player, C_LibGalaxyTitles_ReplieItemId);
 				CanPickUpObject = PlayerReplies < G_LibGalaxyTitles_InventoryMaxReplies;
 			}
 		}
@@ -848,7 +849,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 		// ---------------------------------- //
 		// Give Replie consumable item
 		case "Replie" : {
-			Inventory::AddItems(_Event.Player, "LibGalaxyTitles_Replie", 1);
+			Inventory::AddItems(_Event.Player, C_LibGalaxyTitles_ReplieItemId, 1);
 			Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1", "Replie"], C_LibGalaxyTitles_NoteDisplayTime);
 		}
 	}
@@ -1181,7 +1182,7 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Load Replies in the Inventory
 	if (G_LibGalaxyTitles_RepliesAvailable) {
-		Inventory::CreateItemSlot(_Player, "LibGalaxyTitles_Replie", CSmModeEvent::EActionInput::Consumable1, 0, "Replie.png");
+		Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_ReplieItemId, CSmModeEvent::EActionInput::Consumable1, 0, "Replie.png");
 	}
 
 	// Load action used to show particle effect on the player
@@ -1234,10 +1235,15 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 	
 	declare NbOtherPlayersAffected = 0;
 	declare Message = Text[];
+
+	// Get the target item's id through the ugly way
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Event.Player;
+	if (!LibInventory_PlayerItemHotkey.exists(_Event.ActionInput)) return;
+	declare ItemName = LibInventory_PlayerItemHotkey.keyof(_Event.ActionInput);
 	
 	// ---------------------------------- //
 	// Use a Replie
-	if (_Event.ActionInput == CSmModeEvent::EActionInput::Consumable1) {
+	if (ItemName == C_LibGalaxyTitles_ReplieItemId) {
 		// ---------------------------------- //
 		// Check if the replie can be used
 		declare CanUseReplie = _Event.Player.Armor < _Event.Player.ArmorMax;
@@ -1262,7 +1268,7 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 		if (!CanUseReplie) return;
 		
 		// Use Replie
-		if (!Inventory::UseItem(_Event.Player, "LibGalaxyTitles_Replie", C_LibGalaxyTitles_ReplieUseCooldown, False)) return;
+		if (!Inventory::UseItem(_Event.Player, ItemName, C_LibGalaxyTitles_ReplieUseCooldown, False)) return;
 		Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
 		
 		// ---------------------------------- //

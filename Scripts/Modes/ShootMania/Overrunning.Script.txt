@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  OVERRUNNING by domino54               //
-//  script version: 2017-04-29            //
+//  script version: 2017-05-08            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"OverrunningArena"
-#Const Version		"2017-04-29"
+#Const Version		"2017-05-08"
 #Const ScriptName	"Overrunning.Script.txt"
 
 // ---------------------------------- //
@@ -166,20 +166,6 @@ foreach (MapLandmark in MapLandmarks_Gauge) {
 if (Scores.existskey(0)) Teams[0].ColorPrimary = Scores[0].User.Color;
 
 // ---------------------------------- //
-// Reset players models
-UIManager.UIAll.StatusMessage = _("Initializing players models...");
-StartTime = Now;
-foreach (Player in Players) {
-	Player.ForceModelId = NullId;
-	OVR_SpawnPlayer(Player);
-}
-MB_Sleep(3000);
-StartTime = -1;
-SM::UnspawnAllPlayers();
-MB_Sleep(1500);
-UIManager.UIAll.StatusMessage = "";
-
-// ---------------------------------- //
 // Start match
 StartTime = Now + S_RespawnTime;
 if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
@@ -230,41 +216,21 @@ foreach (Event in PendingEvents) {
 	else if (Event.Type == CSmModeEvent::EType::OnActionEvent) {
 		if (Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 		declare TargetModelId = NullId;
-		declare TargetModelNum = 0;
 
 		// ---------------------------------- //
-		// Get target vehicle
+		// Get the target vehicle
 		switch (Event.ActionInput) {
-			// ---------------------------------- //
-			// Canyon Car
-			case CSmModeEvent::EActionInput::Activable1 : {
-				TargetModelId = G_Vehicles["CanyonCar"];
-				TargetModelNum = 1;
-			}
-			// ---------------------------------- //
-			// Stadium Car
-			case CSmModeEvent::EActionInput::Activable2 : {
-				TargetModelId = G_Vehicles["StadiumCar"];
-				TargetModelNum = 2;
-			}
-			// ---------------------------------- //
-			// Valley Car
-			case CSmModeEvent::EActionInput::Activable3 : {
-				TargetModelId = G_Vehicles["ValleyCar"];
-				TargetModelNum = 3;
-			}
+			case CSmModeEvent::EActionInput::Activable1 : TargetModelId = G_Vehicles["CanyonCar"];
+			case CSmModeEvent::EActionInput::Activable2 : TargetModelId = G_Vehicles["StadiumCar"];
+			case CSmModeEvent::EActionInput::Activable3 : TargetModelId = G_Vehicles["ValleyCar"];
 		}
 
 		// No need to change model
 		if (TargetModelId == NullId || Event.Player.ForceModelId == TargetModelId) continue;
 
-		// ---------------------------------- //
-		// Force change model
-		declare Integer VehicleSwitchId for Event.Player;
-		declare Integer VehicleSwitchTime for Event.Player;
-		VehicleSwitchId = TargetModelNum;
-		VehicleSwitchTime = Now;
-		Event.Player.ForceModelId = NullId;
+		// Change the player model
+		UnspawnPlayer(Event.Player);
+		Event.Player.ForceModelId = TargetModelId;
 	}
 }
 
@@ -280,37 +246,6 @@ foreach (Player in Players) {
 
 		if (!C_PlayerAmmoGain.existskey(Player.CurWeapon)) Player.AmmoGain = 1.;
 		else Player.AmmoGain = C_PlayerAmmoGain[Player.CurWeapon];
-	}
-
-	// ---------------------------------- //
-	// Player has changed desired vehicle
-	declare Integer VehicleSwitchId for Player;
-	declare Integer VehicleSwitchTime for Player;
-
-	if (VehicleSwitchId > 0 && Now > VehicleSwitchTime + 10) {
-		switch (VehicleSwitchId) {
-			case 1 : Player.ForceModelId = G_Vehicles["CanyonCar"];
-			case 2 : Player.ForceModelId = G_Vehicles["StadiumCar"];
-			case 3 : Player.ForceModelId = G_Vehicles["ValleyCar"];
-		}
-
-		UnspawnPlayer(Player);
-		MiniMap::SetVehicleType(Player, VehicleSwitchId - 1);
-
-		// Remove points
-		Player.Score.Points -= 1;
-		if (Player.Score.Points < 0) Player.Score.Points = 0;
-
-		VehicleSwitchId = -1;
-		VehicleSwitchTime = -1;
-	}
-
-	// ---------------------------------- //
-	// Workaround for shooting when unspawned
-	declare CSmPlayer::ESpawnStatus PrevSpawnStatus for Player;
-	if (PrevSpawnStatus != Player.SpawnStatus) {
-		PrevSpawnStatus = Player.SpawnStatus;
-		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawning) SetPlayerAmmo(Player, CSmMode::EWeapon::Rocket, 0);
 	}
 
 	// ---------------------------------- //
@@ -348,9 +283,33 @@ foreach (Player in Players) {
 	}
 	*/
 	
-	if (Player.ForceModelId == NullId) {
-		Player.ForceModelId = G_Vehicles["CanyonCar"];
-		MiniMap::SetVehicleType(Player, 0);
+	if (Player.ForceModelId == NullId) Player.ForceModelId = G_Vehicles["CanyonCar"];
+
+	switch (Player.ForceModelId) {
+		// ---------------------------------- //
+		// Canyon car
+		case  G_Vehicles["CanyonCar"] : {
+			Interfancy::SetArmorText(Player, "Canyon Car");
+			MiniMap::SetVehicleType(Player, 0);
+		}
+		// ---------------------------------- //
+		// Stadium car
+		case G_Vehicles["StadiumCar"] : {
+			Interfancy::SetArmorText(Player, "Stadium Car");
+			MiniMap::SetVehicleType(Player, 1);
+		}
+		// ---------------------------------- //
+		// Valley car
+		case G_Vehicles["ValleyCar"] : {
+			Interfancy::SetArmorText(Player, "Valley Car");
+			MiniMap::SetVehicleType(Player, 2);
+		}
+		// ---------------------------------- //
+		// Not in a car
+		default : {
+			Interfancy::SetArmorText(Player, "");
+			MiniMap::SetVehicleType(Player, -1);
+		}
 	}
 
 	// ---------------------------------- //

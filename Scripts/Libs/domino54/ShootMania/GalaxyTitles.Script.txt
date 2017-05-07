@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-04-29            //
+//  script version: 2017-05-07            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-04-29"
+#Const Version		"2017-05-07"
 #Const ScriptName	"GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -92,6 +92,8 @@ declare Ident[] G_LibGalaxyTitles_ToadsSpawns;
 declare Boolean G_LibGalaxyTitles_WeaponItemsAvailable;
 declare Text[] G_LibGalaxyTitles_AvailableWeapons;
 declare Boolean G_LibGalaxyTitles_RepliesAvailable;
+declare Integer G_LibGalaxyTitles_ObjectsSpawnTier;
+declare Integer G_LibGalaxyTitles_PrevObjectsSpawnTier;
 
 /// Library settings
 declare Integer G_LibGalaxyTitles_ToadsArmorMax;
@@ -237,6 +239,8 @@ Void Unload() {
 	G_LibGalaxyTitles_InventoryMaxWeapons = C_LibGalaxyTitles_DefaultMaxWeapons;
 	G_LibGalaxyTitles_InventoryMaxReplies = C_LibGalaxyTitles_DefaultMaxReplies;
 	G_LibGalaxyTitles_FuelGivesReloadBoost = True;
+	G_LibGalaxyTitles_ObjectsSpawnTier = -1;
+	G_LibGalaxyTitles_PrevObjectsSpawnTier = -1;
 	G_LibGalaxyTitles_LibraryLoaded = False;
 	
 	// Unload libraries
@@ -393,8 +397,10 @@ Void InitObjects(Boolean _UseWeapons, Boolean _UseReplies) {
 	foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
 		declare Boolean LibGalaxyTitles_ObjectSpawned for MapLandmark;
 		declare Integer LibGalaxyTitles_ObjectNextSpawn for MapLandmark;
+		declare Ident LibGalaxyTitles_ObjectPlayerId for MapLandmark;
 		LibGalaxyTitles_ObjectSpawned = False;
 		LibGalaxyTitles_ObjectNextSpawn = Now;
+		LibGalaxyTitles_ObjectPlayerId = NullId;
 		
 		// Tell the library to use weapons
 		if (
@@ -567,13 +573,29 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		if (Now > SpawnTime + G_LibGalaxyTitles_ObjectsDropLifetime) ObjectsToDestroy.add(ObjectId);
 	
 	// ---------------------------------- //
+	// Destroy objects on tier change
+	if (G_LibGalaxyTitles_PrevObjectsSpawnTier != G_LibGalaxyTitles_ObjectsSpawnTier) {
+		G_LibGalaxyTitles_PrevObjectsSpawnTier = G_LibGalaxyTitles_ObjectsSpawnTier;
+
+		foreach (ObjectId in G_LibGalaxyTitles_CreatedObjects) {
+			if (G_LibGalaxyTitles_ObjectsSpawnTier < 0) break;
+			if (!Objects.existskey(ObjectId)) continue;
+			declare Object <=> Objects[ObjectId];
+
+			declare Ident LibGalaxyTitles_AnchorId for Object;
+			if (LibGalaxyTitles_AnchorId == NullId || !MapLandmarks.existskey(LibGalaxyTitles_AnchorId)) continue;
+			declare MapLandmark <=> MapLandmarks[LibGalaxyTitles_AnchorId];
+
+			if (MapLandmark.Order != G_LibGalaxyTitles_ObjectsSpawnTier) ObjectsToDestroy.add(ObjectId);
+		}
+	}
+
+	// ---------------------------------- //
 	// Destroy timed out dropped objects
 	foreach (ObjectId in ObjectsToDestroy) {
 		if (!Objects.existskey(ObjectId)) continue;
 		declare Object <=> Objects[ObjectId];
 		declare Ident LibGalaxyTitles_AnchorId for Object;
-		
-		declare Destroyed = DestroyObject(Object);
 		
 		// Remove object from custom array
 		declare Removed = G_LibGalaxyTitles_DroppedObjects.remove(ObjectId);
@@ -591,6 +613,8 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			MiniMap::DestroyMarker(MarkerTag);
 			Removed = G_LibGalaxyTitles_MinimapMarkers.remove(MarkerTag);
 		}
+
+		declare Destroyed = DestroyObject(Object);
 	}
 	
 	// ---------------------------------- //
@@ -603,6 +627,10 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		// ---------------------------------- //
 		// Continue if landmark has object, the object is dropped somewhere else or object can't be spawned
 		if (LibGalaxyTitles_ObjectSpawned || LibGalaxyTitles_ObjectNextSpawn > Now) continue;
+
+		// ---------------------------------- //
+		// Continue if object doesn't  belong to the current tier
+		if (G_LibGalaxyTitles_ObjectsSpawnTier >= 0 && MapLandmark.Order != G_LibGalaxyTitles_ObjectsSpawnTier) continue;
 		
 		// ---------------------------------- //
 		// Continue if landmark spawns weapons when they're not available
@@ -622,7 +650,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		
 		// ---------------------------------- //
 		// Create object
-		declare Object = SpawnObject(MapLandmark.Position, MapLandmark.Tag, MapLandmark.Id);
+		declare Object = SpawnObject(MapLandmark.Id, MapLandmark.Tag);
 		LibGalaxyTitles_ObjectSpawned = Object != Null;
 		if (LibGalaxyTitles_ObjectSpawned == False) continue;
 		
@@ -644,6 +672,22 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 // ---------------------------------- //
 /// Spawn objects on landmarks
 Void SpawnObjects() { SpawnObjects(True); }
+
+// ---------------------------------- //
+/** Set the objects spawn tier. Objects will only spawn on
+ *	landmark with order specified by this function.
+ *
+ *	@param	_SpawnTier		Order of the landmarks that will spawn objects.
+ */
+Void SetObjectsSpawnTier(Integer _SpawnTier) {
+	G_LibGalaxyTitles_ObjectsSpawnTier = ML::Max(_SpawnTier, -1);
+}
+
+// ---------------------------------- //
+/// Reset the objects spawn tier.
+Void ResetObjectsSpawnTier() {
+	SetObjectsSpawnTier(-1);
+}
 
 // ---------------------------------- //
 /** Pick up object
@@ -785,7 +829,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 				NbOtherPlayersAffected += 1;
 				
 				Interfancy::SendCrosshairNote(
-					Player, ["$<%1$> healed you!", _Event.Player.Name],
+					Player, ["$<%1$> healed you!", _Event.Player.User.Name],
 					C_LibGalaxyTitles_NoteDisplayTime
 				);
 			}
@@ -817,7 +861,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 				NbOtherPlayersAffected += 1;
 				
 				Interfancy::SendCrosshairNote(
-					Player, ["$<%1$> boosted you!", _Event.Player.Name],
+					Player, ["$<%1$> boosted you!", _Event.Player.User.Name],
 					C_LibGalaxyTitles_NoteDisplayTime
 				);
 			}
@@ -1291,7 +1335,7 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 			NbOtherPlayersAffected += 1;
 			
 			Interfancy::SendCrosshairNote(
-				Player, ["$<%1$> healed you!", _Event.Player.Name],
+				Player, ["$<%1$> healed you!", _Event.Player.User.Name],
 				C_LibGalaxyTitles_NoteDisplayTime
 			);
 		}

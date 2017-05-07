@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-04-29            //
+//  script version: 2017-05-07            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2017-04-29"
+#Const BaseVersion		"2017-05-07"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -83,6 +83,7 @@
 #Const C_NoCollisionsDuration	6000	///< No collision duration at the beginning of the round
 #Const C_EnviroKillTimeOut		7500	///< Time after which environmental elimination won't be performed
 #Const C_MaxPodiumSeqDuration	10000	///< Maximum duration of the podium sequence
+#Const C_SuddenDeathPointsLimit	3
 #Const C_DefaultKillfeedPosn	<159., 89.>		///< Default position of the Killfeed layer
 
 #Const C_EventMaxDamage		100		///< Maximum damage amount inflicted by weapons
@@ -266,6 +267,7 @@ MapSelection::Load("Eurostile", "Eurostile_Bold");
 
 UIManager.UIAll.OverlayHide321Go = True;
 UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
+UIManager.UIAll.NoticesFilter_LevelToShowAsBigMessage = CUIConfig::ENoticeLevel::MatchWarning;
 
 // ---------------------------------- //
 // Load the Storage Music Player
@@ -706,14 +708,15 @@ foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// On player request respawn
 	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
-		declare Ident[] GT_VictimShootHistory for Event.Player;
-		declare Ident GT_VictimLastShooter for Event.Player;
-		GT_VictimShootHistory.clear();
-		GT_VictimLastShooter = NullId;
-		
 		if (GT_AutoManageOnRespawn) {
-			Score::RemovePoints(Event.Player, 1);
 			+++OnPlayerRequestRespawn+++
+
+			declare Ident[] GT_VictimShootHistory for Event.Player;
+			declare Ident GT_VictimLastShooter for Event.Player;
+			GT_VictimShootHistory.clear();
+			GT_VictimLastShooter = NullId;
+
+			Score::RemovePoints(Event.Player, 1);
 			if (GT_IsValidForCallbacks(Event)) XmlRpc::OnPlayerRequestRespawn(Event);
 			Statistics::OnPlayerRequestRespawn(Event);
 			PassOn(Event);
@@ -1088,6 +1091,7 @@ Void GT_InitPlayer(CSmPlayer _Player) {
 	
 	_Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
 	_Player.StaminaMax = C_PlayerStaminaMax;
+	_Player.AmmoGain = 1.;
 }
 
 // ---------------------------------- //
@@ -1315,7 +1319,11 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 	// ---------------------------------- //
 	// Initialize Sudden Death mode
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
-	declare TeamsPoints = [1 => 0, 2 => 0];
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.StatusMessage = _("SUDDEN DEATH");
+	declare TeamsPoints = 0;
+	declare StopSuddenDeath = False;
+	declare UpdateBigMessage = True;
 	GalaxyTitles::ResetAll();
 	MiniMap::Show();
 	UseClans = True;
@@ -1340,7 +1348,7 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 	
 	// ---------------------------------- //
 	// Sudden Death loop
-	while (!ServerShutdownRequested && !MatchEndRequested) {
+	while (!ServerShutdownRequested && !MatchEndRequested && !StopSuddenDeath) {
 		MB_Yield();
 		
 		// ---------------------------------- //
@@ -1349,10 +1357,31 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 			// ---------------------------------- //
 			// On armor empty
 			if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+				switch (Event.Victim.CurrentClan) {
+					case 1 : TeamsPoints += 1;
+					case 2 : TeamsPoints -= 1;
+				}
+
+				if (ML::Abs(TeamsPoints) == C_SuddenDeathPointsLimit) {
+					UIManager.UIAll.SendNotice(
+						"", CUIConfig::ENoticeLevel::PlayerInfo, 
+						Null, CUIConfig::EAvatarVariant::Default, 
+						CUIConfig::EUISound::VictoryPoint, 0
+					);
+					StopSuddenDeath = True;
+				} else {
+					UIManager.UIAll.SendNotice(
+						"", CUIConfig::ENoticeLevel::PlayerInfo, 
+						Null, CUIConfig::EAvatarVariant::Default, 
+						CUIConfig::EUISound::TieBreakPoint, 0
+					);
+				}
+
 				if (GT_IsValidForCallbacks(Event)) XmlRpc::OnArmorEmpty(Event);
 				Killfeed::OnArmorEmpty(Event, Null);
 				Statistics::OnArmorEmpty(Event);
 				PassOn(Event);
+				UpdateBigMessage = True;
 			}
 			// ---------------------------------- //
 			// On hit
@@ -1367,9 +1396,6 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 					Score::AddPoints(Event.Shooter, Points);
 					TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
 					Event.ShooterPoints = Points;
-					
-					TeamsPoints[Event.Shooter.CurrentClan] += Points;
-					if (TeamsPoints[Event.Shooter.CurrentClan] - TeamsPoints[3 - Event.Shooter.CurrentClan] >= 3) break;
 					
 					if (GT_IsValidForCallbacks(Event)) XmlRpc::OnHit(Event);
 					Statistics::OnHit(Event);
@@ -1403,6 +1429,7 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 			GT_InitPlayer(Player);
 			Inventory::ResetInventory(Player);
 			SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
+			SetPlayerAmmoMax(Player, CSmMode::EWeapon::Laser, 1);
 			Player.ArmorMax = 100;
 			Player.AmmoGain = 2.;
 			
@@ -1414,21 +1441,30 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 			}
 			SM::SpawnPlayer(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
 		}
+		
+		// ---------------------------------- //
+		// Update the big message
+		if (UpdateBigMessage) {
+			UpdateBigMessage = False;
+
+			if (TeamsPoints == 0) UIManager.UIAll.BigMessage = "0 / 3";
+			else if (TeamsPoints < 0) UIManager.UIAll.BigMessage = "$<$"^TL::ColorToText(Teams[0].ColorPrimary)^-TeamsPoints^"$> / "^C_SuddenDeathPointsLimit;
+			else UIManager.UIAll.BigMessage = "$<$"^TL::ColorToText(Teams[1].ColorPrimary)^TeamsPoints^"$> / "^C_SuddenDeathPointsLimit;
+		}
 	}
-	
+
 	// ---------------------------------- //
 	// Stop the Sudden Death mode
+	SM::UnspawnAllPlayers();
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
-	UIManager.UIAll.SendNotice(
-		"", CUIConfig::ENoticeLevel::PlayerInfo,
-		Null, CUIConfig::EAvatarVariant::Default, 
-		CUIConfig::EUISound::VictoryPoint, 0
-	);
 	MB_Sleep(3000);
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.StatusMessage = "";
 	MiniMap::Hide();
 	
 	// ---------------------------------- //
 	// Return the winner
-	for (Clan, 1, 2) if (TeamsPoints[Clan] > TeamsPoints[3 - Clan]) return Clan;
+	if (TeamsPoints < 0) return 1;
+	if (TeamsPoints > 0) return 2;
 	return 0;
 }

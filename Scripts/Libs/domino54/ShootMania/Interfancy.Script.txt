@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-03-04            //
+//  script version: 2017-04-29            //
 // -------------------------------------- //
 
 /**
@@ -16,37 +16,35 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-03-04"
+#Const	Version		"2017-04-29"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
-#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
-#Const C_LibInterfancy_WidgetsRotation		2.
-#Const C_LibInterfancy_NbGaugesInModel		10
-#Const C_LibInterfancy_GaugeTotalLength		48.
-#Const C_LibInterfancy_GaugeSpacingWidth	.5
-#Const C_LibInterfancy_FrameHideawayPos		-16.
-#Const C_LibInterfancy_GaugeSoundVolume		-10.
-#Const C_LibInterfancy_NearMissDisplayTime	1000
-#Const C_LibInterfancy_UICleaningPeriod		500
+#Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/" 
+#Const C_LibInterfancy_WidgetsRotation		2.		///< Rotation of the Armor and Ammo gauge widgets
+#Const C_LibInterfancy_NbGaugesInModel		10		///< Amount of gauges in a single gauge widget
+#Const C_LibInterfancy_GaugeTotalLength		48.		///< Length of a widget's gauge bar
+#Const C_LibInterfancy_GaugeSpacingWidth	.5		///< Spaceing between smaller gauges in the widget
+#Const C_LibInterfancy_FrameHideawayPos		-16.	///< Offset for hiding gauges below the bottom screen edge
+#Const C_LibInterfancy_GaugeSoundVolume		-10.	///< Volume of the gauges sounds
+#Const C_LibInterfancy_NearMissDisplayTime	1000	///< Duration for how long the near miss message is displayed
 
-#Const C_LibInterfancy_ArmorPos			<-154., -84., 5.>
-#Const C_LibInterfancy_StaminaPos		<0., -85., 5.>
-#Const C_LibInterfancy_AmmunitionPos	<154., -84., 5.>
-#Const C_LibInterfancy_ScoreSummaryPos	<0., 90., 5.>
-#Const C_LibInterfancy_SpecInfoPos		<0., -68., 5.>
-#Const C_LibInterfancy_CountdownPos		<0., 86.25, 5.>
-#Const C_LibInterfancy_CrosshairPos		<0., 0., -5.>
-#Const C_LibInterfancy_NearMissMsgPos	<0., -7.5, -4.>
+#Const C_LibInterfancy_ArmorPos			<-154., -84.>
+#Const C_LibInterfancy_StaminaPos		<0., -85.>
+#Const C_LibInterfancy_AmmunitionPos	<154., -84.>
+#Const C_LibInterfancy_ScoreSummaryPos	<0., 90.>
+#Const C_LibInterfancy_SpecInfoPos		<0., -68.>
+#Const C_LibInterfancy_CountdownPos		<0., 86.25>
+#Const C_LibInterfancy_CrosshairPos		<0., 0.>
+#Const C_LibInterfancy_NearMissMsgPos	<0., -7.5>
 
 // ---------------------------------- //
 // Globales
@@ -56,7 +54,6 @@ declare Boolean[Text]	G_LibInterfancy_ModuleVisibility;
 declare Vec3[Text]		G_LibInterfancy_ModulePosition;
 declare Integer G_LibInterfancy_PrevStartTime;
 declare Integer G_LibInterfancy_PrevEndTime;
-declare Integer G_LibInterfancy_NextUICleaningTime;
 
 // ---------------------------------- //
 // Functions
@@ -97,9 +94,8 @@ Void Private_SetModuleSetting(Text _Name, Text _Value) {
  */
 Text Private_CreateUnivarsalGaugeModel() {
 	declare UniversalGaugeModel = "";
-	for (I, 0, C_LibInterfancy_NbGaugesInModel - 1) UniversalGaugeModel ^= """
-		<gauge sizen="0 8" valign="center" drawbg="0" drawblockbg="0" id="Gauge_Step#{{{I}}}" hidden="1"/>
-	""";
+	for (I, 0, C_LibInterfancy_NbGaugesInModel - 1)
+		UniversalGaugeModel ^= "<gauge size='0 8' valign='center' drawbg='0' drawblockbg='0' id='Gauge_Step#"^I^"' hidden='1' />";
 	return UniversalGaugeModel;
 }
 
@@ -110,57 +106,57 @@ Text Private_CreateUnivarsalGaugeModel() {
  */
 Text Private_CreateManialinkGauges() {
 	return """
-<manialink version="2" name="LibInterfancy:Gauges">
+<manialink version="3" name="LibInterfancy:Gauges">
 <stylesheet>
-	<style class="count" valign="center2" textsize="3" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
-	<style class="desc" valign="center2" textsize="1" textemboss="1" textfont="Eurostile_Bold"/>
+	<style class="count" valign="center2" textsize="3" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
+	<style class="desc" valign="center2" textsize="1" textemboss="1" textfont="Eurostile_Bold" />
 </stylesheet>
 
-<frame id="Frame_HMDClip" clip="1" clipsizen="320 180">
+<frame id="Frame_HMDClip" size="320 180" halign="center" valign="center">
 
-<frame id="Frame_WidgetArmor" posn="{{{C_LibInterfancy_ArmorPos.X^" "^C_LibInterfancy_ArmorPos.Y + C_LibInterfancy_FrameHideawayPos^" "^C_LibInterfancy_ArmorPos.Z}}}" rot="{{{-C_LibInterfancy_WidgetsRotation}}}">
-	<quad sizen="10 10" halign="center" valign="center" id="Quad_ModuleIcon"/>
-	<quad sizen="10 10" halign="center" valign="center" id="Quad_ModuleIconGhost"/>
+<frame id="Frame_WidgetArmor" pos="{{{C_LibInterfancy_ArmorPos.X^" "^C_LibInterfancy_ArmorPos.Y + C_LibInterfancy_FrameHideawayPos}}}" rot="{{{-C_LibInterfancy_WidgetsRotation}}}">
+	<quad size="10 10" halign="center" valign="center" id="Quad_ModuleIcon" />
+	<quad size="10 10" halign="center" valign="center" id="Quad_ModuleIconGhost" />
 	
-	<label posn="5 2.75" class="count" id="Label_ModuleCounter"/>
-	<frame id="Frame_Gauge" posn="5">{{{Private_CreateUnivarsalGaugeModel()}}}</frame>
+	<label pos="5 2.75" class="count" id="Label_ModuleCounter" />
+	<frame id="Frame_Gauge" pos="5">{{{Private_CreateUnivarsalGaugeModel()}}}</frame>
 	
-	<frame posn="5 -2.75">
-		<label class="desc" id="Label_ModuleInfoText"/>
-		<label class="desc" id="Label_ModuleInfoGhost"/>
+	<frame pos="5 -2.75">
+		<label class="desc" id="Label_ModuleInfoText" />
+		<label class="desc" id="Label_ModuleInfoGhost" />
 	</frame>
 </frame>
 
-<frame id="Frame_WidgetStamina" posn="{{{C_LibInterfancy_StaminaPos.X^" "^C_LibInterfancy_StaminaPos.Y + C_LibInterfancy_FrameHideawayPos^" "^C_LibInterfancy_StaminaPos.Z}}}">
-	<quad posn="0 5" sizen="10 10" halign="center" valign="center" id="Quad_ModuleIcon"/>
-	<quad posn="0 5" sizen="10 10" halign="center" valign="center" id="Quad_ModuleIconGhost"/>
+<frame id="Frame_WidgetStamina" pos="{{{C_LibInterfancy_StaminaPos.X^" "^C_LibInterfancy_StaminaPos.Y + C_LibInterfancy_FrameHideawayPos}}}">
+	<quad pos="0 5" size="10 10" halign="center" valign="center" id="Quad_ModuleIcon" />
+	<quad pos="0 5" size="10 10" halign="center" valign="center" id="Quad_ModuleIconGhost" />
 	
-	<frame id="Frame_GaugeStamina" posn="{{{-C_LibInterfancy_GaugeTotalLength / 2}}}">
+	<frame id="Frame_GaugeStamina" pos="{{{-C_LibInterfancy_GaugeTotalLength / 2}}}">
 		{{{Private_CreateUnivarsalGaugeModel()}}}
 	</frame>
 	
-	<frame posn="0 -2.75">
-		<label halign="center" class="desc" id="Label_ModuleInfoText"/>
-		<label halign="center" class="desc" id="Label_ModuleInfoGhost"/>
+	<frame pos="0 -2.75">
+		<label halign="center" class="desc" id="Label_ModuleInfoText" />
+		<label halign="center" class="desc" id="Label_ModuleInfoGhost" />
 	</frame>
 </frame>
 
-<frame id="Frame_WidgetAmmo" posn="{{{C_LibInterfancy_AmmunitionPos.X^" "^C_LibInterfancy_AmmunitionPos.Y + C_LibInterfancy_FrameHideawayPos^" "^C_LibInterfancy_AmmunitionPos.Z}}}" rot="{{{C_LibInterfancy_WidgetsRotation}}}">
-	<quad sizen="10 10" halign="center" valign="center" id="Quad_ModuleIcon"/>
-	<quad sizen="10 10" halign="center" valign="center" id="Quad_ModuleIconGhost"/>
+<frame id="Frame_WidgetAmmo" pos="{{{C_LibInterfancy_AmmunitionPos.X^" "^C_LibInterfancy_AmmunitionPos.Y + C_LibInterfancy_FrameHideawayPos}}}" rot="{{{C_LibInterfancy_WidgetsRotation}}}">
+	<quad size="10 10" halign="center" valign="center" id="Quad_ModuleIcon" />
+	<quad size="10 10" halign="center" valign="center" id="Quad_ModuleIconGhost" />
 	
-	<label posn="-5 2.75" halign="right" class="count" id="Label_ModuleCounter"/>
-	<frame id="Frame_GaugeAmmo" posn="-5 -.35" rot="-180">{{{Private_CreateUnivarsalGaugeModel()}}}</frame>
+	<label pos="-5 2.75" halign="right" class="count" id="Label_ModuleCounter" />
+	<frame id="Frame_GaugeAmmo" pos="-5 -.35" rot="-180">{{{Private_CreateUnivarsalGaugeModel()}}}</frame>
 	
-	<frame posn="-5 -2.75">
-		<label halign="right" class="desc" id="Label_ModuleInfoText"/>
-		<label halign="right" class="desc" id="Label_ModuleInfoGhost"/>
+	<frame pos="-5 -2.75">
+		<label halign="right" class="desc" id="Label_ModuleInfoText" />
+		<label halign="right" class="desc" id="Label_ModuleInfoGhost" />
 	</frame>
 	
-	<frame posn="-40 -4"><frame id="Frame_ReloadBoost" posn="0 -8">
-		<gauge posn="-1" sizen="24 8" halign="right" valign="center" drawbg="0" drawblockbg="0" ratio="1" id="Gauge_ReloadBoost"/>
-		<quad sizen="5 5" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/ReloadBoost.png" id="Quad_BoostIcon"/>
-		<label posn="3" class="count" id="Label_BoostTimer"/>
+	<frame pos="-40 -4"><frame id="Frame_ReloadBoost" pos="0 -8">
+		<label pos="3" class="count" id="Label_BoostTimer" />
+		<quad size="5 5" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/ReloadBoost.png" id="Quad_BoostIcon" />
+		<gauge pos="-1" size="24 8" halign="right" valign="center" drawbg="0" drawblockbg="0" ratio="1" id="Gauge_ReloadBoost" />
 	</frame></frame>
 </frame>
 
@@ -178,7 +174,7 @@ Text Private_CreateManialinkGauges() {
 // Constants
 // ---------------------------------- //
 #Const C_AvailableModules	["Armor", "Stamina", "Ammo"]
-#Const C_WeaponsNames		[1 => "Laser", 2 => "Rocket", 3 => "Nucleus", 5 => "Arrow"]
+#Const C_WeaponsNames		[1 => "Laser", 2 => "Rocket", 3 => "Nucleus", 5 => "Arrow", 6 => "Missile"]
 #Const C_UIChatPosition		[False => <0., 0.>, True => <0., 0.05>]
 #Const C_NbGaugesInModel	{{{C_LibInterfancy_NbGaugesInModel}}}
 #Const C_FrameHideawayPos	{{{C_LibInterfancy_FrameHideawayPos}}}
@@ -195,6 +191,7 @@ Text Private_CreateManialinkGauges() {
 	"Rocket"	=> "{{{C_ImgBase}}}Icons/Rocket.png",
 	"Nucleus"	=> "{{{C_ImgBase}}}Icons/Nucleus.png",
 	"Arrow"		=> "{{{C_ImgBase}}}Icons/Arrow.png",
+	"Missile"	=> "{{{C_ImgBase}}}Icons/Rocket.png",
 	"Stamina"	=> "{{{C_ImgBase}}}Icons/Jump.png",
 	"Sprint"	=> "{{{C_ImgBase}}}Icons/Run.png"
 ]
@@ -247,6 +244,80 @@ foreach (Module in C_AvailableModules) {
 	for (I, 0, C_NbGaugesInModel - 1) G_Gauges[Module].add((Frame.GetFirstChild("Gauge_Step#"^I) as CMlGauge));
 }
 
+declare GaugesModulesVisibility = False;
+
+// ---------------------------------- //
+// Armor module
+declare Frame_WidgetArmor			<=> (Page.GetFirstChild("Frame_WidgetArmor") as CMlFrame);
+declare Label_ModuleCounterArmor	<=> (Frame_WidgetArmor.GetFirstChild("Label_ModuleCounter") as CMlLabel);
+declare Label_ModuleInfoTextArmor	<=> (Frame_WidgetArmor.GetFirstChild("Label_ModuleInfoText") as CMlLabel);
+declare Label_ModuleInfoGhostArmor	<=> (Frame_WidgetArmor.GetFirstChild("Label_ModuleInfoGhost") as CMlLabel);
+declare Quad_ModuleIconArmor		<=> (Frame_WidgetArmor.GetFirstChild("Quad_ModuleIcon") as CMlQuad);
+declare Quad_ModuleIconGhostArmor	<=> (Frame_WidgetArmor.GetFirstChild("Quad_ModuleIconGhost") as CMlQuad);
+
+declare CMlGauge[] Gauge_ModuleArmor;
+for (I, 0, C_NbGaugesInModel - 1) Gauge_ModuleArmor.add((Frame_WidgetArmor.GetFirstChild("Gauge_Step#"^I) as CMlGauge));
+
+declare ModuleDisplay_Armor = True;
+declare ModuleVisibility_Armor = False;
+declare ModuleRatio_Armor = 0.;
+declare ModuleSlots_Armor = 0;
+declare ModuleUpdateGauges_Armor = True;
+declare ModuleDescription_Armor = "";
+declare ModuleIcon_Armor = C_ModulesIcons["Armor"];
+
+declare PrevModuleVisibility_Armor = False;
+declare PrevModuleRatio_Armor = -1.;
+declare PrevModuleSlots_Armor = -1;
+declare PrevModuleDescription_Armor = "";
+declare PrevModuleIcon_Armor = "";
+
+// ---------------------------------- //
+// Ammo module
+declare Frame_WidgetAmmo			<=> (Page.GetFirstChild("Frame_WidgetAmmo") as CMlFrame);
+declare Label_ModuleCounterAmmo		<=> (Frame_WidgetAmmo.GetFirstChild("Label_ModuleCounter") as CMlLabel);
+declare Label_ModuleInfoTextAmmo	<=> (Frame_WidgetAmmo.GetFirstChild("Label_ModuleInfoText") as CMlLabel);
+declare Label_ModuleInfoGhostAmmo	<=> (Frame_WidgetAmmo.GetFirstChild("Label_ModuleInfoGhost") as CMlLabel);
+declare Quad_ModuleIconAmmo			<=> (Frame_WidgetAmmo.GetFirstChild("Quad_ModuleIcon") as CMlQuad);
+declare Quad_ModuleIconGhostAmmo	<=> (Frame_WidgetAmmo.GetFirstChild("Quad_ModuleIconGhost") as CMlQuad);
+
+declare CMlGauge[] Gauge_ModuleAmmo;
+for (I, 0, C_NbGaugesInModel - 1) Gauge_ModuleAmmo.add((Frame_WidgetAmmo.GetFirstChild("Gauge_Step#"^I) as CMlGauge));
+
+declare ModuleDisplay_Ammo = True;
+declare ModuleVisibility_Ammo = False;
+declare ModuleRatio_Ammo = 0.;
+declare ModuleSlots_Ammo = 0;
+declare ModuleUpdateGauges_Ammo = True;
+declare ModuleDescription_Ammo = "";
+declare ModuleIcon_Ammo = C_ModulesIcons["Rocket"];
+
+declare PrevModuleVisibility_Ammo = False;
+declare PrevModuleRatio_Ammo = -1.;
+declare PrevModuleSlots_Ammo = -1;
+declare PrevModuleDescription_Ammo = "";
+declare PrevModuleIcon_Ammo = "";
+
+// ---------------------------------- //
+// Stamina module
+declare Frame_WidgetStamina				<=> (Page.GetFirstChild("Frame_WidgetStamina") as CMlFrame);
+declare Label_ModuleInfoTextStamina		<=> (Frame_WidgetStamina.GetFirstChild("Label_ModuleInfoText") as CMlLabel);
+declare Label_ModuleInfoGhostStamina	<=> (Frame_WidgetStamina.GetFirstChild("Label_ModuleInfoGhost") as CMlLabel);
+declare Quad_ModuleIconStamina			<=> (Frame_WidgetStamina.GetFirstChild("Quad_ModuleIcon") as CMlQuad);
+declare Quad_ModuleIconGhostStamina		<=> (Frame_WidgetStamina.GetFirstChild("Quad_ModuleIconGhost") as CMlQuad);
+declare Gauge_ModuleStamina = [(Frame_WidgetStamina.GetFirstChild("Gauge_Step#0") as CMlGauge)];
+
+declare ModuleDisplay_Stamina = True;
+declare ModuleVisibility_Stamina = False;
+declare ModuleRatio_Stamina = 0.;
+declare ModuleDescription_Stamina = "";
+declare ModuleIcon_Stamina = C_ModulesIcons["Stamina"];
+
+declare PrevModuleVisibility_Stamina = False;
+declare PrevModuleRatio_Stamina = -1.;
+declare PrevModuleDescription_Stamina = "";
+declare PrevModuleIcon_Stamina = "";
+
 // ---------------------------------- //
 // Persistent settings
 declare persistent Persistent_LibInterfancy_AlwaysShowStamina for LocalUser = False;
@@ -257,52 +328,25 @@ declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 declare netread Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
 
-/// Players colors
-declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
-
-/// Custom weapons
-declare netread Text[Text] Net_LibInterfancy_PlayersWeaponsNames for Teams[0];
-
 // ---------------------------------- //
 // Variables
 declare Gauges_Display = True;
-declare DisplayArmor = True;
-declare DisplayAmmo = True;
-declare DisplayStamina = True;
-
-declare InterfaceColor = <1., 1., 1.>;
+declare InterfaceColor = 0.;
 declare StaminaDisplayEndTime = -1;
-declare Integer[Text] PlayerIsOnTechArmor;
+declare Integer[Ident] PlayerIsOnTechArmor;
 declare ShowReloadBoost = False;
-declare GUIPlayerClan = 0;
+declare GUIPlayerIsInVehicle = False;
 
-declare Boolean[Text] FrameVisible;
-declare Real[Text] ModuleRatio;
-declare Integer[Text] ModuleSlots;
-declare Text[Text] ModuleInfoText;
-declare Text[Text] ModuleIcon;
-
-/// Update
+// Update
+declare PrevSettingsUpdate = -1;
 declare PrevGauges_Display = False;
 declare PrevGUIPlayerLogin = "";
 declare PrevGUIPlayerCurWeapon = 0;
-declare PrevGUIPlayerClan = 0;
-declare PrevGUIPlayerUserColor = Vec3;
-declare PrevGUIPlayerForcedColor = Vec3;
-declare PrevInterfaceColor = Vec3;
+declare PrevInterfaceColor = -1.;
 declare PrevShowReloadBoost = False;
 
-declare Boolean[Text] PrevFrameVisible;
-declare Real[Text] PrevModuleRatio;
-declare Integer[Text] PrevModuleSlots;
-declare Text[Text] PrevModuleInfoText;
-declare Text[Text] PrevModuleIcon;
-
-declare PrevSettingsUpdate = -1;
-
+// Init
 G_ModulesIcons = C_ModulesIcons;
-ModuleIcon["Armor"] = G_ModulesIcons["Armor"];
-ModuleSlots["Stamina"] = 1;
 ***
 
 // ---------------------------------- //
@@ -317,15 +361,16 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
-			case "Gauges_Display"	: Gauges_Display	= SettingValue == "True";
-			case "Armor_Display"	: DisplayArmor		= SettingValue == "True";
-			case "Ammo_Display"		: DisplayAmmo		= SettingValue == "True";
-			case "Stamina_Display"	: DisplayStamina	= SettingValue == "True";
+			case "Gauges_Display"	: Gauges_Display		= SettingValue == "True";
+			case "Armor_Display"	: ModuleDisplay_Armor	= SettingValue == "True";
+			case "Ammo_Display"		: ModuleDisplay_Ammo	= SettingValue == "True";
+			case "Stamina_Display"	: ModuleDisplay_Stamina	= SettingValue == "True";
 			default : {
 				if (TL::SubString(SettingName, 0, 11) == "Gauges_Icon" && SettingValue != "") {
 					declare IconId = TL::Replace(SettingName, "Gauges_Icon", "");
 					G_ModulesIcons[IconId] = SettingValue;
-					PrevModuleIcon.clear();
+					PrevModuleIcon_Ammo = "";
+					PrevModuleIcon_Stamina = "";
 				}
 			}
 		}
@@ -333,305 +378,432 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 }
 
 // ---------------------------------- //
-// Get the interface color from the player
-if (GUIPlayer != Null) {
-	if (GUIPlayer.CurrentClan != GUIPlayerClan) GUIPlayerClan = GUIPlayer.CurrentClan;
+// Get for how long players are loading their Armors
+foreach (Player in Players) {
+	if (Player.RequestsSpectate || Player.IsBot || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 	
-	if (GUIPlayerClan == 0) {
-		// ---------------------------------- //
-		// Use the player's forced color
-		if (Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login)) {
-			if (Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login] != PrevGUIPlayerForcedColor) {
-				PrevGUIPlayerForcedColor = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
-				InterfaceColor = PrevGUIPlayerForcedColor;
-			}
-		}
-		// ---------------------------------- //
-		// Uer player's profile color
-		else if (PrevGUIPlayerUserColor != GUIPlayer.User.Color) {
-			PrevGUIPlayerUserColor = GUIPlayer.User.Color;
-			InterfaceColor = PrevGUIPlayerUserColor;
-		}
+	if (Player.IsOnTechArmor) {
+		if (!PlayerIsOnTechArmor.existskey(Player.Id)) PlayerIsOnTechArmor[Player.Id] = GameTime;
+	}
+	else if (PlayerIsOnTechArmor.existskey(Player.Id)) {
+		declare Removed = PlayerIsOnTechArmor.removekey(Player.Id);
 	}
 }
-
-// ---------------------------------- //
-// Update color on player clan change
-if (PrevGUIPlayerClan != GUIPlayerClan) {
-	PrevGUIPlayerClan = GUIPlayerClan;
-	if (Teams.existskey(GUIPlayerClan - 1)) InterfaceColor = Teams[GUIPlayerClan - 1].ColorPrimary;
-}
-
-// ---------------------------------- //
-// Set interface colour
-if (PrevInterfaceColor != InterfaceColor) {
-	PrevInterfaceColor = InterfaceColor;
-	
-	foreach (Module in C_AvailableModules) {
-		foreach (Gauge in G_Gauges[Module]) Gauge.Color = InterfaceColor;
-		declare BrightTextColor = Brightness(InterfaceColor, 4.);
-		Label_ModuleInfoText[Module].TextColor = BrightTextColor;
-		Label_ModuleInfoGhost[Module].TextColor = BrightTextColor;
-	}
-	
-	Gauge_ReloadBoost.Color = InterfaceColor;
-}
-
-// Hide full stamina bar after some delay
-if (GUIPlayer != Null && GUIPlayer.Stamina < GUIPlayer.StaminaMax * 3600) StaminaDisplayEndTime = Now + C_StaminaDisplayTime;
 
 // ---------------------------------- //
 // Set the chat offset
 if (PrevGauges_Display != Gauges_Display) {
 	PrevGauges_Display = Gauges_Display;
-	
 	ClientUI.OverlayChatOffset = C_UIChatPosition[Gauges_Display];
 	ClientUI.OverlayChatHideAvatar = Gauges_Display;
 }
 
 // ---------------------------------- //
-// Get for how long players are loading their armor
-foreach (Player in Players) {
-	if (Player.RequestsSpectate || Player.IsBot || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
-	
-	if (Player.IsOnTechArmor) {
-		if (!PlayerIsOnTechArmor.existskey(Player.User.Login)) PlayerIsOnTechArmor[Player.User.Login] = GameTime;
-	}
-	else if (PlayerIsOnTechArmor.existskey(Player.User.Login)) {
-		declare Removed = PlayerIsOnTechArmor.removekey(Player.User.Login);
-	}
-}
+// Set the gauges visibility
+GaugesModulesVisibility = UI.OverlayHideGauges && Gauges_Display && GUIPlayer != Null;
 
 // ---------------------------------- //
-// Manage modules
-foreach (Module in C_AvailableModules) {
-	// ---------------------------------- //
-	// Update module visibility
-	declare ShowModule = False;
-	switch (Module) {
-		case "Armor" : ShowModule = GUIPlayer != Null && DisplayArmor && GUIPlayer.ArmorMax > 0;
-		case "Stamina" : ShowModule = GUIPlayer != Null && DisplayStamina && !GUIPlayer.IsOnTechNoWeapon && (Now < StaminaDisplayEndTime || Persistent_LibInterfancy_AlwaysShowStamina);
-		case "Ammo" : ShowModule = GUIPlayer != Null && DisplayAmmo && GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0 && !GUIPlayer.IsOnTechNoWeapon;
+// Get the interface color from the player
+if (GUIPlayer != Null && InterfaceColor != GUIPlayer.GetLinearHue) InterfaceColor = GUIPlayer.GetLinearHue;
+
+// ---------------------------------- //
+// Set interface color
+if (PrevInterfaceColor != InterfaceColor) {
+	PrevInterfaceColor = InterfaceColor;
+	declare NewUIColor = HsvToRgb(<ML::Clamp(InterfaceColor, 0., 1.), 1., 1.>);
+
+	foreach (Module in C_AvailableModules) {
+		foreach (Gauge in G_Gauges[Module]) Gauge.Color = NewUIColor;
+		declare BrightTextColor = Brightness(NewUIColor, 4.);
+		Label_ModuleInfoText[Module].TextColor = BrightTextColor;
+		Label_ModuleInfoGhost[Module].TextColor = BrightTextColor;
 	}
 	
-	FrameVisible[Module] = UI.OverlayHideGauges && Gauges_Display && GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && ShowModule;
-	
-	// ---------------------------------- //
-	// Set module visibility
-	if (!PrevFrameVisible.existskey(Module) || PrevFrameVisible[Module] != FrameVisible[Module]) {
-		PrevFrameVisible[Module] = FrameVisible[Module];
-		
-		declare Easing = "EaseOutBack";
-		declare Real PosY;
-		
-		switch (Module) {
-			case "Armor"	: PosY = {{{C_LibInterfancy_ArmorPos.Y}}};
-			case "Stamina"	: PosY = {{{C_LibInterfancy_StaminaPos.Y}}};
-			case "Ammo"		: PosY = {{{C_LibInterfancy_AmmunitionPos.Y}}};
-		}
-		
-		if (!FrameVisible[Module]) {
-			PrevModuleRatio[Module] = -1.;
-			Easing = "EaseInCirc";
-			PosY += C_FrameHideawayPos;
-		}
-		
-		LibManialink_AnimStop(Frame_Widget[Module]);
-		declare Position = Frame_Widget[Module].RelativePosition.X^" "^PosY^" "^Frame_Widget[Module].RelativePosition.Z;
-		LibManialink_Anim(Frame_Widget[Module], "<frame posn='"^Position^"'/>", 200, Easing);
-	}
-	
-	if (!FrameVisible[Module]) continue;
-	
-	switch (Module) {
-		// ---------------------------------- //
-		// Armor module
-		case "Armor" : {
-			declare GUIPlayerArmorLoaded = 0.;
-			if (PlayerIsOnTechArmor.existskey(GUIPlayer.User.Login))
-				GUIPlayerArmorLoaded = (GameTime - PlayerIsOnTechArmor[GUIPlayer.User.Login]) % 1850 / 1850.;
-			
-			ModuleRatio[Module] = GUIPlayer.Armor / 100. + GUIPlayerArmorLoaded;
-			ModuleSlots[Module] = GUIPlayer.ArmorMax / 100;
-			
-			if (GUIPlayer.IsOnTechArmor) {
-				if (GUIPlayer.Armor < GUIPlayer.ArmorMax) ModuleInfoText[Module] = "Healing...";
-				else ModuleInfoText[Module] = "Healing Pad";
-			}
-			else if (GUIPlayer.IsOnTechLaser)
-				ModuleInfoText[Module] = "Zoom Pad";
-			else if (GUIPlayer.IsOnTechArrow)
-				ModuleInfoText[Module] = "Arrow Pad";
-			else if (GUIPlayer.IsOnTechSafeZone)
-				ModuleInfoText[Module] = "Safe Zone";
-			else if (GUIPlayer.IsUnderground)
-				ModuleInfoText[Module] = "Tunnels";
-			else
-				ModuleInfoText[Module] = "Armor";
-		}
-		// ---------------------------------- //
-		// Stamina module
-		case "Stamina" : {
-			ModuleRatio[Module] = (GUIPlayer.Stamina / 3600.) / GUIPlayer.StaminaMax;
-			
-			if (GUIPlayer.IsOnTech) {
-				ModuleInfoText[Module] = "Sprint Path";
-				ModuleIcon[Module] = G_ModulesIcons["Sprint"];
-			} else {
-				ModuleInfoText[Module] = "Stamina";
-				ModuleIcon[Module] = G_ModulesIcons["Stamina"];
-			}
-		}
-		// ---------------------------------- //
-		// Ammunition module
-		case "Ammo" : {
-			ModuleRatio[Module] = ML::ToReal(GUIPlayer.CurAmmo) / GUIPlayer.CurAmmoUnit;
-			ModuleSlots[Module] = GUIPlayer.CurAmmoMax / GUIPlayer.CurAmmoUnit;
-			
-			// ---------------------------------- //
-			// Display name and icon of a custom weapon
-			if (
-				Net_LibInterfancy_PlayersWeaponsNames.existskey(GUIPlayer.User.Login) &&
-				Net_LibInterfancy_PlayersWeaponsNames[GUIPlayer.User.Login] != ""
-			) {
-				declare WeaponName = Net_LibInterfancy_PlayersWeaponsNames[GUIPlayer.User.Login];
-				ModuleInfoText[Module] = WeaponName;
-				if (G_ModulesIcons.existskey(WeaponName)) ModuleIcon[Module] = G_ModulesIcons[WeaponName];
-			}
-			// ---------------------------------- //
-			// Display name and icon of a default weapon
-			else if (C_WeaponsNames.existskey(GUIPlayer.CurWeapon)) {
-				ModuleInfoText[Module] = C_WeaponsNames[GUIPlayer.CurWeapon];
-				ModuleIcon[Module] = G_ModulesIcons[C_WeaponsNames[GUIPlayer.CurWeapon]];
-			}
-			// ---------------------------------- //
-			// Display default name and icon, if something went wrong
-			else {
-				ModuleInfoText[Module] = "Weapon";
-				ModuleIcon[Module] = G_ModulesIcons[C_WeaponsNames[2]];
-			}
-		}
-	}
-	
-	// ---------------------------------- //
-	// Update gauges ratio
-	if (
-		!PrevModuleRatio.existskey(Module) || !PrevModuleSlots.existskey(Module) ||
-		PrevModuleRatio[Module] != ModuleRatio[Module] ||
-		PrevModuleSlots[Module] != ModuleSlots[Module]
-	) {
-		SetModuleRatio(Module, ModuleRatio[Module], ModuleSlots[Module]);
-		
-		if (Module != "Stamina")
-			Label_ModuleCounter[Module].Value = ML::FloorInteger(ModuleRatio[Module])^"$777/"^ModuleSlots[Module];
-		
-		// ---------------------------------- //
-		// Play the interface sounds
-		if (PrevGUIPlayerLogin == GUIPlayer.User.Login && PrevModuleRatio.existskey(Module) && PrevModuleRatio[Module] > -1) {
-			if (ML::FloorInteger(ModuleRatio[Module]) > PrevModuleRatio[Module]) {
-				switch (Module) {
-					// ---------------------------------- //
-					// Armor loaded
-					case "Armor" : {
-						if (GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned)
-							Audio.PlaySoundEvent(C_ModulesSounds["ArmorStep"], C_GaugeSoundVolume);
-					}
-					// ---------------------------------- //
-					// Weapon loaded
-					case "Ammo" : {
-						if (PrevGUIPlayerCurWeapon == GUIPlayer.CurWeapon)
-							Audio.PlaySoundEvent(C_ModulesSounds["AmmoStep"], C_GaugeSoundVolume);
-						
-						else PrevGUIPlayerCurWeapon = GUIPlayer.CurWeapon;
-					}
-					// ---------------------------------- //
-					// Stamina loaded
-					case "Stamina" : Audio.PlaySoundEvent(C_ModulesSounds["StaminaFull"], C_GaugeSoundVolume);
-				}
-			}
-			
-			if (Module == "Stamina" && ModuleRatio[Module] <= 0 && PrevModuleRatio[Module] > 0)
-				Audio.PlaySoundEvent(C_ModulesSounds["StaminaEmpty"], C_GaugeSoundVolume);
-		}
-		
-		PrevModuleRatio[Module] = ModuleRatio[Module];
-		PrevModuleSlots[Module] = ModuleSlots[Module];
-	}
-	
-	// ---------------------------------- //
-	// Update module information text
-	if (!PrevModuleInfoText.existskey(Module) || PrevModuleInfoText[Module] != ModuleInfoText[Module]) {
-		Label_ModuleInfoText[Module].SetText("$t"^Translate(ModuleInfoText[Module]));
-		if (PrevModuleInfoText.existskey(Module))
-			Label_ModuleInfoGhost[Module].SetText("$t"^Translate(PrevModuleInfoText[Module]));
-			
-		LibManialink_AnimStop(Label_ModuleInfoText[Module]);
-		LibManialink_AnimStop(Label_ModuleInfoGhost[Module]);
-		
-		Label_ModuleInfoText[Module].Opacity = 0.;
-		Label_ModuleInfoText[Module].RelativePosition.Y = 1.5;
-		Label_ModuleInfoGhost[Module].Opacity = 1.;
-		Label_ModuleInfoGhost[Module].RelativePosition.Y = 0.;
-		
-		LibManialink_Anim(Label_ModuleInfoText[Module], "<label posn='0 0' opacity=1 />", 200, "EaseLinear");
-		LibManialink_Anim(Label_ModuleInfoGhost[Module], "<label posn='0 -1.5' opacity=0 />", 200, "EaseLinear");
-		PrevModuleInfoText[Module] = ModuleInfoText[Module];
-	}
-	
-	// ---------------------------------- //
-	// Update module icon
-	if (!PrevModuleIcon.existskey(Module) || PrevModuleIcon[Module] != ModuleIcon[Module]) {
-		SetIconImage(Quad_ModuleIcon[Module], ModuleIcon[Module]);
-		if (PrevModuleIcon.existskey(Module)) SetIconImage(Quad_ModuleIconGhost[Module], PrevModuleIcon[Module]);
-		
-		LibManialink_AnimStop(Quad_ModuleIcon[Module]);
-		LibManialink_AnimStop(Quad_ModuleIconGhost[Module]);
-		
-		Quad_ModuleIcon[Module].Opacity = 0.;
-		Quad_ModuleIconGhost[Module].Opacity = 1.;
-		
-		LibManialink_Anim(Quad_ModuleIcon[Module], "<quad opacity=1 />", 125, "EaseLinear");
-		LibManialink_Anim(Quad_ModuleIconGhost[Module], "<quad opacity=0 />", 125, "EaseLinear");
-		PrevModuleIcon[Module] = ModuleIcon[Module];
-	}
+	Gauge_ReloadBoost.Color = NewUIColor;
 }
 
 // ---------------------------------- //
 // Reload boost
-ShowReloadBoost = (
-	GUIPlayer != Null && Net_LibInterfancy_ReloadData.existskey(GUIPlayer.User.Login) &&
-	GameTime <= Net_LibInterfancy_ReloadData[GUIPlayer.User.Login].X + Net_LibInterfancy_ReloadData[GUIPlayer.User.Login].Y
-);
+if (GUIPlayer != Null) {
+	declare netread Integer Net_LibInterfancy_BoostStartTime for GUIPlayer;
+	declare netread Integer Net_LibInterfancy_BoostDuration for GUIPlayer;
+	ShowReloadBoost = GameTime <= Net_LibInterfancy_BoostStartTime + Net_LibInterfancy_BoostDuration;
+}
+else ShowReloadBoost = False;
 
 // ---------------------------------- //
-// Relaod boost animation
+// Reload boost gauge animation
 if (PrevShowReloadBoost != ShowReloadBoost) {
 	PrevShowReloadBoost = ShowReloadBoost;
 	
-	declare Easing = "EaseOutBack";
-	declare Real PosY;
+	declare Easing = CAnimManager::EAnimManagerEasing::BackOut;
+	declare Position = <Frame_ReloadBoost.RelativePosition_V3.X, 0.>;
 	
 	if (!ShowReloadBoost) {
-		Label_BoostTimer.SetText("0");
+		Easing = CAnimManager::EAnimManagerEasing::CircIn;
+		Position.Y -= 8.;
+		Label_BoostTimer.Value = "0";
 		Gauge_ReloadBoost.Size.X = 0.;
-		Easing = "EaseInCirc";
-		PosY -= 8.;
 	}
 	
-	LibManialink_AnimStop(Frame_ReloadBoost);
-	declare Position = Frame_ReloadBoost.RelativePosition.X^" "^PosY^" "^Frame_ReloadBoost.RelativePosition.Z;
-	LibManialink_Anim(Frame_ReloadBoost, "<frame posn='"^Position^"'/>", 200, Easing);
+	AnimMgr.Add(Frame_ReloadBoost, "<frame pos='"^Position.X^" "^Position.Y^"' />", 200, Easing);
 }
 
 // ---------------------------------- //
 // Setup boost gauge
 if (ShowReloadBoost) {
-	declare BoostStartTime = Net_LibInterfancy_ReloadData[GUIPlayer.User.Login].X;
-	declare BoostDuration = Net_LibInterfancy_ReloadData[GUIPlayer.User.Login].Y;
-	Gauge_ReloadBoost.Size.X = 20 * (1. - ML::ToReal(GameTime - BoostStartTime) / BoostDuration) + 4.;
-	Label_BoostTimer.Value = TL::ToText((BoostStartTime + BoostDuration - GameTime) / 1000 + 1);
+	declare netread Integer Net_LibInterfancy_BoostStartTime for GUIPlayer;
+	declare netread Integer Net_LibInterfancy_BoostDuration for GUIPlayer;
+
+	Gauge_ReloadBoost.Size.X = 20 * (1. - ML::ToReal(GameTime - Net_LibInterfancy_BoostStartTime) / Net_LibInterfancy_BoostDuration) + 4.;
+	Label_BoostTimer.Value = TL::ToText((Net_LibInterfancy_BoostStartTime + Net_LibInterfancy_BoostDuration - GameTime) / 1000 + 1);
 }
 
+// Check if the player is in a vehicle (in quite ugly way)
+GUIPlayerIsInVehicle = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.Armor > 0 && GameTime >= GUIPlayer.StartTime - 1500 && !GUIPlayer.IsInAir && !GUIPlayer.IsTouchingGround && !GUIPlayer.IsInWater;
+
+// ---------------------------------- //
+// Update the Armor module visibility
+ModuleVisibility_Armor = GaugesModulesVisibility && ModuleDisplay_Armor && GUIPlayer.ArmorMax > 0 && GUIPlayer.Position != <0., 0., 0.> && !GUIPlayerIsInVehicle;
+
+if (PrevModuleVisibility_Armor != ModuleVisibility_Armor) {
+	PrevModuleVisibility_Armor = ModuleVisibility_Armor;
+
+	declare Easing = CAnimManager::EAnimManagerEasing::BackOut;
+	declare Position = <Frame_WidgetArmor.RelativePosition_V3.X, {{{C_LibInterfancy_ArmorPos.Y}}}>;
+
+	if (!ModuleVisibility_Armor) {
+		Easing = CAnimManager::EAnimManagerEasing::CircIn;
+		Position.Y += C_FrameHideawayPos;
+		PrevModuleRatio_Armor = -1.;
+	}
+	
+	AnimMgr.Add(Frame_WidgetArmor, "<frame pos='"^Position.X^" "^Position.Y^"' />", 200, Easing);
+}
+
+// ---------------------------------- //
+// Manage the Armor module
+if (ModuleVisibility_Armor) {
+	// ---------------------------------- //
+	// Get the Armor module ratio and slots
+	ModuleRatio_Armor = GUIPlayer.Armor / 100.;
+	ModuleSlots_Armor = GUIPlayer.ArmorMax / 100;
+
+	// Armor loading on Armor pads
+	if (GUIPlayer.IsOnTechArmor && PlayerIsOnTechArmor.existskey(GUIPlayer.Id))
+		ModuleRatio_Armor += (GameTime - PlayerIsOnTechArmor[GUIPlayer.Id]) % 1875 / 1875.;
+
+	// Clamp the ratio
+	ModuleRatio_Armor = ML::Clamp(ModuleRatio_Armor, 0., ML::ToReal(ModuleSlots_Armor));
+
+	// ---------------------------------- //
+	// Update Armor module on ratio change
+	if (PrevModuleRatio_Armor != ModuleRatio_Armor) {
+		ModuleUpdateGauges_Armor = True;
+
+		// ---------------------------------- //
+		// Play sound when additional Armor point is loaded
+		if (
+			PrevGUIPlayerLogin == GUIPlayer.User.Login && GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned &&
+			PrevModuleRatio_Armor >= 0 && ML::FloorInteger(ModuleRatio_Armor) > PrevModuleRatio_Armor
+		)
+			Audio.PlaySoundEvent(C_ModulesSounds["ArmorStep"], C_GaugeSoundVolume);
+
+		PrevModuleRatio_Armor = ModuleRatio_Armor;
+	}
+
+	// ---------------------------------- //
+	// Update Armor module on slots amount change
+	if (PrevModuleSlots_Armor != ModuleSlots_Armor) {
+		PrevModuleSlots_Armor = ModuleSlots_Armor;
+		ModuleUpdateGauges_Armor = True;
+	}
+
+	// ---------------------------------- //
+	// Update Armor module gauges
+	if (ModuleUpdateGauges_Armor) {
+		ModuleUpdateGauges_Armor = False;
+		SetModuleRatio(Gauge_ModuleArmor, ModuleRatio_Armor, ModuleSlots_Armor);
+		Label_ModuleCounterArmor.Value = ML::FloorInteger(ModuleRatio_Armor)^"$777/"^ModuleSlots_Armor;
+	}
+
+	// ---------------------------------- //
+	// Set the Armor module dynamic description
+	declare netread Text Net_LibInterfancy_ArmorReplacement for GUIPlayer;
+
+	if (GUIPlayer.IsOnTechArmor) {
+		// Healing on the Armor pad
+		if (GUIPlayer.Armor < GUIPlayer.ArmorMax) ModuleDescription_Armor = "Healing...";
+
+		// Standing on Armor pad while having full Armor
+		else ModuleDescription_Armor = "Healing Pad";
+	}
+
+	// Standing on the Laser pad
+	else if (GUIPlayer.IsOnTechLaser) ModuleDescription_Armor = "Zoom Pad";
+
+	// Standing on the Arrow pad
+	else if (GUIPlayer.IsOnTechArrow) ModuleDescription_Armor = "Arrow Pad";
+
+	// Standing on the Safe Zone
+	else if (GUIPlayer.IsOnTechSafeZone) ModuleDescription_Armor = "Safe Zone";
+
+	// While underground or in bunkers
+	else if (GUIPlayer.IsUnderground) ModuleDescription_Armor = "Tunnels";
+
+	// Custom text
+	else if (Net_LibInterfancy_ArmorReplacement != "") ModuleDescription_Armor = Net_LibInterfancy_ArmorReplacement;
+
+	// Default text
+	else ModuleDescription_Armor = "Armor";
+
+	// ---------------------------------- //
+	// Update Armor module information text
+	if (PrevModuleDescription_Armor != ModuleDescription_Armor) {
+		PrevModuleDescription_Armor = ModuleDescription_Armor;
+
+		Label_ModuleInfoGhostArmor.Value = Label_ModuleInfoTextArmor.Value;
+		Label_ModuleInfoTextArmor.Value = TL::ToUpperCase(Translate(ModuleDescription_Armor));
+		
+		Label_ModuleInfoTextArmor.Opacity = 0.;
+		Label_ModuleInfoTextArmor.RelativePosition_V3.Y = 1.5;
+		Label_ModuleInfoGhostArmor.Opacity = 1.;
+		Label_ModuleInfoGhostArmor.RelativePosition_V3.Y = 0.;
+		
+		AnimMgr.Add(Label_ModuleInfoTextArmor, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+		AnimMgr.Add(Label_ModuleInfoGhostArmor, "<label pos='0 -1.5' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+	}
+
+	// ---------------------------------- //
+	// Get the icon of the module
+	declare ModuleIcon_Armor = G_ModulesIcons["Armor"];
+	if (G_ModulesIcons.existskey(ModuleDescription_Armor)) ModuleIcon_Armor = G_ModulesIcons[ModuleDescription_Armor];
+
+	// ---------------------------------- //
+	// Update Armor module icon
+	if (PrevModuleIcon_Armor != ModuleIcon_Armor) {
+		SetIconImage(Quad_ModuleIconArmor, ModuleIcon_Armor);
+		SetIconImage(Quad_ModuleIconGhostArmor, PrevModuleIcon_Armor);
+		PrevModuleIcon_Armor = ModuleIcon_Armor;
+
+		Quad_ModuleIconArmor.Opacity = 0.;
+		Quad_ModuleIconArmor.RelativeScale = 1.5;
+		Quad_ModuleIconGhostArmor.Opacity = 1.;
+		Quad_ModuleIconGhostArmor.RelativeScale = 1.;
+		
+		AnimMgr.Add(Quad_ModuleIconArmor, "<quad opacity='1' scale='1' />", 200, CAnimManager::EAnimManagerEasing::CircOut);
+		AnimMgr.Add(Quad_ModuleIconGhostArmor, "<quad opacity='0' scale='.5' />", 100, CAnimManager::EAnimManagerEasing::Linear);
+	}
+}
+
+// ---------------------------------- //
+// Update the Ammo module visibility
+ModuleVisibility_Ammo = GaugesModulesVisibility && ModuleDisplay_Ammo && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.CurWeapon > 0 && GUIPlayer.CurAmmoMax > 0;
+
+if (PrevModuleVisibility_Ammo != ModuleVisibility_Ammo) {
+	PrevModuleVisibility_Ammo = ModuleVisibility_Ammo;
+
+	declare Easing = CAnimManager::EAnimManagerEasing::BackOut;
+	declare Position = <Frame_WidgetAmmo.RelativePosition_V3.X, {{{C_LibInterfancy_AmmunitionPos.Y}}}>;
+
+	if (!ModuleVisibility_Ammo) {
+		Easing = CAnimManager::EAnimManagerEasing::CircIn;
+		Position.Y += C_FrameHideawayPos;
+		PrevModuleRatio_Ammo = -1.;
+	}
+	
+	AnimMgr.Add(Frame_WidgetAmmo, "<frame pos='"^Position.X^" "^Position.Y^"' />", 200, Easing);
+}
+
+// ---------------------------------- //
+// Manage the Ammo module
+if (ModuleVisibility_Ammo) {
+	// ---------------------------------- //
+	// Get the Ammo module ratio and slots
+	ModuleRatio_Ammo = ML::ToReal(GUIPlayer.CurAmmo) / GUIPlayer.CurAmmoUnit;
+	ModuleSlots_Ammo = GUIPlayer.CurAmmoMax / GUIPlayer.CurAmmoUnit;
+
+	// ---------------------------------- //
+	// Update Ammo module on ratio change
+	if (PrevModuleRatio_Ammo != ModuleRatio_Ammo) {
+		ModuleUpdateGauges_Ammo = True;
+
+		// ---------------------------------- //
+		// Play sound when next ammo bullet is loaded
+		if (
+			PrevGUIPlayerLogin == GUIPlayer.User.Login && PrevGUIPlayerCurWeapon == GUIPlayer.CurWeapon &&
+			PrevModuleRatio_Ammo >= 0 && ML::FloorInteger(ModuleRatio_Ammo) > PrevModuleRatio_Ammo
+		)
+			Audio.PlaySoundEvent(C_ModulesSounds["AmmoStep"], C_GaugeSoundVolume);
+
+		PrevModuleRatio_Ammo = ModuleRatio_Ammo;
+	}
+
+	// ---------------------------------- //
+	// Update Ammo module on slots amount change
+	if (PrevModuleSlots_Ammo != ModuleSlots_Ammo) {
+		PrevModuleSlots_Ammo = ModuleSlots_Ammo;
+		ModuleUpdateGauges_Ammo = True;
+	}
+
+	// ---------------------------------- //
+	// Update Ammo module gauges
+	if (ModuleUpdateGauges_Ammo) {
+		ModuleUpdateGauges_Ammo = False;
+		SetModuleRatio(Gauge_ModuleAmmo, ModuleRatio_Ammo, ModuleSlots_Ammo);
+		Label_ModuleCounterAmmo.Value = ML::FloorInteger(ModuleRatio_Ammo)^"$777/"^ModuleSlots_Ammo;
+	}
+
+	// ---------------------------------- //
+	// Set name and icon of a custom weapon
+	declare netread Text Net_LibInterfancy_CustomWeaponName for GUIPlayer;
+	if (Net_LibInterfancy_CustomWeaponName != "") ModuleDescription_Ammo = Net_LibInterfancy_CustomWeaponName;
+	
+	// Display name and icon of the current weapon
+	else if (C_WeaponsNames.existskey(GUIPlayer.CurWeapon)) ModuleDescription_Ammo = C_WeaponsNames[GUIPlayer.CurWeapon];
+	
+	// Display default name and icon if something went wrong
+	else ModuleDescription_Ammo = "Rocket";
+
+	// ---------------------------------- //
+	// Update Ammo module information text
+	if (PrevModuleDescription_Ammo != ModuleDescription_Ammo) {
+		PrevModuleDescription_Ammo = ModuleDescription_Ammo;
+
+		Label_ModuleInfoGhostAmmo.Value = Label_ModuleInfoTextAmmo.Value;
+		Label_ModuleInfoTextAmmo.Value = TL::ToUpperCase(Translate(ModuleDescription_Ammo));
+		
+		Label_ModuleInfoTextAmmo.Opacity = 0.;
+		Label_ModuleInfoTextAmmo.RelativePosition_V3.Y = 1.5;
+		Label_ModuleInfoGhostAmmo.Opacity = 1.;
+		Label_ModuleInfoGhostAmmo.RelativePosition_V3.Y = 0.;
+		
+		AnimMgr.Add(Label_ModuleInfoTextAmmo, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+		AnimMgr.Add(Label_ModuleInfoGhostAmmo, "<label pos='0 -1.5' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+	}
+
+	// ---------------------------------- //
+	// Set the icon corresponding to the current weapon
+	if (G_ModulesIcons.existskey(ModuleDescription_Ammo)) ModuleIcon_Ammo = G_ModulesIcons[ModuleDescription_Ammo];
+
+	// ---------------------------------- //
+	// Update Ammo module icon
+	if (PrevModuleIcon_Ammo != ModuleIcon_Ammo) {
+		SetIconImage(Quad_ModuleIconAmmo, ModuleIcon_Ammo);
+		SetIconImage(Quad_ModuleIconGhostAmmo, PrevModuleIcon_Ammo);
+		PrevModuleIcon_Ammo = ModuleIcon_Ammo;
+
+		Quad_ModuleIconAmmo.Opacity = 0.;
+		Quad_ModuleIconAmmo.RelativeScale = 1.5;
+		Quad_ModuleIconGhostAmmo.Opacity = 1.;
+		Quad_ModuleIconGhostAmmo.RelativeScale = 1.;
+		
+		AnimMgr.Add(Quad_ModuleIconAmmo, "<quad opacity='1' scale='1' />", 200, CAnimManager::EAnimManagerEasing::CircOut);
+		AnimMgr.Add(Quad_ModuleIconGhostAmmo, "<quad opacity='0' scale='.5' />", 100, CAnimManager::EAnimManagerEasing::Linear);
+	}
+}
+
+// ---------------------------------- //
+// Hide full Stamina bar after some delay
+if (GUIPlayer != Null && GUIPlayer.Stamina < GUIPlayer.StaminaMax * 3600) StaminaDisplayEndTime = Now + C_StaminaDisplayTime;
+
+// ---------------------------------- //
+// Update the Stamina module visibility
+ModuleVisibility_Stamina = GaugesModulesVisibility && GUIPlayer.Position != <0., 0., 0.> && !GUIPlayerIsInVehicle && ModuleDisplay_Stamina && Now <= StaminaDisplayEndTime;
+
+if (PrevModuleVisibility_Stamina != ModuleVisibility_Stamina) {
+	PrevModuleVisibility_Stamina = ModuleVisibility_Stamina;
+
+	declare Easing = CAnimManager::EAnimManagerEasing::BackOut;
+	declare Position = <Frame_WidgetStamina.RelativePosition_V3.X, {{{C_LibInterfancy_StaminaPos.Y}}}>;
+
+	if (!ModuleVisibility_Stamina) {
+		Easing = CAnimManager::EAnimManagerEasing::CircIn;
+		Position.Y += C_FrameHideawayPos;
+	}
+	
+	AnimMgr.Add(Frame_WidgetStamina, "<frame pos='"^Position.X^" "^Position.Y^"' />", 200, Easing);
+}
+
+// ---------------------------------- //
+// Manage the Stamina module
+if (ModuleVisibility_Stamina) {
+	// ---------------------------------- //
+	// Get the Stamina module ratio
+	ModuleRatio_Stamina = GUIPlayer.Stamina / GUIPlayer.StaminaMax / 3600;
+
+	// ---------------------------------- //
+	// Update Stamina module on ratio change
+	if (PrevModuleRatio_Stamina != ModuleRatio_Stamina) {
+		SetModuleRatio(Gauge_ModuleStamina, ModuleRatio_Stamina, 1);
+
+		if (PrevGUIPlayerLogin == GUIPlayer.User.Login && PrevModuleRatio_Stamina >= 0) {
+			// ---------------------------------- //
+			// Play sound when Stamina is fully loaded
+			if (ModuleRatio_Stamina >= 1 && PrevModuleRatio_Stamina < 1)
+				Audio.PlaySoundEvent(C_ModulesSounds["StaminaFull"], C_GaugeSoundVolume);
+
+			// ---------------------------------- //
+			// Play sound when Stamina has been emptied
+			if (ModuleRatio_Stamina <= 0 && PrevModuleRatio_Stamina > 0)
+				Audio.PlaySoundEvent(C_ModulesSounds["StaminaEmpty"], C_GaugeSoundVolume);
+		}
+
+		PrevModuleRatio_Stamina = ModuleRatio_Stamina;
+	}
+
+	// ---------------------------------- //
+	// Set sprinting description when on tech
+	if (GUIPlayer.IsOnTech) {
+		ModuleDescription_Stamina = "Sprint Path";
+		ModuleIcon_Stamina = G_ModulesIcons["Sprint"];
+	}
+	// ---------------------------------- //
+	// Set default Dtamina description
+	else {
+		ModuleDescription_Stamina = "Stamina";
+		ModuleIcon_Stamina = G_ModulesIcons["Stamina"];
+	}
+
+	// ---------------------------------- //
+	// Update Stamina module information text
+	if (PrevModuleDescription_Stamina != ModuleDescription_Stamina) {
+		PrevModuleDescription_Stamina = ModuleDescription_Stamina;
+
+		Label_ModuleInfoGhostStamina.Value = Label_ModuleInfoTextStamina.Value;
+		Label_ModuleInfoTextStamina.Value = TL::ToUpperCase(Translate(ModuleDescription_Stamina));
+		
+		Label_ModuleInfoTextStamina.Opacity = 0.;
+		Label_ModuleInfoTextStamina.RelativePosition_V3.Y = 1.5;
+		Label_ModuleInfoGhostStamina.Opacity = 1.;
+		Label_ModuleInfoGhostStamina.RelativePosition_V3.Y = 0.;
+		
+		AnimMgr.Add(Label_ModuleInfoTextStamina, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+		AnimMgr.Add(Label_ModuleInfoGhostStamina, "<label pos='0 -1.5' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+	}
+
+	// ---------------------------------- //
+	// Set the icon corresponding to the current weapon
+	if (G_ModulesIcons.existskey(ModuleDescription_Stamina)) ModuleIcon_Stamina = G_ModulesIcons[ModuleDescription_Stamina];
+
+	// ---------------------------------- //
+	// Update Stamina module icon
+	if (PrevModuleIcon_Stamina != ModuleIcon_Stamina) {
+		SetIconImage(Quad_ModuleIconStamina, ModuleIcon_Stamina);
+		SetIconImage(Quad_ModuleIconGhostStamina, PrevModuleIcon_Stamina);
+		PrevModuleIcon_Stamina = ModuleIcon_Stamina;
+
+		Quad_ModuleIconStamina.Opacity = 0.;
+		Quad_ModuleIconStamina.RelativeScale = 1.5;
+		Quad_ModuleIconGhostStamina.Opacity = 1.;
+		Quad_ModuleIconGhostStamina.RelativeScale = 1.;
+		
+		AnimMgr.Add(Quad_ModuleIconStamina, "<quad opacity='1' scale='1' />", 200, CAnimManager::EAnimManagerEasing::CircOut);
+		AnimMgr.Add(Quad_ModuleIconGhostStamina, "<quad opacity='0' scale='.5' />", 100, CAnimManager::EAnimManagerEasing::Linear);
+	}
+}
+
+// ---------------------------------- //
 // Update player
 if (GUIPlayer != Null) {
 	if (PrevGUIPlayerLogin != GUIPlayer.User.Login) PrevGUIPlayerLogin = GUIPlayer.User.Login;
@@ -643,7 +815,7 @@ if (GUIPlayer != Null) {
 // Functions
 // ---------------------------------- //
 
-{{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness"])}}}
+{{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness", "HsvToRgb"])}}}
 
 // ---------------------------------- //
 /** Set icon image of the Quad
@@ -669,55 +841,53 @@ Void SetIconImage(CMlQuad _Quad, Text _Image) {
 // ---------------------------------- //
 /** Set module value
  *
- *	@param	_Module		Module to set energy
+ *	@param	_Gauges		Array of gauges used by the module
  *	@param	_Energy		Amount of currently loaded energy
  *	@param	_Slots		Amount of available energy slots
  */
-Void SetModuleRatio(Text _Module, Real _Energy, Integer _Slots) {
-	if (!G_Gauges.existskey(_Module)) return;
+Void SetModuleRatio(CMlGauge[] _Gauges, Real _Energy, Integer _Slots) {
 	declare persistent Persistent_LibInterfancy_ShowGaugesBgs for LocalUser = False;
-	declare Gauges = G_Gauges[_Module];
 	
 	// ---------------------------------- //
 	// Hide gauges if there are no slots
 	if (_Slots <= 0) {
-		foreach (Gauge in Gauges) Gauge.Visible = False;
+		foreach (Gauge in _Gauges) Gauge.Visible = False;
 		
 		// There is nothing more to do without slots
 		return;
 	}
 	// ---------------------------------- //
 	// Adjust up to N gauges for slots
-	else if (_Slots <= Gauges.count) {
+	else if (_Slots <= _Gauges.count) {
 		declare SpacingSizeSub = 0.;
 		if (_Slots >= 2) SpacingSizeSub = C_GaugeSpacingWidth * (_Slots - 1) / _Slots;
 		declare GaugeSlotSize = C_GaugeTotalLength / _Slots + C_GaugePositionFix - SpacingSizeSub;
 		
-		foreach (I => Gauge in Gauges) {
+		foreach (I => Gauge in _Gauges) {
 			Gauge.Visible = I <= _Slots - 1;
 			if (!Gauge.Visible) continue;
 			
 			Gauge.Size.X = GaugeSlotSize;
-			Gauge.RelativePosition.X = (GaugeSlotSize - C_GaugePositionFix) * I - C_GaugePositionFix / 2;
+			Gauge.RelativePosition_V3.X = (GaugeSlotSize - C_GaugePositionFix) * I - C_GaugePositionFix / 2;
 			Gauge.DrawBlockBackground = Persistent_LibInterfancy_ShowGaugesBgs;
-			if (I > 0) Gauge.RelativePosition.X += C_GaugeSpacingWidth * I;
+			if (I > 0) Gauge.RelativePosition_V3.X += C_GaugeSpacingWidth * I;
 		}
 	}
 	// ---------------------------------- //
 	// Use one gauge for over N slots
 	else {
-		foreach (I => Gauge in Gauges) {
+		foreach (I => Gauge in _Gauges) {
 			Gauge.Visible = I == 0;
 			if (!Gauge.Visible) continue;
 			
 			Gauge.Size.X = C_GaugeTotalLength + C_GaugePositionFix;
-			Gauge.RelativePosition.X = -C_GaugePositionFix / 2;
+			Gauge.RelativePosition_V3.X = -C_GaugePositionFix / 2;
 		}
 	}
 	
 	// ---------------------------------- //
 	// Set gauges ratios
-	foreach (I => Gauge in Gauges) {
+	foreach (I => Gauge in _Gauges) {
 		if (!Gauge.Visible) continue;
 		// Gauge.DrawBlockBackground = _Module == "Stamina";
 		
@@ -731,7 +901,6 @@ Void SetModuleRatio(Text _Module, Real _Energy, Integer _Slots) {
 	}
 }
 
-{{{Manialink::Animations(["EaseInOutSine", "EaseInCirc", "EaseOutBack"])}}}
 {{{Translations::InjectInManialink(["Laser", "Nucleus", "Arrow", "Rocket", "Stamina", "Sprint Path", "Armor", "Healing Pad", "Healing...", "Zoom Pad", "Arrow Pad", "Safe Zone", "Tunnels", "Handheld Charge", "Frozen Arrow", "Plasma Grenade", "Torpede", "Wide Rail"])}}}
 
 // ---------------------------------- //
@@ -741,7 +910,6 @@ main() {
 	+++Main+++
 	while (True) {
 		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
 	}
 }
@@ -756,20 +924,35 @@ main() {
  */
 Text Private_CreateManialinkScoreSummary() {
 	return """
-<manialink version="2" name="LibInterfancy:ScoreSummary">
+<manialink version="3" name="LibInterfancy:ScoreSummary">
 <stylesheet>
-	<style class="bg" sizen="30 10" colorize="777"/>
-	<style class="font" textsize="4" textfont="Eurostile_Bold" textemboss="1" textcolor="FFF"/>
+	<style class="bg" size="30 10" colorize="777" />
+	<style class="font" textsize="4" textfont="Eurostile_Bold" textemboss="1" textcolor="FFF" />
 </stylesheet>
 
-<frame id="Frame_ScoreSummary" posn="{{{C_LibInterfancy_ScoreSummaryPos.X^" "^C_LibInterfancy_ScoreSummaryPos.Y + 15^" "^C_LibInterfancy_ScoreSummaryPos.Z}}}">
-	<quad posn="-10" class="bg" image="{{{C_ImgBase}}}UiScoreSummaryLeft.png" halign="right" id="Quad_SummaryBgLeft"/>
-	<label posn="-13 -3" valign="center2" class="font" text="0" halign="right" id="Label_SummaryPtsLeft"/>
-	<label posn="-13 -7" valign="center2" class="font" textsize="2" halign="right" id="Label_SummaryRoundLeft" hidden="1"/>
-	
-	<quad posn="10" class="bg" image="{{{C_ImgBase}}}UiScoreSummaryRight.png" id="Quad_SummaryBgRight"/>
-	<label posn="13 -3" valign="center2" class="font" text="0" id="Label_SummaryPtsRight"/>
-	<label posn="13 -7" valign="center2" class="font" textsize="2" id="Label_SummaryRoundRight" hidden="1"/>
+<frame id="Frame_HMDClip" size="320 180" halign="center" valign="center">
+
+<framemodel id="FrameModel_SummaryCardL">
+	<label pos="-3 -3" valign="center2" class="font" text="0" halign="right" id="Label_TeamPoints" />
+	<label pos="-3 -7" valign="center2" class="font" textsize="2" halign="right" id="Label_TeamRoundPoints" hidden="1" />
+	<quad class="bg" image="{{{C_ImgBase}}}UiScoreSummaryLeft.png" halign="right" id="Quad_TeamColorCard" />
+</framemodel>
+
+<framemodel id="FrameModel_SummaryCardR">
+	<label pos="3 -3" valign="center2" class="font" text="0" halign="left" id="Label_TeamPoints" />
+	<label pos="3 -7" valign="center2" class="font" textsize="2" halign="left" id="Label_TeamRoundPoints" hidden="1" />
+	<quad class="bg" image="{{{C_ImgBase}}}UiScoreSummaryRight.png" halign="left" id="Quad_TeamColorCard" />
+</framemodel>
+
+<frame id="Frame_ScoreSummary" pos="{{{C_LibInterfancy_ScoreSummaryPos.X^" "^C_LibInterfancy_ScoreSummaryPos.Y + 15}}}">
+	<frameinstance modelid="FrameModel_SummaryCardL" id="Frame_SummaryCard#0" hidden="1" pos="-65" />
+	<frameinstance modelid="FrameModel_SummaryCardL" id="Frame_SummaryCard#1" hidden="1" pos="-37.5" />
+	<frameinstance modelid="FrameModel_SummaryCardL" id="Frame_SummaryCard#2" hidden="1" pos="-10" />
+	<frameinstance modelid="FrameModel_SummaryCardR" id="Frame_SummaryCard#3" hidden="1" pos="10" />
+	<frameinstance modelid="FrameModel_SummaryCardR" id="Frame_SummaryCard#4" hidden="1" pos="37.5" />
+	<frameinstance modelid="FrameModel_SummaryCardR" id="Frame_SummaryCard#5" hidden="1" pos="65" />
+</frame>
+
 </frame>
 
 <script><!--
@@ -789,13 +972,11 @@ Text Private_CreateManialinkScoreSummary() {
 ***
 // ---------------------------------- //
 // Load interface elements
-declare Frame_ScoreSummary		<=> (Page.GetFirstChild("Frame_ScoreSummary")		as CMlFrame);
-declare Quad_SummaryBgLeft		<=> (Page.GetFirstChild("Quad_SummaryBgLeft")		as CMlQuad);
-declare Quad_SummaryBgRight		<=> (Page.GetFirstChild("Quad_SummaryBgRight")		as CMlQuad);
-declare Label_SummaryPtsLeft	<=> (Page.GetFirstChild("Label_SummaryPtsLeft")		as CMlLabel);
-declare Label_SummaryPtsRight	<=> (Page.GetFirstChild("Label_SummaryPtsRight")	as CMlLabel);
-declare Label_SummaryRoundLeft	<=> (Page.GetFirstChild("Label_SummaryRoundLeft")	as CMlLabel);
-declare Label_SummaryRoundRight	<=> (Page.GetFirstChild("Label_SummaryRoundRight")	as CMlLabel);
+declare Frame_ScoreSummary <=> (Page.GetFirstChild("Frame_ScoreSummary") as CMlFrame);
+
+// Load the summary cards
+declare CMlFrame[] Frame_SummaryCards;
+for (I, 0, 5) Frame_SummaryCards.add((Page.GetFirstChild("Frame_SummaryCard#"^I) as CMlFrame));
 
 // ---------------------------------- //
 // Netcode
@@ -807,10 +988,17 @@ declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 declare ScoreSummary_Display = False;
 declare ShowScoreSummary = False;
 declare ShowRoundPoints = False;
+
+declare NbTeams = Teams.count;
+declare UpdateSummaryCards = True;
+declare TeamColors = Vec3[Integer];
+declare CustomTeamsColors = Vec3[Integer];
+declare CustomTeamsPoints = Integer[Integer];
 declare ClanRoundScores = [1 => 0, 2 => 0];
 
 declare PrevSettingsUpdate = -1;
 declare PrevShowScoreSummary = False;
+declare PrevNbTeams = -1;
 declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
 declare PrevClanScores = Integer[Integer];
 declare PrevClanRoundScores = Integer[Integer];
@@ -831,90 +1019,159 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 		switch (SettingName) {
 			case "ScoreSummary_Display" : ScoreSummary_Display = SettingValue == "True";
 			case "ScoreSummary_ShowRoundPoints" : ShowRoundPoints = SettingValue == "True";
+			case "NbTeams" : NbTeams = ML::Max(TL::ToInteger(SettingValue), 0);
+			default : {
+				// ---------------------------------- //
+				// Set custom color of a team
+				if (TL::SubText(SettingName, 0, 15) == "CustomTeamColor") {
+					declare Team = TL::ToInteger(TL::Replace(SettingName, "CustomTeamColor", ""));
+					if (Team <= 0) continue;
+					
+					declare ColorText = TL::Split(" ", SettingValue);
+					if (ColorText.count != 3) continue;
+					
+					declare Color = <-1., -1., -1.>;
+					for (I, 0, 2) Color[I] = TL::ToReal(ColorText[I]);
+					
+					// ---------------------------------- //
+					// Update the team color
+					if (!CustomTeamsColors.existskey(Team) || Color != CustomTeamsColors[Team]) {
+						UpdateSummaryCards = True;
+						if (Color == <-1., -1., -1.>) {
+							declare Removed = CustomTeamsColors.removekey(Team);
+						}
+						else CustomTeamsColors[Team] = Color;
+					}
+				}
+				// ---------------------------------- //
+				// Set custom amount of points of a team
+				if (TL::SubText(SettingName, 0, 16) == "CustomTeamPoints") {
+					declare Team = TL::ToInteger(TL::Replace(SettingName, "CustomTeamPoints", ""));
+					if (Team <= 0) continue;
+					
+					declare Points = TL::ToInteger(SettingValue);
+					if (Points < 0) {
+						declare Removed = CustomTeamsPoints.removekey(Team);
+					}
+					else CustomTeamsPoints[Team] = Points;
+				}
+			}
 		}
 	}
 }
 
-ShowScoreSummary = ScoreSummary_Display && UseClans;
+ShowScoreSummary = ScoreSummary_Display;
 
 // ---------------------------------- //
 // Set score summary visibility
 if (PrevShowScoreSummary != ShowScoreSummary) {
 	PrevShowScoreSummary = ShowScoreSummary;
 	
-	declare TargetPosition = Frame_ScoreSummary.RelativePosition;
+	declare TargetPosition = Frame_ScoreSummary.RelativePosition_V3;
 	TargetPosition.Y = {{{C_LibInterfancy_ScoreSummaryPos.Y}}};
-	declare TargetEasing = "EaseOutCirc";
+	declare TargetEasing = CAnimManager::EAnimManagerEasing::CircOut;
 	
 	if (!ShowScoreSummary) {
 		TargetPosition.Y += C_FrameHideaway;
-		TargetEasing = "EaseInCirc";
+		TargetEasing = CAnimManager::EAnimManagerEasing::CircIn;
 	}
 	
-	LibManialink_Anim(
-		"<frame id='Frame_ScoreSummary' posn='"^TargetPosition.X^" "^TargetPosition.Y^" "^TargetPosition.Z^"'/>",
-		250, TargetEasing
-	);
+	AnimMgr.Add(Frame_ScoreSummary, "<frame pos='"^TargetPosition.X^" "^TargetPosition.Y^"' />", 250, TargetEasing);
 }
 
 if (!ShowScoreSummary) continue;
 
 // ---------------------------------- //
-//Set round points visibility
+// Set round points visibility
 if (PrevShowRoundPoints != ShowRoundPoints) {
 	PrevShowRoundPoints = ShowRoundPoints;
-	
-	Label_SummaryRoundLeft.Visible = ShowRoundPoints;
-	Label_SummaryRoundRight.Visible = ShowRoundPoints;
+
+	foreach (Frame in Frame_SummaryCards) {
+		declare Label_TeamRoundPoints <=> (Frame.GetFirstChild("Label_TeamRoundPoints") as CMlLabel);
+		Label_TeamRoundPoints.Visible = ShowRoundPoints;
+	}
 }
 
 ClanRoundScores = [1 => UI.ScoreSummary_RoundPoints1, 2 => UI.ScoreSummary_RoundPoints2];
 
 // ---------------------------------- //
-// Update teams colors
+// Update teams cards on teams number change
+if (PrevNbTeams != NbTeams) {
+	PrevNbTeams = NbTeams;
+	UpdateSummaryCards = True;
+}
+
+// ---------------------------------- //
+// Update teams cards on default teams colors change
 foreach (TeamId => Team in Teams) {
 	if (PrevTeamsColors[TeamId] == Team.ColorPrimary) continue;
 	PrevTeamsColors[TeamId] = Team.ColorPrimary;
+	UpdateSummaryCards = True;
+}
 
-	LibManialink_AnimStop(Quad_SummaryBgLeft);
-	LibManialink_AnimStop(Quad_SummaryBgRight);
+// ---------------------------------- //
+// Update teams cards
+if (UpdateSummaryCards) {
+	UpdateSummaryCards = False;
+	PrevClanScores.clear();
+	PrevClanRoundScores.clear();
 	
-	Quad_SummaryBgLeft.Colorize = Brightness(Teams[0].ColorPrimary, 1.5);
-	Quad_SummaryBgRight.Colorize = Brightness(Teams[1].ColorPrimary, 1.5);
+	// Get the colors of the teams
+	TeamColors = [1 => Teams[0].ColorPrimary, 2 => Teams[1].ColorPrimary];
+	foreach (Team => Color in CustomTeamsColors) TeamColors[Team] = Color;
+	
+	// First team card offset
+	declare Offset = 2 - ML::Clamp(NbTeams - 2, 1, 6) / 2;
+	
+	// ---------------------------------- //
+	// Manage the teams card
+	foreach (I => Frame in Frame_SummaryCards) {
+		Frame.Visible = I >= Offset && I <= Offset + (NbTeams - 1);
+		if (!Frame.Visible) continue;
+		declare Clan = I - Offset + 1;
+		
+		// ---------------------------------- //
+		// Update color of the card
+		declare Quad_TeamColorCard		<=> (Frame.GetFirstChild("Quad_TeamColorCard") as CMlQuad);
+		declare Label_TeamRoundPoints	<=> (Frame.GetFirstChild("Label_TeamRoundPoints") as CMlLabel);
+		Label_TeamRoundPoints.Visible = ShowRoundPoints;
+		
+		declare Color = <.5, .5, .5>;
+		if (TeamColors.existskey(Clan)) Color = Brightness(TeamColors[Clan], 1.5);
+		Quad_TeamColorCard.Colorize = Color;
+	}
 }
 
 // ---------------------------------- //
 // Update clans scores
-for (Clan, 1, 2) {
+for (Clan, 1, NbTeams) {
 	// ---------------------------------- //
 	// Set match scores
-	if (
-		ClanScores.existskey(Clan) && (!PrevClanScores.existskey(Clan) ||
-		PrevClanScores[Clan] != ClanScores[Clan])
-	) {
-		PrevClanScores[Clan] = ClanScores[Clan];
+	declare ClanPoints = 0;
+	if (CustomTeamsPoints.existskey(Clan)) ClanPoints = CustomTeamsPoints[Clan];
+	else if (ClanScores.existskey(Clan)) ClanPoints = ClanScores[Clan];
+	
+	if (!PrevClanScores.existskey(Clan) || PrevClanScores[Clan] != ClanPoints) {
+		PrevClanScores[Clan] = ClanPoints;
 		
-		declare CMlLabel Label;
-		declare CMlQuad Quad;
+		// ---------------------------------- //
+		// Get the target frame
+		declare TeamCardFrameNum = GetTeamCardNum(Clan, NbTeams);
+		if (!Frame_SummaryCards.existskey(TeamCardFrameNum)) continue;
+		declare Frame = Frame_SummaryCards[TeamCardFrameNum];
 		
-		switch (Clan) {
-			case 1 : {
-				Label = Label_SummaryPtsLeft;
-				Quad = Quad_SummaryBgLeft;
-			}
-			case 2 : {
-				Label = Label_SummaryPtsRight;
-				Quad = Quad_SummaryBgRight;
-			}
-		}
+		// Update displayed points
+		declare Label_TeamPoints <=> (Frame.GetFirstChild("Label_TeamPoints") as CMlLabel);
+		Label_TeamPoints.Value = TL::ToText(ClanPoints);
 		
-		if (Label != Null) Label.SetText(TL::ToText(ClanScores[Clan]));
+		// ---------------------------------- //
+		// White flash animation
+		declare Quad_TeamColorCard <=> (Frame.GetFirstChild("Quad_TeamColorCard") as CMlQuad);
+		Quad_TeamColorCard.Colorize = <1., 1., 1.>;
 		
-		if (Quad != Null) {
-			Quad.Colorize = <1., 1., 1.>;
-			declare TargetColor = TL::ColorToText(Brightness(Teams[Clan - 1].ColorPrimary, 1.5));
-			LibManialink_Anim(Quad, "<quad colorize='"^TargetColor^"'/>", 250, "EaseLinear");
-		}
+		declare TargetColor = "888";
+		if (TeamColors.existskey(Clan)) TargetColor = TL::ColorToText(Brightness(TeamColors[Clan], 1.5));
+		AnimMgr.Add(Quad_TeamColorCard, "<quad colorize='"^TargetColor^"' />", 250, CAnimManager::EAnimManagerEasing::Linear);
 	}
 	
 	// ---------------------------------- //
@@ -925,18 +1182,34 @@ for (Clan, 1, 2) {
 	) {
 		PrevClanRoundScores[Clan] = ClanRoundScores[Clan];
 		
-		declare CMlLabel Label;
-		switch (Clan) {
-			case 1 : Label = Label_SummaryRoundLeft;
-			case 2 : Label = Label_SummaryRoundRight;
-		}
-		if (Label != Null) Label.SetText(TL::ToText(ML::Max(0, ClanRoundScores[Clan])));
+		// ---------------------------------- //
+		// Get the target frame
+		declare TeamCardFrameNum = GetTeamCardNum(Clan, NbTeams);
+		if (!Frame_SummaryCards.existskey(TeamCardFrameNum)) continue;
+		declare Frame = Frame_SummaryCards[TeamCardFrameNum];
+		
+		// Update displayed points
+		declare Label_TeamRoundPoints <=> (Frame.GetFirstChild("Label_TeamRoundPoints") as CMlLabel);
+		Label_TeamRoundPoints.Value = TL::ToText(ML::Max(ClanRoundScores[Clan], 0));
 	}
 }
 ***
 
+// ---------------------------------- //
+/** Get number of the team's summary card.
+ *
+ *	@param	_Team		The team to get card number.
+ *	@param	_NbTeams	Number of teams shown on the UI.
+ *
+ *	@return		Number of a summary card for the given team.
+ */
+Integer GetTeamCardNum(Integer _Team, Integer _NbTeams) {
+	if (_Team <= 0 || _NbTeams <= 0) return 0;
+	declare Offset = 2 - ML::Clamp(_NbTeams - 2, 1, 6) / 2;
+	return Offset + _Team - 1;
+}
+
 {{{ManialinkTools::Function("Brightness")}}}
-{{{Manialink::Animations(["EaseInCirc", "EaseOutCirc"])}}}
 
 // ---------------------------------- //
 // Main
@@ -945,7 +1218,6 @@ main() {
 	---Main---
 	while (True) {
 		yield;
-		LibManialink_AnimLoop();
 		---Yield---
 	}
 }
@@ -960,9 +1232,9 @@ main() {
  */
 Text Private_CreateManialinkCountdown() {
 	return """
-<manialink version="2" name="LibInterfancy:Countdown">
-<frame id="Frame_Countdown" posn="{{{C_LibInterfancy_CountdownPos.X^" "^C_LibInterfancy_CountdownPos.Y^" "^C_LibInterfancy_CountdownPos.Z}}}">
-	<label halign="center" valign="center2" textsize="4" textemboss="1" textcolor="FB0" textfont="Eurostile_Bold" id="Label_Countdown"/>
+<manialink version="3" name="LibInterfancy:Countdown">
+<frame id="Frame_Countdown" pos="{{{C_LibInterfancy_CountdownPos.X^" "^C_LibInterfancy_CountdownPos.Y}}}">
+	<label halign="center" valign="center2" textsize="4" textemboss="1" textcolor="FB0" textfont="Eurostile_Bold" id="Label_Countdown" />
 </frame>
 
 <script><!--
@@ -973,7 +1245,7 @@ Text Private_CreateManialinkCountdown() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const C_CountdownSongsNames 	["Countdown1Compressed.ogg"]
+#Const C_CountdownSongsNames 	["Countdown1Compressed.ogg", "Countdown02.ogg"]
 #Const C_CountdownSongDuration	30000
 
 // ---------------------------------- //
@@ -994,8 +1266,6 @@ declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 // ---------------------------------- //
 // Persistent settings
 declare persistent Boolean Persistent_LibInterfancy_DisableCountdownSong for LocalUser;
-declare persistent Text[] Persistent_LibInterfancy_TimerMusics for LocalUser;
-declare persistent Text Persistent_LibInterfancy_PrevCountdownSong for LocalUser;
 
 // ---------------------------------- //
 // Varialbes
@@ -1005,30 +1275,10 @@ declare ScoreSummary_Display = False;
 declare StartTime = -1;
 declare EndTime = -1;
 declare CurrentTick = -1;
+declare CountdownMusic = CAudioSource;
 
 declare PrevSettingsUpdate = -1;
 declare PrevTick = -1;
-
-// ---------------------------------- //
-// Countdown soundtrack
-declare CAudioSound CountdownMusic;
-declare NewMusicName = "";
-
-if (Persistent_LibInterfancy_TimerMusics.count <= 0)
-	Persistent_LibInterfancy_TimerMusics = C_CountdownSongsNames;
-
-while (Persistent_LibInterfancy_TimerMusics.count > 0) {
-	NewMusicName = Persistent_LibInterfancy_TimerMusics[ML::Rand(0, Persistent_LibInterfancy_TimerMusics.count - 1)];
-	if (NewMusicName != Persistent_LibInterfancy_PrevCountdownSong) break;
-	if (Persistent_LibInterfancy_TimerMusics.count <= 1) break;
-}
-
-if (NewMusicName != "") {
-	declare Removed = Persistent_LibInterfancy_TimerMusics.remove(NewMusicName);
-	Persistent_LibInterfancy_PrevCountdownSong = NewMusicName;
-	CountdownMusic = Audio.CreateSound("{{{C_ImgBase}}}Sounds/"^NewMusicName, 10., True, False, False);
-	CountdownMusic.Stop();
-}
 ***
 
 // ---------------------------------- //
@@ -1049,7 +1299,15 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 			case "StartTime" : StartTime = TL::ToInteger(SettingValue);
 			case "EndTime" : {
 				EndTime = TL::ToInteger(SettingValue);
-				if (CountdownMusic != Null && GameTime < EndTime - C_CountdownSongDuration) CountdownMusic.Stop();
+				if (
+					CountdownMusic != Null && 
+					((EndTime > 0 && GameTime < EndTime - C_CountdownSongDuration) ||
+					(EndTime <= 0 && CountdownMusic.PlayCursor < C_CountdownSongDuration / 1000.))
+				) {
+					CountdownMusic.Stop();
+					Audio.DestroySound(CountdownMusic);
+					CountdownMusic = Null;
+				}
 			}
 		}
 	}
@@ -1095,21 +1353,29 @@ if (Frame_Countdown.Visible) {
 // ---------------------------------- //
 // Countdown soundtrack
 if (
-	Countdown_UseMusic && !Persistent_LibInterfancy_DisableCountdownSong && CountdownMusic != Null &&
+	Countdown_UseMusic && !Persistent_LibInterfancy_DisableCountdownSong &&
 	EndTime > 0 && EndTime - GameTime < C_CountdownSongDuration && GameTime < EndTime
 ) {
-	declare NewPlayCursor = (C_CountdownSongDuration - (EndTime - GameTime)) / 1000.;
-	
 	// ---------------------------------- //
-	// Start the music when countdown begins
-	if (!CountdownMusic.IsPlaying) {
-		CountdownMusic.Play();
-		CountdownMusic.PlayCursor = NewPlayCursor;
+	// Create new soundtrack
+	if (CountdownMusic == Null) {
+		declare NextTrackURL = "{{{C_ImgBase}}}Sounds/"^GetCountdownMusicName();
+		if (Http.IsValidUrl(NextTrackURL)) CountdownMusic = Audio.CreateSound(NextTrackURL, 15., True, False, False);
 	}
-	
-	// Adjust the music play cursor if not matching countdown time
-	if (ML::Abs(CountdownMusic.PlayCursor - NewPlayCursor) > .0625) CountdownMusic.PlayCursor = NewPlayCursor;
+	else {
+		// ---------------------------------- //
+		// Start the music when countdown begins
+		if (!CountdownMusic.IsPlaying) CountdownMusic.Play();
+
+		// Adjust the music play cursor if not matching countdown time
+		declare NewPlayCursor = (C_CountdownSongDuration - (EndTime - GameTime)) / 1000.;
+		if (ML::Abs(CountdownMusic.PlayCursor - NewPlayCursor) > .0625) CountdownMusic.PlayCursor = NewPlayCursor;
+	}
 }
+
+// ---------------------------------- //
+// Stop countdown soundtrack
+if (CountdownMusic != Null && CountdownMusic.IsPlaying && CountdownMusic.PlayCursor > C_CountdownSongDuration / 1000. + 5.) CountdownMusic.Stop();
 
 // ---------------------------------- //
 // Show animation when last tick changes
@@ -1119,7 +1385,7 @@ if (PrevTick != CurrentTick) {
 	
 	// ---------------------------------- //
 	// Play countdown sounds when the music is not playing
-	if (Countdown_UseMusic && UI.CountdownEndTime <= 0 && (CountdownMusic == Null || CountdownMusic.PlayCursor <= 0)) {
+	if (Countdown_UseMusic && UI.CountdownEndTime <= 0 && (CountdownMusic == Null || CountdownMusic.PlayCursor <= 0) && CurrentTick >= 0) {
 		AnimStartTick = 15;
 		
 		switch (CurrentTick) {
@@ -1136,14 +1402,12 @@ if (PrevTick != CurrentTick) {
 	// ---------------------------------- //
 	// Display tick animation
 	if (CurrentTick > 0 && (AnimStartTick == 0 || CurrentTick < AnimStartTick)) {
-		LibManialink_AnimStop(Label_Countdown);
-		
 		Label_Countdown.RelativeScale = 2.;
 		Label_Countdown.RelativeRotation = 7.5;
 		if (UI.CountdownEndTime > 0) Label_Countdown.TextColor = <0., 1., 0.>;
 		else Label_Countdown.TextColor = <1., 0., 0.>;
 		
-		LibManialink_Anim(Label_Countdown, "<label scale=1 textcolor=FB0 rot=0 />", 1000, "EaseOutCirc");
+		AnimMgr.Add(Label_Countdown, "<label scale='1' textcolor='FB0' rot='0' />", 1000, CAnimManager::EAnimManagerEasing::CircOut);
 	}
 }
 ***
@@ -1181,7 +1445,41 @@ Text TimeToText(Integer _Time, Boolean _Decimal, Boolean _CompactHr) {
 	return Minutes^":"^TL::FormatInteger(Seconds, 2);
 }
 
-{{{Manialink::Animations(["EaseOutCirc"])}}}
+// ---------------------------------- //
+/** Get name of next countdown track
+ *
+ *	@return		Name of the next countdown track.
+ */
+Text GetCountdownMusicName() {
+	if (C_CountdownSongsNames.count <= 0) return "";
+	declare persistent Text[] Persistent_LibInterfancy_TimerMusics for LocalUser;
+	declare persistent Text Persistent_LibInterfancy_PrevCountdownSong for LocalUser;
+
+	// ---------------------------------- //
+	// Check if array includes non-existing tracks
+	declare Text[] ToRemove;
+	foreach (Track in Persistent_LibInterfancy_TimerMusics) if (!C_CountdownSongsNames.exists(Track)) ToRemove.add(Track);
+	foreach (Track in ToRemove) {
+		declare Removed = Persistent_LibInterfancy_TimerMusics.remove(Track);
+	}
+
+	// Fill the list if empty
+	if (Persistent_LibInterfancy_TimerMusics.count <= 0)
+		Persistent_LibInterfancy_TimerMusics = C_CountdownSongsNames;
+
+	// ---------------------------------- //
+	// Get the next track
+	declare CountdownMusicName = "";
+	while (Persistent_LibInterfancy_TimerMusics.count > 0) {
+		CountdownMusicName = Persistent_LibInterfancy_TimerMusics[ML::Rand(0, Persistent_LibInterfancy_TimerMusics.count - 1)];
+		if (CountdownMusicName != Persistent_LibInterfancy_PrevCountdownSong) break;
+		if (Persistent_LibInterfancy_TimerMusics.count <= 1) break;
+	}
+	declare Removed = Persistent_LibInterfancy_TimerMusics.remove(CountdownMusicName);
+	Persistent_LibInterfancy_PrevCountdownSong = CountdownMusicName;
+
+	return CountdownMusicName;
+}
 
 // ---------------------------------- //
 // Main
@@ -1190,7 +1488,6 @@ main() {
 	+++Main+++
 	while (True) {
 		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
 	}
 }
@@ -1205,18 +1502,18 @@ main() {
  */
 Text Private_CreateManialinkSpecInfo() {
 	return """
-<manialink version="2" name="LibInterfancy:SpecInfo">
+<manialink version="3" name="LibInterfancy:SpecInfo">
 <stylesheet>
-	<style id="Label_PlayerName" textemboss="1" textsize="3" textcolor="FFF" textfont="Eurostile"/>
-	<style id="Label_PlayerZone" textemboss="1" textsize="2" textcolor="FFF" textfont="Eurostile_Bold" textprefix="$t"/>
+	<style id="Label_PlayerName" textemboss="1" textsize="3" textcolor="FFF" textfont="Eurostile" />
+	<style id="Label_PlayerZone" textemboss="1" textsize="2" textcolor="FFF" textfont="Eurostile_Bold" textprefix="$t" />
 </stylesheet>
 
-<frame id="Frame_SpectatorInfo" posn="{{{C_LibInterfancy_SpecInfoPos.X^" "^C_LibInterfancy_SpecInfoPos.Y^" "^C_LibInterfancy_SpecInfoPos.Z}}}" hidden="1">
-	<label posn="0 3.25" halign="center" valign="center2" id="Label_PlayerName"/>
-	<quad sizen="54 3.5" halign="center" valign="center" image="{{{C_ImgBase}}}ColorSeparator.png" id="Quad_PlayerColor"/>
-	<frame posn="0 -3" id="Frame_PlayerZone">
-		<quad sizen="4 4" valign="center" id="Quad_PlayerZone"/>
-		<label valign="center2" id="Label_PlayerZone"/>
+<frame id="Frame_SpectatorInfo" pos="{{{C_LibInterfancy_SpecInfoPos.X^" "^C_LibInterfancy_SpecInfoPos.Y}}}" hidden="1">
+	<label pos="0 3.25" halign="center" valign="center2" id="Label_PlayerName" />
+	<quad size="54 3.5" halign="center" valign="center" image="{{{C_ImgBase}}}ColorSeparator.png" id="Quad_PlayerColor" />
+	<frame pos="0 -3" id="Frame_PlayerZone">
+		<quad size="4 4" valign="center" id="Quad_PlayerZone" />
+		<label valign="center2" id="Label_PlayerZone" />
 	</frame>
 </frame>
 
@@ -1247,9 +1544,6 @@ declare Label_PlayerZone <=> (Page.GetFirstChild("Label_PlayerZone") as CMlLabel
 declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 
-/// Players colors
-declare netread Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
-
 // ---------------------------------- //
 // Variables
 declare SpecInfo_Display = True;
@@ -1257,7 +1551,7 @@ declare SpecInfo_Display = True;
 /// Update
 declare PrevSettingsUpdate = -1;
 declare PrevGUIPlayerLogin = "";
-declare PrevGUIPlayerClan = -1;
+declare PrevGUIPlayerHue = -1.;
 declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
 ***
 
@@ -1284,17 +1578,10 @@ Frame_SpectatorInfo.Visible = SpecInfo_Display && GUIPlayer != Null && GUIPlayer
 if (!Frame_SpectatorInfo.Visible) continue;
 
 // ---------------------------------- //
-// Update on player clan change
-if (PrevGUIPlayerClan != GUIPlayer.CurrentClan) {
-	PrevGUIPlayerClan = GUIPlayer.CurrentClan;
-	PrevGUIPlayerLogin = "";
-}
-
-// ---------------------------------- //
-// Update on team color change
-for (I, 0, 1) if (PrevTeamsColors[I] != Teams[I].ColorPrimary) {
-	PrevTeamsColors[I] = Teams[I].ColorPrimary;
-	if (I == GUIPlayer.CurrentClan - 1) PrevGUIPlayerLogin = "";
+// Update on color change
+if (GUIPlayer != Null && PrevGUIPlayerHue != GUIPlayer.GetLinearHue) {
+	PrevGUIPlayerHue = GUIPlayer.GetLinearHue;
+	Quad_PlayerColor.Colorize = HsvToRgb(<ML::Clamp(PrevGUIPlayerHue, 0., 1.), 1., 1.>);
 }
 
 // ---------------------------------- //
@@ -1307,19 +1594,6 @@ if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
 	declare PlayerName = GUIPlayer.User.Login;
 	if (TL::Length(TL::StripFormatting(GUIPlayer.User.Name)) > 3) PlayerName = GUIPlayer.User.Name;
 	Label_PlayerName.SetText(PlayerName);
-	
-	// ---------------------------------- //
-	// Update colour
-	declare Color = GUIPlayer.User.Color;
-	
-	// Use the player clan colour
-	if (GUIPlayer.CurrentClan > 0) Color = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
-	
-	// Use forced colour
-	else if (Net_LibInterfancy_ForcedColors.existskey(GUIPlayer.User.Login))
-		Color = Net_LibInterfancy_ForcedColors[GUIPlayer.User.Login];
-	
-	Quad_PlayerColor.Colorize = Color;
 	
 	// ---------------------------------- //
 	// Update zone name
@@ -1336,8 +1610,8 @@ if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
 	// ---------------------------------- //
 	// Update position
 	Label_PlayerZone.SetText(ZoneName);
-	Label_PlayerZone.RelativePosition.X = Quad_PlayerZone.Size.X + .5;
-	Frame_PlayerZone.RelativePosition.X = -(Label_PlayerZone.RelativePosition.X + ComputeWidth(Label_PlayerZone)) / 2;
+	Label_PlayerZone.RelativePosition_V3.X = Quad_PlayerZone.Size.X + .5;
+	Frame_PlayerZone.RelativePosition_V3.X = -(Label_PlayerZone.RelativePosition_V3.X + ComputeWidth(Label_PlayerZone)) / 2;
 }
 ***
 
@@ -1345,7 +1619,7 @@ if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
 // Functions
 // ---------------------------------- //
 
-{{{ManialinkTools::Function("ComputeWidth")}}}
+{{{ManialinkTools::Functions(["ComputeWidth", "HsvToRgb"])}}}
 
 // ---------------------------------- //
 // Main
@@ -1368,33 +1642,33 @@ main() {
  */
 Text Private_CreateManialinkCrosshair() {
 	return """
-<manialink version="2" name="LibInterfancy:Crosshair">
+<manialink version="3" name="LibInterfancy:Crosshair">
 <stylesheet>
-	<style class="MissMessage" halign="center" valign="center2" textemboss="1" textsize="2" textcolor="FFF" textfont="Eurostile_Bold"/>
-	<style class="ch" halign="center" valign="center"/>
+	<style class="CrosshairNote" halign="center" valign="center2" textemboss="1" textsize="2" textcolor="FFF" textfont="Eurostile_Bold" />
+	<style class="ch" halign="center" valign="center" />
 </stylesheet>
 
-<frame id="Frame_Crosshair" posn="{{{C_LibInterfancy_CrosshairPos.X^" "^C_LibInterfancy_CrosshairPos.Y^" "^C_LibInterfancy_CrosshairPos.Z}}}" hidden="1">
-	<quad sizen="1 1" halign="center" valign="center" image="{{{C_ImgBase}}}Crosshair/Dot.png" id="Quad_CrosshairDot"/>
+<frame id="Frame_Crosshair" pos="{{{C_LibInterfancy_CrosshairPos.X^" "^C_LibInterfancy_CrosshairPos.Y}}}" hidden="1">
+	<quad size="1 1" halign="center" valign="center" image="{{{C_ImgBase}}}Crosshair/Dot.png" id="Quad_CrosshairDot" />
 	<frame id="Frame_CrosshairAnim">
-		<quad sizen="16 16" class="ch" image="{{{C_ImgBase}}}Crosshair/Rocket.png" id="Quad_CrosshairRocket"/>
-		<quad sizen="16 16" class="ch" image="{{{C_ImgBase}}}Crosshair/Laser.png" id="Quad_CrosshairLaser"/>
-		<quad sizen="16 16" class="ch" image="{{{C_ImgBase}}}Crosshair/Nucleus.png" id="Quad_CrosshairNucleus"/>
-		<quad sizen="12 48" halign="center" image="{{{C_ImgBase}}}Crosshair/Arrow.png" id="Quad_CrosshairArrow"/>
+		<quad size="16 16" class="ch" image="{{{C_ImgBase}}}Crosshair/Rocket.png" id="Quad_CrosshairRocket" />
+		<quad size="16 16" class="ch" image="{{{C_ImgBase}}}Crosshair/Laser.png" id="Quad_CrosshairLaser" />
+		<quad size="16 16" class="ch" image="{{{C_ImgBase}}}Crosshair/Nucleus.png" id="Quad_CrosshairNucleus" />
+		<quad size="12 48" halign="center" image="{{{C_ImgBase}}}Crosshair/Arrow.png" id="Quad_CrosshairArrow" />
 	</frame>
 	<frame id="Frame_CrosshairGauge" hidden="1">
-		<frame clip="1" clipposn="8" clipsizen="16 32">
-			<quad posn="-.2" sizen="28 28" class="ch" image="{{{C_ImgBase}}}Crosshair/Gauge.png" id="Quad_GaugeRight"/>
+		<frame size="16 32" valign="center" halign="left">
+			<quad size="28 28" class="ch" image="{{{C_ImgBase}}}Crosshair/Gauge.png" id="Quad_GaugeRight" />
 		</frame>
-		<frame clip="1" clipposn="-8" clipsizen="16 32">
-			<quad posn=".2" sizen="28 28" class="ch" image="{{{C_ImgBase}}}Crosshair/Gauge.png" id="Quad_GaugeLeft"/>
+		<frame size="16 32" valign="center" halign="right">
+			<quad size="28 28" class="ch" image="{{{C_ImgBase}}}Crosshair/Gauge.png" id="Quad_GaugeLeft" rot="-180" />
 		</frame>
 	</frame>
 </frame>
 
-<frame id="Frame_NearMissMessage" posn="{{{C_LibInterfancy_NearMissMsgPos.X^" "^C_LibInterfancy_NearMissMsgPos.Y^" "^C_LibInterfancy_NearMissMsgPos.Z}}}">
-	<label class="MissMessage" id="Label_NearMissMessage"/>
-	<label class="MissMessage" id="Label_NearMissGhost"/>
+<frame id="Frame_CrosshairNote" pos="{{{C_LibInterfancy_NearMissMsgPos.X^" "^C_LibInterfancy_NearMissMsgPos.Y}}}">
+	<label class="CrosshairNote" id="Label_CrosshairNote" />
+	<label class="CrosshairNote" id="Label_CrosshairNote2" />
 </frame>
 
 <script><!--
@@ -1428,34 +1702,35 @@ declare Frame_CrosshairGauge	<=> (Page.GetFirstChild("Frame_CrosshairGauge") as 
 declare Quad_GaugeRight	<=> (Page.GetFirstChild("Quad_GaugeRight") as CMlQuad);
 declare Quad_GaugeLeft	<=> (Page.GetFirstChild("Quad_GaugeLeft") as CMlQuad);
 
-declare Label_NearMissMessage	<=> (Page.GetFirstChild("Label_NearMissMessage") as CMlLabel);
-declare Label_NearMissGhost		<=> (Page.GetFirstChild("Label_NearMissGhost") as CMlLabel);
+declare Label_CrosshairNote		<=> (Page.GetFirstChild("Label_CrosshairNote") as CMlLabel);
+declare Label_CrosshairNote2	<=> (Page.GetFirstChild("Label_CrosshairNote2") as CMlLabel);
 
 // ---------------------------------- //
 // Persistent settings
 declare persistent Persistent_LibInterfancy_UseCustomCrosshair for LocalUser = True;
+declare persistent Persistent_LibInterfancy_HideCrosshairNotes for LocalUser = False;
+declare persistent Persistent_LibInterfancy_HideCrosshairGauge for LocalUser = False;
 
 // ---------------------------------- //
 // Netcode
 declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
-declare netread Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
-declare netread Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
 
 // ---------------------------------- //
 // Variables
 declare Crosshair_Display = True;
 declare AnimateCrosshair = False;
-declare UpdateNote = True;
-declare CrosshairNote = "";
-declare CrosshairNoteTime = -1;
+declare CrosshairVisible = True;
+declare UpdateCrosshairNoteText = True;
+declare CrosshairNoteValue = "";
+declare CrosshairNoteEndTime = -1;
 declare SpawnInvulnerabilityDuration = 2000;
 
 declare PrevGUIPlayerLogin = "";
 declare PrevAmmoCount = 0;
 declare PrevCurWeapon = 0;
-declare PrevCrosshairNote = "";
-declare PrevCrosshairNoteTime = -1;
+declare PrevCrosshairNoteValue = "";
+declare PrevCrosshairNoteEndTime = -1;
 declare PrevSettingsUpdate = -1;
 ***
 
@@ -1484,13 +1759,15 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	}
 }
 
+CrosshairVisible = !IsInGameMenuDisplayed;
+
 // ---------------------------------- //
 // Set crosshair visibility
-ClientUI.OverlayHideCrosshair = !Crosshair_Display || Persistent_LibInterfancy_UseCustomCrosshair;
+ClientUI.OverlayHideCrosshair = !Crosshair_Display || Persistent_LibInterfancy_UseCustomCrosshair || !CrosshairVisible;
 Frame_Crosshair.Visible =
-	ClientUI.OverlayHideCrosshair && GUIPlayer != Null && !GUIPlayer.IsOnTechNoWeapon && !GUIPlayer.IsInWater &&
+	ClientUI.OverlayHideCrosshair && CrosshairVisible && GUIPlayer != Null && !GUIPlayer.IsOnTechNoWeapon && !GUIPlayer.IsInWater &&
 	GUIPlayer.Position != <0., 0., 0.> && GameTime >= GUIPlayer.StartTime - 1500 &&
-	GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0;
+	GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0 && GUIPlayer.IsInAir != GUIPlayer.IsTouchingGround;
 
 // ---------------------------------- //
 // Update GUIPlayer
@@ -1504,7 +1781,6 @@ if (GUIPlayer != Null && PrevGUIPlayerLogin != GUIPlayer.User.Login) {
 // Manage crosshair
 if (Frame_Crosshair.Visible) {
 	Quad_CrosshairDot.Visible = GUIPlayer.CurWeapon != 5;
-	Frame_CrosshairGauge.Visible = GUIPlayer.CurAmmo < GUIPlayer.CurAmmoUnit || GameTime - GUIPlayer.StartTime < SpawnInvulnerabilityDuration;
 	
 	Quad_CrosshairLaser.Visible = GUIPlayer.CurWeapon == 1;
 	Quad_CrosshairRocket.Visible = GUIPlayer.CurWeapon == 2;
@@ -1524,16 +1800,19 @@ if (Frame_Crosshair.Visible) {
 		if (PrevAmmoCount > 0 && PrevAmmoCount > GUIPlayer.CurAmmo) AnimateCrosshair = True;
 		PrevAmmoCount = GUIPlayer.CurAmmo;
 	}
-	
+
 	// ---------------------------------- //
-	// Display Gauge
+	// Display weapon loading gauge
+	Frame_CrosshairGauge.Visible = GUIPlayer.CurAmmo < GUIPlayer.CurAmmoUnit || GameTime - GUIPlayer.StartTime < SpawnInvulnerabilityDuration;
 	if (Frame_CrosshairGauge.Visible) {
 		declare Ratio = ML::ToReal(GUIPlayer.CurAmmo) / GUIPlayer.CurAmmoUnit;
-		if (GameTime - GUIPlayer.StartTime < 2000) Ratio = ML::ToReal(GameTime - GUIPlayer.StartTime) / SpawnInvulnerabilityDuration;
+
+		// Show gauge also while recently spawned player is invincible
+		if (GameTime - GUIPlayer.StartTime < SpawnInvulnerabilityDuration)
+			Ratio = ML::ToReal(GameTime - GUIPlayer.StartTime) / SpawnInvulnerabilityDuration;
 		
 		Quad_GaugeRight.RelativeRotation = ML::Clamp(Ratio, 0., .5) * 360 - 180;
 		Quad_GaugeLeft.RelativeRotation = ML::Clamp(Ratio, .5, 1.) * 360 - 180;
-		
 		Quad_GaugeRight.Opacity = ML::Min(1 - Ratio, C_OpacityFadeLimit) / C_OpacityFadeLimit;
 		Quad_GaugeLeft.Opacity = Quad_GaugeRight.Opacity;
 		
@@ -1543,8 +1822,8 @@ if (Frame_Crosshair.Visible) {
 		Quad_CrosshairArrow.Opacity = Quad_CrosshairLaser.Opacity;
 	}
 	// ---------------------------------- //
-	// Reset opacity
-	else {
+	// Reset custom crosshairs opacity
+	else if (Quad_CrosshairLaser.Opacity != 1) {
 		Quad_CrosshairLaser.Opacity = 1.;
 		Quad_CrosshairRocket.Opacity = 1.;
 		Quad_CrosshairNucleus.Opacity = 1.;
@@ -1556,9 +1835,8 @@ if (Frame_Crosshair.Visible) {
 // Animate crosshair
 if (AnimateCrosshair) {
 	AnimateCrosshair = False;
-	LibManialink_AnimStop(Frame_CrosshairAnim);
 	Frame_CrosshairAnim.RelativeScale = 2.5;
-	LibManialink_Anim(Frame_CrosshairAnim, "<frame scale=1 />", 750, "EaseOutCirc");
+	AnimMgr.Add(Frame_CrosshairAnim, "<frame scale='1' />", 750, CAnimManager::EAnimManagerEasing::CircOut);
 }
 
 // ---------------------------------- //
@@ -1566,63 +1844,69 @@ if (AnimateCrosshair) {
 if (GUIPlayer != Null) {
 	if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
 		PrevGUIPlayerLogin = GUIPlayer.User.Login;
-		UpdateNote = True;
+		UpdateCrosshairNoteText = True;
 	}
 } else if (PrevGUIPlayerLogin != "") {
 	PrevGUIPlayerLogin = "";
-	UpdateNote = True;
+	UpdateCrosshairNoteText = True;
 }
 
 // ---------------------------------- //
 // Get the current player crosshair note end time
-if (GUIPlayer != Null && Net_LibInterfancy_CrosshairNoteTime.existskey(GUIPlayer.User.Login)) {
-	if (GameTime < Net_LibInterfancy_CrosshairNoteTime[GUIPlayer.User.Login]) {
-		CrosshairNoteTime = Net_LibInterfancy_CrosshairNoteTime[GUIPlayer.User.Login];
-	} else CrosshairNoteTime = -1;
-} else CrosshairNoteTime = -1;
+if (GUIPlayer != Null) {
+	declare netread Integer Net_LibInterfancy_CrosshairNoteTime for GUIPlayer;
+	CrosshairNoteEndTime = Net_LibInterfancy_CrosshairNoteTime;
+}
+else CrosshairNoteEndTime = -1;
 
 // ---------------------------------- //
-// Update on time change
-if (PrevCrosshairNoteTime != CrosshairNoteTime) {
-	PrevCrosshairNoteTime = CrosshairNoteTime;
-	UpdateNote = True;
+// Update note on time change
+if (PrevCrosshairNoteEndTime != CrosshairNoteEndTime) {
+	PrevCrosshairNoteEndTime = CrosshairNoteEndTime;
+	UpdateCrosshairNoteText = True;
 }
 
 // ---------------------------------- //
-// Update note text
-if (UpdateNote) {
-	UpdateNote = False;
-	if (PrevCrosshairNoteTime > 0 && Net_LibInterfancy_CrosshairNote.existskey(GUIPlayer.User.Login))
-		CrosshairNote = TL::GetTranslatedText(Translate(Net_LibInterfancy_CrosshairNote[GUIPlayer.User.Login]));
-	else
-		CrosshairNote = "";
+// Hide no longer visible crosshair note
+if (CrosshairNoteValue != "" && GameTime > CrosshairNoteEndTime) CrosshairNoteValue = "";
+
+// ---------------------------------- //
+// Update crosshair note text
+if (UpdateCrosshairNoteText) {
+	UpdateCrosshairNoteText = False;
+
+	if (GUIPlayer != Null && !Persistent_LibInterfancy_HideCrosshairNotes && GameTime < CrosshairNoteEndTime) {
+		declare netread Text[] Net_LibInterfancy_CrosshairNoteBody for GUIPlayer;
+		CrosshairNoteValue = TL::GetTranslatedText(Translate(Net_LibInterfancy_CrosshairNoteBody));
+	}
+	else CrosshairNoteValue = "";
 }
 
 // ---------------------------------- //
-// Update near miss message
-if (PrevCrosshairNote != CrosshairNote) {
-	PrevCrosshairNote = CrosshairNote;
-	Label_NearMissGhost.SetText(Label_NearMissMessage.Value);
-	Label_NearMissMessage.SetText(CrosshairNote);
+// Update crosshair note message
+if (PrevCrosshairNoteValue != CrosshairNoteValue) {
+	PrevCrosshairNoteValue = CrosshairNoteValue;
+
+	Label_CrosshairNote2.SetText(Label_CrosshairNote.Value);
+	Label_CrosshairNote.SetText(CrosshairNoteValue);
 	
-	LibManialink_AnimStop(Label_NearMissMessage);
-	LibManialink_AnimStop(Label_NearMissGhost);
+	Label_CrosshairNote.Opacity = 0.;
+	Label_CrosshairNote2.Opacity = 1.;
+	Label_CrosshairNote.RelativePosition_V3.Y = 2.;
+	Label_CrosshairNote2.RelativePosition_V3.Y = 0.;
 	
-	Label_NearMissMessage.Opacity = 0.;
-	Label_NearMissGhost.Opacity = 1.;
-	Label_NearMissMessage.RelativePosition.Y = 2.;
-	Label_NearMissGhost.RelativePosition.Y = 0.;
-	
-	LibManialink_Anim(Label_NearMissMessage, "<label posn='0 0' opacity=1 />", 125, "EaseLinear");
-	LibManialink_Anim(Label_NearMissGhost, "<label posn='0 -2' opacity=0 />", 125, "EaseLinear");
+	AnimMgr.Add(Label_CrosshairNote, "<label pos='0 0' opacity='1' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Label_CrosshairNote2, "<label pos='0 -2' opacity='0' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 }
 
-Label_NearMissMessage.Visible = Label_NearMissMessage.Opacity > 0;
-Label_NearMissGhost.Visible = Label_NearMissGhost.Opacity > 0;
+Label_CrosshairNote.Visible = Label_CrosshairNote.Opacity > 0;
+Label_CrosshairNote2.Visible = Label_CrosshairNote2.Opacity > 0;
 ***
 
-{{{Manialink::Animations(["EaseLinear", "EaseOutCirc"])}}}
-{{{Translations::InjectInManialink(["%1 miss", "$<%1$> healed you!", "Healed %1 players", "Healed 1 player", "$<%1$> boosted you!", "Boosted %1 players", "Boosted 1 player", "Laser", "Nucleus", "Arrow", "Rocket", "Skills"])}}}
+{{{Translations::InjectInManialink([
+	"Laser", "Nucleus", "Arrow", "Rocket", "Replie", "Skills", "%1 miss",
+	"$<%1$> healed you!", "Healed %1 players", "Healed 1 player", "$<%1$> boosted you!", "Boosted %1 players", "Boosted 1 player"
+])}}}
 
 // ---------------------------------- //
 // Main
@@ -1631,7 +1915,6 @@ main() {
 	+++Main+++
 	while (True) {
 		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
 	}
 }
@@ -1728,6 +2011,33 @@ Void SetRoundPointsVisibility(Boolean _Visible) {
 }
 
 // ---------------------------------- //
+/** Set visibility of the armor gauge.
+ *
+ *	@param	_Visible	If True, armor will be visible.
+ */
+Void SetArmorVisibility(Boolean _Visible) {
+	Private_SetModuleSetting("Armor_Display", TL::ToText(_Visible));
+}
+
+// ---------------------------------- //
+/** Set visibility of the ammo gauge.
+ *
+ *	@param	_Visible	If True, ammo will be visible.
+ */
+Void SetAmmoVisibility(Boolean _Visible) {
+	Private_SetModuleSetting("Ammo_Display", TL::ToText(_Visible));
+}
+
+// ---------------------------------- //
+/** Set visibility of the stamina gauge.
+ *
+ *	@param	_Visible	If True, stamina will be visible.
+ */
+Void SetStaminaVisibility(Boolean _Visible) {
+	Private_SetModuleSetting("Stamina_Display", TL::ToText(_Visible));
+}
+
+// ---------------------------------- //
 /** Display a notice under player's crosshair.
  *
  *	@param	_Player		The player to display crosshair notice.
@@ -1737,11 +2047,11 @@ Void SetRoundPointsVisibility(Boolean _Visible) {
 Void SendCrosshairNote(CSmPlayer _Player, Text[] _Message, Integer _Duration) {
 	if (_Player == Null || _Player.IsBot || _Player.IsFakePlayer || _Message.count <= 0 || _Message[0] == "") return;
 	
-	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
-	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
+	declare netwrite Integer Net_LibInterfancy_CrosshairNoteTime for _Player;
+	declare netwrite Text[] Net_LibInterfancy_CrosshairNoteBody for _Player;
 	
-	Net_LibInterfancy_CrosshairNote[_Player.User.Login] = _Message;
-	Net_LibInterfancy_CrosshairNoteTime[_Player.User.Login] = Now + _Duration;
+	Net_LibInterfancy_CrosshairNoteTime = Now + _Duration;
+	Net_LibInterfancy_CrosshairNoteBody = _Message;
 }
 
 // ---------------------------------- //
@@ -1778,33 +2088,32 @@ Void DisplayNearMiss(CSmPlayer _Player, Real _Distance) {
  */
 Void SetPlayerReloadData(CSmPlayer _Player, Integer _StartTime, Integer _Duration) {
 	if (_Player == Null) return;
-	declare netwrite Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
-	Net_LibInterfancy_ReloadData[_Player.User.Login] = <_StartTime, _Duration, 0>;
+	declare netwrite Integer Net_LibInterfancy_BoostStartTime for _Player;
+	declare netwrite Integer Net_LibInterfancy_BoostDuration for _Player;
+	Net_LibInterfancy_BoostStartTime = _StartTime;
+	Net_LibInterfancy_BoostDuration = _Duration;
 }
 
 // ---------------------------------- //
 /** Change player's interface and character color.
+ *
+ *	@deprecated		No longer need to use this function to set a player's color.
  *
  *	@param	_Player		The player to set color.
  *	@param	_Color		Color to apply to the player.
  */
 Void ForceColor(CSmPlayer _Player, Vec3 _Color) {
 	if (_Player == Null) return;
-	declare netwrite Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
 	
 	// Set player forced color
 	if (_Color != <-1., -1., -1.>) {
 		declare Color = _Color;
 		for (I, 0, 2) Color[I] = ML::Clamp(Color[I], 0., 1.);
-		Net_LibInterfancy_ForcedColors[_Player.User.Login] = Color;
 		_Player.ForceColor = Color;
 	}
 	
 	// Reset forced color
-	else {
-		declare Removed = Net_LibInterfancy_ForcedColors.removekey(_Player.User.Login);
-		_Player.ForceColor = <-1., -1., -1.>;
-	}
+	else _Player.ForceColor = <-1., -1., -1.>;
 }
 
 // ---------------------------------- //
@@ -1824,15 +2133,20 @@ Void ResetColor(CSmPlayer _Player) {
  */
 Void SetPlayerCustomWeapon(CSmPlayer _Player, Text _Name) {
 	if (_Player == Null || _Player.IsBot) return;
-	declare netwrite Text[Text] Net_LibInterfancy_PlayersWeaponsNames for Teams[0];
-	
-	// Set custom name
-	if (_Name != "") Net_LibInterfancy_PlayersWeaponsNames[_Player.User.Login] = _Name;
-	
-	// Remove custom name
-	else if (Net_LibInterfancy_PlayersWeaponsNames.existskey(_Player.User.Login)) {
-		declare Removed = Net_LibInterfancy_PlayersWeaponsNames.removekey(_Player.User.Login);
-	}
+	declare netwrite Text Net_LibInterfancy_CustomWeaponName for _Player;
+	Net_LibInterfancy_CustomWeaponName = _Name;
+}
+
+// ---------------------------------- //
+/** Set custom text displayed on the armor module.
+ *
+ *	@param	_Player		The player to change the armor text.
+ *	@param	_Name		The custom text to set.
+ */
+Void SetArmorText(CSmPlayer _Player, Text _Value) {
+	if (_Player == Null || _Player.IsBot) return;
+	declare netwrite Text Net_LibInterfancy_ArmorReplacement for _Player;
+	Net_LibInterfancy_ArmorReplacement = _Value;
 }
 
 // ---------------------------------- //
@@ -1865,20 +2179,58 @@ Void SetUseMusic(Boolean _UseMusic) {
 }
 
 // ---------------------------------- //
-/// Reset all data sent through network by the library.
-Void ClearData() {
-	declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
-	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
-	declare netwrite Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
-	declare netwrite Vec3[Text] Net_LibInterfancy_ForcedColors for Teams[0];
-	declare netwrite Text[Text] Net_LibInterfancy_PlayersWeaponsNames for Teams[0];
-	
-	Net_LibInterfancy_CrosshairNote.clear();
-	Net_LibInterfancy_CrosshairNoteTime.clear();
-	Net_LibInterfancy_ReloadData.clear();
-	Net_LibInterfancy_ForcedColors.clear();
-	Net_LibInterfancy_PlayersWeaponsNames.clear();
+/** Set the amount of teams in scores summary.
+ *
+ *	@param	_NbTeams	The amount of teams playing in the match.
+ */
+Void SetNbCustomTeams(Integer _NbTeams) {
+	Private_SetModuleSetting("NbTeams", TL::ToText(_NbTeams));
 }
+
+// ---------------------------------- //
+/** Set the color of a custom team in the scores summary.
+ *
+ *	@param	_Team	Team to set the color.
+ *	@param	_Color	The color of a custom team.
+ */
+Void SetCustomTeamColor(Integer _Team, Vec3 _Color) {
+	Private_SetModuleSetting("CustomTeamColor"^_Team, _Color.X^" "^_Color.Y^" "^_Color.Z);
+}
+
+// ---------------------------------- //
+/** Reset the color of a team in scores summary.
+ *
+ *	@param	_Team	The team to reset its color.
+ */
+Void ResetCustomTeamColor(Integer _Team) {
+	SetCustomTeamColor(_Team, <-1., -1., -1.>);
+}
+
+// ---------------------------------- //
+/** Set the amount of points of a custom team in the scores summary.
+ *
+ *	@param	_Team		Team to set the point samount.
+ *	@param	_Points		The amount of points of a custom team.
+ */
+Void SetCustomTeamPoints(Integer _Team, Integer _Points) {
+	Private_SetModuleSetting("CustomTeamPoints"^_Team, TL::ToText(_Points));
+}
+
+// ---------------------------------- //
+/** Reset the amount of points of a team in scores summary.
+ *
+ *	@param	_Team	The team to reset its amount of points.
+ */
+Void ResetCustomTeamPoints(Integer _Team) {
+	SetCustomTeamPoints(_Team, -1);
+}
+
+// ---------------------------------- //
+/** Reset all data sent through network by the library.
+ *
+ *	@deprecated		No longer need to use this function.
+ */
+Void ClearData() {}
 
 // ---------------------------------- //
 /** Load a module by its name.
@@ -1926,8 +2278,7 @@ Void UnloadModule(Text _ModuleId) {
 // ---------------------------------- //
 /// Unload the library.
 Void Unload() {
-	foreach (ModuleId in G_LibInterfancy_ModulesLoaded) UnloadModule(ModuleId);
-	ClearData();	
+	foreach (ModuleId in G_LibInterfancy_ModulesLoaded) UnloadModule(ModuleId);	
 	
 	declare netwrite Net_LibInterfancy_SettingsUpdate for Teams[0] = 0;
 	declare netwrite Net_LibInterfancy_Settings for Teams[0] = Text[Text];
@@ -1969,37 +2320,6 @@ Void Loop(Boolean _UseDefaultEndTime) {
 	if (_UseDefaultEndTime && G_LibInterfancy_PrevEndTime != EndTime) {
 		G_LibInterfancy_PrevEndTime = EndTime;
 		Private_SetModuleSetting("EndTime", TL::ToText(EndTime));
-	}
-	
-	if (Now < G_LibInterfancy_NextUICleaningTime) return;
-	G_LibInterfancy_NextUICleaningTime = Now + C_LibInterfancy_UICleaningPeriod;
-	
-	// ---------------------------------- //
-	// Remove no longer visible crosshair notes
-	declare netwrite Integer[Text] Net_LibInterfancy_CrosshairNoteTime for Teams[0];
-	
-	declare Text[] LoginsToRemove;
-	foreach (Login => EndTime in Net_LibInterfancy_CrosshairNoteTime) if (Now >= EndTime) LoginsToRemove.add(Login);
-	
-	if (LoginsToRemove.count > 0) {
-		declare netwrite Text[][Text] Net_LibInterfancy_CrosshairNote for Teams[0];
-		foreach (Login in LoginsToRemove) {
-			declare Boolean Tmp;
-			Tmp = Net_LibInterfancy_CrosshairNote.removekey(Login);
-			Tmp = Net_LibInterfancy_CrosshairNoteTime.removekey(Login);
-		}
-	}
-	
-	// ---------------------------------- //
-	// Remove no longer needed reload boost data
-	declare netwrite Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
-	
-	if (LoginsToRemove.count > 0) LoginsToRemove.clear();
-	foreach (Login => Data in Net_LibInterfancy_ReloadData)
-		if (Now >= Data[0] + Data[1]) LoginsToRemove.add(Login);
-	
-	foreach (Login in LoginsToRemove) {
-		declare Tmp = Net_LibInterfancy_ReloadData.removekey(Login);
 	}
 }
 

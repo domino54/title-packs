@@ -1,10 +1,151 @@
+// -------------------------------------- //
+//  INVASION SOLO by domino54             //
+//  script version: v3.2 @2017-04-03      //
+// -------------------------------------- //
+
 #Extends "Modes/ShootMania/Invasion.Script.txt"
 
-#Setting S_AutoManageAFK	False
+#Const DeluxeVersion	"2017-04-03"
+#Const DeluxeScriptName	"Invasion.Script.txt"
 
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_UseEvolutionLevels	False	///< Evolution levels are disabled in solo mode
+#Setting S_AutoManageAFK		False	///< We don't want unspawned player
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(DeluxeScriptName, DeluxeVersion);
+***
+
+// ---------------------------------- //
+// Initialize server
+// ---------------------------------- //
 ***InitServer***
 ***
+GT_UseAutoEndSequence = False;
 G_IsSoloMode = True;
+InvasionUI::SetSoloMode(G_IsSoloMode);
+
+// ---------------------------------- //
+// Hide name tags
+UIManager.UIAll.AlliesLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+
+// Hide unnecessary buttons in pause menu
+PauseMenu::SetSoloMode(G_IsSoloMode);
+
+// ---------------------------------- //
+// Unload the scores table
+ST2::Unload();
+UIManager.UIAll.ScoreTableOnlyManialink = True;
+UIManager.UIAll.AltMenuNoDefaultScores = True;
+
+// ---------------------------------- //
+// Unload the Killfeed library
+Killfeed::Unload();
+UIManager.UIAll.OverlayHideNotices = True;
+UIManager.UIAll.OverlayHideMapInfo = True;
 ***
 
-Void DoNothing() { return; }
+// ---------------------------------- //
+// Start map
+// ---------------------------------- //
+***StartMap***
+***
+// ---------------------------------- //
+// Force the player's color as the bases colors
+UIManager.UIAll.ScoreSummary_Player1 = Players[0].Id;
+UIManager.UIAll.ScoreSummary_Player2 = Players[0].Id;
+***
+
+
+// ---------------------------------- //
+// Round end
+// ---------------------------------- //
+***EndRound***
+***
+// ---------------------------------- //
+// Solo mode sequence
+if (Players.existskey(0)) {
+	declare Player <=> Players[0];
+	AddScorePoints(Player, SoloTimeScore);
+
+	// Get the scores
+	declare TotalSoloPoints = Player.Score.Points * 10;
+	declare SoloScoreMedal = GetMedalFromPoints(TotalSoloPoints);
+
+	// ---------------------------------- //
+	// Save the local score
+	Player.Score.Points = ML::Clamp(Player.Score.Points, 0, 32767);
+	Solo_SetNewRecord(Player.Score, SoloScoreMedal);
+	InvasionSolo_SavePersonalBest(TotalSoloPoints);
+
+	// Wait until player ha sclosed the medal award window
+	while (!UIManager.UIAll.UISequenceIsCompleted) MB_Yield();
+
+	// Show the summary window
+	InvasionUI::DisplaySoloScore(True, SoloScoreMedal, TotalSoloPoints);
+	while (!ServerShutdownRequested) MB_Yield();
+}
+***
+
+// ---------------------------------- //
+/** Get the medal from points.
+ *	
+ *	@param	_Points		The amount of points to get the medal from.
+ *
+ *	@return		The medal according to the amount of points.
+ */
+CMode::EMedal GetMedalFromPoints(Integer _Points) {
+	if (Map == Null) return CMode::EMedal::None;
+
+	// ---------------------------------- //
+	// Read objectives from the map
+	declare ObjectivePointsBronze	= TL::ToInteger(Map.ObjectiveTextBronze);
+	declare ObjectivePointsSilver	= TL::ToInteger(Map.ObjectiveTextSilver);
+	declare ObjectivePointsGold		= TL::ToInteger(Map.ObjectiveTextGold);
+	declare ObjectivePointsAuthor	= TL::ToInteger(Map.ObjectiveTextAuthor);
+
+	// Invalid scores
+	if (
+		ObjectivePointsAuthor <= 0 ||
+		ObjectivePointsGold > ObjectivePointsAuthor ||
+		ObjectivePointsSilver > ObjectivePointsGold ||
+		ObjectivePointsBronze > ObjectivePointsSilver
+	)
+		return CMode::EMedal::None;
+
+	// ---------------------------------- //
+	// Return medal according to the score points
+	if (_Points >= ObjectivePointsAuthor)	return CMode::EMedal::Author;
+	if (_Points >= ObjectivePointsGold)		return CMode::EMedal::Gold;
+	if (_Points >= ObjectivePointsSilver)	return CMode::EMedal::Silver;
+	if (_Points >= ObjectivePointsBronze)	return CMode::EMedal::Bronze;
+	return CMode::EMedal::None;
+}
+
+// ---------------------------------- //
+/** Save personal record of a player.
+ *
+ *	@param	_ScorePoints		Scored points.
+ */
+Void InvasionSolo_SavePersonalBest(Integer _ScorePoints) {
+	if (!Users.existskey(0) || Map == Null) return;
+	declare Points = ML::Max(_ScorePoints, 0);
+	declare UID = Map.MapInfo.MapUid;
+	
+	declare persistent Integer[Text] Persistent_Invasion_PersonalRecords for Users[0];
+	declare persistent Integer Persistent_Invasion_LastRecordsUpdate for Users[0];
+	
+	// Don't save score if smaller than current personal best
+	if (Persistent_Invasion_PersonalRecords.existskey(UID) && Persistent_Invasion_PersonalRecords[UID] >= Points) return;
+	
+	Persistent_Invasion_PersonalRecords[UID] = Points;
+	Persistent_Invasion_LastRecordsUpdate = Now;
+}

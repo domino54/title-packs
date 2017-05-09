@@ -1,20 +1,22 @@
 // -------------------------------------- //
 //  LIBRARY STORAGE PLAYER by domino54    //
-//  script version: 2017-03-04            //
+//  script version: 2017-04-18            //
 // -------------------------------------- //
 
-#Const Version		"2017-03-04"
+#Const Version		"2017-04-18"
 #Const ScriptName	"StoragePlayer.Script.txt"
 
 #Include "MathLib" as ML
+#Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
 #Const C_ImgBase "http://dominolink.aq.pl/music/"
-#Const C_LibStoragePlayer_NbPlaylistRows	15		///< Amount of songs displayed at one playlist page
+#Const C_LibStoragePlayer_NbPlaylistRows	14		///< Amount of tracks displayed at one playlist page
 
 // ---------------------------------- //
 // Global variables
@@ -42,126 +44,127 @@ declare Text G_LibStoragePlayer_PreviousPlaylistURL;
 Text Private_CreateManialinkMusicPlayer(Text _MediaBasePath, Text _ThinTextFont, Text _ThickTextFont) {
 	declare MediaBasePath = C_ImgBase;
 	if (_MediaBasePath != "" && Http.IsValidUrl(_MediaBasePath)) MediaBasePath = _MediaBasePath;
+
+	declare PlaylistCards = "";
+	for (I, 0, C_LibStoragePlayer_NbPlaylistRows - 1) {
+		PlaylistCards ^= "<frameinstance modelid='FrameModel_PlaylistItem' id='Frame_PlaylistItem#"^I^"' hidden='1' pos='0 "^I * -5.5^"' />";
+	}
 	
 	return """
-<?xml version="1.0" encoding="utf-8" standalone="yes"?>
-<manialink version="2" name="Storage:InGame" background="0">
+<manialink version="3" name="LibStorage:Window">
 <stylesheet>
-	<style class="timeLabel" valign="center2" style="TextRaceChrono" textemboss="1" textsize="2" textfont="{{{_ThickTextFont}}}"/>
-	<style class="bigInfo" valign="center2" textsize="2" style="TextValueSmallSm" textcolor="CCC" textprefix="$t" textfont="{{{_ThickTextFont}}}"/>
-	<style class="subInfo" valign="center2" scale=".875" textsize="2" textcolor="CCC" textfont="{{{_ThinTextFont}}}"/>
+	<style class="FontM" valign="center2" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(_ThinTextFont)}}}" />
+	<style class="FontB" valign="center2" style="TextValueSmallSm" textcolor="FFF" textfont="{{{TL::MLEncode(_ThickTextFont)}}}" />
+	<style class="timeLabel" valign="center2" style="TextRaceChrono" textemboss="1" textsize="2.5" textfont="{{{TL::MLEncode(_ThickTextFont)}}}" />
 </stylesheet>
 
-<!-- Model of the playlist item -->
-<framemodel id="FrameModel_SongsListItem">
-	<quad opacity=".25" sizen="100 4" id="Quad_ListItemBackground" ScriptEvents="1"/>
-	<label posn="1 -2 1" sizen="76" class="subInfo" scale="1.125" textsize="1" id="Label_ListItemTitle"/>
-	<label posn="98 -2 1" class="subInfo" halign="right" scale="1.125" textsize="1" id="Label_ListItemDuration"/>
-</framemodel>
+<frame id="Frame_StorageInGameMenu" hidden="1">
 
 <!-- Global music plugin window -->
-<frame id="Frame_StorageInGameMenu" posn="-50 48 10" hidden="1">
-	<quad sizen="100 96" bgcolor="000" opacity=".75" ScriptEvents="0"/>
-	<quad sizen="100 96" style="Bgs1" substyle="BgDialogBlur"/>
-	<quad posn="-2.5 2.5 -.1" sizen="210 202" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow"/>
-	
-	<!-- Music player window header -->
-	<frame id="Frame_WindowTitle" posn="50 -5 1">
-		<quad sizen="99 9" halign="center" valign="center" bgcolor="FFF"/>
-		<label
-			posn="-47 0 .1" sizen="90" halign="left" valign="center2" style="TextButtonNav"
-			textsize="2" textcolor="000" textfont="{{{_ThickTextFont}}}" id="Label_WindowTitleText"
-		/>
-		<quad posn="46 0 .1" sizen="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="Close" id="Quad_ButtonClose" ScriptEvents="1"/>
+<frame id="Frame_StoragePlayerWindow" pos="-93 48">
+	<!-- Window header -->
+	<frame id="Frame_StoragePlayerHeader" pos="0 -2">
+		<label pos="2" class="FontM" id="Label_WindowTitleText" textsize="4" textprefix="$t" />
+
+		<!-- Total amount of tracks -->
+		<frame id="Frame_TotalNbTracks" pos="178">
+			<label pos="-2.75" halign="right" class="FontB" textsize="4" id="Label_PlaylistNbTracks" text="0" />
+			<label pos="0 .375" class="FontM" halign="center" valign="center" text="♫" />
+		</frame>
+
+		<!-- Close window button -->
+		<quad pos="182.5" size="7 7" halign="center" valign="center" style="Icons64x64_1" substyle="QuitRace" id="Quad_PlayerControlClose" ScriptEvents="1" />
 	</frame>
-	
-	<!-- Custom playlist setup row -->
-	<frame id="Frame_CustomPlaylistEnter" posn="0 -12.5 1">
-		<label posn="2" class="bigInfo" textsize="1" id="Label_CustomPlaylist"/>
-		<entry
-			posn="98" sizen="60 3" halign="right" valign="center2" id="Entry_PlaylistLoadURL"
-			textsize="1" textcolor="CCC" textfont="{{{_ThinTextFont}}}"
-		/>
-	</frame>
-	
-	<!-- Playlist window -->
-	<frame id="Frame_MusicPlaylistWindow" posn="0 -14.5 1">
-		<!-- Playlist songs items -->
-		<frame id="Frame_SongsListItems" posn="0 -.5">
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#0" hidden="1" posn="0 0"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#1" hidden="1" posn="0 -4"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#2" hidden="1" posn="0 -8"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#3" hidden="1" posn="0 -12"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#4" hidden="1" posn="0 -16"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#5" hidden="1" posn="0 -20"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#6" hidden="1" posn="0 -24"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#7" hidden="1" posn="0 -28"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#8" hidden="1" posn="0 -32"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#9" hidden="1" posn="0 -36"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#10" hidden="1" posn="0 -40"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#11" hidden="1" posn="0 -44"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#12" hidden="1" posn="0 -48"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#13" hidden="1" posn="0 -52"/>
-			<frameinstance modelid="FrameModel_SongsListItem" id="Frame_SongsListItem#14" hidden="1" posn="0 -56"/>
+
+	<!-- Separator -->
+	<quad pos="0 -6" size="186 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<frame pos="2 -8">
+		<quad size="60 60" id="Quad_CurrentTrackCover" />
+
+		<!-- track information -->
+		<frame id="Frame_CurrentTrackInfo" pos="0 -62">
+			<label pos="0 -2" size="60 3" class="FontB" textsize="2.5" text="???" id="Label_CurrentTrackAuthor" />
+			<label pos="0 -5.75" size="50 3" class="FontM" textsize="1.5" text="???" id="Label_CurrentTrackTitle" />
+			<label pos="60 -6.25" size="10 3" halign="right" class="FontB" textsize="1" textcolor="FFF" text="0/0" id="Label_CurrentTrackOrder" />
 		</frame>
-		
-		<!-- Page switch -->
-		<frame id="Frame_PlaylistPageSwitch" posn="50 -63.25">
-			<quad posn="-8" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowDisabled"/>
-			<quad
-				posn="-8 0 .1" sizen="5 5" halign="center" valign="center" id="Quad_PrevPlaylistPage" ScriptEvents="1"
-				style="Icons64x64_1" substyle="ArrowPrev" hidden="1"
-			/>
-			<label halign="center" class="bigInfo" textsize="1" text="1 / 1" id="Label_CurPlaylistPage"/>
-			<quad
-				posn="8 0 .1" sizen="5 5" halign="center" valign="center" id="Quad_NextPlaylistPage" ScriptEvents="1"
-				style="Icons64x64_1" substyle="ArrowNext" hidden="1"
-			/>
-			<quad posn="8" sizen="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowDisabled"/>
+
+		<!-- track navigation bar -->
+		<frame id="Frame_Navigation" pos="0 -71.25">
+			<quad size="60 3" valign="center" id="Quad_TrackNavBarTrigger" ScriptEvents="1" />
+			<quad size="0 .5" valign="center" bgcolor="FFF" id="Quad_TrackNavBarHover" hidden="1" />
+			<quad size="0 .5" valign="center" bgcolor="FFF" id="Quad_TrackNavBarCur" />
+			<quad size="60 .5" valign="center" bgcolor="000" opacity=".25" />
 		</frame>
-	</frame>
-	
-	<!-- Music player controlc window -->
-	<frame id="Frame_PlayerControlsWindow" posn="0 -79">
-		<!-- Song information -->
-		<frame id="Frame_SongInfo" posn="1.5 -1.5 1">
-			<quad sizen="8.2 8.2" id="Quad_StaticCoverImage"/>
-			<label posn="9.5 -2.25" sizen="68 3" class="bigInfo" text="???" id="Label_SongInfoAuthor"/>
-			<label posn="9.5 -5.75" sizen="100 3" class="subInfo" text="???" id="Label_SongInfoTitle"/>
-			<label posn="97 -6.75" sizen="40 3" halign="right" class="bigInfo" textsize="1" textcolor="888" text="0/0" id="Label_SongInfoIndex"/>
-		</frame>
-		
-		<!-- Song navigation bar -->
-		<frame id="Frame_Navigation" posn="1.5 -11 1">
-			<quad posn="0 0 3" sizen="97 2.5" valign="center" id="Quad_NavigationTrigger" ScriptEvents="1"/>
-			<quad sizen="97 .5" valign="center" bgcolor="444"/>
-			<quad posn="0 0 1" sizen="0 .5" valign="center" bgcolor="BBB" id="Quad_NavigationCur"/>
-			<quad posn="0 0 2" sizen="0 .5" valign="center" bgcolor="BBB" id="Quad_NavigationHover" hidden="1"/>
-		</frame>
-		
+
 		<!-- Timer and controllers -->
-		<frame id="Frame_PlayControls" posn="50 -14 1">
-			<label posn="-48.75" class="timeLabel" textcolor="BBB" text="0:00" id="Label_CurrentPlayTime"/>
-			<label posn="48.75" halign="right" class="timeLabel" textcolor="888" text="0:00" id="Label_TotalTimeLength"/>
-			
+		<frame id="Frame_PlayControls" pos="0 -74.75">
+			<label pos="-.25" class="timeLabel" textcolor="BBB" text="0:00" id="Label_CurrentTrackTime" />
+			<label pos="60.25" halign="right" class="timeLabel" textcolor="FFF" text="0:00" id="Label_CurrentTrackLength" />
 			<quad
-				posn="-5" sizen="3.5 3.5" halign="center" valign="center" id="Quad_ButtonPrev" ScriptEvents="1"
+				pos="24" size="3.5 3.5" halign="center" valign="center" id="Quad_PlayerControlPrev" ScriptEvents="1"
 				class="focus valid" image="{{{MediaBasePath}}}MusicNext.png" imagefocus="{{{MediaBasePath}}}MusicNextHover.png" rot="180"
 			/>
 			<quad
-				posn="0" sizen="3.5 3.5" halign="center" valign="center" id="Quad_ButtonPlay" ScriptEvents="1"
+				pos="29" size="3.5 3.5" halign="center" valign="center" id="Quad_PlayerControlPlay" ScriptEvents="1"
 				class="focus valid" image="{{{MediaBasePath}}}MusicPlay.png" imagefocus="{{{MediaBasePath}}}MusicPlayHover.png"
 			/>
 			<quad
-				posn="0" sizen="3.5 3.5" halign="center" valign="center" id="Quad_ButtonPause" ScriptEvents="1" hidden="1"
+				pos="29" size="3.5 3.5" halign="center" valign="center" id="Quad_PlayerControlPause" ScriptEvents="1" hidden="1"
 				class="focus valid" image="{{{MediaBasePath}}}MusicPause.png" imagefocus="{{{MediaBasePath}}}MusicPauseHover.png"
 			/>
 			<quad
-				posn="5" sizen="3.5 3.5" halign="center" valign="center" id="Quad_ButtonNext" ScriptEvents="1"
+				pos="34" size="3.5 3.5" halign="center" valign="center" id="Quad_PlayerControlNext" ScriptEvents="1"
 				class="focus valid" image="{{{MediaBasePath}}}MusicNext.png" imagefocus="{{{MediaBasePath}}}MusicNextHover.png"
 			/>
 		</frame>
+
+		<!-- Playlist tracks items -->
+		<frame id="Frame_PlaylistItems" pos="62">
+			<!-- Model of the playlist item -->
+			<framemodel id="FrameModel_PlaylistItem">
+				<label pos="1 -2.5" size="108" class="FontM" textsize="1.5" id="Label_ListItemTitle" />
+				<label pos="119 -2.5" class="FontM" halign="right" textsize="1.5" id="Label_ListItemDuration" />
+				<quad size="120 5" opacity=".25" id="Quad_ListItemBackground" ScriptEvents="1" />
+				<quad size="120 5" bgcolor="FFF" opacity=".25" id="Quad_IsCurrentlyPlaying" hidden="1" />
+				<quad size="120 5" bgcolor="FFF" opacity=".125" />
+			</framemodel>
+			{{{PlaylistCards}}}
+		</frame>
 	</frame>
+
+	<!-- Separator -->
+	<quad pos="0 -86.5" size="186 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Custom playlist setup row -->
+	<frame id="Frame_CustomPlaylistEnter" pos="2 -90">
+		<label class="FontB" textsize="1" textprefix="$t$s" id="Label_CustomPlaylist" />
+		<entry
+			size="80 4" valign="center2" id="Entry_CustomPlaylistURL" focusareacolor1="0000" focusareacolor2="0002"
+			textsize="1" textcolor="FFF" textfont="{{{TL::MLEncode(_ThinTextFont)}}}"
+		/>
+	</frame>
+
+	<!-- Page switch -->
+	<frame id="Frame_PlaylistPageSwitch" pos="181.5 -90.75">
+		<label pos="-9.5 .25" halign="right" class="FontB" textsize="2" text="1/1" id="Label_CurPlaylistPage" />
+		<frame pos="-6">
+			<label halign="center" valign="center2" textsize="2" text="►" textcolor="FFF" rot="-180" />
+			<label pos=".125 -.125" halign="center" valign="center2" textsize="2" text="►" textcolor="000" rot="-180" />
+			<quad size="5 5" halign="center" valign="center" bgcolor="FFF2" bgcolorfocus="FFF4" id="Quad_PlaylistPagePrev" ScriptEvents="1" hidden="1" />
+		</frame>
+		<frame>
+			<label halign="center" valign="center2" textsize="2" text="►" textcolor="FFF" />
+			<label pos=".125 -.125" halign="center" valign="center2" textsize="2" text="►" textcolor="000" />
+			<quad size="5 5" halign="center" valign="center" bgcolor="FFF2" bgcolorfocus="FFF4" id="Quad_PlaylistPageNext" ScriptEvents="1" hidden="1" />
+		</frame>
+	</frame>
+</frame>
+
+<!-- Background blur -->
+<quad z-index="-50" size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+<quad z-index="-50" size="320 180" halign="center" valign="center" bgcolor="000" opacity=".25" />
+
 </frame>
 
 <script><!--
@@ -181,32 +184,32 @@ Text Private_CreateManialinkMusicPlayer(Text _MediaBasePath, Text _ThinTextFont,
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare CHttpRequest G_Storage_PlaylistRequest;	///< HTTP request pointing the current playlist file
-declare CAudioSound G_Storage_CurrentSong;		///< Currently played song item
-declare Boolean G_Storage_ForceSongChange;		///< Force script to change currently played song
+declare CHttpRequest G_PlaylistRequest;	///< HTTP request pointing the current playlist file
+declare CAudioSource G_CurrentTrack;		///< Currently played track item
+declare Boolean G_ForceTrackChange;		///< Force script to change currently played track
 
 // ---------------------------------- //
 // Current playlist data
-declare Text G_Storage_PlaylistMusicRoot;		///< URL of the directory containing playlist music files
-declare Text G_Storage_PlaylistCoversRoot;		///< URL of the directory containing playlist albums covers images
-declare Text G_Storage_PlaylistDefaultCover;	///< Address of default cover image
-declare Integer G_Storage_PlaylistSongsCount;	///< Total amount of songs in current playlist
-declare Integer G_Storage_PlaylistAlbumsCount;	///< Total amount of albums in current playlist
+declare Text G_PlaylistMusicPath;		///< URL of the directory containing playlist music files
+declare Text G_PlaylistImagePath;		///< URL of the directory containing playlist albums covers images
+declare Text G_PlaylistDefaultImage;	///< Address of default cover image
+declare Integer G_PlaylistNbTracks;	///< Total amount of tracks in current playlist
+declare Integer G_PlaylistNbAlbums;	///< Total amount of albums in current playlist
 
 // ---------------------------------- //
-// Available songs information
-declare Text[Integer] G_Storage_SongsNames;		///< Songs titles
-declare Text[Integer] G_Storage_SongsAuthors;	///< Songs authors
-declare Text[Integer] G_Storage_SongsAlbums;	///< Songs albums
-declare Text[Integer] G_Storage_SongsGeneres;	///< Songs generes
-declare Vec3[Integer] G_Storage_SongsColors;	///< Songs colors
-declare Text[Integer] G_Storage_SongsFileNames;	///< Songs files names
-declare Real[Integer] G_Storage_SongsDuration;	///< Songs duration
+// Available tracks information
+declare Text[Integer] G_TrackInfoTitle;		///< tracks titles
+declare Text[Integer] G_TrackInfoAuthor;	///< tracks authors
+declare Text[Integer] G_TrackInfoAlbum;	///< tracks albums
+declare Text[Integer] G_TrackInfoGenere;	///< tracks generes
+declare Vec3[Integer] G_TrackInfoColor;	///< tracks colors
+declare Text[Integer] G_TrackInfoFileName;	///< tracks files names
+declare Real[Integer] G_TrackInfoDuration;	///< tracks duration
 
 // ---------------------------------- //
 // Available albums information
-declare Text[Integer] G_Storage_AlbumsNames;		///< Titles of albums
-declare Text[Integer] G_Storage_AlbumsCoverFiles;	///< Cover file name
+declare Text[Integer] G_AlbumInfoName;		///< Titles of albums
+declare Text[Integer] G_AlbumInfoImage;	///< Cover file name
 
 // ---------------------------------- //
 // Main
@@ -216,34 +219,33 @@ declare Text[Integer] G_Storage_AlbumsCoverFiles;	///< Cover file name
 // ---------------------------------- //
 // Load interface elements
 declare Frame_StorageInGameMenu	<=> (Page.GetFirstChild("Frame_StorageInGameMenu") as CMlFrame);
-declare Label_CurrentPlayTime	<=> (Page.GetFirstChild("Label_CurrentPlayTime") as CMlLabel);
-declare Label_TotalTimeLength	<=> (Page.GetFirstChild("Label_TotalTimeLength") as CMlLabel);
-declare Label_SongInfoAuthor	<=> (Page.GetFirstChild("Label_SongInfoAuthor") as CMlLabel);
-declare Label_SongInfoTitle		<=> (Page.GetFirstChild("Label_SongInfoTitle") as CMlLabel);
-declare Label_SongInfoIndex		<=> (Page.GetFirstChild("Label_SongInfoIndex") as CMlLabel);
-declare Quad_StaticCoverImage	<=> (Page.GetFirstChild("Quad_StaticCoverImage") as CMlQuad);
-declare Entry_PlaylistLoadURL	<=> (Page.GetFirstChild("Entry_PlaylistLoadURL") as CMlEntry);
+declare Label_PlaylistNbTracks	<=> (Page.GetFirstChild("Label_PlaylistNbTracks") as CMlLabel);
+declare Label_CustomPlaylist	<=> (Page.GetFirstChild("Label_CustomPlaylist") as CMlLabel);
+declare Entry_CustomPlaylistURL	<=> (Page.GetFirstChild("Entry_CustomPlaylistURL") as CMlEntry);
+declare Label_CurPlaylistPage	<=> (Page.GetFirstChild("Label_CurPlaylistPage") as CMlLabel);
+declare Quad_PlaylistPagePrev	<=> (Page.GetFirstChild("Quad_PlaylistPagePrev") as CMlQuad);
+declare Quad_PlaylistPageNext	<=> (Page.GetFirstChild("Quad_PlaylistPageNext") as CMlQuad);
 
-// Song progress bar
-declare Quad_NavigationCur		<=> (Page.GetFirstChild("Quad_NavigationCur") as CMlQuad);
-declare Quad_NavigationTrigger	<=> (Page.GetFirstChild("Quad_NavigationTrigger") as CMlQuad);
-declare Quad_NavigationHover	<=> (Page.GetFirstChild("Quad_NavigationHover") as CMlQuad);
+/// Current track information
+declare Quad_CurrentTrackCover		<=> (Page.GetFirstChild("Quad_CurrentTrackCover") as CMlQuad);
+declare Label_CurrentTrackAuthor	<=> (Page.GetFirstChild("Label_CurrentTrackAuthor") as CMlLabel);
+declare Label_CurrentTrackTitle		<=> (Page.GetFirstChild("Label_CurrentTrackTitle") as CMlLabel);
+declare Label_CurrentTrackOrder		<=> (Page.GetFirstChild("Label_CurrentTrackOrder") as CMlLabel);
+declare Label_CurrentTrackTime		<=> (Page.GetFirstChild("Label_CurrentTrackTime") as CMlLabel);
+declare Label_CurrentTrackLength	<=> (Page.GetFirstChild("Label_CurrentTrackLength") as CMlLabel);
 
-// Music player control buttons
-declare Quad_ButtonPrev <=> (Page.GetFirstChild("Quad_ButtonPrev") as CMlQuad);
-declare Quad_ButtonPlay <=> (Page.GetFirstChild("Quad_ButtonPlay") as CMlQuad);
-declare Quad_ButtonPause <=> (Page.GetFirstChild("Quad_ButtonPause") as CMlQuad);
-declare Quad_ButtonNext <=> (Page.GetFirstChild("Quad_ButtonNext") as CMlQuad);
+/// Music player controls
+declare Quad_TrackNavBarCur		<=> (Page.GetFirstChild("Quad_TrackNavBarCur") as CMlQuad);
+declare Quad_TrackNavBarTrigger	<=> (Page.GetFirstChild("Quad_TrackNavBarTrigger") as CMlQuad);
+declare Quad_TrackNavBarHover	<=> (Page.GetFirstChild("Quad_TrackNavBarHover") as CMlQuad);
+declare Quad_PlayerControlPrev	<=> (Page.GetFirstChild("Quad_PlayerControlPrev") as CMlQuad);
+declare Quad_PlayerControlPlay	<=> (Page.GetFirstChild("Quad_PlayerControlPlay") as CMlQuad);
+declare Quad_PlayerControlPause	<=> (Page.GetFirstChild("Quad_PlayerControlPause") as CMlQuad);
+declare Quad_PlayerControlNext	<=> (Page.GetFirstChild("Quad_PlayerControlNext") as CMlQuad);
 
-// Playlist page switch
-declare Quad_PrevPlaylistPage <=> (Page.GetFirstChild("Quad_PrevPlaylistPage") as CMlQuad);
-declare Quad_NextPlaylistPage <=> (Page.GetFirstChild("Quad_NextPlaylistPage") as CMlQuad);
-declare Label_CurPlaylistPage <=> (Page.GetFirstChild("Label_CurPlaylistPage") as CMlLabel);
-
-// Get the songs list items
-declare CMlFrame[] Frame_SongsListItems;
-for (I, 0, {{{C_LibStoragePlayer_NbPlaylistRows - 1}}})
-	Frame_SongsListItems.add((Page.GetFirstChild("Frame_SongsListItem#"^I) as CMlFrame));
+// Load playlist cards
+declare CMlFrame[] Frame_PlaylistItems;
+for (I, 0, {{{C_LibStoragePlayer_NbPlaylistRows - 1}}}) Frame_PlaylistItems.add((Page.GetFirstChild("Frame_PlaylistItem#"^I) as CMlFrame));
 
 // ---------------------------------- //
 // Netcode
@@ -255,36 +257,39 @@ declare persistent Persistent_Storage_CustomPlaylistURL for LocalUser = "";
 declare persistent Persistent_Storage_CurrentPlaylistURL for LocalUser = "";
 declare persistent Persistent_Storage_PreviousPlaylistURL for LocalUser = "";
 declare persistent Persistent_Storage_IsPlaying for LocalUser = True;
-declare persistent Persistent_Storage_CurrentSongIndex for LocalUser = 0;
+declare persistent Persistent_Storage_CurrentTrackIndex for LocalUser = 0;
 declare persistent Persistent_Storage_PreviousPlayPoint for LocalUser = 0.;
 declare persistent Persistent_Storage_InGameWindowVisible for LocalUser = False;
 
 // ---------------------------------- //
 // Variables
-declare JumpToLatestPlayPoint = True;		///< Forces script to skip newly loaded song to the latests listening point
-declare CurrentSongIsDownloading = True;	///< Disallows script to skip just downloaded song
-declare ClearSongInformation = True;		///< Forces script to clear all information in player
+declare JumpToLatestPlayPoint = True;		///< Forces script to skip newly loaded track to the latests listening point
+declare CurrentTrackIsDownloading = True;	///< Disallows script to skip just downloaded track
+declare ClearTrackInformation = True;		///< Forces script to clear all information in player
+declare DisplayStoragePlayer = False;		///< Current plugin window visibility
 declare StartNewRequest = True;			///< Forces script to load another playlist
 declare PlaylistRequestStartTime = -1;	///< Time of the request start used to determine timeout
 
-declare UpdateSongsListFrame = True;
-declare PlayerControlsColor = C_Storage_DefaultPlayerColor;
-declare PagesNbCurrent = 1;
-declare PagesNbTotal = 1;
+declare UpdatePlaylistItems = True;
+declare InterfaceColor = C_Storage_DefaultPlayerColor;
+declare PlaylistCurPage = 1;
+declare PlaylistNbPages = 1;
 
 // Update
-declare PrevPlayerControlsColor = Vec3;
+declare PrevInterfaceColor = Vec3;
 declare PrevCustomPlaylistURL = Persistent_Storage_CustomPlaylistURL;
 
 // ---------------------------------- //
 // Initialize music plugin
-(Page.GetFirstChild("Label_WindowTitleText") as CMlLabel).SetText(Translate("Storage Music Player"));
-(Page.GetFirstChild("Label_CustomPlaylist") as CMlLabel).SetText(Translate("Custom playlist URL:"));
-Entry_PlaylistLoadURL.Value = Persistent_Storage_CustomPlaylistURL;
+Translate("Label_WindowTitleText", "Storage Music Player");
+Translate("Label_CustomPlaylist", "Custom playlist URL:");
+
+Entry_CustomPlaylistURL.RelativePosition_V3.X = Label_CustomPlaylist.RelativePosition_V3.X + ComputeWidth(Label_CustomPlaylist) + 1.;
+Entry_CustomPlaylistURL.Value = Persistent_Storage_CustomPlaylistURL;
 
 JumpToLatestPlayPoint = True;
 StartNewRequest = True;
-G_Storage_ForceSongChange = True;
+G_ForceTrackChange = True;
 ***
 
 // ---------------------------------- //
@@ -306,54 +311,57 @@ foreach (Event in PendingEvents) {
 		// Do action
 		switch (Event.ControlId) {
 			// ---------------------------------- //
-			// Resume song
-			case "Quad_ButtonPlay" : Persistent_Storage_IsPlaying = True;
+			// Resume playback
+			case "Quad_PlayerControlPlay" : Persistent_Storage_IsPlaying = True;
 			
 			// ---------------------------------- //
-			// Pause song
-			case "Quad_ButtonPause" : Persistent_Storage_IsPlaying = False;
+			// Pause playback
+			case "Quad_PlayerControlPause" : Persistent_Storage_IsPlaying = False;
 			
 			// ---------------------------------- //
-			// Go to the previous song
-			case "Quad_ButtonPrev" : {
-				if (G_Storage_CurrentSong != Null && G_Storage_CurrentSong.PlayCursor > 10)
-					G_Storage_CurrentSong.PlayCursor = 0.;
-				else PrevSong();
+			// Previous track button
+			case "Quad_PlayerControlPrev" : {
+				if (G_CurrentTrack != Null && G_CurrentTrack.PlayCursor > 10)
+					G_CurrentTrack.PlayCursor = 0.;
+
+				// Go to the next track
+				else PrevTrack();
 			}
 			// ---------------------------------- //
-			// Go to the next Song
-			case "Quad_ButtonNext" : NextSong();
+			// Next track button
+			case "Quad_PlayerControlNext" : NextTrack();
 			
 			// ---------------------------------- //
 			// Travel to selected play point
-			case "Quad_NavigationTrigger" : {
-				if (G_Storage_CurrentSong != Null && !G_Storage_CurrentSong.DownloadInProgress) {
-					G_Storage_CurrentSong.PlayCursor =
-						G_Storage_CurrentSong.PlayLength *
-						(MouseX - Event.Control.AbsolutePosition.X) / Event.Control.Size.X / Event.Control.AbsoluteScale;
-				}
+			case "Quad_TrackNavBarTrigger" : {
+				if (G_CurrentTrack == Null || G_CurrentTrack.PlayLength <= 0) continue;
+				declare Ratio = (Input.MousePos.X - Event.Control.AbsolutePosition_V3.X) / Event.Control.Size.X / Event.Control.AbsoluteScale;
+				G_CurrentTrack.PlayCursor = G_CurrentTrack.PlayLength * Ratio;
 			}
 			// ---------------------------------- //
-			// Switch to a song selected in the playlist
+			// Play track from the playlist
 			case "Quad_ListItemBackground" : {
-				declare SongIndex = TL::ToInteger(Event.Control.DataAttributeGet("SongIndex"));
-				if (SongIndex != Persistent_Storage_CurrentSongIndex) GoToSong(SongIndex);
+				declare Integer CurrentTrackOrder for Event.Control;
+				if (CurrentTrackOrder < 0 || CurrentTrackOrder == Persistent_Storage_CurrentTrackIndex) continue;
+				GoToTrack(CurrentTrackOrder);
 			}
 			// ---------------------------------- //
-			// Go to the previous playlist page
-			case "Quad_PrevPlaylistPage" : {
-				PagesNbCurrent = ML::Max(PagesNbCurrent - 1, 1);
-				UpdateSongsListFrame = True;
+			// Previous playlist page
+			case "Quad_PlaylistPagePrev" : {
+				if (PlaylistCurPage <= 1) continue;
+				PlaylistCurPage -= 1; 
+				UpdatePlaylistItems = True;
 			}
 			// ---------------------------------- //
-			// Go to the next playlist page
-			case "Quad_NextPlaylistPage" : {
-				PagesNbCurrent = ML::Min(PagesNbCurrent + 1, PagesNbTotal);
-				UpdateSongsListFrame = True;
+			// Next playlist page
+			case "Quad_PlaylistPageNext" : {
+				if (PlaylistCurPage >= PlaylistNbPages) continue;
+				PlaylistCurPage += 1;
+				UpdatePlaylistItems = True;
 			}
 			// ---------------------------------- //
-			// Close window
-			case "Quad_ButtonClose" : Persistent_Storage_InGameWindowVisible = False;
+			// Close the music player interface
+			case "Quad_PlayerControlClose" : Persistent_Storage_InGameWindowVisible = False;
 		}
 	}
 	// ---------------------------------- //
@@ -365,14 +373,14 @@ foreach (Event in PendingEvents) {
 		
 		// ---------------------------------- //
 		// Show navigation bar
-		if (Event.ControlId == "Quad_NavigationTrigger") Quad_NavigationHover.Show();
+		if (Event.ControlId == "Quad_TrackNavBarTrigger") Quad_TrackNavBarHover.Show();
 	}
 	// ---------------------------------- //
 	// On mouse out
 	else if (Event.Type == CMlEvent::Type::MouseOut) {
 		// ---------------------------------- //
 		// Hide navigation bar
-		if (Event.ControlId == "Quad_NavigationTrigger") Quad_NavigationHover.Hide();
+		if (Event.ControlId == "Quad_TrackNavBarTrigger") Quad_TrackNavBarHover.Hide();
 	}
 	// ---------------------------------- //
 	// On key press
@@ -387,23 +395,25 @@ foreach (Event in PendingEvents) {
 			case "K" : Persistent_Storage_IsPlaying = !Persistent_Storage_IsPlaying;
 			
 			// ---------------------------------- //
-			// Go to the previous song
+			// Go to the previous track
 			case "J" : {
-				if (G_Storage_CurrentSong != Null && G_Storage_CurrentSong.PlayCursor > 10)
-					G_Storage_CurrentSong.PlayCursor = 0.;
-				else PrevSong();
+				if (G_CurrentTrack != Null && G_CurrentTrack.PlayCursor > 10)
+					G_CurrentTrack.PlayCursor = 0.;
+				else PrevTrack();
 			}
 			// ---------------------------------- //
-			// Go to the next song
-			case "L" : NextSong();
+			// Go to the next track
+			case "L" : NextTrack();
 		}
 	}
 }
 
 // ---------------------------------- //
 // Update window visibility
-if (Frame_StorageInGameMenu.Visible != Persistent_Storage_InGameWindowVisible) {
-	Frame_StorageInGameMenu.Visible = Persistent_Storage_InGameWindowVisible;
+DisplayStoragePlayer = Persistent_Storage_InGameWindowVisible && !IsInGameMenuDisplayed;
+
+if (Frame_StorageInGameMenu.Visible != DisplayStoragePlayer) {
+	Frame_StorageInGameMenu.Visible = DisplayStoragePlayer;
 	ClientUI.AltMenuNoCustomScores = Frame_StorageInGameMenu.Visible;
 	
 	// Hide scores table while using music plugin
@@ -413,25 +423,26 @@ if (Frame_StorageInGameMenu.Visible != Persistent_Storage_InGameWindowVisible) {
 	// Play sound
 	declare Sound = CAudioManager::ELibSound::HideDialog;
 	if (Frame_StorageInGameMenu.Visible) Sound = CAudioManager::ELibSound::ShowDialog;
-	Audio.PlaySoundEvent(Sound, 0, 10.);
+	Audio.PlaySoundEvent(Sound, 0, 0.);
 }
 
 // ---------------------------------- //
 // Update playlist currently played by server
 if (Persistent_Storage_PreviousPlaylistURL != Net_LibStoragePlayer_ServerPlaylistURL) {
 	Persistent_Storage_PreviousPlaylistURL = Net_LibStoragePlayer_ServerPlaylistURL;
-	if (Net_LibStoragePlayer_ServerPlaylistURL != "" && Persistent_Storage_CustomPlaylistURL == "") {
+
+	if (Persistent_Storage_CustomPlaylistURL == "") {
 		Persistent_Storage_CurrentPlaylistURL = Net_LibStoragePlayer_ServerPlaylistURL;
 		ClearPlaylist();
 		StartNewRequest = True;
-		ClearSongInformation = True;
+		ClearTrackInformation = True;
 	}
 }
 
 // ---------------------------------- //
 // Load new custom playlist specified by user
-if (Persistent_Storage_CustomPlaylistURL != Entry_PlaylistLoadURL.Value) {
-	Persistent_Storage_CustomPlaylistURL = Entry_PlaylistLoadURL.Value;
+if (Persistent_Storage_CustomPlaylistURL != Entry_CustomPlaylistURL.Value) {
+	Persistent_Storage_CustomPlaylistURL = Entry_CustomPlaylistURL.Value;
 	
 	if (Persistent_Storage_CustomPlaylistURL != "" && Http.IsValidUrl(Persistent_Storage_CustomPlaylistURL))
 		Persistent_Storage_CurrentPlaylistURL = Persistent_Storage_CustomPlaylistURL;
@@ -440,7 +451,7 @@ if (Persistent_Storage_CustomPlaylistURL != Entry_PlaylistLoadURL.Value) {
 	
 	ClearPlaylist();
 	StartNewRequest = True;
-	ClearSongInformation = True;
+	ClearTrackInformation = True;
 }
 
 // ---------------------------------- //
@@ -451,306 +462,285 @@ if (StartNewRequest) {
 	// ---------------------------------- //
 	// Check if the URL is valid and create request
 	if (Http.IsValidUrl(Persistent_Storage_CurrentPlaylistURL)) {
-		if (G_Storage_PlaylistRequest != Null) Http.Destroy(G_Storage_PlaylistRequest);
-		G_Storage_PlaylistRequest = Http.CreateGet(Persistent_Storage_CurrentPlaylistURL, False);
+		if (G_PlaylistRequest != Null) Http.Destroy(G_PlaylistRequest);
+		G_PlaylistRequest = Http.CreateGet(Persistent_Storage_CurrentPlaylistURL, False);
 		PlaylistRequestStartTime = Now;
 	}
 }
 
 // ---------------------------------- //
 // Manage ongoing playlist HTTP request
-if (G_Storage_PlaylistRequest != Null) {
+if (G_PlaylistRequest != Null) {
 	// ---------------------------------- //
 	// Read information from successful request
-	if (G_Storage_PlaylistRequest.IsCompleted) {
-		declare PlaylistDocument = Xml.Create(G_Storage_PlaylistRequest.Result);
+	if (G_PlaylistRequest.IsCompleted) {
+		declare PlaylistDocument = Xml.Create(G_PlaylistRequest.Result);
 		LoadPlaylist(PlaylistDocument);
 		Xml.Destroy(PlaylistDocument);
 		
 		// ---------------------------------- //
-		// Switch to a random song, unless player loads previous playlist
-		if (!JumpToLatestPlayPoint) Persistent_Storage_CurrentSongIndex = ML::Rand(0, G_Storage_PlaylistSongsCount - 1);
+		// Switch to a random track, unless player loads previous playlist
+		if (!JumpToLatestPlayPoint) Persistent_Storage_CurrentTrackIndex = ML::Rand(0, G_PlaylistNbTracks - 1);
 		
-		UpdateSongsListFrame = True;
-		PagesNbCurrent = 1;
-		PagesNbTotal = (G_Storage_PlaylistSongsCount + 1) / {{{C_LibStoragePlayer_NbPlaylistRows}}} + 1;
+		UpdatePlaylistItems = True;
+		PlaylistCurPage = 1;
+		PlaylistNbPages = (G_PlaylistNbTracks - 1) / {{{C_LibStoragePlayer_NbPlaylistRows}}} + 1;
+		Label_PlaylistNbTracks.Value = TL::ToText(G_PlaylistNbTracks);
 		
 		// Destroy request
-		Http.Destroy(G_Storage_PlaylistRequest);
-		G_Storage_PlaylistRequest = Null;
+		Http.Destroy(G_PlaylistRequest);
+		G_PlaylistRequest = Null;
 	}
 	
 	// ---------------------------------- //
 	// Destroy request if it timed out
 	else if (Now > PlaylistRequestStartTime + C_Storage_RequestTimeOut) {
-		Http.Destroy(G_Storage_PlaylistRequest);
-		G_Storage_PlaylistRequest = Null;
+		Http.Destroy(G_PlaylistRequest);
+		G_PlaylistRequest = Null;
 	}
 }
 
 // ---------------------------------- //
-// Change the currently played song
-if (G_Storage_ForceSongChange && G_Storage_PlaylistSongsCount > 0) {
-	G_Storage_ForceSongChange = False;
-	UpdateSongsListFrame = True;
+// Change the currently played track
+if (G_ForceTrackChange && G_PlaylistNbTracks > 0) {
+	G_ForceTrackChange = False;
+	UpdatePlaylistItems = True;
+
+	declare I = Persistent_Storage_CurrentTrackIndex;
+	Label_CurrentTrackOrder.Value = I + 1^"/"^G_PlaylistNbTracks;
 	
-	// Get the current song index
-	declare Index = Persistent_Storage_CurrentSongIndex;
-	
-	// Change playlist page
-	PagesNbCurrent = Index / {{{C_LibStoragePlayer_NbPlaylistRows}}} + 1;
-	
-	Label_SongInfoIndex.SetText(Index + 1^"/"^G_Storage_PlaylistSongsCount);
+	// Change the currently shown playlist page
+	PlaylistCurPage = I / {{{C_LibStoragePlayer_NbPlaylistRows}}} + 1;
 	
 	// ---------------------------------- //
-	// Load song from URL
-	if (G_Storage_SongsFileNames.existskey(Index)) {
+	// Load track from URL
+	if (G_TrackInfoFileName.existskey(I)) {
 		// ---------------------------------- //
-		// Destroy previous song item
-		if (G_Storage_CurrentSong != Null) {
-			G_Storage_CurrentSong.Stop();
-			Audio.DestroySound(G_Storage_CurrentSong);
-			G_Storage_CurrentSong = Null;
+		// Destroy previous sound
+		if (G_CurrentTrack != Null) {
+			G_CurrentTrack.Stop();
+			Audio.DestroySound(G_CurrentTrack);
+			G_CurrentTrack = Null;
 		}
 		
 		// ---------------------------------- //
-		// Create new song item
-		G_Storage_CurrentSong = Audio.CreateSound(
-			G_Storage_PlaylistMusicRoot^G_Storage_SongsFileNames[Index],
-			0., True, False, False
-		);
-		Label_TotalTimeLength.SetText(TL::TimeToText(ML::FloorInteger(G_Storage_CurrentSong.PlayLength * 1000)));
-		G_Storage_CurrentSong.Play();
+		// Create new sound
+		declare TrackFileURL = G_PlaylistMusicPath^G_TrackInfoFileName[I];
+		if (Http.IsValidUrl(TrackFileURL)) {
+			G_CurrentTrack = Audio.CreateSound(TrackFileURL, 0., True, False, False);
+			Label_CurrentTrackLength.Value = TL::TimeToText(ML::FloorInteger(G_CurrentTrack.PlayLength * 1000));
+			G_CurrentTrack.Play();
+		}
 		
-		// ---------------------------------- //
-		// Set the current song name
-		declare CurrentSongName = "???";
-		if (G_Storage_SongsNames.existskey(Index)) CurrentSongName = G_Storage_SongsNames[Index];
-		Label_SongInfoTitle.SetText(CurrentSongName);
+		// Set the current track name
+		declare CurTrackName = "???";
+		if (G_TrackInfoTitle.existskey(I)) CurTrackName = G_TrackInfoTitle[I];
+		Label_CurrentTrackTitle.Value = CurTrackName;
 		
-		// ---------------------------------- //
-		// Set the current song autor
-		declare CurrentSongAuthor = "???";
-		if (G_Storage_SongsAuthors.existskey(Index)) CurrentSongAuthor = G_Storage_SongsAuthors[Index];
-		Label_SongInfoAuthor.SetText(CurrentSongAuthor);
+		// Set the current track autor
+		declare CurTrackAuthor = "???";
+		if (G_TrackInfoAuthor.existskey(I)) CurTrackAuthor = G_TrackInfoAuthor[I];
+		Label_CurrentTrackAuthor.Value = TL::ToUpperCase(CurTrackAuthor);
 		
-		// ---------------------------------- //
 		// Set the player controls color
-		if (G_Storage_SongsColors.existskey(Index)) PlayerControlsColor = G_Storage_SongsColors[Index];
-		else PlayerControlsColor = C_Storage_DefaultPlayerColor;
+		if (G_TrackInfoColor.existskey(I)) InterfaceColor = G_TrackInfoColor[I];
+		else InterfaceColor = C_Storage_DefaultPlayerColor;
 		
-		// ---------------------------------- //
-		// Set the current song cover
-		declare CurrentSongCoverImage = G_Storage_PlaylistDefaultCover;
-		if (G_Storage_SongsAlbums.existskey(Index)) {
-			declare AlbumIndex = -1;
-			if (G_Storage_AlbumsNames.exists(G_Storage_SongsAlbums[Index]))
-				AlbumIndex = G_Storage_AlbumsNames.keyof(G_Storage_SongsAlbums[Index]);
-			
-			if (AlbumIndex != -1 && G_Storage_AlbumsCoverFiles.existskey(AlbumIndex))
-				CurrentSongCoverImage = G_Storage_PlaylistCoversRoot^G_Storage_AlbumsCoverFiles[AlbumIndex];
+		// Set the current track album cover image
+		declare CurTrackImage = G_PlaylistDefaultImage;
+		if (G_TrackInfoAlbum.existskey(I)) {
+			declare AlbumIndex = G_AlbumInfoName.keyof(G_TrackInfoAlbum[I]);
+			if (AlbumIndex != -1 && G_AlbumInfoImage.existskey(AlbumIndex)) CurTrackImage = G_PlaylistImagePath^G_AlbumInfoImage[AlbumIndex];
 		}
-		Quad_StaticCoverImage.ImageUrl = CurrentSongCoverImage;
+		Quad_CurrentTrackCover.ImageUrl = CurTrackImage;
 	}
 }
 
 // ---------------------------------- //
-// Manage currently loaded song item
-if (G_Storage_CurrentSong != Null) {
+// Manage currently loaded track item
+if (G_CurrentTrack != Null) {
 	// ---------------------------------- //
 	// Travel to the latest moment if music player has just started
-	if (JumpToLatestPlayPoint && G_Storage_CurrentSong.IsPlaying && G_Storage_CurrentSong.PlayCursor != 0.) {
+	if (JumpToLatestPlayPoint && G_CurrentTrack.IsPlaying && G_CurrentTrack.PlayCursor != 0.) {
 		JumpToLatestPlayPoint = False;
-		G_Storage_CurrentSong.PlayCursor = Persistent_Storage_PreviousPlayPoint;
+		G_CurrentTrack.PlayCursor = Persistent_Storage_PreviousPlayPoint;
 	}
 	
 	// ---------------------------------- //
-	// Song is playing
+	// Track is playing
 	if (Persistent_Storage_IsPlaying) {
-		if (!G_Storage_CurrentSong.IsPlaying) {
-			G_Storage_CurrentSong.Play();
-			G_Storage_CurrentSong.PlayCursor = Persistent_Storage_PreviousPlayPoint;
+		if (!G_CurrentTrack.IsPlaying) {
+			G_CurrentTrack.Play();
+			G_CurrentTrack.PlayCursor = Persistent_Storage_PreviousPlayPoint;
 		}
-		else if (G_Storage_CurrentSong.PlayCursor != 0)
-			Persistent_Storage_PreviousPlayPoint = G_Storage_CurrentSong.PlayCursor;
+		else if (G_CurrentTrack.PlayCursor != 0) Persistent_Storage_PreviousPlayPoint = G_CurrentTrack.PlayCursor;
 	}
 	// ---------------------------------- //
-	// Song is paused
-	else if (G_Storage_CurrentSong.IsPlaying) G_Storage_CurrentSong.Stop();
+	// Track is paused
+	else if (G_CurrentTrack.IsPlaying) G_CurrentTrack.Stop();
 	
 	// ---------------------------------- //
 	// Somg volume depending on game countdown
-	if (G_Storage_CurrentSong.IsPlaying) G_Storage_CurrentSong.Volume = GetCountdownVolume();
+	if (G_CurrentTrack.IsPlaying) G_CurrentTrack.Volume = GetCountdownVolume();
 	
 	// ---------------------------------- //
-	// Current song is being downloaded
-	if (G_Storage_CurrentSong.DownloadInProgress) {
-		if (!CurrentSongIsDownloading) {
-			CurrentSongIsDownloading = True;
-			Label_CurrentPlayTime.SetText("0:00");
-			Label_TotalTimeLength.SetText("0:00");
+	// Current track is being downloaded
+	if (G_CurrentTrack.PlayLength <= 0) {
+		if (!CurrentTrackIsDownloading) {
+			CurrentTrackIsDownloading = True;
+			Label_CurrentTrackTime.SetText("0:00");
+			Label_CurrentTrackLength.SetText("0:00");
 		}
-		
+
 		// ---------------------------------- //
 		// Blink the progress bar to represent downloading status
 		declare Sinus = ML::Sin(Now / 125.) / 2 + .5;
-		Quad_NavigationCur.Opacity = Sinus;
-		Quad_NavigationCur.Size.X = Quad_NavigationTrigger.Size.X;
+		Quad_TrackNavBarCur.Opacity = Sinus;
+		Quad_TrackNavBarCur.Size.X = Quad_TrackNavBarTrigger.Size.X;
 	}
 	// ---------------------------------- //
-	// Current song is downloaded and playable
+	// Current track is downloaded and playable
 	else {
 		// ---------------------------------- //
-		// Start playing the song if it just downloaded
-		if (CurrentSongIsDownloading && G_Storage_CurrentSong.PlayLength >= 5) {
-			CurrentSongIsDownloading = False;
-			Label_TotalTimeLength.SetText(TL::TimeToText(ML::FloorInteger(G_Storage_CurrentSong.PlayLength * 1000)));
-			G_Storage_CurrentSong.Play();
+		// Start playing the track if it just downloaded
+		if (CurrentTrackIsDownloading && G_CurrentTrack.PlayLength >= 5) {
+			CurrentTrackIsDownloading = False;
+			Label_CurrentTrackLength.SetText(TL::TimeToText(ML::FloorInteger(G_CurrentTrack.PlayLength * 1000)));
+			G_CurrentTrack.Play();
 		}
 		
 		// ---------------------------------- //
 		// Set the progress bar size
 		if (PageIsVisible) {
 			declare Real PercentageProgress;
-			if (G_Storage_CurrentSong.PlayLength == 0) PercentageProgress = 0.;
-			else PercentageProgress = ML::Max(0., Persistent_Storage_PreviousPlayPoint / G_Storage_CurrentSong.PlayLength);
+			if (G_CurrentTrack.PlayLength == 0) PercentageProgress = 0.;
+			else PercentageProgress = ML::Max(0., Persistent_Storage_PreviousPlayPoint / G_CurrentTrack.PlayLength);
 			
-			if (Quad_NavigationCur.Opacity != 1) Quad_NavigationCur.Opacity = 1.;
-			Quad_NavigationCur.Size.X =  Quad_NavigationTrigger.Size.X * PercentageProgress;
+			if (Quad_TrackNavBarCur.Opacity != 1) Quad_TrackNavBarCur.Opacity = 1.;
+			Quad_TrackNavBarCur.Size.X =  Quad_TrackNavBarTrigger.Size.X * PercentageProgress;
 			
 			// ---------------------------------- //
-			// Display current song play time
-			Label_CurrentPlayTime.Value = TL::TimeToText(ML::FloorInteger(Persistent_Storage_PreviousPlayPoint * 1000));
+			// Display current track play time
+			Label_CurrentTrackTime.Value = TL::TimeToText(ML::FloorInteger(Persistent_Storage_PreviousPlayPoint * 1000));
 		}
 	}
 	
-	// ---------------------------------- //
-	// Switch to the next song if current one is over
-	if (
-		G_Storage_CurrentSong.PlayLength >= 5 &&
-		G_Storage_CurrentSong.PlayCursor >= G_Storage_CurrentSong.PlayLength - .25
-	) NextSong();
+	// Switch to the next track if current one is over
+	if (G_CurrentTrack.PlayLength >= 5 && G_CurrentTrack.PlayCursor >= G_CurrentTrack.PlayLength - .25) NextTrack();
 	
-	// Force script to clear current song information when there is no song
-	if (ClearSongInformation) ClearSongInformation = True;
+	// Force script to clear current track information when there is no track
+	if (ClearTrackInformation) ClearTrackInformation = True;
 }
+
+if (!Frame_StorageInGameMenu.Visible) continue;
+
 // ---------------------------------- //
-// Clear current song information when there is no song playing
-else if (PageIsVisible && ClearSongInformation) {
-	ClearSongInformation = False;
-	UpdateSongsListFrame = True;
+// Update the tracks list window frame
+if (UpdatePlaylistItems) {
+	UpdatePlaylistItems = False;
 	
-	Label_SongInfoTitle.SetText("???");
-	Label_SongInfoAuthor.SetText("???");
-	Label_CurrentPlayTime.SetText("0:00");
-	Label_TotalTimeLength.SetText("0:00");
+	// ---------------------------------- //
+	// Update the playlist page switch
+	Quad_PlaylistPagePrev.Visible = PlaylistCurPage > 1;
+	Quad_PlaylistPageNext.Visible = PlaylistCurPage < PlaylistNbPages;
+	Label_CurPlaylistPage.Value = PlaylistCurPage^"/"^PlaylistNbPages;
 	
-	Quad_NavigationCur.Size.X = 0.;
-	Quad_StaticCoverImage.ImageUrl = G_Storage_PlaylistDefaultCover;
-	
-	// Update index
-	Label_SongInfoIndex.SetText("0/"^G_Storage_PlaylistSongsCount);
+	// ---------------------------------- //
+	// Configure playlist rows
+	foreach (I => Frame in Frame_PlaylistItems) {
+		declare TrackIndex = I + (PlaylistCurPage - 1) * Frame_PlaylistItems.count;
+		Frame.Visible = TrackIndex < G_PlaylistNbTracks;
+		if (!Frame.Visible) continue;
+		
+		declare Label_ListItemTitle <=> (Frame.GetFirstChild("Label_ListItemTitle") as CMlLabel);
+		declare Label_ListItemDuration <=> (Frame.GetFirstChild("Label_ListItemDuration") as CMlLabel);
+		declare Quad_ListItemBackground <=> (Frame.GetFirstChild("Quad_ListItemBackground") as CMlQuad);
+		declare Quad_IsCurrentlyPlaying <=> (Frame.GetFirstChild("Quad_IsCurrentlyPlaying") as CMlQuad);
+		
+		// Track name
+		declare CurTrackName = "???";
+		if (G_TrackInfoTitle.existskey(TrackIndex)) CurTrackName = G_TrackInfoTitle[TrackIndex];
+		
+		// Track autor
+		declare CurTrackAuthor = "???";
+		if (G_TrackInfoAuthor.existskey(TrackIndex)) CurTrackAuthor = G_TrackInfoAuthor[TrackIndex];
+		
+		// Track duration
+		declare CurTrackDuration = 0.;
+		if (G_TrackInfoDuration.existskey(TrackIndex)) CurTrackDuration = G_TrackInfoDuration[TrackIndex];
+		Label_ListItemDuration.Value = TL::TimeToText(ML::FloorInteger(CurTrackDuration));
+		
+		// Set the item label value
+		Label_ListItemTitle.Value = TrackIndex + 1^". "^CurTrackAuthor^" - "^CurTrackName;
+		
+		// Set the item elements colors
+		Quad_IsCurrentlyPlaying.Visible = TrackIndex == Persistent_Storage_CurrentTrackIndex;
+		
+		// Set the track index
+		declare Integer CurrentTrackOrder for Quad_ListItemBackground;
+		CurrentTrackOrder = TrackIndex;
+	}
 }
 
 // ---------------------------------- //
-// Continue script only if the page is visible
-if (PageIsVisible) {
-	// ---------------------------------- //
-	// Update the songs list window frame
-	if (UpdateSongsListFrame) {
-		UpdateSongsListFrame = False;
-		
-		// ---------------------------------- //
-		// Set the playlist page switch
-		Quad_PrevPlaylistPage.Visible = PagesNbCurrent > 1;
-		Quad_NextPlaylistPage.Visible = PagesNbCurrent < PagesNbTotal;
-		Label_CurPlaylistPage.SetText(PagesNbCurrent^" / "^PagesNbTotal);
-		
-		// ---------------------------------- //
-		// Configure frames
-		foreach (I => Frame in Frame_SongsListItems) {
-			declare SongIndex = I + (PagesNbCurrent - 1) * {{{C_LibStoragePlayer_NbPlaylistRows}}};
-			Frame.Visible = SongIndex < G_Storage_PlaylistSongsCount;
-			if (!Frame.Visible) continue;
-			
-			declare Label_ListItemTitle <=> (Frame.GetFirstChild("Label_ListItemTitle") as CMlLabel);
-			declare Label_ListItemDuration <=> (Frame.GetFirstChild("Label_ListItemDuration") as CMlLabel);
-			declare Quad_ListItemBackground <=> (Frame.GetFirstChild("Quad_ListItemBackground") as CMlQuad);
-			
-			// ---------------------------------- //
-			// Get the current song name
-			declare CurrentSongName = "???";
-			if (G_Storage_SongsNames.existskey(SongIndex)) CurrentSongName = G_Storage_SongsNames[SongIndex];
-			
-			// ---------------------------------- //
-			// Get the current song autor
-			declare CurrentSongAuthor = "???";
-			if (G_Storage_SongsAuthors.existskey(SongIndex)) CurrentSongAuthor = G_Storage_SongsAuthors[SongIndex];
-			
-			// Set the item label value
-			Label_ListItemTitle.SetText(SongIndex + 1^". "^CurrentSongAuthor^" - "^CurrentSongName);
-			
-			// ---------------------------------- //
-			// Get the song duration
-			declare CurrentSongDuration = 0.;
-			if (G_Storage_SongsDuration.existskey(SongIndex)) CurrentSongDuration = G_Storage_SongsDuration[SongIndex];
-			Label_ListItemDuration.SetText(TL::TimeToText(ML::FloorInteger(CurrentSongDuration)));
-			
-			// ---------------------------------- //
-			// Set the item elements colors
-			if (SongIndex == Persistent_Storage_CurrentSongIndex) Label_ListItemTitle.TextColor = <1., 1., 1.>;
-			else Label_ListItemTitle.TextColor = C_Storage_DefaultPlayerColor;
-			Label_ListItemDuration.TextColor = Label_ListItemTitle.TextColor;
-			
-			// Set the song index
-			Quad_ListItemBackground.DataAttributeSet("SongIndex", TL::ToText(SongIndex));
-		}
+// Clear current track information if there is no track playing
+if (ClearTrackInformation && G_CurrentTrack == Null) {
+	ClearTrackInformation = False;
+	UpdatePlaylistItems = True;
+	
+	Label_CurrentTrackTitle.Value = "???";
+	Label_CurrentTrackAuthor.Value = "???";
+	Label_CurrentTrackTime.Value = "0:00";
+	Label_CurrentTrackLength.Value = "0:00";
+	
+	Quad_TrackNavBarCur.Size.X = 0.;
+	Quad_CurrentTrackCover.ImageUrl = G_PlaylistDefaultImage;
+	
+	// Update index
+	Label_CurrentTrackOrder.Value = "0/"^G_PlaylistNbTracks;
+}
+
+// ---------------------------------- //
+// Update color of the interface
+if (PrevInterfaceColor != InterfaceColor) {
+	PrevInterfaceColor = InterfaceColor;
+	
+	Quad_TrackNavBarCur.BgColor		= InterfaceColor;
+	Quad_TrackNavBarHover.BgColor	= InterfaceColor;
+	Label_CurrentTrackTime.TextColor	= InterfaceColor;
+	Quad_PlayerControlPrev.Colorize		= InterfaceColor;
+	Quad_PlayerControlPlay.Colorize		= InterfaceColor;
+	Quad_PlayerControlPause.Colorize	= InterfaceColor;
+	Quad_PlayerControlNext.Colorize		= InterfaceColor;
+	
+	foreach (Frame in Frame_PlaylistItems) {
+		declare Quad_ListItemBackground <=> (Frame.GetFirstChild("Quad_ListItemBackground") as CMlQuad);
+		Quad_ListItemBackground.BgColorFocus = InterfaceColor;
 	}
+}
+
+// ---------------------------------- //
+// Update play and pause buttons visibility
+Quad_PlayerControlPause.Visible = G_CurrentTrack != Null && Persistent_Storage_IsPlaying;
+Quad_PlayerControlPlay.Visible = !Quad_PlayerControlPause.Visible;
+
+// ---------------------------------- //
+// Show the target play point while hovering navigation bar
+if (Quad_TrackNavBarHover.Visible) {
+	declare Ratio = (Input.MousePos.X - Quad_TrackNavBarTrigger.AbsolutePosition_V3.X) / Quad_TrackNavBarTrigger.AbsoluteScale;
+	if (Quad_TrackNavBarHover.Size.X != Ratio) Quad_TrackNavBarHover.Size.X = Ratio;
 	
 	// ---------------------------------- //
-	// Set color of the player controls depending on current song color
-	if (PrevPlayerControlsColor != PlayerControlsColor) {
-		PrevPlayerControlsColor = PlayerControlsColor;
-		
-		Quad_NavigationCur.BgColor		= PlayerControlsColor;
-		Quad_NavigationHover.BgColor	= PlayerControlsColor;
-		Label_CurrentPlayTime.TextColor	= PlayerControlsColor;
-		Quad_ButtonPrev.Colorize		= PlayerControlsColor;
-		Quad_ButtonPlay.Colorize		= PlayerControlsColor;
-		Quad_ButtonPause.Colorize		= PlayerControlsColor;
-		Quad_ButtonNext.Colorize		= PlayerControlsColor;
-		
-		foreach (Frame in Frame_SongsListItems) {
-			declare Quad_ListItemBackground <=> (Frame.GetFirstChild("Quad_ListItemBackground") as CMlQuad);
-			Quad_ListItemBackground.BgColorFocus = PlayerControlsColor;
-		}
+	// Progress bar opacity before play point
+	if (Quad_TrackNavBarHover.Size.X < Quad_TrackNavBarCur.Size.X) {
+		Quad_TrackNavBarCur.Opacity = .5;
+		Quad_TrackNavBarHover.Opacity = 1.;
 	}
-	
 	// ---------------------------------- //
-	// Set play and pause buttons visibility
-	Quad_ButtonPause.Visible = G_Storage_CurrentSong != Null && Persistent_Storage_IsPlaying;
-	Quad_ButtonPlay.Visible = !Quad_ButtonPause.Visible;
-	
-	// ---------------------------------- //
-	// Highlight progress bar on travel
-	if (Quad_NavigationHover.Visible) {
-		declare TravelPosition = (MouseX - Quad_NavigationTrigger.AbsolutePosition.X) / Quad_NavigationTrigger.AbsoluteScale;
-		if (Quad_NavigationHover.Size.X != TravelPosition) Quad_NavigationHover.Size.X = TravelPosition;
-		
-		// ---------------------------------- //
-		// Progress bar opacity before play point
-		if (Quad_NavigationHover.Size.X < Quad_NavigationCur.Size.X) {
-			if (Quad_NavigationCur.Opacity == 1) {
-				Quad_NavigationCur.Opacity = .5;
-				Quad_NavigationHover.Opacity = 1.;
-			}
-		}
-		// ---------------------------------- //
-		// Progress bar opacity after play point
-		else if (Quad_NavigationHover.Opacity == 1) {
-			Quad_NavigationHover.Opacity = .5;
-			Quad_NavigationCur.Opacity = 1.;
-		}
+	// Progress bar opacity after play point
+	else {
+		Quad_TrackNavBarHover.Opacity = .5;
+		Quad_TrackNavBarCur.Opacity = 1.;
 	}
 }
 ***
@@ -760,137 +750,138 @@ if (PageIsVisible) {
 // ---------------------------------- //
 
 // ---------------------------------- //
-/// Removes everything from the song information and stops playing
+/// Reset the currently loaded playlist information.
 Void ClearPlaylist() {
-	if (G_Storage_CurrentSong != Null) {
-		Audio.DestroySound(G_Storage_CurrentSong);
-		G_Storage_CurrentSong = Null;
+	// ---------------------------------- //
+	// Stop playing current track
+	if (G_CurrentTrack != Null) {
+		Audio.DestroySound(G_CurrentTrack);
+		G_CurrentTrack = Null;
 	}
 	
 	// Clear index
-	declare persistent Integer Persistent_Storage_CurrentSongIndex for LocalUser;
-	Persistent_Storage_CurrentSongIndex = 0;
+	declare persistent Integer Persistent_Storage_CurrentTrackIndex for LocalUser;
+	Persistent_Storage_CurrentTrackIndex = 0;
 	
 	// Reset playlist data
-	G_Storage_PlaylistMusicRoot = "";
-	G_Storage_PlaylistCoversRoot = "";
-	G_Storage_PlaylistDefaultCover = "";
-	G_Storage_PlaylistSongsCount = 0;
-	G_Storage_PlaylistAlbumsCount = 0;
+	G_PlaylistMusicPath = "";
+	G_PlaylistImagePath = "";
+	G_PlaylistDefaultImage = "";
+	G_PlaylistNbTracks = 0;
+	G_PlaylistNbAlbums = 0;
 	
-	// Reset songs information
-	G_Storage_SongsNames		.clear();
-	G_Storage_SongsAuthors		.clear();
-	G_Storage_SongsAlbums		.clear();
-	G_Storage_SongsGeneres		.clear();
-	G_Storage_SongsColors		.clear();
-	G_Storage_SongsFileNames	.clear();
+	// Reset tracks info
+	G_TrackInfoTitle.clear();
+	G_TrackInfoAuthor.clear();
+	G_TrackInfoAlbum.clear();
+	G_TrackInfoGenere.clear();
+	G_TrackInfoColor.clear();
+	G_TrackInfoFileName.clear();
 	
-	// Reset albums information
-	G_Storage_AlbumsNames.clear();
-	G_Storage_AlbumsCoverFiles.clear();
+	// Reset albums info
+	G_AlbumInfoName.clear();
+	G_AlbumInfoImage.clear();
 }
 
 // ---------------------------------- //
-/** Reads songs information from playlist XML file
+/** Read the information from playlist XML file.
  *	
- *	@param	_PlaylistFile	Playlist document to read
+ *	@param	_Document	XML document with data of the playlist.
  */
-Void LoadPlaylist(CXmlDocument _PlaylistFile) {
-	if (_PlaylistFile == Null || _PlaylistFile.Root == Null || _PlaylistFile.Root.Name != "playlist") return;
-	foreach (Node in _PlaylistFile.Root.Children) {
+Void LoadPlaylist(CXmlDocument _Document) {
+	if (_Document == Null || _Document.Root == Null || _Document.Root.Name != "playlist") return;
+
+	foreach (Node in _Document.Root.Children) {
 		// ---------------------------------- //
 		// Get the playlist information
-		if (Node.Name == "musicurl") G_Storage_PlaylistMusicRoot = Node.TextContents;
-		if (Node.Name == "coverurl") G_Storage_PlaylistCoversRoot = Node.TextContents;
-		if (Node.Name == "defaultcover") G_Storage_PlaylistDefaultCover = Node.TextContents;
+		if (Node.Name == "musicurl") G_PlaylistMusicPath = Node.TextContents;
+		if (Node.Name == "coverurl") G_PlaylistImagePath = Node.TextContents;
+		if (Node.Name == "defaultcover") G_PlaylistDefaultImage = Node.TextContents;
 		
 		// ---------------------------------- //
-		// Get the songs list
+		// Get the tracks list
 		if (Node.Name == "songs") {
-			G_Storage_PlaylistSongsCount = 0;
-			foreach (Song in Node.Children) {
-				declare Index = Node.Children.keyof(Song);
+			G_PlaylistNbTracks = 0;
+
+			foreach (Track in Node.Children) {
+				if (Track.Name != "song") continue;
+				declare I = G_PlaylistNbTracks;
+
+				// Name of the track
+				declare CurTrackTitle = Track.GetAttributeText("name", "");
+				if (CurTrackTitle != "") G_TrackInfoTitle[I] = CurTrackTitle;
 				
-				// ---------------------------------- //
-				// Get the name of the song
-				declare SongName = Song.GetAttributeText("name", "");
-				if (SongName != "") G_Storage_SongsNames[Index] = SongName;
+				// Author of the track
+				declare CurTrackAuthor = Track.GetAttributeText("author", "");
+				if (CurTrackAuthor != "") G_TrackInfoAuthor[I] = CurTrackAuthor;
 				
-				// ---------------------------------- //
-				// Get the name of song author
-				declare SongAuthor = Song.GetAttributeText("author", "");
-				if (SongAuthor != "") G_Storage_SongsAuthors[Index] = SongAuthor;
+				// Name of the track album
+				declare CurTrackAlbum = Track.GetAttributeText("album", "");
+				if (CurTrackAlbum != "") G_TrackInfoAlbum[I] = CurTrackAlbum;
 				
-				// ---------------------------------- //
-				// Get the ID of the song album
-				declare SongAlbum = Song.GetAttributeText("album", "");
-				if (SongAlbum != "") G_Storage_SongsAlbums[Index] = SongAlbum;
+				// Genere of the track
+				declare CurTrackGenere = Track.GetAttributeText("genere", "");
+				if (CurTrackGenere != "") G_TrackInfoGenere[I] = CurTrackGenere;
 				
-				// ---------------------------------- //
-				// Get the song genere
-				declare SongGenere = Song.GetAttributeText("genere", "");
-				if (SongGenere != "") G_Storage_SongsGeneres[Index] = SongGenere;
-				
-				// ---------------------------------- //
-				// Get the song color
-				declare SongColorText = Song.GetAttributeText("color", "");
-				if (SongColorText != "") {
-					declare Text[] SplitRGB = TL::Split(" ", SongColorText);
+				// Color of the track
+				declare TrackColorText = Track.GetAttributeText("color", "");
+				if (TrackColorText != "") {
+					declare SplitRGB = TL::Split(" ", TrackColorText);
 					if (SplitRGB.count == 3) {
-						declare Vec3 SongColorVector;
-						for (I, 0, 2) SongColorVector[I] = TL::ToReal(SplitRGB[I]);
-						if (SongColorVector != <0., 0., 0.>) G_Storage_SongsColors[Index] = SongColorVector;
+						declare Color = <0., 0., 0.>;
+						for (Axis, 0, 2) Color[Axis] = TL::ToReal(SplitRGB[Axis]);
+						if (Color != <0., 0., 0.>) G_TrackInfoColor[I] = Color;
 					}
 				}
 				
-				// ---------------------------------- //
-				// Get name of the song file
-				declare SongFileName = Song.GetAttributeText("url", "");
-				if (SongFileName != "") G_Storage_SongsFileNames[Index] = SongFileName;
+				// Get name of the track file
+				declare TrackFileName = Track.GetAttributeText("url", "");
+				if (TrackFileName != "") G_TrackInfoFileName[I] = TrackFileName;
 				
-				// ---------------------------------- //
-				// Get song duration
-				declare SongDuration = Song.GetAttributeReal("duration", 0.);
-				if (SongDuration > 0) G_Storage_SongsDuration[Index] = SongDuration;
+				// Get track duration
+				declare TrackDuration = Track.GetAttributeReal("duration", 0.);
+				if (TrackDuration > 0) G_TrackInfoDuration[I] = TrackDuration;
 				
-				G_Storage_PlaylistSongsCount += 1;
+				G_PlaylistNbTracks += 1;
 			}
 		}
 		
 		// ---------------------------------- //
 		// Load all albums
 		else if (Node.Name == "albums") {
-			G_Storage_PlaylistAlbumsCount = Node.Children.count;
+			G_PlaylistNbAlbums = 0;
 			
 			foreach (Album in Node.Children) {
-				// Get index of the album
-				declare Integer Index = Node.Children.keyof(Album);
+				if (Album.Name != "album") continue;
+				declare I = G_PlaylistNbAlbums;
 				
-				// Get name of the album
+				// Name of the album
 				declare Text AlbumName = Album.GetAttributeText("name", "");
-				if (AlbumName != "") G_Storage_AlbumsNames[Index] = AlbumName;
+				if (AlbumName != "") G_AlbumInfoName[I] = AlbumName;
 				
-				// Get cover URL of the album
+				// URL of the album image
 				declare Text AlbumCoverURL = Album.GetAttributeText("coverurl", "");
-				if (AlbumCoverURL != "") G_Storage_AlbumsCoverFiles[Index] = AlbumCoverURL;
+				if (AlbumCoverURL != "") G_AlbumInfoImage[I] = AlbumCoverURL;
+
+				G_PlaylistNbAlbums += 1;
 			}
 		}
 	}
 	
-	// Force song change
-	G_Storage_ForceSongChange = True;
+	// Force track change
+	G_ForceTrackChange = True;
 }
 
 // ---------------------------------- //
-/// Change current song to the next one in playlist
-Void NextSong() {
-	G_Storage_ForceSongChange = True;
+/// Go to the previous track in the playlist.
+Void PrevTrack() {
+	if (G_PlaylistNbTracks <= 0) return;
+	G_ForceTrackChange = True;
 	
 	// Set higher index
-	declare persistent Integer Persistent_Storage_CurrentSongIndex for LocalUser;
-	Persistent_Storage_CurrentSongIndex += 1;
-	if (Persistent_Storage_CurrentSongIndex > G_Storage_PlaylistSongsCount - 1) Persistent_Storage_CurrentSongIndex = 0;
+	declare persistent Integer Persistent_Storage_CurrentTrackIndex for LocalUser;
+	Persistent_Storage_CurrentTrackIndex -= 1;
+	if (Persistent_Storage_CurrentTrackIndex < 0) Persistent_Storage_CurrentTrackIndex = G_PlaylistNbTracks - 1;
 	
 	// Set preloaded time to 0
 	declare persistent Real Persistent_Storage_PreviousPlayPoint for LocalUser;
@@ -898,14 +889,15 @@ Void NextSong() {
 }
 
 // ---------------------------------- //
-/// Change current song to the previous one in the playlist
-Void PrevSong() {
-	G_Storage_ForceSongChange = True;
+/// Go to the next track in the playlist.
+Void NextTrack() {
+	if (G_PlaylistNbTracks <= 0) return;
+	G_ForceTrackChange = True;
 	
 	// Set higher index
-	declare persistent Integer Persistent_Storage_CurrentSongIndex for LocalUser;
-	Persistent_Storage_CurrentSongIndex -= 1;
-	if (Persistent_Storage_CurrentSongIndex < 0) Persistent_Storage_CurrentSongIndex = G_Storage_PlaylistSongsCount - 1;
+	declare persistent Integer Persistent_Storage_CurrentTrackIndex for LocalUser;
+	Persistent_Storage_CurrentTrackIndex += 1;
+	if (Persistent_Storage_CurrentTrackIndex > G_PlaylistNbTracks - 1) Persistent_Storage_CurrentTrackIndex = 0;
 	
 	// Set preloaded time to 0
 	declare persistent Real Persistent_Storage_PreviousPlayPoint for LocalUser;
@@ -913,17 +905,17 @@ Void PrevSong() {
 }
 
 // ---------------------------------- //
-/** Change current song to specific one one in the playlist
+/** Change current track to specific one one in the playlist.
  *
- *	@param	_SongIndex		Index of the song
+ *	@param	_TrackIndex		Index of the track.
  */
-Void GoToSong(Integer _SongIndex) {
-	if (_SongIndex < 0 || _SongIndex >= G_Storage_PlaylistSongsCount) return;
-	G_Storage_ForceSongChange = True;
+Void GoToTrack(Integer _TrackIndex) {
+	if (_TrackIndex < 0 || _TrackIndex >= G_PlaylistNbTracks) return;
+	G_ForceTrackChange = True;
 	
 	// Set higher index
-	declare persistent Integer Persistent_Storage_CurrentSongIndex for LocalUser;
-	Persistent_Storage_CurrentSongIndex = _SongIndex;
+	declare persistent Integer Persistent_Storage_CurrentTrackIndex for LocalUser;
+	Persistent_Storage_CurrentTrackIndex = _TrackIndex;
 	
 	// Set preloaded time to 0
 	declare persistent Real Persistent_Storage_PreviousPlayPoint for LocalUser;
@@ -936,8 +928,8 @@ Void GoToSong(Integer _SongIndex) {
  *	@return		The music volume factor.
  */
 Real GetCountdownVolume() {
-	declare persistent Boolean Persistent_LibInterfancy_DisableCountdownSong for LocalUser;
-	if (Persistent_LibInterfancy_DisableCountdownSong) return 1.;
+	declare persistent Boolean Persistent_LibInterfancy_DisableCountdownTrack for LocalUser;
+	if (Persistent_LibInterfancy_DisableCountdownTrack) return 1.;
 	
 	declare netread Integer Net_LibStoragePlayer_EndTime for Teams[0];
 	declare netread Integer Net_LibStoragePlayer_CountdownDuration for Teams[0];
@@ -967,15 +959,16 @@ Real GetCountdownVolume() {
 }
 
 {{{Translations::InsertToManialink(["Storage Music Player", "Custom playlist URL:"])}}}
+{{{ManialinkTools::Function("ComputeWidth")}}}
 
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
 main() {
-	+++Main+++
+	---Main---
 	while (True) {
-		+++Yield+++
 		yield;
+		---Yield---
 	}
 }
 --></script>
@@ -987,16 +980,16 @@ main() {
 // ---------------------------------- //
 
 // ---------------------------------- //
-/** Return the version number of the script
+/** Return the version number of the script.
  *
- *	@return		The version number of the script
+ *	@return		The version number of the script.
  */
 Text GetScriptVersion() { return Version; }
 
 // ---------------------------------- //
-/** Return the name of the script
+/** Return the name of the script.
  *
- *	@return		The name of the script
+ *	@return		The name of the script.
  */
 Text GetScriptName() { return ScriptName; }
 
@@ -1008,11 +1001,11 @@ Void Unload() {
 }
 
 // ---------------------------------- //
-/** Load the library
+/** Load the library.
  *
- *	@param	_MediaBasePath		Base URL for the interface icons
- *	@param	_ThinTextFont		Font used on thin text
- *	@param	_ThickTextFont		Font used on thick text
+ *	@param	_MediaBasePath		Base URL for the interface icons.
+ *	@param	_ThinTextFont		Font used on thin text.
+ *	@param	_ThickTextFont		Font used on thick text.
  */
 Void Load(Text _MediaBasePath, Text _ThinTextFont, Text _ThickTextFont) {
 	Unload();
@@ -1021,9 +1014,9 @@ Void Load(Text _MediaBasePath, Text _ThinTextFont, Text _ThickTextFont) {
 }
 
 // ---------------------------------- //
-/** Set the default mode playlist URL
+/** Set the default mode playlist URL.
  *
- *	@param	_PlaylistURL	URL of the playlist file
+ *	@param	_PlaylistURL	URL of the playlist file.
  */
 Void SetDefaultPlaylistURL(Text _PlaylistURL) {
 	if (_PlaylistURL == "" || !Http.IsValidUrl(_PlaylistURL)) return;
@@ -1032,9 +1025,9 @@ Void SetDefaultPlaylistURL(Text _PlaylistURL) {
 }
 
 // ---------------------------------- //
-/** Update the server forced playlist URL
+/** Update the server forced playlist URL.
  *
- *	@param	_PlaylistURL	URL of the playlist file
+ *	@param	_PlaylistURL	URL of the playlist file.
  */
 Void UpdatePlaylistURL(Text _PlaylistURL) {
 	if (_PlaylistURL == G_LibStoragePlayer_PreviousPlaylistURL) return;

@@ -1,15 +1,15 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-03-04            //
+//  script version: 2017-05-07            //
 // -------------------------------------- //
 
 /**
  *	Base for the game modes in the GalaxyTitles title pack.
  */
 
-#Extends "Modes/ShootMania/ModeMatchmaking.Script.txt"
+#Extends "Modes/ShootMania/Base/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2017-03-04"
+#Const BaseVersion		"2017-05-07"
 #Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
@@ -21,6 +21,7 @@
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
 #Include "Libs/domino54/Killfeed.Script.txt" as Killfeed
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/MapSelection.Script.txt" as MapSelection
 #Include "Libs/domino54/Statistics.Script.txt" as Statistics
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
@@ -54,6 +55,8 @@
 #Setting S_CustomBlacklistURL	""		as "<hidden>" ///< URL of the custom blacklist file
 #Setting S_KillfeedOffsetY		0.		as "<hidden>" ///< For server hosters: killfeed Y offset
 #Setting S_MusicPlaylistURL		""		as "<hidden>" ///< URL of the server custom music playlist file
+#Setting S_EnableMapSelection	True	as "<hidden>" ///< Allow players to choose which map they want to play next
+#Setting S_PodiumTrackDuration	8000	as "<hidden>" ///< Duration of the podium sequence (10 max)
 
 /// Clublinks settings
 #Setting S_UsePlayerClublinks	True	as _("Use players clublinks")
@@ -77,9 +80,11 @@
 #Const C_OfflineTranslationsURL	"file://Media/Translations/Default.xml"
 #Const C_OnlineTranslationsURL	"http://raw.githubusercontent.com/domino54/title-packs/master/Media/Translations/Default.xml"
 #Const C_ScriptTicksPerSecond	100		///< The amount of script ticks per second
-#Const C_DefaultKillfeedPosn	<159., 89., -5.>	///< Default position of the Killfeed layer
 #Const C_NoCollisionsDuration	6000	///< No collision duration at the beginning of the round
 #Const C_EnviroKillTimeOut		7500	///< Time after which environmental elimination won't be performed
+#Const C_MaxPodiumSeqDuration	10000	///< Maximum duration of the podium sequence
+#Const C_SuddenDeathPointsLimit	3
+#Const C_DefaultKillfeedPosn	<159., 89.>		///< Default position of the Killfeed layer
 
 #Const C_EventMaxDamage		100		///< Maximum damage amount inflicted by weapons
 #Const C_PlayerStaminaMax	1.25	///< Amount of player stamina
@@ -129,6 +134,7 @@ MB_LogVersion(Interfancy::GetScriptName(), Interfancy::GetScriptVersion());
 MB_LogVersion(Inventory::GetScriptName(), Inventory::GetScriptVersion());
 MB_LogVersion(Killfeed::GetScriptName(), Killfeed::GetScriptVersion());
 MB_LogVersion(ManialinkTools::GetScriptName(), ManialinkTools::GetScriptVersion());
+MB_LogVersion(MapSelection::GetScriptName(), MapSelection::GetScriptVersion());
 MB_LogVersion(MiniMap::GetScriptName(), MiniMap::GetScriptVersion());
 MB_LogVersion(PauseMenu::GetScriptName(), PauseMenu::GetScriptVersion());
 MB_LogVersion(Statistics::GetScriptName(), Statistics::GetScriptVersion());
@@ -256,9 +262,12 @@ WarmUp2::SetLayerPosition(<0., -58.>);
 Interfancy::Load(["Gauges", "Countdown", "SpecInfo", "Crosshair", "ScoreSummary"]);
 PauseMenu::Load();
 SM::SetupDefaultVisibility();
+Killfeed::Load();
+MapSelection::Load("Eurostile", "Eurostile_Bold");
 
 UIManager.UIAll.OverlayHide321Go = True;
 UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
+UIManager.UIAll.NoticesFilter_LevelToShowAsBigMessage = CUIConfig::ENoticeLevel::MatchWarning;
 
 // ---------------------------------- //
 // Load the Storage Music Player
@@ -272,8 +281,7 @@ Streaks::Load();
 
 // ---------------------------------- //
 // Load Killfeed library
-Killfeed::Load();
-Killfeed::SetPosition(C_DefaultKillfeedPosn + <0., S_KillfeedOffsetY, 0.>);
+Killfeed::SetPosition(C_DefaultKillfeedPosn + <0., S_KillfeedOffsetY>);
 Killfeed::AddTranslations(GT_KillfeedTranslations);
 Killfeed::SetTextFont("Eurostile");
 Killfeed::SetWeaponsIcons([
@@ -318,7 +326,7 @@ MB_SetScoresTableStyleFromXml(S_ScoresTableStylePath);
 ST2::Build("SM");
 
 // Update scores summary visibility
-Interfancy::SetModuleVisibility("ScoreSummary", UseClans && !UseForcedClans);
+Interfancy::SetModuleVisibility("ScoreSummary", UseClans);
 
 // ---------------------------------- //
 // Stop the script if server is in matchmaking mode and mode doesn't support it
@@ -332,7 +340,7 @@ assert(!(MM_IsMatchmakingServer() && !GT_AllowMatchmakingMode), "This game mode 
 // ---------------------------------- //
 ***UpdateClublinks***
 ***
-if (UseClans && !UseForcedClans) {
+if (UseClans) {
 	Clublink::ResetAll();
 	if (S_ForceClublinkTeam1 == "" && S_ForceClublinkTeam2 == "") Clublink::DefineTeamAuto();
 	else Clublink::DefineTeamFromUrl(S_ForceClublinkTeam1, S_ForceClublinkTeam2);
@@ -349,6 +357,11 @@ TopScores::MatchBegin();
 Interfancy::ClearData();
 GalaxyTitles::ResetAll();
 CupAdmin::StartMap();
+
+// Clear all messages
+UIManager.UIAll.BigMessage = "";
+UIManager.UIAll.StatusMessage = "";
+FancyMessages::ResetData();
 
 // Warm-up
 if (UseClans) GT_InitWarmUp();
@@ -410,6 +423,9 @@ foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 // ---------------------------------- //
 ***StartRound***
 ***
+UIManager.UIAll.BigMessage = "";
+UIManager.UIAll.StatusMessage = "";
+
 // ---------------------------------- //
 // Init GalaxyTitles functions
 declare ToadsSpawnRatio = 0.;
@@ -443,7 +459,6 @@ Blacklist::Loop(S_CustomBlacklistURL);
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
 CupAdmin::Loop(S_AdminEnableCupMode, S_AdminPauseCompetition, S_AdminCupModeNbMaps, S_AdminCupName);
 Interfancy::Loop();
-Inventory::Loop();
 Message::Loop();
 Killfeed::Loop();
 FancyMessages::Loop();
@@ -583,52 +598,97 @@ foreach (Event in PendingEvents) {
 		// ---------------------------------- //
 		// Automatic hit management
 		if (GT_AutoManageOnHit) {
+			// Reduce Laser damage
+			if (Event.Damage > C_EventMaxDamage) Event.Damage = C_EventMaxDamage;
+
 			// ---------------------------------- //
-			// Discard invalid events
-			if (Event.Shooter == Null || Event.Victim == Null || Event.Shooter == Event.Victim) Discard(Event);
-			
-			// ---------------------------------- //
-			// Teammate hit
-			else if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) Discard(Event);
-			
-			// ---------------------------------- //
-			// A bot has hit someone
-			else if (Event.Shooter.IsBot) {
-				if (Event.Victim.IsBot && Event.Victim.CurrentClan == 0) Discard(Event);
-				else PassOn(Event);
+			// Turret shooter
+			if (Event.ShooterTurret != Null) {
+				// ---------------------------------- //
+				// Invalid events
+				if ((Event.Victim == Null && Event.VictimObject == Null && Event.VictimTurret == Null) || Event.ShooterTurret == Event.VictimTurret) Discard(Event);
+
+				// ---------------------------------- //
+				// Turret hit
+				else if (Event.VictimTurret != Null) {
+					+++OnTurretHitByTurret+++
+					PassOn(Event);
+				}
+				// ---------------------------------- //
+				// Object hit
+				else if (Event.VictimObject != Null) {
+					+++OnObjectHitByTurret+++
+					PassOn(Event);
+				}
+				// ---------------------------------- //
+				// Player hit
+				else if (Event.Victim != Null) {
+					+++OnHitByTurret+++
+					PassOn(Event);
+				}
 			}
-			
 			// ---------------------------------- //
-			// Enemy hit
-			else {
-				+++OnHitConditions+++
-				
-				// Reduce Laser damage
-				if (Event.Damage > C_EventMaxDamage) Event.Damage = C_EventMaxDamage;
-				
-				declare Points = ML::Min(Event.Damage, Event.Victim.Armor) / 100;
-				Score::AddPoints(Event.Shooter, Points);
-				TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
-				Event.ShooterPoints = Points;
-				
-				+++OnHit+++
+			// Player shooter
+			else if (Event.Shooter != Null) {
+				// ---------------------------------- //
+				// Turret hit
+				if (Event.VictimTurret != Null) {
+					+++OnTurretHit+++
+					PassOn(Event);
+				}
+				// ---------------------------------- //
+				// Object hit
+				else if (Event.VictimObject != Null) {
+					+++OnObjectHit+++
+					PassOn(Event);
+				}
+				// ---------------------------------- //
+				// Invalid events
+				else if (Event.Victim == Null || Event.Shooter == Event.Victim) Discard(Event);
 				
 				// ---------------------------------- //
-				// Environmental eliminations
-				declare Ident GT_VictimLastShooter for Event.Victim;
-				declare Integer GT_VictimLastHitTime for Event.Victim;
-				GT_VictimLastShooter = Event.Shooter.Id;
-				GT_VictimLastHitTime = Now;
+				// Teammate hit
+				else if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) Discard(Event);
 				
 				// ---------------------------------- //
-				// Elimination assists
-				declare Ident[] GT_VictimShootHistory for Event.Victim;
-				GT_VictimShootHistory.add(Event.Shooter.Id);
+				// A bot has hit someone
+				else if (Event.Shooter.IsBot) {
+					if (Event.Victim.IsBot && (Event.Victim.CurrentClan == 0 || Event.Shooter.CurrentClan == Event.Victim.CurrentClan)) Discard(Event);
+					else PassOn(Event);
+				}
 				
-				if (GT_IsValidForCallbacks(Event)) XmlRpc::OnHit(Event);
-				Statistics::OnHit(Event);
-				PassOn(Event);
+				// ---------------------------------- //
+				// Enemy hit
+				else {
+					+++OnHitConditions+++
+					
+					declare Points = ML::Min(Event.Damage, Event.Victim.Armor) / 100;
+					Score::AddPoints(Event.Shooter, Points);
+					TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
+					Event.ShooterPoints = Points;
+					
+					+++OnHit+++
+					
+					// ---------------------------------- //
+					// Environmental eliminations
+					declare Ident GT_VictimLastShooter for Event.Victim;
+					declare Integer GT_VictimLastHitTime for Event.Victim;
+					GT_VictimLastShooter = Event.Shooter.Id;
+					GT_VictimLastHitTime = Now;
+					
+					// ---------------------------------- //
+					// Elimination assists
+					declare Ident[] GT_VictimShootHistory for Event.Victim;
+					GT_VictimShootHistory.add(Event.Shooter.Id);
+					
+					if (GT_IsValidForCallbacks(Event)) XmlRpc::OnHit(Event);
+					Statistics::OnHit(Event);
+					PassOn(Event);
+				}
 			}
+			// ---------------------------------- //
+			// Invalid event
+			else Discard(Event);
 		}
 		// ---------------------------------- //
 		// Manual event management
@@ -648,14 +708,15 @@ foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// On player request respawn
 	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
-		declare Ident[] GT_VictimShootHistory for Event.Player;
-		declare Ident GT_VictimLastShooter for Event.Player;
-		GT_VictimShootHistory.clear();
-		GT_VictimLastShooter = NullId;
-		
 		if (GT_AutoManageOnRespawn) {
-			Score::RemovePoints(Event.Player, 1);
 			+++OnPlayerRequestRespawn+++
+
+			declare Ident[] GT_VictimShootHistory for Event.Player;
+			declare Ident GT_VictimLastShooter for Event.Player;
+			GT_VictimShootHistory.clear();
+			GT_VictimLastShooter = NullId;
+
+			Score::RemovePoints(Event.Player, 1);
 			if (GT_IsValidForCallbacks(Event)) XmlRpc::OnPlayerRequestRespawn(Event);
 			Statistics::OnPlayerRequestRespawn(Event);
 			PassOn(Event);
@@ -757,7 +818,7 @@ Score::RoundEnd();
 TopScores::RoundEnd();
 MiniMap::Hide();
 GalaxyTitles::ResetAll();
-EndTime = -1;
+GT_SetTimeLimit(-1, False, False);
 ***
 
 // ---------------------------------- //
@@ -800,11 +861,14 @@ if (GT_UseAutoEndSequence) {
 	// ---------------------------------- //
 	// Set the map winner
 	declare Text WinnerName;
-	if (UseClans && !UseForcedClans) {
+	if (UseClans) {
 		foreach (Clan => Points in ClanScores)
 			if (Clan != 0 && Points > ClanScores[3 - Clan]) WinnerName = Teams[Clan - 1].ColorizedName;
 	}
-	else if (Scores.existskey(0)) WinnerName = Scores[0].User.Name;
+	else {
+		declare WinnerScoreId = GT_GetWinnerScoreId();
+		if (Scores.existskey(WinnerScoreId) && Scores[WinnerScoreId].User != Null) WinnerName = Scores[WinnerScoreId].User.Name;
+	}
 	
 	// ---------------------------------- //
 	// Display the round winner
@@ -816,15 +880,32 @@ if (GT_UseAutoEndSequence) {
 	if (WinnerName == "") UIManager.UIAll.BigMessage = _("|Match|Draw");
 	else UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the match!"), WinnerName);
 	
-	MB_Sleep(6000);
+	MB_Sleep(4000);
 	
 	// ---------------------------------- //
-	// Podium
-	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
-	while(!UIManager.UIAll.UISequenceIsCompleted) MB_Yield();
+	// Play the podium sequence
+	if (S_PodiumTrackDuration > 0) {
+		declare PodiumSequenceEndTime = Now + ML::Min(S_PodiumTrackDuration, C_MaxPodiumSeqDuration);
+		UIManager.UIAll.UISequence = CUIConfig::EUISequence::Podium;
+		while (Now < PodiumSequenceEndTime && !MatchEndRequested && !ServerShutdownRequested) MB_Yield();
+	}
 	
+	if (!MM_IsMatchServer()) UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 	UIManager.UIAll.BigMessage = "";
+}
+
+// ---------------------------------- //
+// Let players vote for the next map
+if (!MM_IsMatchServer() && S_EnableMapSelection && MapSelection::SelectionStart(Now + 10750, True)) {
+	declare PrevSummaryVisibility = Interfancy::GetModuleVisibility("ScoreSummary");
+	Interfancy::SetModuleVisibility("ScoreSummary", False);
+
+	while (!MapSelection::SelectionLoop() && !MatchEndRequested && !ServerShutdownRequested) MB_Yield();
+	MB_Sleep(3000);
+	MapSelection::SelectionEnd();
+
+	Interfancy::SetModuleVisibility("ScoreSummary", PrevSummaryVisibility);
 }
 
 // ---------------------------------- //
@@ -885,16 +966,18 @@ WarmUp2::Unload();
  *	@return		The requested clan of the player
  */
 Integer GT_GetRequestedClan(CSmPlayer _Player) {
-	if (_Player == Null || !UseClans || UseForcedClans) return 0;
+	if (_Player == Null || !UseClans) return 0;
 	
 	// Get the clan in matchmaking
 	if (MM_IsMatchServer()) return MM_GetRequestedClan(_Player);
 	
 	// Get the clan from automatic team balance
+	/*
 	if (S_UseAutoBalance) {
 		declare Integer GT_AutoBalanceClan for _Player;
 		if (GT_AutoBalanceClan >= 1 && GT_AutoBalanceClan <= 2) return GT_AutoBalanceClan;
 	}
+	*/
 	
 	// Get the user requested clan
 	return _Player.User.RequestedClan;
@@ -997,13 +1080,18 @@ Boolean GT_IsValidPlayer(CSmPlayer _Player) {
 Void GT_InitPlayer(CSmPlayer _Player) {
 	if (_Player == Null) return;
 	
-	if (UseClans && !UseForcedClans) SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
+	if (UseClans) SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
 	GalaxyTitles::InitPlayer(_Player);
-	Interfancy::ForceColor(_Player, _Player.User.Color);
 	SetPlayerReloadAllWeapons(_Player, True);
+
+	// ---------------------------------- //
+	// Force player's favorite color
+	if (_Player.CurrentClan != 0) _Player.ForceColor = <-1., -1., -1.>;
+	else _Player.ForceColor = _Player.User.Color;
 	
 	_Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
 	_Player.StaminaMax = C_PlayerStaminaMax;
+	_Player.AmmoGain = 1.;
 }
 
 // ---------------------------------- //
@@ -1046,12 +1134,24 @@ Void GT_SkipInvalidMap() {
 }
 
 // ---------------------------------- //
+/** Get the Id of the winner's score object.
+ *
+ *	@return		Id of the match winner score.
+ */
+Ident GT_GetWinnerScoreId() {
+	if (Scores.count <= 0 || Scores[0].Points <= 0) return NullId; ///< Draw - no players or the 1st player has 0 points
+	if (Scores.existskey(1) && Scores[1].Points >= Scores[0].Points) return NullId; /// Draw - second player has the same number of points
+	return Scores[0].Id; ///< Return the winner Id
+}
+
+// ---------------------------------- //
 /** Set the new time limit.
  *
  *	@param	_NewEndTime		New value for the time limit.
  *	@param	_EnableSounds	If True, ticking sound will be heard when time is running out.
+ *	@param	_ResetMusic		If True, music will be reset with the timer.
  */
-Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
+Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds, Boolean _ResetMusic) {
 	GT_EndTime = ML::Max(_NewEndTime, -1);
 	Interfancy::SetEndTime(GT_EndTime);
 	Interfancy::SetUseMusic(!_EnableSounds);
@@ -1060,9 +1160,19 @@ Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
 		StoragePlayer::SetCountdown(-1, 0);
 		EndTime = GT_EndTime;
 	} else {
-		StoragePlayer::SetCountdown(GT_EndTime, 30000);
+		if (GT_EndTime > 0 || (GT_EndTime <= 0 && _ResetMusic)) StoragePlayer::SetCountdown(GT_EndTime, 30000);
 		EndTime = -1;
 	}
+}
+
+// ---------------------------------- //
+/** Set the new time limit.
+ *
+ *	@param	_NewEndTime		New value for the time limit.
+ *	@param	_EnableSounds	If True, ticking sound will be heard when time is running out.
+ */
+Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
+	GT_SetTimeLimit(_NewEndTime, _EnableSounds, False);
 }
 
 // ---------------------------------- //
@@ -1071,7 +1181,7 @@ Void GT_SetTimeLimit(Integer _NewEndTime, Boolean _EnableSounds) {
  *	@param	_NewEndTime		New value for the time limit.
  */
 Void GT_SetTimeLimit(Integer _NewEndTime) {
-	GT_SetTimeLimit(_NewEndTime, False);
+	GT_SetTimeLimit(_NewEndTime, False, False);
 }
 
 // ---------------------------------- //
@@ -1086,7 +1196,7 @@ Boolean GT_TimeReachedLimit() {
 // ---------------------------------- //
 /// Disable the time limit.
 Void GT_DisableTimeLimit() {
-	GT_SetTimeLimit(-1);
+	GT_SetTimeLimit(-1, False, True);
 }
 
 // ---------------------------------- //
@@ -1209,7 +1319,11 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 	// ---------------------------------- //
 	// Initialize Sudden Death mode
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
-	declare TeamsPoints = [1 => 0, 2 => 0];
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.StatusMessage = _("SUDDEN DEATH");
+	declare TeamsPoints = 0;
+	declare StopSuddenDeath = False;
+	declare UpdateBigMessage = True;
 	GalaxyTitles::ResetAll();
 	MiniMap::Show();
 	UseClans = True;
@@ -1234,7 +1348,7 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 	
 	// ---------------------------------- //
 	// Sudden Death loop
-	while (!ServerShutdownRequested && !MatchEndRequested) {
+	while (!ServerShutdownRequested && !MatchEndRequested && !StopSuddenDeath) {
 		MB_Yield();
 		
 		// ---------------------------------- //
@@ -1243,10 +1357,31 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 			// ---------------------------------- //
 			// On armor empty
 			if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+				switch (Event.Victim.CurrentClan) {
+					case 1 : TeamsPoints += 1;
+					case 2 : TeamsPoints -= 1;
+				}
+
+				if (ML::Abs(TeamsPoints) == C_SuddenDeathPointsLimit) {
+					UIManager.UIAll.SendNotice(
+						"", CUIConfig::ENoticeLevel::PlayerInfo, 
+						Null, CUIConfig::EAvatarVariant::Default, 
+						CUIConfig::EUISound::VictoryPoint, 0
+					);
+					StopSuddenDeath = True;
+				} else {
+					UIManager.UIAll.SendNotice(
+						"", CUIConfig::ENoticeLevel::PlayerInfo, 
+						Null, CUIConfig::EAvatarVariant::Default, 
+						CUIConfig::EUISound::TieBreakPoint, 0
+					);
+				}
+
 				if (GT_IsValidForCallbacks(Event)) XmlRpc::OnArmorEmpty(Event);
 				Killfeed::OnArmorEmpty(Event, Null);
 				Statistics::OnArmorEmpty(Event);
 				PassOn(Event);
+				UpdateBigMessage = True;
 			}
 			// ---------------------------------- //
 			// On hit
@@ -1261,9 +1396,6 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 					Score::AddPoints(Event.Shooter, Points);
 					TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
 					Event.ShooterPoints = Points;
-					
-					TeamsPoints[Event.Shooter.CurrentClan] += Points;
-					if (TeamsPoints[Event.Shooter.CurrentClan] - TeamsPoints[3 - Event.Shooter.CurrentClan] >= 3) break;
 					
 					if (GT_IsValidForCallbacks(Event)) XmlRpc::OnHit(Event);
 					Statistics::OnHit(Event);
@@ -1297,6 +1429,7 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 			GT_InitPlayer(Player);
 			Inventory::ResetInventory(Player);
 			SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
+			SetPlayerAmmoMax(Player, CSmMode::EWeapon::Laser, 1);
 			Player.ArmorMax = 100;
 			Player.AmmoGain = 2.;
 			
@@ -1308,21 +1441,30 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 			}
 			SM::SpawnPlayer(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
 		}
+		
+		// ---------------------------------- //
+		// Update the big message
+		if (UpdateBigMessage) {
+			UpdateBigMessage = False;
+
+			if (TeamsPoints == 0) UIManager.UIAll.BigMessage = "0 / 3";
+			else if (TeamsPoints < 0) UIManager.UIAll.BigMessage = "$<$"^TL::ColorToText(Teams[0].ColorPrimary)^-TeamsPoints^"$> / "^C_SuddenDeathPointsLimit;
+			else UIManager.UIAll.BigMessage = "$<$"^TL::ColorToText(Teams[1].ColorPrimary)^TeamsPoints^"$> / "^C_SuddenDeathPointsLimit;
+		}
 	}
-	
+
 	// ---------------------------------- //
 	// Stop the Sudden Death mode
+	SM::UnspawnAllPlayers();
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
-	UIManager.UIAll.SendNotice(
-		"", CUIConfig::ENoticeLevel::PlayerInfo,
-		Null, CUIConfig::EAvatarVariant::Default, 
-		CUIConfig::EUISound::VictoryPoint, 0
-	);
 	MB_Sleep(3000);
+	UIManager.UIAll.BigMessage = "";
+	UIManager.UIAll.StatusMessage = "";
 	MiniMap::Hide();
 	
 	// ---------------------------------- //
 	// Return the winner
-	for (Clan, 1, 2) if (TeamsPoints[Clan] > TeamsPoints[3 - Clan]) return Clan;
+	if (TeamsPoints < 0) return 1;
+	if (TeamsPoints > 0) return 2;
 	return 0;
 }

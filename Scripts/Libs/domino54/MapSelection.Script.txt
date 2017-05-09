@@ -1,0 +1,802 @@
+// -------------------------------------- //
+//  LIBRARY MAP SELECTION by domino54     //
+//  script version: 2017-04-29            //
+// -------------------------------------- //
+
+#Const Version		"2017-04-29"
+#Const ScriptName	"MapSelection.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibMapSelection_MinNbMapsRequired	3	///< Minimal number of maps required on server to show map selection.
+#Const C_LibMapSelection_NbDisplayedMaps	6	///< Amount of maps displayed in the selection window.
+#Const C_LibMapSelection_LayerId "LibMapSelection:SelectionWindow"
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[] G_LibMapSelection_AvailableToVote;	///< UIDs of maps currently available to be voted for.
+declare Text[Text] G_LibMapSelection_PlayersVotes;	///< UIDs of maps voted by the players.
+declare Boolean G_LibMapSelection_UpdateVotes;		///< Trigger for updating the amount of votes.
+declare Integer G_LibMapSelection_PrevNbPlayers;	///< Previous amount of players on the server.
+declare Integer G_LibMapSelection_SelectionEndTime;	///< End time of the map selection.
+declare Integer G_LibMapSelection_ChoosedMapIndex;	///< Index of the map choosed by the players.
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the Map Selection library.
+ *
+ *	@param	_FontMedium		Thin font on the interface manialink.
+ *	@param	_FontBold		Thick font on the interface manialink.
+ *
+ *	@return 	The Map Selection library manialink.
+ */
+Text Private_CreateManialinkMapSelection(Text _FontMedium, Text _FontBold) {
+	// ---------------------------------- //
+	// Create cards for the selection window
+	declare Text SelectionCards;
+	declare NbMapsPerRow = 3;
+	for (I, 0, C_LibMapSelection_NbDisplayedMaps - 1) {
+		declare Pos = <I % NbMapsPerRow * 60., I / NbMapsPerRow * -48.>;
+		SelectionCards ^= "<frameinstance modelid='FrameModel_SelectionMapCard' id='Frame_SelectionMapCard#"^I^"' pos='"^Pos.X^" "^Pos.Y^"' hidden='1' />";
+	}
+
+	return """
+<manialink version="3" name="{{{C_LibMapSelection_LayerId}}}">
+<stylesheet>
+	<style class="FontM" valign="center2" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(_FontMedium)}}}" />
+	<style class="FontB" valign="center2" style="TextValueSmallSm" textcolor="FFF" textfont="{{{TL::MLEncode(_FontBold)}}}" />
+</stylesheet>
+
+<!-- Map selection window -->
+<frame id="Frame_MapSelectionWindow" pos="-91 57">
+	<!-- Window header -->
+	<frame id="Frame_MapSelectionHeader" pos="0 -2">
+		<label pos="2" class="FontM" id="Label_MapSelectionTitle" textsize="4" textprefix="$t" text="Select next map" translate="1" />
+		
+		<!-- Amount of players who have casted a vote -->
+		<frame id="Frame_NbPlayersVotes" pos="158">
+			<label pos="-3" halign="right" class="FontB" textsize="4" id="Label_NbPlayersVotes" text="0/0" />
+			<label pos="0 .125" class="FontM" halign="center" valign="center" text="👥" />
+		</frame>
+
+		<!-- Selection end countdown timer -->
+		<frame id="Frame_SelectionEndTime" pos="178">
+			<label pos="-2.75" halign="right" class="FontB" textsize="4" textcolor="FB0" id="Label_SelectionEndTime" text="0:00" />
+			<label pos="0 .125" class="FontM" halign="center" valign="center" textcolor="FB0" text="⏰" id="Label_SelectionClockIcon" />
+		</frame>
+	</frame>
+
+	<!-- Separator -->
+	<quad pos="0 -6" size="182 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Available maps cards -->
+	<frame id="Frame_SelectionMapCardsContainer" pos="2 -8">
+		<framemodel id="FrameModel_SelectionMapCard">
+			<!-- Selection controls -->
+			<quad pos="-.5 .5" size="59 47" style="Bgs1" substyle="BgColorContour" id="Quad_MapCardIsSelected" hidden="1" />
+			<quad size="58 46" bgcolor="FFF" opacity="0" class="Hover" id="Quad_MapCardSelection" ScriptEvents="1" />
+
+			<!-- Map votes amount -->
+			<frame id="Frame_MapCardVotes" hidden="1">
+				<label pos="53.5 -2.5" halign="right" class="FontB" textsize="2" id="Label_MapCardNbVotes" />
+				<quad pos="58 -2.5" size="5 5" halign="right" valign="center" style="Icons64x64_1" substyle="Check" id="Quad_MapCardCheck" />
+				<quad size="58 5" bgcolor="000" opacity=".75" />
+			</frame>
+
+			<!-- Map information -->
+			<label pos="29 -43" size="56 6" class="FontM" halign="center" textsize="2" id="Label_MapCardName" />
+			<quad size="58 40" keepratio="Clip" autoscale="0" id="Quad_MapCardThumbnail" />
+			<quad size="58 46" bgcolor="000" opacity=".75" />
+		</framemodel>
+		{{{SelectionCards}}}
+	</frame>
+
+	<!-- Separator -->
+	<quad pos="0 -104" size="182 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Window footer -->
+	<frame id="Frame_MapSelectionFooter" pos="0 -106">
+		<!-- Replay map button -->
+		<frame id="Frame_ReplayMapButton" pos="2">
+			<quad pos="-.5 .5" size="59 9" style="Bgs1" substyle="BgColorContour" id="Quad_ReplayIsSelected" hidden="1" />
+			<label pos="2 -4" class="FontM" textcolor="888" text="🔂" id="Label_ReplayButtonIcon" />
+			<label pos="8 -4" class="FontM" textsize="2" textcolor="888" textprefix="$t" text="Replay" translate="1" id="Label_ReplayButtonText" />
+
+			<!-- Replay votes amount -->
+			<frame id="Frame_ReplayCardVotes" pos="57 -4" hidden="1">
+				<label pos="-4.5" halign="right" class="FontB" textsize="2" id="Label_ReplayCardNbVotes" />
+				<quad size="5 5" halign="right" valign="center" style="Icons64x64_1" substyle="Check" id="Quad_ReplayCardCheck" />
+			</frame>
+
+			<quad size="58 8" bgcolor="FFF" opacity="0" class="Hover" id="Quad_ReplayButtonCard" ScriptEvents="1" hidden="1" />
+			<quad size="58 8" bgcolor="000" opacity=".125" id="Quad_ReplayButtonBg" />
+		</frame>
+
+		<!-- Quit button -->
+		<frame id="Frame_QuitButton" pos="62">
+			<label pos="2 -4.25" class="FontM" text="🏃" />
+			<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Quit" translate="1" />
+
+			<quad size="58 8" bgcolor="FFF" opacity="0" class="Hover" id="Quad_QuitButtonCard" ScriptEvents="1" />
+			<quad size="58 8" bgcolor="FFF" opacity=".125" />
+		</frame>
+	</frame>
+</frame>
+
+<!-- Background blur -->
+<quad z-index="-50" size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+
+<script><!--
+/**
+ *	{{{C_LibMapSelection_LayerId}}}
+ */
+
+#Include "TextLib" as TL
+
+#Const C_TimerColorPending		<1., .75, 0.>
+#Const C_TimerColorSelected		<0., 1., 0.>
+#Const C_ReplayColorEnabled		<1., 1., 1.>
+#Const C_ReplayColorDisabled	<0., 0., 0.>
+#Const C_ReplayColorTextOff		<.5, .5, .5>
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+declare Frame_MapSelectionWindow	<=> (Page.GetFirstChild("Frame_MapSelectionWindow") as CMlFrame);
+declare Label_NbPlayersVotes		<=> (Page.GetFirstChild("Label_NbPlayersVotes") as CMlLabel);
+declare Label_SelectionEndTime		<=> (Page.GetFirstChild("Label_SelectionEndTime") as CMlLabel);
+declare Label_SelectionClockIcon	<=> (Page.GetFirstChild("Label_SelectionClockIcon") as CMlLabel);
+
+// Replay map button
+declare Label_ReplayButtonIcon	<=> (Page.GetFirstChild("Label_ReplayButtonIcon") as CMlLabel);
+declare Label_ReplayButtonText	<=> (Page.GetFirstChild("Label_ReplayButtonText") as CMlLabel);
+declare Quad_ReplayIsSelected	<=> (Page.GetFirstChild("Quad_ReplayIsSelected") as CMlQuad);
+declare Quad_ReplayButtonCard	<=> (Page.GetFirstChild("Quad_ReplayButtonCard") as CMlQuad);
+declare Quad_ReplayButtonBg		<=> (Page.GetFirstChild("Quad_ReplayButtonBg") as CMlQuad);
+declare Frame_ReplayCardVotes	<=> (Page.GetFirstChild("Frame_ReplayCardVotes") as CMlFrame);
+declare Label_ReplayCardNbVotes	<=> (Page.GetFirstChild("Label_ReplayCardNbVotes") as CMlLabel);
+declare Quad_ReplayCardCheck	<=> (Page.GetFirstChild("Quad_ReplayCardCheck") as CMlQuad);
+
+declare CMlFrame[] Frame_SelectionMapCards;
+for (I, 0, {{{C_LibMapSelection_NbDisplayedMaps}}} - 1) Frame_SelectionMapCards.add((Page.GetFirstChild("Frame_SelectionMapCard#"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Vote screen information
+declare netread Text[] Net_LibMapSelection_AvailableMaps for Teams[0];
+declare netread Boolean Net_LibMapSelection_ReplayAvailable for Teams[0];
+declare netread Text[Text] Net_LibMapSelection_MapsNames for Teams[0];
+declare netread Text[Text] Net_LibMapSelection_MapsAuthors for Teams[0];
+declare netread Integer Net_LibMapSelection_AvailableMapsUpdate for Teams[0];
+declare netread Integer Net_LibMapSelection_VoteEndTime for Teams[0];
+declare netread Text[Text] Net_LibMapSelection_PlayersVotes for Teams[0];
+declare netread Integer Net_LibMapSelection_LastVotesUpdate for Teams[0];
+declare netread Text Net_LibMapSelection_SelectedMap for Teams[0];
+
+// ---------------------------------- //
+// Local user selection
+declare netwrite Text Net_LibMapSelection_UserSelectedMap for UI;
+declare netwrite Integer Net_LibMapSelection_PrevVoteTime for UI;
+Net_LibMapSelection_UserSelectedMap = "";
+Net_LibMapSelection_PrevVoteTime = -1;
+
+// ---------------------------------- //
+// Variables
+declare IsSelectionOver = False;
+declare CurrentMapUID = Map.MapInfo.MapUid;
+
+/// Update
+declare PrevMapsUpdateTime = -1;
+declare PrevVotesUpdateTime = -1;
+declare PrevUserSelectedMap = "!";
+declare PrevSelectedMap = "!";
+declare PrevIsSelectionOver = False;
+declare PrevReplayIsAvailable = False;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// User has selected a map
+		if (Event.ControlId == "Quad_MapCardSelection") {
+			if (Net_LibMapSelection_VoteEndTime <= 0 || GameTime >= Net_LibMapSelection_VoteEndTime) continue;
+			if (IsSpectator || !Frame_SelectionMapCards.exists(Event.Control.Parent)) continue;
+
+			declare Text CurMapUID for Event.Control.Parent;
+			if (CurMapUID == "") continue;
+
+			Net_LibMapSelection_UserSelectedMap = CurMapUID;
+			Net_LibMapSelection_PrevVoteTime = Net_LibMapSelection_VoteEndTime;
+		}
+		// ---------------------------------- //
+		// User has selected map replay option
+		else if (Event.ControlId == "Quad_ReplayButtonCard") {
+			if (IsSpectator || Net_LibMapSelection_VoteEndTime <= 0 || GameTime >= Net_LibMapSelection_VoteEndTime) continue;
+			
+			Net_LibMapSelection_UserSelectedMap = CurrentMapUID;
+			Net_LibMapSelection_PrevVoteTime = Net_LibMapSelection_VoteEndTime;
+		}
+		// ---------------------------------- //
+		// Leave the server
+		else if (Event.ControlId == "Quad_QuitButtonCard") {
+			TriggerPageAction("maniaplanet:quitserver");
+		}
+	}
+	// ---------------------------------- //
+	// On mouse over
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		if (Event.Control.HasClass("Hover"))
+			AnimMgr.Add(Event.Control, "<quad opacity='.125' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+	}
+	// ---------------------------------- //
+	// On mouse out
+	else if (Event.Type == CMlEvent::Type::MouseOut) {
+		if (Event.Control.HasClass("Hover"))
+			AnimMgr.Add(Event.Control, "<quad opacity='0' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+	}
+}
+
+// Continue if the page is not visible
+if (!PageIsVisible) continue;
+
+// Hide map selection when pause menu is open
+Frame_MapSelectionWindow.Visible = !IsInGameMenuDisplayed;
+if (!Frame_MapSelectionWindow.Visible) continue;
+
+// ---------------------------------- //
+// Update information about currently avaialble maps
+if (PrevMapsUpdateTime != Net_LibMapSelection_AvailableMapsUpdate) {
+	PrevMapsUpdateTime = Net_LibMapSelection_AvailableMapsUpdate;
+
+	foreach (I => Frame in Frame_SelectionMapCards) {
+		Frame.Visible = Net_LibMapSelection_AvailableMaps.existskey(I);
+		if (!Frame.Visible) continue;
+
+		// Save current map UID in the frame
+		declare Text CurMapUID for Frame;
+		CurMapUID = Net_LibMapSelection_AvailableMaps[I];
+
+		// ---------------------------------- //
+		// Get the map thumbnail image
+		declare Quad_MapCardThumbnail <=> (Frame.GetFirstChild("Quad_MapCardThumbnail") as CMlQuad);
+		Quad_MapCardThumbnail.ImageUrl = "file://Thumbnails/MapUid/"^CurMapUID;
+
+		// ---------------------------------- //
+		// Set name of the map
+		declare Label_MapCardName <=> (Frame.GetFirstChild("Label_MapCardName") as CMlLabel);
+		declare CurMapName = "???";
+		if (Net_LibMapSelection_MapsNames.existskey(CurMapUID)) CurMapName = Net_LibMapSelection_MapsNames[CurMapUID];
+		Label_MapCardName.Value = CurMapName;
+	}
+}
+
+// ---------------------------------- //
+// Update maps cards on players votes update
+if (PrevVotesUpdateTime != Net_LibMapSelection_LastVotesUpdate) {
+	PrevVotesUpdateTime = Net_LibMapSelection_LastVotesUpdate;
+
+	// ---------------------------------- //
+	// Get the amount of votes on all maps
+	declare Integer[Text] MapsNbVotes;
+	foreach (Login => MapUID in Net_LibMapSelection_PlayersVotes) {
+		if (!MapsNbVotes.existskey(MapUID)) MapsNbVotes[MapUID] = 0;
+		MapsNbVotes[MapUID] += 1;
+	}
+
+	// Get the amount of players able to vote
+	declare NbPlayers = 0;
+	foreach (Player in Players) if (!Player.RequestsSpectate && !Player.User.IsFakeUser) NbPlayers += 1;
+
+	// Update the amount of players who have casted a vote
+	Label_NbPlayersVotes.Value = Net_LibMapSelection_PlayersVotes.count^"/"^NbPlayers;
+
+	// ---------------------------------- //
+	// Map replay card votes
+	Frame_ReplayCardVotes.Visible = MapsNbVotes.existskey(CurrentMapUID) && MapsNbVotes[CurrentMapUID] >= 0;
+	if (Frame_ReplayCardVotes.Visible) Label_ReplayCardNbVotes.Value = TL::ToText(MapsNbVotes[CurrentMapUID]);
+
+	// ---------------------------------- //
+	// Update maps information
+	foreach (I => Frame in Frame_SelectionMapCards) {
+		if (!Frame.Visible) continue;
+		declare Text CurMapUID for Frame;
+
+		// Get amount of votes on the current map
+		declare CurMapNbVotes = 0;
+		if (MapsNbVotes.existskey(CurMapUID)) CurMapNbVotes = MapsNbVotes[CurMapUID];
+
+		// ---------------------------------- //
+		// Show the map votes amount when greater than zero
+		declare Frame_MapCardVotes <=> (Frame.GetFirstChild("Frame_MapCardVotes") as CMlFrame);
+		Frame_MapCardVotes.Visible = CurMapNbVotes > 0;
+
+		if (Frame_MapCardVotes.Visible) {
+			declare Label_MapCardNbVotes <=> (Frame.GetFirstChild("Label_MapCardNbVotes") as CMlLabel);
+			Label_MapCardNbVotes.Value = TL::ToText(CurMapNbVotes);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update the replay availability
+if (PrevReplayIsAvailable != Net_LibMapSelection_ReplayAvailable) {
+	PrevReplayIsAvailable = Net_LibMapSelection_ReplayAvailable;
+
+	Quad_ReplayIsSelected.Visible = PrevReplayIsAvailable && Net_LibMapSelection_UserSelectedMap == CurrentMapUID;
+	Quad_ReplayButtonCard.Visible = PrevReplayIsAvailable;
+
+	declare Color = C_ReplayColorTextOff;
+	if (PrevReplayIsAvailable) Color = C_ReplayColorEnabled;
+	Label_ReplayButtonIcon.TextColor = Color;
+	Label_ReplayButtonText.TextColor = Color;
+
+	Quad_ReplayButtonBg.BgColor = C_ReplayColorDisabled;
+	if (PrevReplayIsAvailable) Quad_ReplayButtonBg.BgColor = C_ReplayColorEnabled;
+}
+
+// ---------------------------------- //
+// Update map selected by the local player
+if (PrevUserSelectedMap != Net_LibMapSelection_UserSelectedMap) {
+	PrevUserSelectedMap = Net_LibMapSelection_UserSelectedMap;
+
+	// User selected replay
+	Quad_ReplayIsSelected.Visible = PrevUserSelectedMap == CurrentMapUID;
+
+	foreach (I => Frame in Frame_SelectionMapCards) {
+		if (!Frame.Visible) continue;
+		declare Text CurMapUID for Frame;
+
+		declare Quad_MapCardIsSelected <=> (Frame.GetFirstChild("Quad_MapCardIsSelected") as CMlQuad);
+		Quad_MapCardIsSelected.Visible = CurMapUID == PrevUserSelectedMap;
+	}
+}
+
+// ---------------------------------- //
+// Update map selected by all players
+if (PrevSelectedMap != Net_LibMapSelection_SelectedMap) {
+	PrevSelectedMap = Net_LibMapSelection_SelectedMap;
+
+	// ---------------------------------- //
+	// Check if replay has been selected
+	Quad_ReplayCardCheck.StyleSelected = PrevSelectedMap == CurrentMapUID;
+	if (Quad_ReplayCardCheck.StyleSelected) Label_ReplayCardNbVotes.TextColor = <0., 1., 0.>;
+	else Label_ReplayCardNbVotes.TextColor = <1., 0., 0.>;
+
+	foreach (I => Frame in Frame_SelectionMapCards) {
+		if (!Frame.Visible) continue;
+		declare Text CurMapUID for Frame;
+
+		declare Quad_MapCardCheck <=> (Frame.GetFirstChild("Quad_MapCardCheck") as CMlQuad);
+		Quad_MapCardCheck.StyleSelected = PrevSelectedMap == CurMapUID;
+		
+		declare Label_MapCardNbVotes <=> (Frame.GetFirstChild("Label_MapCardNbVotes") as CMlLabel);
+		if (Quad_MapCardCheck.StyleSelected) Label_MapCardNbVotes.TextColor = <0., 1., 0.>;
+		else Label_MapCardNbVotes.TextColor = <1., 0., 0.>;
+	}
+}
+
+// Check if the time has expired
+IsSelectionOver = Net_LibMapSelection_VoteEndTime <= 0 || GameTime >= Net_LibMapSelection_VoteEndTime;
+
+// ---------------------------------- //
+// Update timer status
+if (PrevIsSelectionOver != IsSelectionOver) {
+	PrevIsSelectionOver = IsSelectionOver;
+
+	declare Color = C_TimerColorPending;
+	if (IsSelectionOver) Color = C_TimerColorSelected;
+
+	Label_SelectionEndTime.Value = "0:00";
+	declare Labels = [Label_SelectionEndTime, Label_SelectionClockIcon];
+	foreach (Label in Labels) AnimMgr.Add(Label, "<label textcolor='"^TL::ColorToText(Color)^"' />", 250, CAnimManager::EAnimManagerEasing::Linear);
+}
+
+// Show countdown
+if (!IsSelectionOver) Label_SelectionEndTime.Value = TL::TimeToText(Net_LibMapSelection_VoteEndTime - GameTime + 1000);
+***
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Set list of UIDs of maps available to cast votes on.
+ *
+ *	@param	_AvailableMaps	List of available maps UIDs.
+ *	@param	_MapsNames		Names of the available maps.
+ */
+Void Private_SetAvailableMaps(Text[] _AvailableMaps, Text[Text] _MapsNames) {
+	declare netwrite Text[] Net_LibMapSelection_AvailableMaps for Teams[0];
+	declare netwrite Text[Text] Net_LibMapSelection_MapsNames for Teams[0];
+	declare netwrite Integer Net_LibMapSelection_AvailableMapsUpdate for Teams[0];
+
+	Net_LibMapSelection_AvailableMaps = _AvailableMaps;
+	Net_LibMapSelection_MapsNames = _MapsNames;
+	Net_LibMapSelection_AvailableMapsUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Set if the map replay is available.
+ *
+ *	@param	_IsReplayAvailable	Whether the replay is available or not.
+ */
+Void Private_SetReplayAvaliability(Boolean _IsReplayAvailable) {
+	declare netwrite Boolean Net_LibMapSelection_ReplayAvailable for Teams[0];
+	Net_LibMapSelection_ReplayAvailable = _IsReplayAvailable;
+}
+
+// ---------------------------------- //
+/** Set the end time of the voting.
+ *
+ *	@param	_EndTime	Voting end time.
+ */
+Void Private_SetVotingEndTime(Integer _EndTime) {
+	declare netwrite Integer Net_LibMapSelection_VoteEndTime for Teams[0];
+	Net_LibMapSelection_VoteEndTime = ML::Max(-1, _EndTime);
+}
+
+// ---------------------------------- //
+/** Send UIDs of the maps voted by players to the interface.
+ *
+ *	@param	_VotedMaps	Array of players votes in format: [Login => UID].
+ */
+Void Private_SetPlayersVotes(Text[Text] _VotedMaps) {
+	declare netwrite Text[Text] Net_LibMapSelection_PlayersVotes for Teams[0];
+	declare netwrite Integer Net_LibMapSelection_LastVotesUpdate for Teams[0];
+
+	Net_LibMapSelection_PlayersVotes = _VotedMaps;
+	Net_LibMapSelection_LastVotesUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Set the UID of map currently marked as the choosen one (doesn't frature Anakin).
+ *
+ *	@param	_SelectedMapUID		UID of the selected map.
+ */
+Void Private_SetSelectedMap(Text _SelectedMapUID) {
+	declare netwrite Text Net_LibMapSelection_SelectedMap for Teams[0];
+	Net_LibMapSelection_SelectedMap = _SelectedMapUID;
+}
+
+// ---------------------------------- //
+/** Increase the play count of a selected map.
+ *
+ *	@param	_Map	The map to increase play count.
+ */
+Void Private_IncrementMapPlayCount(CMapInfo _Map) {
+	if (_Map == Null) return;
+	declare persistent Integer[Text] Persistent_LibMapSelection_MapsPlayCount;
+	declare MapUID = _Map.MapUid;
+
+	if (!Persistent_LibMapSelection_MapsPlayCount.existskey(MapUID)) Persistent_LibMapSelection_MapsPlayCount[MapUID] = 0;
+	Persistent_LibMapSelection_MapsPlayCount[MapUID] += 0;
+}
+
+// ---------------------------------- //
+/** Get the play count of a selected map.
+ *
+ *	@param	_Map	The map to get play count.
+ */
+Integer Private_GetMapPlayCount(CMapInfo _Map) {
+	if (_Map == Null) return 0;
+	declare persistent Integer[Text] Persistent_LibMapSelection_MapsPlayCount;
+	declare MapUID = _Map.MapUid;
+
+	if (!Persistent_LibMapSelection_MapsPlayCount.existskey(MapUID)) return 0;
+	return Persistent_LibMapSelection_MapsPlayCount[MapUID];
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Get a map information from its UID.
+ *
+ *	@param	_MapUID		UID of the map to get information.
+ *
+ *	@return		Information about the map with given UID.
+ */
+CMapInfo GetMapByUID(Text _MapUID) {
+	if (_MapUID == "") return Null;
+	foreach (MapInfo in MapList) if (MapInfo.MapUid == _MapUID) return MapInfo;
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get the integer index of a given map.
+ *
+ *	@param	_Map	The map to get index in maps list.
+ *
+ *	@return		Index of the given map.
+ */
+Integer GetMapIndex(CMapInfo _Map) {
+	if (_Map == Null || !MapList.exists(_Map)) return -1;
+	return MapList.keyof(_Map);
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	Layers::Destroy(C_LibMapSelection_LayerId);
+
+	Private_SetAvailableMaps(Text[], Text[Text]);
+	Private_SetReplayAvaliability(False);
+	Private_SetPlayersVotes(Text[Text]);
+	Private_SetVotingEndTime(-1);
+	Private_SetSelectedMap("");
+}
+
+// ---------------------------------- //
+/** Load the library.
+ *
+ *	@param	_FontMedium		Thin font on the interface manialink.
+ *	@param	_FontBold		Thick font on the interface manialink.
+ */
+Void Load(Text _FontMedium, Text _FontBold) {
+	Unload();
+
+	Layers::Create(C_LibMapSelection_LayerId, Private_CreateManialinkMapSelection(_FontMedium, _FontBold));
+}
+
+// ---------------------------------- //
+/** Initialize the map selection screen.
+ *
+ *	@param	_EndTime				Time after which the map will be selected.
+ *	@param	_ListLeastPlayedMaps	Allow players to vote for the least played maps on the server.
+ *
+ *	@return		True, if the selection has been started properly.
+ */
+Boolean SelectionStart(Integer _EndTime, Boolean _ListLeastPlayedMaps) {
+	if (Map == Null || _EndTime <= Now || Players.count <= 0 || MapList.count < C_LibMapSelection_MinNbMapsRequired) return False;
+
+	// Reset library data
+	G_LibMapSelection_AvailableToVote.clear();
+	G_LibMapSelection_PlayersVotes.clear();
+	G_LibMapSelection_UpdateVotes = True;
+	G_LibMapSelection_PrevNbPlayers = -1;
+	G_LibMapSelection_SelectionEndTime = _EndTime;
+	G_LibMapSelection_ChoosedMapIndex = -1;
+	
+	// Set the UI sequence
+	declare PrevUISequence for This = UIManager.UIAll.UISequence;
+	UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;
+	
+	// Increment current map's play count
+	Private_IncrementMapPlayCount(Map.MapInfo);
+
+	// Copy the maps list without the current map
+	declare CMapInfo[] Maps;
+	foreach (MapInfo in MapList) if (MapInfo != Map.MapInfo) Maps.add(MapInfo);
+
+	// ---------------------------------- //
+	// Choose maps which were played the least
+	if (_ListLeastPlayedMaps) {
+		declare Integer[Text] MapsPlayCount;
+		foreach (MapInfo in Maps) MapsPlayCount[MapInfo.MapUid] = Private_GetMapPlayCount(MapInfo);
+		MapsPlayCount = MapsPlayCount.sort();
+
+		// Get the min and max play count
+		declare CurMinPlayCount = 0;
+		declare CurMaxPlayCount = 0;
+		foreach (MapUID => PlayCount in MapsPlayCount) { CurMinPlayCount = PlayCount; break; }
+		foreach (MapUID => PlayCount in MapsPlayCount) if (PlayCount > CurMaxPlayCount) CurMaxPlayCount = PlayCount;
+		declare Text[] CurPlayCountMaps;
+
+		// ---------------------------------- //
+		// Choose the random leat played maps
+		while (True) {
+			if (CurPlayCountMaps.count <= 0) {
+				if (CurMinPlayCount > CurMaxPlayCount) break;
+				foreach (MapUID => PlayCount in MapsPlayCount) if (PlayCount == CurMinPlayCount) CurPlayCountMaps.add(MapUID);
+				CurMinPlayCount += 1;
+				continue;
+			}
+
+			// Add a random map from current play count peek
+			declare NewMapUID = CurPlayCountMaps[ML::Rand(0, CurPlayCountMaps.count - 1)];
+			G_LibMapSelection_AvailableToVote.add(NewMapUID);
+			declare Removed = CurPlayCountMaps.remove(NewMapUID);
+
+			// Break the loop if there are no more maps needed
+			if (G_LibMapSelection_AvailableToVote.count >= C_LibMapSelection_NbDisplayedMaps) break;
+		}
+	}
+	// ---------------------------------- //
+	// Select random maps to choose
+	else while (Maps.count > 0 && G_LibMapSelection_AvailableToVote.count < C_LibMapSelection_NbDisplayedMaps) {
+		declare NewMap <=> Maps[ML::Rand(0, Maps.count - 1)];
+		G_LibMapSelection_AvailableToVote.add(NewMap.MapUid);
+		declare Removed = Maps.remove(NewMap);
+	}
+
+	// ---------------------------------- //
+	// Gather information about the available maps
+	declare Text[Text] MapsNames;
+	foreach (MapUID in G_LibMapSelection_AvailableToVote) {
+		declare MapInfo <=> GetMapByUID(MapUID);
+		if (MapInfo != Null) MapsNames[MapUID] = MapInfo.Name;
+	}
+
+	// ---------------------------------- //
+	// Reset previously selected maps by players
+	foreach (Player in Players) {
+		declare Text PrevSelectedMap for Player;
+		PrevSelectedMap = "";
+	}
+
+	// ---------------------------------- //
+	// Update interface values
+	Private_SetAvailableMaps(G_LibMapSelection_AvailableToVote, MapsNames);
+	Private_SetPlayersVotes(G_LibMapSelection_PlayersVotes);
+	Private_SetVotingEndTime(G_LibMapSelection_SelectionEndTime);
+	Private_SetSelectedMap("");
+
+	// Display the selection window
+	Layers::Attach(C_LibMapSelection_LayerId);
+
+	// ---------------------------------- //
+	// Set map replay availability
+	declare CurMapUID = Map.MapInfo.MapUid;
+	declare persistent Text Persistent_LibMapSelection_PrevMapUID;
+	Private_SetReplayAvaliability(CurMapUID != Persistent_LibMapSelection_PrevMapUID);
+	Persistent_LibMapSelection_PrevMapUID = CurMapUID;
+
+	return True;
+}
+
+// ---------------------------------- //
+/** Wait for the players to vote for the next map.
+ *
+ *	@return		True, if the map selection has been completed, False otherwise.
+ */
+Boolean SelectionLoop() {
+	if (G_LibMapSelection_SelectionEndTime <= 0 || Players.count <= 0) return True;
+
+	// ---------------------------------- //
+	// Get UIDs of the maps voted by players
+	foreach (Player in Players) {
+		if (Player.User.IsFakeUser) continue;
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+
+		// Skip the player if the voted UID is from previous selection
+		declare netread Integer Net_LibMapSelection_PrevVoteTime for UI;
+		if (Net_LibMapSelection_PrevVoteTime != G_LibMapSelection_SelectionEndTime) continue;
+
+		declare netread Text Net_LibMapSelection_UserSelectedMap for UI;
+		declare Text PrevSelectedMap for Player;
+
+		if (PrevSelectedMap == Net_LibMapSelection_UserSelectedMap) continue;
+		PrevSelectedMap = Net_LibMapSelection_UserSelectedMap;
+
+		G_LibMapSelection_PlayersVotes[Player.User.Login] = PrevSelectedMap;
+		G_LibMapSelection_UpdateVotes = True;
+	}
+
+	// ---------------------------------- //
+	// Update votes count on players amount change
+	if (G_LibMapSelection_PrevNbPlayers != Players.count) {
+		G_LibMapSelection_PrevNbPlayers = Players.count;
+		G_LibMapSelection_UpdateVotes = True;
+	}
+
+	// ---------------------------------- //
+	// Update the votes amount
+	if (G_LibMapSelection_UpdateVotes) {
+		G_LibMapSelection_UpdateVotes = False;
+
+		// ---------------------------------- //
+		// Remove votes of players who left the game
+		declare Text[] LoginsToRemove;
+		foreach (Login => MapUID in G_LibMapSelection_PlayersVotes) {
+			declare PlayerExists = False;
+			foreach (Player in Players) if (Player.User.Login == Login) { PlayerExists = True; break; }
+			if (!PlayerExists && !LoginsToRemove.exists(Login)) LoginsToRemove.add(Login);
+		}
+		while (LoginsToRemove.existskey(0)) {
+			declare Boolean Removed;
+			Removed = G_LibMapSelection_PlayersVotes.removekey(LoginsToRemove[0]);
+			Removed = LoginsToRemove.removekey(0);
+		}
+
+		// Update displayed votes
+		Private_SetPlayersVotes(G_LibMapSelection_PlayersVotes);
+
+		// ---------------------------------- //
+		// Check how many times each map has been voted
+		declare Integer[Text] MapsVotesAmount;
+		foreach (Login => MapUID in G_LibMapSelection_PlayersVotes) {
+			if (!MapsVotesAmount.existskey(MapUID)) MapsVotesAmount[MapUID] = 0;
+			MapsVotesAmount[MapUID] -= 1; ///< Negative value allows to sort maps by descanding votes amount
+		}
+		MapsVotesAmount = MapsVotesAmount.sort();
+
+		// ---------------------------------- //
+		// Get the selected map
+		declare SelectedMapUID = "";
+		foreach (MapUID => NbVotes in MapsVotesAmount) { SelectedMapUID = MapUID; break; }
+		Private_SetSelectedMap(SelectedMapUID);
+
+		declare SelectedMapInfo <=> GetMapByUID(SelectedMapUID);
+		G_LibMapSelection_ChoosedMapIndex = GetMapIndex(SelectedMapInfo);
+
+		// Skip the selection if all players have casted a vote
+		if (G_LibMapSelection_PlayersVotes.count >= Players.count) G_LibMapSelection_SelectionEndTime = -1;
+	}
+	
+	// Continue if there is pending vote
+	if (Now < G_LibMapSelection_SelectionEndTime) return False;
+
+	// ---------------------------------- //
+	// Force the selected map
+	Private_SetVotingEndTime(-1);
+	if (G_LibMapSelection_ChoosedMapIndex >= 0) NextMapIndex = G_LibMapSelection_ChoosedMapIndex;
+	return True;
+}
+
+// ---------------------------------- //
+/// Stop the map selection.
+Void SelectionEnd() {
+	Private_SetAvailableMaps(Text[], Text[Text]);
+	Private_SetReplayAvaliability(False);
+	Private_SetPlayersVotes(Text[Text]);
+	Private_SetVotingEndTime(-1);
+	Private_SetSelectedMap("");
+	
+	// Restore previous sequence
+	declare CUIConfig::EUISequence PrevUISequence for This;
+	UIManager.UIAll.UISequence = PrevUISequence;
+
+	// Hide the selection window
+	Layers::Detach(C_LibMapSelection_LayerId);
+}

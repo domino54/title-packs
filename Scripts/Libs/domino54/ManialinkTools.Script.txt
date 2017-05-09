@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MANIALINK TOOLS by domino54   //
-//  script version: 2016-12-20            //
+//  script version: 2017-03-21            //
 // -------------------------------------- //
 
 /**
@@ -15,15 +15,16 @@
  *	-	Brightness		Used to adjust brightness of a given color.
  *	-	ReplaceChars	Replaces diacritic characters with characters they are based on.
  *	-	ColorTransition	Creates smooth transition between 2 or more colors according to a given ratio.
+ *	-	HsvToRgb		Converts color in HSV format to RGB.
  */
 
-#Const Version		"2016-12-20"
+#Const Version		"2017-03-21"
 #Const ScriptName	"ManialinkTools.Script.txt"
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_ManialinkTools_AvailableFunctions ["Pulse", "SetGaugeRatio", "ComputeWidth", "Brightness", "ReplaceChars", "ColorTransition"]
+#Const C_ManialinkTools_AvailableFunctions ["Pulse", "SetGaugeRatio", "ComputeWidth", "Brightness", "ReplaceChars", "ColorTransition", "HsvToRgb"]
 
 /// Code of the Pulse() function
 #Const C_ManialinkTools_Pulse """
@@ -157,6 +158,40 @@ Vec3 ColorTransition(Real _Ratio, Vec3[Real] _ColorRatios) {
 }
 """
 
+/// Code of the HsvToRgb() function
+#Const C_ManialinkTools_HsvToRgb """
+// ---------------------------------- //
+/** Convert a HSV color to a RGB color
+ *
+ *	@param	_HSV	The HSV values [0.-1.[
+ *
+ *	@return		The RGB values [0.-1.[
+ */
+Vec3 HsvToRgb(Vec3 _HSV) {
+	declare RGB = <0., 0., 0.>;
+	declare H = _HSV.X;
+	declare S = _HSV.Y;
+	declare V = _HSV.Z;
+	
+	declare Hi = ML::FloorInteger(H * 6.);
+	declare F = (H * 6.) - Hi;
+	declare P = V * (1. - S);
+	declare Q = V * (1. - (F * S));
+	declare T = V * (1. - ((1. - F) * S));
+	
+	switch(Hi) {
+		case 0: RGB = <V, T, P>;
+		case 1: RGB = <Q, V, P>;
+		case 2: RGB = <P, V, T>;
+		case 3: RGB = <P, Q, V>;
+		case 4: RGB = <T, P, V>;
+		default: RGB = <V, P, Q>;
+	}
+	
+	return RGB;
+}
+"""
+
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
@@ -180,6 +215,7 @@ Text Private_GetFunctionCode(Text _FunctionName) {
 		case "Brightness"		: return C_ManialinkTools_Brightness;
 		case "ReplaceChars"		: return C_ManialinkTools_ReplaceChars;
 		case "ColorTransition"	: return C_ManialinkTools_ColorTransition;
+		case "HsvToRgb"			: return C_ManialinkTools_HsvToRgb;
 	}
 	return "";
 }

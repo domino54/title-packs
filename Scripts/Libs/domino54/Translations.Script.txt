@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY TRANSLATIONS by domino54      //
-//  script version: 2017-04-03            //
+//  script version: 2017-05-12            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Chat messages MUST be prefixed.
  */
 
-#Const Version		"2017-04-03"
+#Const Version		"2017-05-12"
 #Const ScriptName	"Translations.Script.txt"
 
 #Include "TextLib" as TL
@@ -190,113 +190,6 @@ Text GetScriptVersion() { return Version; }
  *	@return		The name of the script
  */
 Text GetScriptName() { return ScriptName; }
-
-// ---------------------------------- //
-/// Unload all downloaded translations
-Void Unload() {
-	G_LibTranslations_LatestIndex = 0;
-	G_LibTranslations_CZ.clear();
-	G_LibTranslations_DA.clear();
-	G_LibTranslations_DE.clear();
-	G_LibTranslations_EN.clear();
-	G_LibTranslations_ENGB.clear();
-	G_LibTranslations_ES.clear();
-	G_LibTranslations_FR.clear();
-	G_LibTranslations_HU.clear();
-	G_LibTranslations_IT.clear();
-	G_LibTranslations_JP.clear();
-	G_LibTranslations_KR.clear();
-	G_LibTranslations_NB.clear();
-	G_LibTranslations_NL.clear();
-	G_LibTranslations_PL.clear();
-	G_LibTranslations_PT.clear();
-	G_LibTranslations_PTBR.clear();
-	G_LibTranslations_RO.clear();
-	G_LibTranslations_RU.clear();
-	G_LibTranslations_SK.clear();
-	G_LibTranslations_TR.clear();
-	G_LibTranslations_ZH.clear();
-	
-	// ---------------------------------- //
-	// Destroy ongoing requests
-	foreach (URL => RequestId in G_LibTranslations_OngoingRequests) {
-		if (!Http.Requests.existskey(RequestId)) continue;
-		Http.Destroy(Http.Requests[RequestId]);
-	}
-	
-	G_LibTranslations_RequestsPriorityOrder.clear();
-	G_LibTranslations_OngoingRequests.clear();
-	G_LibTranslations_RequestStartTime.clear();
-}
-
-// ---------------------------------- //
-/** Start loading translations from given URLs
- *
- *	@param	_FilesURLs	Addresses of the files containing translations
- */
-Void Load(Text[] _FilesURLs) {
-	if (_FilesURLs.count <= 0) return;
-	Unload();
-	
-	foreach (URL in _FilesURLs) {
-		if (!Http.IsValidUrl(URL)) continue;
-		declare Request = Http.CreateGet(URL, False);
-		G_LibTranslations_OngoingRequests[URL] = Request.Id;
-		G_LibTranslations_RequestStartTime[URL] = Now;
-		G_LibTranslations_RequestsPriorityOrder.add(URL);
-	}
-}
-
-// ---------------------------------- //
-/** Manage ongoing translations requests
- *
- *	@return		True, if the translations have been loaded
- */
-Boolean LoadingLoop() {
-	if (G_LibTranslations_OngoingRequests.count <= 0) return True;
-	declare FinishedRequests = 0;
-	
-	// ---------------------------------- //
-	// Manage requests
-	foreach (URL => RequestId in G_LibTranslations_OngoingRequests) {
-		if (!Http.Requests.existskey(RequestId)) continue;
-		declare Request = Http.Requests[RequestId];
-		
-		// Request has been completed
-		if (Request.IsCompleted) FinishedRequests += 1;
-		
-		// Request has timed out
-		else if (
-			G_LibTranslations_RequestStartTime.existskey(URL) &&
-			Now > G_LibTranslations_RequestStartTime[URL] + G_LibTranslations_RequestTimeOut
-		) 
-			FinishedRequests += 1;
-	}
-	
-	// Wait until all requests are finished
-	if (FinishedRequests < G_LibTranslations_RequestsPriorityOrder.count) return False;
-	
-	// ---------------------------------- //
-	// Load translations
-	foreach (URL => RequestId in G_LibTranslations_OngoingRequests) {
-		if (!Http.Requests.existskey(RequestId)) continue;
-		declare Request = Http.Requests[RequestId];
-		
-		if (Request.IsCompleted) {
-			declare TranslationsDocument = Xml.Create(Request.Result);
-			Private_LoadTranslations(TranslationsDocument);
-			Xml.Destroy(TranslationsDocument);
-		}
-		
-		Http.Destroy(Request);
-	}
-	
-	G_LibTranslations_RequestsPriorityOrder.clear();
-	G_LibTranslations_OngoingRequests.clear();
-	G_LibTranslations_RequestStartTime.clear();
-	
-	return True;
-}
 
 // ---------------------------------- //
 /** Return translation depending on selected language
@@ -663,6 +556,117 @@ Void SendNotice(CPlayer _Player, Text[] _Arguments, CUIConfig::ENoticeLevel _Lev
  */
 Void SendNotice(Text[] _Arguments, CUIConfig::ENoticeLevel _Level, CUser _Avatar, CUIConfig::EAvatarVariant _AvatarVariant, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
 	foreach (Player in AllPlayers) SendNotice(Player, _Arguments, _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
+}
+
+// ---------------------------------- //
+/// Unload all downloaded translations
+Void Unload() {
+	SetBigMessage("");
+	SetStatusMessage("");
+	SetGaugeMessage("");
+
+	G_LibTranslations_LatestIndex = 0;
+	G_LibTranslations_CZ.clear();
+	G_LibTranslations_DA.clear();
+	G_LibTranslations_DE.clear();
+	G_LibTranslations_EN.clear();
+	G_LibTranslations_ENGB.clear();
+	G_LibTranslations_ES.clear();
+	G_LibTranslations_FR.clear();
+	G_LibTranslations_HU.clear();
+	G_LibTranslations_IT.clear();
+	G_LibTranslations_JP.clear();
+	G_LibTranslations_KR.clear();
+	G_LibTranslations_NB.clear();
+	G_LibTranslations_NL.clear();
+	G_LibTranslations_PL.clear();
+	G_LibTranslations_PT.clear();
+	G_LibTranslations_PTBR.clear();
+	G_LibTranslations_RO.clear();
+	G_LibTranslations_RU.clear();
+	G_LibTranslations_SK.clear();
+	G_LibTranslations_TR.clear();
+	G_LibTranslations_ZH.clear();
+	
+	// ---------------------------------- //
+	// Destroy ongoing requests
+	foreach (URL => RequestId in G_LibTranslations_OngoingRequests) {
+		if (!Http.Requests.existskey(RequestId)) continue;
+		Http.Destroy(Http.Requests[RequestId]);
+	}
+	
+	G_LibTranslations_RequestsPriorityOrder.clear();
+	G_LibTranslations_OngoingRequests.clear();
+	G_LibTranslations_RequestStartTime.clear();
+}
+
+// ---------------------------------- //
+/** Start loading translations from given URLs
+ *
+ *	@param	_FilesURLs	Addresses of the files containing translations
+ */
+Void Load(Text[] _FilesURLs) {
+	if (_FilesURLs.count <= 0) return;
+	Unload();
+	
+	foreach (URL in _FilesURLs) {
+		if (!Http.IsValidUrl(URL)) continue;
+		declare Request = Http.CreateGet(URL, False);
+		G_LibTranslations_OngoingRequests[URL] = Request.Id;
+		G_LibTranslations_RequestStartTime[URL] = Now;
+		G_LibTranslations_RequestsPriorityOrder.add(URL);
+	}
+}
+
+// ---------------------------------- //
+/** Manage ongoing translations requests
+ *
+ *	@return		True, if the translations have been loaded
+ */
+Boolean LoadingLoop() {
+	if (G_LibTranslations_OngoingRequests.count <= 0) return True;
+	declare FinishedRequests = 0;
+	
+	// ---------------------------------- //
+	// Manage requests
+	foreach (URL => RequestId in G_LibTranslations_OngoingRequests) {
+		if (!Http.Requests.existskey(RequestId)) continue;
+		declare Request = Http.Requests[RequestId];
+		
+		// Request has been completed
+		if (Request.IsCompleted) FinishedRequests += 1;
+		
+		// Request has timed out
+		else if (
+			G_LibTranslations_RequestStartTime.existskey(URL) &&
+			Now > G_LibTranslations_RequestStartTime[URL] + G_LibTranslations_RequestTimeOut
+		) 
+			FinishedRequests += 1;
+	}
+	
+	// Wait until all requests are finished
+	if (FinishedRequests < G_LibTranslations_RequestsPriorityOrder.count) return False;
+	
+	// ---------------------------------- //
+	// Load translations
+	foreach (URL => RequestId in G_LibTranslations_OngoingRequests) {
+		if (!Http.Requests.existskey(RequestId)) continue;
+		declare Request = Http.Requests[RequestId];
+		
+		if (Request.IsCompleted) {
+			declare TranslationsDocument = Xml.Create(Request.Result);
+			Private_LoadTranslations(TranslationsDocument);
+			Xml.Destroy(TranslationsDocument);
+		}
+		
+		Http.Destroy(Request);
+	}
+	
+	G_LibTranslations_RequestsPriorityOrder.clear();
+	G_LibTranslations_OngoingRequests.clear();
+	G_LibTranslations_RequestStartTime.clear();
+	
+	return True;
 }
 
 // ---------------------------------- //

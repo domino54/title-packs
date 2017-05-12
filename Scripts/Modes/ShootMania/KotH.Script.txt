@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-04-29            //
+//  script version: 2017-05-12            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-04-29"
+#Const Version		"2017-05-12"
 #Const ScriptName	"KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -19,7 +19,7 @@
 #Setting S_RoundsToWin			2		as _("Number of rounds to win a map")
 #Setting S_NbTeams				0		as _("Number of teams (2 - 4, 0 = auto)")
 #Setting S_UseDefaultTeams		False	as _("Use default teams (Blue vs Red)")
-#Setting S_GoalCaptureDuration	100		as _("Time team requires to capture the Goal (min. 15)")
+#Setting S_GoalCaptureDuration	100		as _("Time team requires to capture the Goal")
 #Setting S_DarkerGoalColor		False	as "<hidden>"
 #Setting S_UseAutoBalance		True
 
@@ -28,9 +28,9 @@
 // ---------------------------------- //
 #Const C_TeamsNbMax		4	///< Maximum number of teams
 #Const C_TeamsNames		["Orange", "Purple", "Green", "Pink"]
-#Const C_TeamsColors	[<1., .5, 0.>, <.5, 0., 1.>, <.5, 1., 0.>, <1., 0., .75>]
+#Const C_TeamsColors	[<1., .5, 0.>, <.375, 0., 1.>, <.5, 1., 0.>, <1., 0., .5>]
 
-#Const C_GoalCaptureDurationMin		15		///< Minimum Goal capture duration
+#Const C_GoalCaptureDurationMin		1		///< Minimum Goal capture duration
 #Const C_GoalCaptureSpeedBase		3		///< Basic Goal capture speed
 #Const C_GoalCaptureSpeedPerPlayer	1		///< Goal capture speed per additional player
 #Const C_GoalCaptureTimePerPoint	1500	///< Capture time per every capture point
@@ -519,20 +519,17 @@ if (!GT_UseAutoEndSequence) {
 	declare WinningTeam = 0;
 	declare Integer[Integer] TeamsScores;
 	declare MaxPoints = 0;
-	declare TeamsWithMaxPoints = 0;
+	declare Integer[] TeamsWithMaxPoints;
 
 	// ---------------------------------- //
 	// Custom teams
 	for (Team, 1, G_NbTeams) {
-		TeamsScores[Team] = Clans::GetClanPoints(Team);
-		if (TeamsScores[Team] > MaxPoints) {
-			MaxPoints = TeamsScores[Team];
-			TeamsWithMaxPoints = 1;
-		}
-		else TeamsWithMaxPoints += 1;
+		declare Points = Clans::GetClanPoints(Team);
+		TeamsScores[Team] = Points;
+		if (Points > MaxPoints) MaxPoints = Points;
 	}
-
-	if (TeamsWithMaxPoints == 1) WinningTeam = TeamsScores.keyof(MaxPoints);
+	foreach (Team => Points in TeamsScores) if (Points == MaxPoints) TeamsWithMaxPoints.add(Team);
+	if (TeamsWithMaxPoints.count == 1) WinningTeam = TeamsWithMaxPoints[0];
 
 	// ---------------------------------- //
 	// Display the match winner

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-04-29            //
+//  script version: 2017-05-12            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-04-29"
+#Const	Version		"2017-05-12"
 #Const	ScriptName	"Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -114,7 +114,7 @@ Text Private_CreateManialinkGauges() {
 
 <frame id="Frame_HMDClip" size="320 180" halign="center" valign="center">
 
-<frame id="Frame_WidgetArmor" pos="{{{C_LibInterfancy_ArmorPos.X^" "^C_LibInterfancy_ArmorPos.Y + C_LibInterfancy_FrameHideawayPos}}}" rot="{{{-C_LibInterfancy_WidgetsRotation}}}">
+<frame id="Frame_WidgetArmor" pos="{{{C_LibInterfancy_ArmorPos.X^" "^C_LibInterfancy_ArmorPos.Y + C_LibInterfancy_FrameHideawayPos}}}" rot="{{{-C_LibInterfancy_WidgetsRotation}}}" z-index="-10">
 	<quad size="10 10" halign="center" valign="center" id="Quad_ModuleIcon" />
 	<quad size="10 10" halign="center" valign="center" id="Quad_ModuleIconGhost" />
 	
@@ -335,7 +335,6 @@ declare InterfaceColor = 0.;
 declare StaminaDisplayEndTime = -1;
 declare Integer[Ident] PlayerIsOnTechArmor;
 declare ShowReloadBoost = False;
-declare GUIPlayerIsInVehicle = False;
 
 // Update
 declare PrevSettingsUpdate = -1;
@@ -459,12 +458,9 @@ if (ShowReloadBoost) {
 	Label_BoostTimer.Value = TL::ToText((Net_LibInterfancy_BoostStartTime + Net_LibInterfancy_BoostDuration - GameTime) / 1000 + 1);
 }
 
-// Check if the player is in a vehicle (in quite ugly way)
-GUIPlayerIsInVehicle = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && GUIPlayer.Armor > 0 && GameTime >= GUIPlayer.StartTime - 1500 && !GUIPlayer.IsInAir && !GUIPlayer.IsTouchingGround && !GUIPlayer.IsInWater;
-
 // ---------------------------------- //
 // Update the Armor module visibility
-ModuleVisibility_Armor = GaugesModulesVisibility && ModuleDisplay_Armor && GUIPlayer.ArmorMax > 0 && GUIPlayer.Position != <0., 0., 0.> && !GUIPlayerIsInVehicle;
+ModuleVisibility_Armor = GaugesModulesVisibility && ModuleDisplay_Armor && GUIPlayer.ArmorMax > 0 && GUIPlayer.Position != <0., 0., 0.> && !GUIPlayer.IsInVehicle;
 
 if (PrevModuleVisibility_Armor != ModuleVisibility_Armor) {
 	PrevModuleVisibility_Armor = ModuleVisibility_Armor;
@@ -709,7 +705,7 @@ if (GUIPlayer != Null && GUIPlayer.Stamina < GUIPlayer.StaminaMax * 3600) Stamin
 
 // ---------------------------------- //
 // Update the Stamina module visibility
-ModuleVisibility_Stamina = GaugesModulesVisibility && GUIPlayer.Position != <0., 0., 0.> && !GUIPlayerIsInVehicle && ModuleDisplay_Stamina && Now <= StaminaDisplayEndTime;
+ModuleVisibility_Stamina = GaugesModulesVisibility && GUIPlayer.Position != <0., 0., 0.> && !GUIPlayer.IsInVehicle && ModuleDisplay_Stamina && Now <= StaminaDisplayEndTime;
 
 if (PrevModuleVisibility_Stamina != ModuleVisibility_Stamina) {
 	PrevModuleVisibility_Stamina = ModuleVisibility_Stamina;
@@ -989,7 +985,7 @@ declare ScoreSummary_Display = False;
 declare ShowScoreSummary = False;
 declare ShowRoundPoints = False;
 
-declare NbTeams = Teams.count;
+declare NbCustomTeams = -1;
 declare UpdateSummaryCards = True;
 declare TeamColors = Vec3[Integer];
 declare CustomTeamsColors = Vec3[Integer];
@@ -998,7 +994,7 @@ declare ClanRoundScores = [1 => 0, 2 => 0];
 
 declare PrevSettingsUpdate = -1;
 declare PrevShowScoreSummary = False;
-declare PrevNbTeams = -1;
+declare PrevNbCustomTeams = -1;
 declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
 declare PrevClanScores = Integer[Integer];
 declare PrevClanRoundScores = Integer[Integer];
@@ -1019,7 +1015,7 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 		switch (SettingName) {
 			case "ScoreSummary_Display" : ScoreSummary_Display = SettingValue == "True";
 			case "ScoreSummary_ShowRoundPoints" : ShowRoundPoints = SettingValue == "True";
-			case "NbTeams" : NbTeams = ML::Max(TL::ToInteger(SettingValue), 0);
+			case "NbTeams" : NbCustomTeams = ML::Max(TL::ToInteger(SettingValue), 0);
 			default : {
 				// ---------------------------------- //
 				// Set custom color of a team
@@ -1096,14 +1092,14 @@ ClanRoundScores = [1 => UI.ScoreSummary_RoundPoints1, 2 => UI.ScoreSummary_Round
 
 // ---------------------------------- //
 // Update teams cards on teams number change
-if (PrevNbTeams != NbTeams) {
-	PrevNbTeams = NbTeams;
+if (PrevNbCustomTeams != NbCustomTeams) {
+	PrevNbCustomTeams = NbCustomTeams;
 	UpdateSummaryCards = True;
 }
 
 // ---------------------------------- //
 // Update teams cards on default teams colors change
-foreach (TeamId => Team in Teams) {
+if (NbCustomTeams <= 0) foreach (TeamId => Team in Teams) {
 	if (PrevTeamsColors[TeamId] == Team.ColorPrimary) continue;
 	PrevTeamsColors[TeamId] = Team.ColorPrimary;
 	UpdateSummaryCards = True;
@@ -1113,14 +1109,14 @@ foreach (TeamId => Team in Teams) {
 // Update teams cards
 if (UpdateSummaryCards) {
 	UpdateSummaryCards = False;
-	PrevClanScores.clear();
-	PrevClanRoundScores.clear();
 	
 	// Get the colors of the teams
 	TeamColors = [1 => Teams[0].ColorPrimary, 2 => Teams[1].ColorPrimary];
 	foreach (Team => Color in CustomTeamsColors) TeamColors[Team] = Color;
 	
-	// First team card offset
+	// First team card Offset
+	declare NbTeams = 2;
+	if (NbCustomTeams > 0) NbTeams = NbCustomTeams;
 	declare Offset = 2 - ML::Clamp(NbTeams - 2, 1, 6) / 2;
 	
 	// ---------------------------------- //
@@ -1144,7 +1140,7 @@ if (UpdateSummaryCards) {
 
 // ---------------------------------- //
 // Update clans scores
-for (Clan, 1, NbTeams) {
+for (Clan, 1, 6) {
 	// ---------------------------------- //
 	// Set match scores
 	declare ClanPoints = 0;
@@ -1156,6 +1152,8 @@ for (Clan, 1, NbTeams) {
 		
 		// ---------------------------------- //
 		// Get the target frame
+		declare NbTeams = 2;
+		if (NbCustomTeams > 0) NbTeams = NbCustomTeams;
 		declare TeamCardFrameNum = GetTeamCardNum(Clan, NbTeams);
 		if (!Frame_SummaryCards.existskey(TeamCardFrameNum)) continue;
 		declare Frame = Frame_SummaryCards[TeamCardFrameNum];
@@ -1184,6 +1182,8 @@ for (Clan, 1, NbTeams) {
 		
 		// ---------------------------------- //
 		// Get the target frame
+		declare NbTeams = 2;
+		if (NbCustomTeams > 0) NbTeams = NbCustomTeams;
 		declare TeamCardFrameNum = GetTeamCardNum(Clan, NbTeams);
 		if (!Frame_SummaryCards.existskey(TeamCardFrameNum)) continue;
 		declare Frame = Frame_SummaryCards[TeamCardFrameNum];
@@ -1645,10 +1645,10 @@ Text Private_CreateManialinkCrosshair() {
 <manialink version="3" name="LibInterfancy:Crosshair">
 <stylesheet>
 	<style class="CrosshairNote" halign="center" valign="center2" textemboss="1" textsize="2" textcolor="FFF" textfont="Eurostile_Bold" />
-	<style class="ch" halign="center" valign="center" />
+	<style class="ch" halign="center" valign="center" autoscale="0" />
 </stylesheet>
 
-<frame id="Frame_Crosshair" pos="{{{C_LibInterfancy_CrosshairPos.X^" "^C_LibInterfancy_CrosshairPos.Y}}}" hidden="1">
+<frame id="Frame_Crosshair" pos="{{{C_LibInterfancy_CrosshairPos.X^" "^C_LibInterfancy_CrosshairPos.Y}}}" z-index="-10" hidden="1">
 	<quad size="1 1" halign="center" valign="center" image="{{{C_ImgBase}}}Crosshair/Dot.png" id="Quad_CrosshairDot" />
 	<frame id="Frame_CrosshairAnim">
 		<quad size="16 16" class="ch" image="{{{C_ImgBase}}}Crosshair/Rocket.png" id="Quad_CrosshairRocket" />
@@ -1658,10 +1658,10 @@ Text Private_CreateManialinkCrosshair() {
 	</frame>
 	<frame id="Frame_CrosshairGauge" hidden="1">
 		<frame size="16 32" valign="center" halign="left">
-			<quad size="28 28" class="ch" image="{{{C_ImgBase}}}Crosshair/Gauge.png" id="Quad_GaugeRight" />
+			<quad size="28 28" class="ch" autoscale="1" image="{{{C_ImgBase}}}Crosshair/Gauge.png" id="Quad_GaugeRight" />
 		</frame>
 		<frame size="16 32" valign="center" halign="right">
-			<quad size="28 28" class="ch" image="{{{C_ImgBase}}}Crosshair/Gauge.png" id="Quad_GaugeLeft" rot="-180" />
+			<quad size="28 28" class="ch" autoscale="1" image="{{{C_ImgBase}}}Crosshair/Gauge.png" id="Quad_GaugeLeft" rot="-180" />
 		</frame>
 	</frame>
 </frame>
@@ -1764,10 +1764,7 @@ CrosshairVisible = !IsInGameMenuDisplayed;
 // ---------------------------------- //
 // Set crosshair visibility
 ClientUI.OverlayHideCrosshair = !Crosshair_Display || Persistent_LibInterfancy_UseCustomCrosshair || !CrosshairVisible;
-Frame_Crosshair.Visible =
-	ClientUI.OverlayHideCrosshair && CrosshairVisible && GUIPlayer != Null && !GUIPlayer.IsOnTechNoWeapon && !GUIPlayer.IsInWater &&
-	GUIPlayer.Position != <0., 0., 0.> && GameTime >= GUIPlayer.StartTime - 1500 &&
-	GUIPlayer.CurAmmoMax > 0 && GUIPlayer.CurAmmoUnit > 0 && GUIPlayer.IsInAir != GUIPlayer.IsTouchingGround;
+Frame_Crosshair.Visible = ClientUI.OverlayHideCrosshair && CrosshairVisible && GUIPlayer != Null && GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && !GUIPlayer.IsOnTechNoWeapon && !GUIPlayer.IsInVehicle;
 
 // ---------------------------------- //
 // Update GUIPlayer

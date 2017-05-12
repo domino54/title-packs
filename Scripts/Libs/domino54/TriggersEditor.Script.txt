@@ -1,0 +1,802 @@
+// -------------------------------------- //
+//  LIBRARY TRIGGERS EDITOR  by domino54  //
+//  script version: 2017-05-12            //
+// -------------------------------------- //
+
+#Const Version		"2017-05-12"
+#Const ScriptName	"Libs/domino54/TriggersEditor.Script.txt"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibTriggersEditor_NbTriggersCards	10
+#Const C_LibTriggersEditor_NbPropertyCards	16
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident G_LibTriggersEditor_EditorLayerId;
+declare CMlPage G_LibTriggersEditor_LayerLocalPage;
+
+// ---------------------------------- //
+/** Create manialink for triggers editor layer.
+ *
+ *	@return		Triggers editor manialink.
+ */
+Text Private_CreateManialinkTriggersEditor() {
+	declare TriggersCards = "";
+	for (I, 0, C_LibTriggersEditor_NbTriggersCards - 1)
+		TriggersCards ^= "<frameinstance modelid='FrameModel_TriggerCard' id='Frame_TriggerCard#"^I^"' hidden='1' pos='0 "^I * -6.5^"' />";
+
+	declare PropertyCards = "";
+	for (I, 0, C_LibTriggersEditor_NbPropertyCards - 1)
+		PropertyCards ^= "<frameinstance modelid='FrameModel_PropertyCard' id='Frame_PropertyCard#"^I^"' pos='0 "^I * -6.5^"' />";
+
+	return """
+<manialink version="3" name="TriggersEditor">
+<stylesheet>
+	<style class="F" valign="center2" textsize="2" textemboss="1" textcolor="FFF" textfont="Oswald" />
+</stylesheet>
+
+<!-- Editor interface disabler -->
+<quad pos="-108 -78" size="162 12" bgcolor="000" id="Quad_EditorInterfaceCover" ScriptEvents="1" hidden="1" />
+
+<!-- List of the available triggers -->
+<frame id="Frame_TriggersList" pos="-160 60" hidden="1">
+	<frame size="90 8">
+		<label pos="2 -4.25" class="F" textsize="3" text="Gameplay Triggers Editor" />
+		<quad pos="72 -4" size="7 7" halign="center" valign="center" style="UIConstruction_Buttons" substyle="Left" id="Quad_CloseTriggersList" ScriptEvents="1" />
+		<quad size="76 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
+	</frame>
+
+	<frame pos="0 -9">
+		<framemodel id="FrameModel_TriggerCard" size="90 6">
+			<label pos="2 -3.25" class="F" id="Label_TriggerCardName" />
+			<quad pos="67.5 -3" size="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="QuitRace" id="Quad_TriggerCardDelete" ScriptEvents="1" />
+			<quad size="70 84" valign="center" rot="11.25" bgcolorfocus="FFF" opacity=".125" id="Quad_TriggerCardBg" ScriptEvents="1" />
+			<quad size="70 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
+		</framemodel>
+		{{{TriggersCards}}}
+	</frame>
+
+	<frame pos="0 -74.25" size="90 6">
+		<quad pos="47 -3" size="6 6" halign="center" valign="center" style="Icons64x64_1" substyle="Add" id="Quad_AddNewTrigger" ScriptEvents="1" />
+		<quad size="50 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
+	</frame>
+</frame>
+
+<!-- Selected trigger propertis -->
+<frame id="Frame_TriggerProperties" pos="-160 60" hidden="1">
+	<frame size="90 8">
+		<label pos="2 -4.25" class="F" textsize="3" text="Set trigger properties" />
+		<quad pos="72 -4" size="7 7" halign="center" valign="center" style="UIConstruction_Buttons" substyle="Left" styleselected="1" id="Quad_CloseTriggerProps" ScriptEvents="1" />
+		<quad size="76 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
+	</frame>
+
+	<frame pos="0 -9">
+		<framemodel id="FrameModel_PropertyCard" size="90 6">
+			<label pos="2 -3.25" class="F" id="Label_PropertyCardName" opacity=".25" />
+
+			<frame id="Frame_PropertyRealSlider" pos="60.5 -3" hidden="1">
+				<entry size="9.5 6" class="F" halign="center" textsize="2" default="1.0" focusareacolor1="0000" focusareacolor2="FFF2" id="Entry_PropertyRealValue" />
+				<quad pos="-7" size="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="Sub" id="Quad_PropertyRealSub" ScriptEvents="1" />
+				<quad pos="7" size="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="Add" id="Quad_PropertyRealAdd" ScriptEvents="1" />
+			</frame>
+
+			<frame id="Frame_PropertyEnumList" pos="60.5 -3" hidden="1">
+				<label pos="0 -.25" size="9.5" class="F" halign="center" textsize="2" id="Label_PropertyEnumValue" />
+				<quad pos="-7" size="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowPrev" id="Quad_PropertyEnumPrev" ScriptEvents="1" />
+				<quad pos="7" size="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="ArrowNext" id="Quad_PropertyEnumNext" ScriptEvents="1" />
+			</frame>
+
+			<quad pos="67.5 -3" size="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="Check" id="Quad_PropertyBoolean" hidden="1" ScriptEvents="1" />
+
+			<quad size="70 84" valign="center" rot="11.25" bgcolorfocus="FFF" opacity=".125" id="Quad_PropertyCardBg" ScriptEvents="1" />
+			<quad size="70 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
+		</framemodel>
+		{{{PropertyCards}}}
+	</frame>
+</frame>
+
+<script><!--
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+/// Window mode enum
+#Const C_WindowMode_Disabled		0
+#Const C_WindowMode_TriggersList	1
+#Const C_WindowMode_EditProperties	2
+#Const C_WindowMode_PlaceTrigger	3
+
+/// Available gameplay properties
+#Const C_GameplayProperties [
+	"SetDefaultGameplay", "Weapon", "AmmoMax", "AmmoGain", "DisableOffZone",
+	"StaminaInfinite", "StaminaMax", "StaminaGain", "StaminaPower", "SpeedPower",
+	"JumpPower", "AllowWallJump", "AllowProgressiveJump", "SetVehicleModel"
+]
+
+/// Properties types
+#Const C_GameplayProperties_Type [
+	"Checkpoint ID" => "int",
+	"SetDefaultGameplay" => "bool",
+	"Weapon" => "enum",
+	"AmmoMax" => "int",
+	"AmmoGain" => "real",
+	"DisableOffZone" => "bool",
+	"StaminaInfinite" => "bool",
+	"StaminaMax" => "real",
+	"StaminaGain" => "real",
+	"StaminaPower" => "real",
+	"SpeedPower" => "real",
+	"JumpPower" => "real",
+	"AllowWallJump" => "bool",
+	"AllowProgressiveJump" => "bool",
+	"SetVehicleModel" => "enum"
+]
+
+/// Default properties values
+#Const C_GameplayProperties_Default [
+	"SetDefaultGameplay" => "True",
+	"Weapon" => "Rocket",
+	"AmmoMax" => "4",
+	"AmmoGain" => "1.",
+	"DisableOffZone" => "False",
+	"StaminaInfinite" => "False",
+	"StaminaMax" => "1.",
+	"StaminaGain" => "1.",
+	"StaminaPower" => "1.",
+	"SpeedPower" => "1.",
+	"JumpPower" => "1.",
+	"AllowWallJump" => "True",
+	"AllowProgressiveJump" => "True",
+	"SetVehicleModel" => "None"
+]
+
+/// Min values for real properties
+#Const C_GameplayProperties_RealMin [
+	"AmmoMax" => 0.,
+	"AmmoGain" => 0.,
+	"StaminaMax" => .1,
+	"StaminaGain" => 0.,
+	"StaminaPower" => .1,
+	"SpeedPower" => .1,
+	"JumpPower" => .1
+]
+
+/// Max values for real properties
+#Const C_GameplayProperties_RealMax [
+	"AmmoMax" => 10.,
+	"AmmoGain" => 10.,
+	"StaminaMax" => 3.,
+	"StaminaGain" => 1.,
+	"StaminaPower" => 1.,
+	"SpeedPower" => 1.,
+	"JumpPower" => 1.
+]
+
+/// Gameplay properties enums values
+#Const C_GameplayProperties_Enums [
+	"Weapon" => ["Laser", "Nucleus", "Arrow", "Rocket", "Missile"],
+	"SetVehicleModel" => ["None", "CanyonCar", "StadiumCar", "ValleyCar"]
+]
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load interface elements
+	declare Frame_TriggersList <=> (Page.GetFirstChild("Frame_TriggersList") as CMlFrame);
+	declare Frame_TriggerProperties <=> (Page.GetFirstChild("Frame_TriggerProperties") as CMlFrame);
+	declare Quad_EditorInterfaceCover <=> (Page.GetFirstChild("Quad_EditorInterfaceCover") as CMlQuad);
+
+	/// Triggers list cards
+	declare CMlFrame[] Frame_TriggersCards;
+	for (I, 0, {{{C_LibTriggersEditor_NbTriggersCards - 1}}})
+		Frame_TriggersCards.add((Page.GetFirstChild("Frame_TriggerCard#"^I) as CMlFrame));
+
+	/// Properties list cards
+	declare CMlFrame[] Frame_PropertyCards;
+	for (I, 0, {{{C_LibTriggersEditor_NbPropertyCards - 1}}})
+		Frame_PropertyCards.add((Page.GetFirstChild("Frame_PropertyCard#"^I) as CMlFrame));
+
+	// ---------------------------------- //
+	// Plugin script communication
+	declare Integer[] MLLayerTemp_GameplayTriggers_MapTriggers for Page;
+	declare Text[Text][Integer] MLLayerTemp_GameplayTriggers_TriggersProperties for Page;
+	declare Integer[Integer] MLLayerTemp_GameplayTriggers_TriggersCPOrders for Page;
+	declare Int3[][Integer] MLLayerTemp_GameplayTriggers_TriggersCustomPos for Page;
+	declare Boolean MLLayerTemp_UpdateMapMetadata for Page;
+
+	// ---------------------------------- //
+	// Variables
+	declare CurWindowMode = 1;
+	declare SelectedTriggerId = -1;
+	declare RevertPluginMode = False;
+	declare UpdateTriggersList = True;
+	declare UpdateTriggerProperties = True;
+
+	/// Update
+	declare PrevWindowMode = -1;
+
+	// ---------------------------------- //
+	// Initialize properties
+	foreach (I => Frame in Frame_PropertyCards) {
+		declare Text PropertyType for Frame;
+		switch (I) {
+			case 0 : PropertyType = "Checkpoint ID";
+			case 1 : PropertyType = "Custom trigger";
+			default : PropertyType = C_GameplayProperties[I - 2];
+		}
+		declare Label_PropertyCardName <=> (Frame.GetFirstChild("Label_PropertyCardName") as CMlLabel);
+		Label_PropertyCardName.Value = PropertyType;
+	}
+
+	// ---------------------------------- //
+	// Init default properties
+	if (!MLLayerTemp_GameplayTriggers_TriggersProperties.existskey(0)) {
+		MLLayerTemp_GameplayTriggers_TriggersProperties[0] = ["SetDefaultGameplay" => "True"];
+		MLLayerTemp_GameplayTriggers_TriggersCPOrders[0] = -1;
+		MLLayerTemp_GameplayTriggers_TriggersCustomPos[0] = Int3[];
+		MLLayerTemp_UpdateMapMetadata = True;
+	}
+
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+
+		// ---------------------------------- //
+		// Manage events
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// On mouse click
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				// ---------------------------------- //
+				// Create a new gameplay trigger
+				if (Event.ControlId == "Quad_AddNewTrigger") {
+					declare NewTriggerId = 1;
+					foreach (TriggerId in MLLayerTemp_GameplayTriggers_MapTriggers) if (TriggerId >= NewTriggerId) NewTriggerId = TriggerId + 1;
+
+					MLLayerTemp_GameplayTriggers_MapTriggers.add(NewTriggerId);
+					MLLayerTemp_GameplayTriggers_TriggersProperties[NewTriggerId] = ["SetDefaultGameplay" => "True"];
+					MLLayerTemp_GameplayTriggers_TriggersCPOrders[NewTriggerId] = 1;
+					MLLayerTemp_GameplayTriggers_TriggersCustomPos[NewTriggerId] = Int3[];
+					MLLayerTemp_UpdateMapMetadata = True;
+
+					UpdateTriggersList = True;
+				}
+				// ---------------------------------- //
+				// Edit trigger properties
+				else if (Event.ControlId == "Quad_TriggerCardBg") {
+					declare Integer TriggerId for Event.Control;
+					if (TriggerId != 0 && !MLLayerTemp_GameplayTriggers_MapTriggers.exists(TriggerId)) continue;
+
+					SelectedTriggerId = TriggerId;
+					CurWindowMode = C_WindowMode_EditProperties;
+					UpdateTriggerProperties = True;
+				}
+				// ---------------------------------- //
+				// Delete an existing trigger
+				else if (Event.ControlId == "Quad_TriggerCardDelete") {
+					declare Integer TriggerId for Event.Control.Parent;
+					if (TriggerId <= 0 || !MLLayerTemp_GameplayTriggers_MapTriggers.exists(TriggerId)) continue;
+
+					declare Boolean Tmp;
+					Tmp = MLLayerTemp_GameplayTriggers_MapTriggers.remove(TriggerId);
+					Tmp = MLLayerTemp_GameplayTriggers_TriggersProperties.removekey(TriggerId);
+					Tmp = MLLayerTemp_GameplayTriggers_TriggersCPOrders.removekey(TriggerId);
+					Tmp = MLLayerTemp_GameplayTriggers_TriggersCustomPos.removekey(TriggerId);
+					MLLayerTemp_UpdateMapMetadata = True;
+
+					UpdateTriggersList = True;
+				}
+				// ---------------------------------- //
+				// Enable/disable selected property
+				else if (Event.ControlId == "Quad_PropertyCardBg") {
+					if (CurWindowMode != C_WindowMode_EditProperties) continue;
+					if (SelectedTriggerId != 0 && !MLLayerTemp_GameplayTriggers_MapTriggers.exists(SelectedTriggerId)) continue;
+
+					declare Text PropertyType for Event.Control.Parent;
+					if (SelectedTriggerId == 0 && (PropertyType == "Checkpoint ID" || PropertyType == "Custom trigger" || PropertyType == "SetDefaultGameplay")) continue;
+
+					UpdateTriggerProperties = True;
+					MLLayerTemp_UpdateMapMetadata = True;
+
+					switch (PropertyType) {
+						// ---------------------------------- //
+						// Set the default checkpoint order
+						case "Checkpoint ID" : {
+							if (MLLayerTemp_GameplayTriggers_TriggersCPOrders.existskey(SelectedTriggerId)) continue;
+							MLLayerTemp_GameplayTriggers_TriggersCPOrders[SelectedTriggerId] = 1;
+							MLLayerTemp_GameplayTriggers_TriggersCustomPos[SelectedTriggerId] = Int3[];
+						}
+						// ---------------------------------- //
+						// Start editing the custom trigger
+						case "Custom trigger" : {
+							// TODO
+						}
+						// ---------------------------------- //
+						// Default properties
+						default : {
+							if (!MLLayerTemp_GameplayTriggers_TriggersProperties.existskey(SelectedTriggerId))
+								MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId] = Text[Text];
+
+							// ---------------------------------- //
+							// Disable property
+							if (MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId].existskey(PropertyType)) {
+								declare Removed = MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId].removekey(PropertyType);
+							}
+							// ---------------------------------- //
+							// Enable property with its default value
+							else {
+								declare NewPropertyValue = "";
+
+								// ---------------------------------- //
+								// Try getting customized defaults from map
+								if (
+									MLLayerTemp_GameplayTriggers_TriggersProperties.existskey(0) &&
+									MLLayerTemp_GameplayTriggers_TriggersProperties[0].existskey(PropertyType)
+								) {
+									NewPropertyValue = MLLayerTemp_GameplayTriggers_TriggersProperties[0][PropertyType];
+								}
+
+								// Use predefined default values
+								if (NewPropertyValue == "" && C_GameplayProperties_Default.existskey(PropertyType)) {
+									NewPropertyValue = C_GameplayProperties_Default[PropertyType];
+								}
+
+								// Set the new value
+								if (NewPropertyValue != "") MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = NewPropertyValue;
+							}
+						}
+					}
+				}
+				// ---------------------------------- //
+				// Enable/disable boolean property
+				else if (Event.ControlId == "Quad_PropertyBoolean") {
+					if (CurWindowMode != C_WindowMode_EditProperties) continue;
+					if (SelectedTriggerId != 0 && !MLLayerTemp_GameplayTriggers_MapTriggers.exists(SelectedTriggerId)) continue;
+
+					declare Text PropertyType for Event.Control.Parent;
+					if (SelectedTriggerId == 0 && PropertyType == "SetDefaultGameplay") continue;
+
+					UpdateTriggerProperties = True;
+					MLLayerTemp_UpdateMapMetadata = True;
+
+					if (
+						!MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId].existskey(PropertyType) ||
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] != "True"
+					) {
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = "True";
+					} else {
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = "False";
+					}
+				}
+				// ---------------------------------- //
+				// Previous enum property value
+				else if (Event.ControlId == "Quad_PropertyEnumPrev") {
+					if (CurWindowMode != C_WindowMode_EditProperties) continue;
+					if (SelectedTriggerId != 0 && !MLLayerTemp_GameplayTriggers_MapTriggers.exists(SelectedTriggerId)) continue;
+
+					declare Text PropertyType for Event.Control.Parent.Parent;
+					if (!C_GameplayProperties_Type.existskey(PropertyType) || C_GameplayProperties_Type[PropertyType] != "enum") continue;
+
+					declare Text[] CurPropertyValues;
+					if (C_GameplayProperties_Enums.existskey(PropertyType)) CurPropertyValues = C_GameplayProperties_Enums[PropertyType];
+					if (CurPropertyValues.count < 2) continue;
+
+					if (!MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId].existskey(PropertyType)) {
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = C_GameplayProperties_Default[PropertyType];
+					}
+					else {
+						declare Key = CurPropertyValues.keyof(MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType]);
+						Key -= 1;
+						if (Key < 0) Key = CurPropertyValues.count - 1;
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = CurPropertyValues[Key];
+					}
+
+					UpdateTriggerProperties = True;
+				}
+				// ---------------------------------- //
+				// Next enum property value
+				else if (Event.ControlId == "Quad_PropertyEnumNext") {
+					if (CurWindowMode != C_WindowMode_EditProperties) continue;
+					if (SelectedTriggerId != 0 && !MLLayerTemp_GameplayTriggers_MapTriggers.exists(SelectedTriggerId)) continue;
+
+					declare Text PropertyType for Event.Control.Parent.Parent;
+					if (!C_GameplayProperties_Type.existskey(PropertyType) || C_GameplayProperties_Type[PropertyType] != "enum") continue;
+
+					declare Text[] CurPropertyValues;
+					if (C_GameplayProperties_Enums.existskey(PropertyType)) CurPropertyValues = C_GameplayProperties_Enums[PropertyType];
+					if (CurPropertyValues.count < 2) continue;
+
+					if (!MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId].existskey(PropertyType)) {
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = C_GameplayProperties_Default[PropertyType];
+					}
+					else {
+						declare Key = CurPropertyValues.keyof(MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType]);
+						Key += 1;
+						if (Key >= CurPropertyValues.count) Key = 0;
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = CurPropertyValues[Key];
+					}
+
+					UpdateTriggerProperties = True;
+				}
+				// ---------------------------------- //
+				// Decrease Real property
+				else if (Event.ControlId == "Quad_PropertyRealSub") {
+					if (CurWindowMode != C_WindowMode_EditProperties) continue;
+					if (SelectedTriggerId != 0 && !MLLayerTemp_GameplayTriggers_MapTriggers.exists(SelectedTriggerId)) continue;
+
+					declare Text PropertyType for Event.Control.Parent.Parent;
+					if (!C_GameplayProperties_Type.existskey(PropertyType)) continue;
+					if (C_GameplayProperties_Type[PropertyType] != "real" && C_GameplayProperties_Type[PropertyType] != "int") continue;
+
+					if (PropertyType == "Checkpoint ID") {
+
+					}
+					else if (!MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId].existskey(PropertyType)) {
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = C_GameplayProperties_Default[PropertyType];
+					}
+					else {
+						declare NewValue = TL::ToReal(MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType]);
+						switch (C_GameplayProperties_Type[PropertyType]) {
+							case "real" : NewValue -= .125;
+							case "int" : NewValue -= 1.;
+						}
+
+						declare MinValue = 0.;
+						if (C_GameplayProperties_RealMin.existskey(PropertyType)) MinValue = C_GameplayProperties_RealMin[PropertyType];
+						if (NewValue < MinValue) NewValue = MinValue;
+
+						declare NewValueText = TL::ToText(NewValue);
+						if (C_GameplayProperties_Type[PropertyType] == "int") NewValueText = TL::ToText(ML::NearestInteger(NewValue));
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = NewValueText;
+					}
+
+					UpdateTriggerProperties = True;
+					MLLayerTemp_UpdateMapMetadata = True;
+				}
+				// ---------------------------------- //
+				// Increase Real property
+				else if (Event.ControlId == "Quad_PropertyRealAdd") {
+					if (CurWindowMode != C_WindowMode_EditProperties) continue;
+					if (SelectedTriggerId != 0 && !MLLayerTemp_GameplayTriggers_MapTriggers.exists(SelectedTriggerId)) continue;
+
+					declare Text PropertyType for Event.Control.Parent.Parent;
+					if (!C_GameplayProperties_Type.existskey(PropertyType)) continue;
+					if (C_GameplayProperties_Type[PropertyType] != "real" && C_GameplayProperties_Type[PropertyType] != "int") continue;
+
+					if (PropertyType == "Checkpoint ID") {
+						
+					}
+					else if (!MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId].existskey(PropertyType)) {
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = C_GameplayProperties_Default[PropertyType];
+					}
+					else {
+						declare NewValue = TL::ToReal(MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType]);
+						switch (C_GameplayProperties_Type[PropertyType]) {
+							case "real" : NewValue += .125;
+							case "int" : NewValue += 1.;
+						}
+
+						declare MaxValue = 1.;
+						if (C_GameplayProperties_RealMax.existskey(PropertyType)) MaxValue = C_GameplayProperties_RealMax[PropertyType];
+						if (NewValue > MaxValue) NewValue = MaxValue;
+
+						declare NewValueText = TL::ToText(NewValue);
+						if (C_GameplayProperties_Type[PropertyType] == "int") NewValueText = TL::ToText(ML::NearestInteger(NewValue));
+						MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = NewValueText;
+					}
+
+					UpdateTriggerProperties = True;
+					MLLayerTemp_UpdateMapMetadata = True;
+				}
+				// ---------------------------------- //
+				// Finish editing trigger properties
+				else if (Event.ControlId == "Quad_CloseTriggerProps") {
+					CurWindowMode = C_WindowMode_TriggersList;
+				}
+			}
+		}
+
+		// ---------------------------------- //
+		// Update the current window mode
+		if (PrevWindowMode != CurWindowMode) {
+			PrevWindowMode = CurWindowMode;
+
+			Frame_TriggersList.Visible = CurWindowMode == C_WindowMode_TriggersList;
+			Frame_TriggerProperties.Visible = CurWindowMode == C_WindowMode_EditProperties;
+			Quad_EditorInterfaceCover.Visible = CurWindowMode != C_WindowMode_Disabled;
+
+			// Reset selected trigger if not in trigger list, nor editing it's properties
+			if (CurWindowMode != C_WindowMode_TriggersList && CurWindowMode != C_WindowMode_EditProperties) SelectedTriggerId = -1;
+		}
+
+		// ---------------------------------- //
+		// Force the custom selection mode during triggers edition
+		if (CurWindowMode != C_WindowMode_Disabled) {
+			Editor.PlaceMode = CEditorPlugin::PlaceMode::CustomSelection;
+			if (!RevertPluginMode) RevertPluginMode = True;
+		}
+		else if (Editor.PlaceMode == CEditorPlugin::PlaceMode::CustomSelection && RevertPluginMode) {
+			Editor.PlaceMode = CEditorPlugin::PlaceMode::Block;
+			Editor.CustomSelectionCoords.clear();
+			RevertPluginMode = False;
+		}
+
+		// ---------------------------------- //
+		// Preview the current custom trigger
+		if (CurWindowMode == C_WindowMode_TriggersList || CurWindowMode == C_WindowMode_EditProperties) {
+			Editor.CustomSelectionCoords.clear();
+			if (SelectedTriggerId > 0 && MLLayerTemp_GameplayTriggers_TriggersCustomPos.existskey(SelectedTriggerId)) {
+				foreach (Coord in MLLayerTemp_GameplayTriggers_TriggersCustomPos[SelectedTriggerId]) Editor.CustomSelectionCoords.add(Coord);
+			}
+			// This part is quite ugly, it updates every tick to prevent editing custom selection
+		}
+
+		// ---------------------------------- //
+		// Update the triggers list
+		if (UpdateTriggersList && CurWindowMode == C_WindowMode_TriggersList) {
+			UpdateTriggersList = False;
+
+			// ---------------------------------- //
+			// Format triggers cards frames
+			foreach (I => Frame in Frame_TriggersCards) {
+				declare ListItemId = I;
+				Frame.Visible = I <= MLLayerTemp_GameplayTriggers_MapTriggers.count;
+				if (!Frame.Visible) continue;
+
+				// ---------------------------------- //
+				// Get the ID of the target trigger
+				declare Integer TriggerId for Frame;
+				TriggerId = 0;
+				if (ListItemId > 0) TriggerId = MLLayerTemp_GameplayTriggers_MapTriggers[ListItemId - 1];
+
+				// ---------------------------------- //
+				// Get the name of the trigger
+				declare Label_TriggerCardName <=> (Frame.GetFirstChild("Label_TriggerCardName") as CMlLabel);
+
+				if (TriggerId == 0) Label_TriggerCardName.Value = _("Default");
+				else {
+					// ---------------------------------- //
+					// Name according to the checkpoint
+					if (MLLayerTemp_GameplayTriggers_TriggersCPOrders.existskey(TriggerId)) {
+						declare CheckpointOrder = MLLayerTemp_GameplayTriggers_TriggersCPOrders[TriggerId];
+						Label_TriggerCardName.Value = TL::Compose(TriggerId^". %1 #"^CheckpointOrder, _("Checkpoint"));
+					}
+
+					// ---------------------------------- //
+					// Name according to custom trigger
+					else if (
+						MLLayerTemp_GameplayTriggers_TriggersCustomPos.existskey(TriggerId) &&
+						MLLayerTemp_GameplayTriggers_TriggersCustomPos[TriggerId].count > 0
+					) {
+						declare FirstCoord = MLLayerTemp_GameplayTriggers_TriggersCustomPos[TriggerId][0];
+						Label_TriggerCardName.Value = TL::Compose(TriggerId^". %1 "^FirstCoord, _("Custom"));
+					}
+
+					// Unknown trigger
+					else Label_TriggerCardName.Value = TL::Compose(TriggerId^". %1", _("Unknown"));
+				}
+
+				// Hide the delete button if it's default gameplay card
+				declare Quad_TriggerCardDelete <=> (Frame.GetFirstChild("Quad_TriggerCardDelete") as CMlQuad);
+				Quad_TriggerCardDelete.Visible = TriggerId != 0;
+
+				// Save trigger ID in the background button
+				declare Quad_TriggerCardBg <=> (Frame.GetFirstChild("Quad_TriggerCardBg") as CMlQuad);
+				declare Integer TriggerId as QuadTriggerId for Quad_TriggerCardBg;
+				QuadTriggerId = TriggerId;
+			}
+		}
+
+		if (CurWindowMode == C_WindowMode_EditProperties) {
+			// ---------------------------------- //
+			// Update properties list
+			if (UpdateTriggerProperties) {
+				UpdateTriggerProperties = False;
+				UpdateTriggersList = True;
+
+				foreach (Frame in Frame_PropertyCards) {
+					declare Text PropertyType for Frame;
+					declare PropertyIsActive =
+						(
+							SelectedTriggerId == 0 && PropertyType == "SetDefaultGameplay"
+						) || (
+							PropertyType == "Checkpoint ID" &&
+							MLLayerTemp_GameplayTriggers_TriggersCPOrders.existskey(SelectedTriggerId) &&
+							MLLayerTemp_GameplayTriggers_TriggersCPOrders[SelectedTriggerId] >= 1
+						) || (
+							PropertyType == "Custom trigger" &&
+							MLLayerTemp_GameplayTriggers_TriggersCustomPos.existskey(SelectedTriggerId) &&
+							MLLayerTemp_GameplayTriggers_TriggersCustomPos[SelectedTriggerId].count > 0
+						) || (
+							MLLayerTemp_GameplayTriggers_TriggersProperties.existskey(SelectedTriggerId) &&
+							MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId].existskey(PropertyType)
+						);
+
+					// Get the primitive type of a property
+					declare PropertyPrimitive = "";
+					if (C_GameplayProperties_Type.existskey(PropertyType)) PropertyPrimitive = C_GameplayProperties_Type[PropertyType];
+
+					// ---------------------------------- //
+					// Black out the property name if inactive
+					declare Label_PropertyCardName <=> (Frame.GetFirstChild("Label_PropertyCardName") as CMlLabel);
+					Label_PropertyCardName.Opacity = 1.;
+					if (!PropertyIsActive) Label_PropertyCardName.Opacity /= 4.;
+
+					// ---------------------------------- //
+					// Boolean properties check
+					declare Quad_PropertyBoolean <=> (Frame.GetFirstChild("Quad_PropertyBoolean") as CMlQuad);
+					Quad_PropertyBoolean.Visible = PropertyIsActive && PropertyPrimitive == "bool";
+					if (Quad_PropertyBoolean.Visible) {
+						Quad_PropertyBoolean.StyleSelected =
+							(PropertyType == "SetDefaultGameplay" && SelectedTriggerId == 0) || 
+							MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] == "True";
+					}
+
+					// ---------------------------------- //
+					// Real properties slider
+					declare Frame_PropertyRealSlider <=> (Frame.GetFirstChild("Frame_PropertyRealSlider") as CMlFrame);
+					declare Entry_PropertyRealValue <=> (Frame.GetFirstChild("Entry_PropertyRealValue") as CMlEntry);
+
+					Frame_PropertyRealSlider.Visible = PropertyIsActive && PropertyType != "Checkpoint ID" && (PropertyPrimitive == "real" || PropertyPrimitive == "int");
+					if (Frame_PropertyRealSlider.Visible) {
+						switch (PropertyPrimitive) {
+							case "real" : {
+								declare ValueReal = TL::ToReal(MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType]);
+								Entry_PropertyRealValue.Value = TL::FormatReal(ValueReal, 3, False, False);
+							}
+							case "int" : {
+								declare ValueInt = TL::ToInteger(MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType]);
+								Entry_PropertyRealValue.Value = TL::ToText(ValueInt);
+							}
+						}
+					}
+
+					// ---------------------------------- //
+					// Checkpoint number slider
+					if (!Frame_PropertyRealSlider.Visible) {
+						Frame_PropertyRealSlider.Visible = PropertyIsActive && PropertyType == "Checkpoint ID";
+						declare CheckpointID = 0;
+						if (MLLayerTemp_GameplayTriggers_TriggersCPOrders.existskey(SelectedTriggerId))
+							CheckpointID = MLLayerTemp_GameplayTriggers_TriggersCPOrders[SelectedTriggerId];
+						Entry_PropertyRealValue.Value = TL::ToText(CheckpointID);
+					}
+
+					// ---------------------------------- //
+					// Enumerator properties switch
+					declare Frame_PropertyEnumList <=> (Frame.GetFirstChild("Frame_PropertyEnumList") as CMlFrame);
+					declare Label_PropertyEnumValue <=> (Frame.GetFirstChild("Label_PropertyEnumValue") as CMlLabel);
+
+					Frame_PropertyEnumList.Visible = PropertyIsActive && PropertyPrimitive == "enum";
+					if (Frame_PropertyEnumList.Visible) Label_PropertyEnumValue.Value = MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType];
+				}
+			}
+
+			// ---------------------------------- //
+			// Save changes in Real properties
+			foreach (Frame in Frame_PropertyCards) {
+				declare Frame_PropertyRealSlider <=> (Frame.GetFirstChild("Frame_PropertyRealSlider") as CMlFrame);
+				if (!Frame_PropertyRealSlider.Visible) continue;
+
+				declare Entry_PropertyRealValue <=> (Frame.GetFirstChild("Entry_PropertyRealValue") as CMlEntry);
+				declare Text PrevEntryValue for Frame;
+				if (PrevEntryValue == Entry_PropertyRealValue.Value) continue;
+				PrevEntryValue = Entry_PropertyRealValue.Value;
+				declare Text PropertyType for Frame;
+
+				// ---------------------------------- //
+				// Save the new Checkpoint Id
+				if (PropertyType == "Checkpoint ID") {
+					declare NewValue = ML::Max(TL::ToInteger(Entry_PropertyRealValue.Value), 1);
+					Entry_PropertyRealValue.Value = TL::ToText(NewValue);
+					MLLayerTemp_GameplayTriggers_TriggersCPOrders[SelectedTriggerId] = NewValue;
+				}
+				// ---------------------------------- //
+				// Clamp the Real values
+				else if (
+					C_GameplayProperties_Type.existskey(PropertyType) &&
+					(C_GameplayProperties_Type[PropertyType] == "real" || C_GameplayProperties_Type[PropertyType] == "int")
+				) {
+					declare MinValue = 0.;
+					declare MaxValue = 1.;
+					if (C_GameplayProperties_RealMin.existskey(PropertyType)) MinValue = C_GameplayProperties_RealMin[PropertyType];
+					if (C_GameplayProperties_RealMax.existskey(PropertyType)) MaxValue = C_GameplayProperties_RealMax[PropertyType];
+
+					switch (C_GameplayProperties_Type[PropertyType]) {
+						case "real" : {
+							declare NewValue = ML::Clamp(TL::ToReal(Entry_PropertyRealValue.Value), MinValue, MaxValue);
+							Entry_PropertyRealValue.Value = TL::FormatReal(NewValue, 3, False, False);
+						}
+						case "int" : {
+							declare NewValue = ML::NearestInteger(ML::Clamp(TL::ToReal(Entry_PropertyRealValue.Value), MinValue, MaxValue));
+							Entry_PropertyRealValue.Value = TL::ToText(NewValue);
+						}
+					}
+
+					MLLayerTemp_GameplayTriggers_TriggersProperties[SelectedTriggerId][PropertyType] = Entry_PropertyRealValue.Value;
+				}
+
+				MLLayerTemp_UpdateMapMetadata = True;
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	if (G_LibTriggersEditor_EditorLayerId != NullId && UILayers.existskey(G_LibTriggersEditor_EditorLayerId)) {
+		UILayerDestroy(UILayers[G_LibTriggersEditor_EditorLayerId]);
+		G_LibTriggersEditor_EditorLayerId = NullId;
+		G_LibTriggersEditor_LayerLocalPage = Null;
+	}
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+
+	// Create plugin layer
+	declare EditorLayer <=> UILayerCreate();
+	G_LibTriggersEditor_EditorLayerId = EditorLayer.Id;
+	G_LibTriggersEditor_LayerLocalPage <=> EditorLayer.LocalPage;
+	EditorLayer.ManialinkPage = Private_CreateManialinkTriggersEditor();
+
+	// ---------------------------------- //
+	// Initialize and gameplay properties
+	declare metadata Integer[] Metadata_GameplayTriggers_MapTriggers for Map;
+	declare metadata Text[Text][Integer] Metadata_GameplayTriggers_TriggersProperties for Map;
+	declare metadata Integer[Integer] Metadata_GameplayTriggers_TriggersCPOrders for Map;
+	declare metadata Int3[][Integer] Metadata_GameplayTriggers_TriggersCustomPos for Map;
+
+	// ---------------------------------- //
+	// Send gameplay properties to the UI layer
+	declare Integer[] MLLayerTemp_GameplayTriggers_MapTriggers for EditorLayer.LocalPage;
+	declare Text[Text][Integer] MLLayerTemp_GameplayTriggers_TriggersProperties for EditorLayer.LocalPage;
+	declare Integer[Integer] MLLayerTemp_GameplayTriggers_TriggersCPOrders for EditorLayer.LocalPage;
+	declare Int3[][Integer] MLLayerTemp_GameplayTriggers_TriggersCustomPos for EditorLayer.LocalPage;
+
+	MLLayerTemp_GameplayTriggers_MapTriggers = Metadata_GameplayTriggers_MapTriggers;
+	MLLayerTemp_GameplayTriggers_TriggersProperties = Metadata_GameplayTriggers_TriggersProperties;
+	MLLayerTemp_GameplayTriggers_TriggersCPOrders = Metadata_GameplayTriggers_TriggersCPOrders;
+	MLLayerTemp_GameplayTriggers_TriggersCustomPos = Metadata_GameplayTriggers_TriggersCustomPos;
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	if (G_LibTriggersEditor_LayerLocalPage == Null) return;
+
+	// Wait until UI layer sends gampley properties update
+	declare Boolean MLLayerTemp_UpdateMapMetadata for G_LibTriggersEditor_LayerLocalPage;
+	if (!MLLayerTemp_UpdateMapMetadata) return;
+	MLLayerTemp_UpdateMapMetadata = False;
+
+	// ---------------------------------- //
+	// Update gampley properties data saved in the map file
+	declare Integer[] MLLayerTemp_GameplayTriggers_MapTriggers for G_LibTriggersEditor_LayerLocalPage;
+	declare Text[Text][Integer] MLLayerTemp_GameplayTriggers_TriggersProperties for G_LibTriggersEditor_LayerLocalPage;
+	declare Integer[Integer] MLLayerTemp_GameplayTriggers_TriggersCPOrders for G_LibTriggersEditor_LayerLocalPage;
+	declare Int3[][Integer] MLLayerTemp_GameplayTriggers_TriggersCustomPos for G_LibTriggersEditor_LayerLocalPage;
+
+	declare metadata Integer[] Metadata_GameplayTriggers_MapTriggers for Map;
+	declare metadata Text[Text][Integer] Metadata_GameplayTriggers_TriggersProperties for Map;
+	declare metadata Integer[Integer] Metadata_GameplayTriggers_TriggersCPOrders for Map;
+	declare metadata Int3[][Integer] Metadata_GameplayTriggers_TriggersCustomPos for Map;
+
+	Metadata_GameplayTriggers_MapTriggers = MLLayerTemp_GameplayTriggers_MapTriggers;
+	Metadata_GameplayTriggers_TriggersProperties = MLLayerTemp_GameplayTriggers_TriggersProperties;
+	Metadata_GameplayTriggers_TriggersCPOrders = MLLayerTemp_GameplayTriggers_TriggersCPOrders;
+	Metadata_GameplayTriggers_TriggersCustomPos = MLLayerTemp_GameplayTriggers_TriggersCustomPos;
+}

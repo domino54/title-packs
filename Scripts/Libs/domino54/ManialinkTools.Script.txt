@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MANIALINK TOOLS by domino54   //
-//  script version: 2017-03-21            //
+//  script version: 2017-05-16            //
 // -------------------------------------- //
 
 /**
@@ -16,10 +16,11 @@
  *	-	ReplaceChars	Replaces diacritic characters with characters they are based on.
  *	-	ColorTransition	Creates smooth transition between 2 or more colors according to a given ratio.
  *	-	HsvToRgb		Converts color in HSV format to RGB.
+ *	-	TimeToText		Converts time Integer into formatted Text.
  */
 
-#Const Version		"2017-03-21"
-#Const ScriptName	"ManialinkTools.Script.txt"
+#Const Version		"2017-05-16"
+#Const ScriptName	"Libs/domino54/ManialinkTools.Script.txt"
 
 // ---------------------------------- //
 // Constants
@@ -192,6 +193,40 @@ Vec3 HsvToRgb(Vec3 _HSV) {
 }
 """
 
+/// Code of the TimeToText() function
+#Const C_ManialinkTools_TimeToText """
+// ---------------------------------- //
+/** Get Text from time Tnteger.
+ *
+ *	@param	_Time			The time Integer to convert.
+ *	@param	_Milliseconds	Whether the milliseconds are displayed or not.
+ *
+ *	@return		Time Integer formatted as Text.
+ */
+Text TimeToText(Integer _Time, Boolean _Milliseconds) {
+	if (_Time == 0) {
+		if (_Milliseconds) return "0:00.000";
+		return "0:00";
+	}
+
+	declare Time = ML::Abs(_Time);
+
+	declare Milliseconds = Time % 1000; 
+	declare Seconds = (Time / 1000) % 60;
+	declare Minutes = (Time / 60000) % 60;
+	declare Hours = (Time / 3600000);
+
+	declare Output = "";
+	if (Hours > 0) Output ^= Hours^":"^TL::FormatInteger(Minutes, 2);
+	else Output = TL::ToText(Minutes);
+	Output ^= ":"^TL::FormatInteger(Seconds, 2);
+	if (_Milliseconds) Output ^= "."^TL::FormatInteger(Milliseconds, 3);
+	if (_Time < 0) Output = "-"^Output;
+	return Output;
+}
+Text TimeToText(Integer _Time) { return TimeToText(_Time, False); }
+"""
+
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
@@ -216,6 +251,7 @@ Text Private_GetFunctionCode(Text _FunctionName) {
 		case "ReplaceChars"		: return C_ManialinkTools_ReplaceChars;
 		case "ColorTransition"	: return C_ManialinkTools_ColorTransition;
 		case "HsvToRgb"			: return C_ManialinkTools_HsvToRgb;
+		case "TimeToText"		: return C_ManialinkTools_TimeToText;
 	}
 	return "";
 }

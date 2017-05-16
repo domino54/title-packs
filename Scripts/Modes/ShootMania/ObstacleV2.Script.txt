@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  OBSTACLE V2 by domino54               //
-//  script version: 2017-05-16            //
+//  script version: 2017-05-17            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "ObstacleArena, ObstacleV2Arena, ObstacleTitleArena"
-#Const Version		"2017-05-16"
+#Const Version		"2017-05-17"
 #Const ScriptName	"Modes/ShootMania/ObstacleV2.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -128,14 +128,21 @@ Obstacle::Loop();
 // Manage events
 foreach (Event in PendingEvents) {
 	// ---------------------------------- //
+	// On armor empty
+	if (Event.Type == CSmModeEvent::EType::OnArmorEmpty) {
+		RespawnInLastCheckpoint(Event.Victim, False);
+		Discard(Event);
+	}
+	// ---------------------------------- //
+	// On hit
+	if (Event.Type == CSmModeEvent::EType::OnHit) {
+		Discard(Event);
+	}
+	// ---------------------------------- //
 	// On player request respawn
-	if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
-		declare MapLandmark <=> Obstacle::GetLatestCheckpoint(Event.Player);
-		if (Event.GiveUp || MapLandmark == Null) {
-			Obstacle::RestartOnSpawn(Event.Player);
-			UnspawnPlayer(Event.Player);
-		}
-		else RespawnPlayer(Event.Player, MapLandmark);
+	else if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		RespawnInLastCheckpoint(Event.Player, Event.GiveUp);
+		Discard(Event);
 	}
 }
 
@@ -159,7 +166,16 @@ foreach (Player in Players) {
 		switch (Player.CapturedLandmark.Tag) {
 			// ---------------------------------- //
 			// On Goal capture
-			case "Goal" : Obstacle::TriggerGoal(Player, PrevCapturedLandmark);
+			case "Goal" : {
+				if (!Obstacle::TriggerGoal(Player, PrevCapturedLandmark)) continue;
+				Obstacle::SpawnPlayer(Player);
+
+				declare BestTime = Obstacle::GetBestTime(Player);
+				if (BestTime > 0) {
+					ST2::SetColValue("BestTime", Player.Score, TimeToText(BestTime, True));
+					Player.Score.LadderRankSortValue = BestTime;
+				}
+			}
 
 			// ---------------------------------- //
 			// On Portal activation
@@ -200,3 +216,54 @@ if (CurrentTimeLimit != S_TimeLimit) {
 ***
 Obstacle::Unload();
 ***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Respawn player on the last checkpoint.
+ *
+ *	@param	_Player		The player to respawn.
+ *	@param	_IsGiveUp	Whether the player has given up or not.
+ */
+Void RespawnInLastCheckpoint(CSmPlayer _Player, Boolean _IsGiveUp) {
+	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return;
+
+	declare MapLandmark <=> Obstacle::GetLatestCheckpoint(_Player);
+	if (_IsGiveUp || MapLandmark == Null) {
+		Obstacle::RestartOnSpawn(_Player);
+		Obstacle::SpawnPlayer(_Player);
+	}
+	else RespawnPlayer(_Player, MapLandmark);
+}
+
+// ---------------------------------- //
+/** Get Text from time Tnteger.
+ *
+ *	@param	_Time			The time Integer to convert.
+ *	@param	_Milliseconds	Whether the milliseconds are displayed or not.
+ *
+ *	@return		Time Integer formatted as Text.
+ */
+Text TimeToText(Integer _Time, Boolean _Milliseconds) {
+	if (_Time == 0) {
+		if (_Milliseconds) return "0:00.000";
+		return "0:00";
+	}
+
+	declare Time = ML::Abs(_Time);
+
+	declare Milliseconds = Time % 1000; 
+	declare Seconds = (Time / 1000) % 60;
+	declare Minutes = (Time / 60000) % 60;
+	declare Hours = (Time / 3600000);
+
+	declare Output = "";
+	if (Hours > 0) Output ^= Hours^":"^TL::FormatInteger(Minutes, 2);
+	else Output = TL::ToText(Minutes);
+	Output ^= ":"^TL::FormatInteger(Seconds, 2);
+	if (_Milliseconds) Output ^= "."^TL::FormatInteger(Milliseconds, 3);
+	if (_Time < 0) Output = "-"^Output;
+	return Output;
+}

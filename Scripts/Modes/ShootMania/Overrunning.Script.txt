@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  OVERRUNNING by domino54               //
-//  script version: 2017-05-12            //
+//  script version: 2017-05-16            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"OverrunningArena"
-#Const Version		"2017-05-12"
+#Const Version		"2017-05-16"
 #Const ScriptName	"Overrunning.Script.txt"
 
 // ---------------------------------- //
@@ -42,7 +42,6 @@
 // ---------------------------------- //
 declare Ident[] G_SpawnsList;	///< List of Spawns available to toss
 declare Ident G_LatestSpawnId;	///< Previously tossed Spawn
-declare Ident[Text] G_Vehicles;	///< Ids of vehicles used by the mode
 
 // ---------------------------------- //
 // Extend
@@ -67,8 +66,8 @@ TopScores::RemoveCategory("Support");
 // ---------------------------------- //
 ***InitServer***
 ***
-Interfancy::SetArmorVisibility(False);
-Interfancy::SetStaminaVisibility(False);
+//Interfancy::SetArmorVisibility(False);
+//Interfancy::SetStaminaVisibility(False);
 
 // ---------------------------------- //
 // Set mode options
@@ -79,13 +78,6 @@ GT_UseRandomToads = False;
 GT_AutoManageOnArmorEmpty = False;
 GT_AutoManageOnHit = False;
 GT_AutoManageOnRespawn = False;
-
-// ---------------------------------- //
-// Load vehicles
-G_Vehicles["CanyonCar"] = ItemList_Add("CanyonCar");
-G_Vehicles["StadiumCar"] = ItemList_Add("StadiumCar");
-G_Vehicles["ValleyCar"] = ItemList_Add("ValleyCar");
-G_Vehicles["LagoonCar"] = ItemList_Add("LagoonCar");
 
 // ---------------------------------- //
 // Set the rules in the SpawnScreen
@@ -218,10 +210,10 @@ foreach (Event in PendingEvents) {
 		// ---------------------------------- //
 		// Get the target vehicle
 		switch (Event.ActionInput) {
-			case CSmModeEvent::EActionInput::Activable1 : TargetModelId = G_Vehicles["CanyonCar"];
-			case CSmModeEvent::EActionInput::Activable2 : TargetModelId = G_Vehicles["StadiumCar"];
-			case CSmModeEvent::EActionInput::Activable3 : TargetModelId = G_Vehicles["ValleyCar"];
-			case CSmModeEvent::EActionInput::Activable4 : TargetModelId = G_Vehicles["LagoonCar"];
+			case CSmModeEvent::EActionInput::Activable1 : TargetModelId = Models::CanyonCar();
+			case CSmModeEvent::EActionInput::Activable2 : TargetModelId = Models::StadiumCar();
+			case CSmModeEvent::EActionInput::Activable3 : TargetModelId = Models::ValleyCar();
+			case CSmModeEvent::EActionInput::Activable4 : TargetModelId = Models::LagoonCar();
 		}
 
 		// No need to change model
@@ -282,41 +274,6 @@ foreach (Player in Players) {
 	}
 	*/
 	
-	if (Player.ForceModelId == NullId) Player.ForceModelId = G_Vehicles["CanyonCar"];
-
-	switch (Player.ForceModelId) {
-		// ---------------------------------- //
-		// Canyon car
-		case  G_Vehicles["CanyonCar"] : {
-			Interfancy::SetArmorText(Player, "Canyon Car");
-			MiniMap::SetVehicleType(Player, 0);
-		}
-		// ---------------------------------- //
-		// Stadium car
-		case G_Vehicles["StadiumCar"] : {
-			Interfancy::SetArmorText(Player, "Stadium Car");
-			MiniMap::SetVehicleType(Player, 1);
-		}
-		// ---------------------------------- //
-		// Valley car
-		case G_Vehicles["ValleyCar"] : {
-			Interfancy::SetArmorText(Player, "Valley Car");
-			MiniMap::SetVehicleType(Player, 2);
-		}
-		// ---------------------------------- //
-		// Lagoon car
-		case G_Vehicles["LagoonCar"] : {
-			Interfancy::SetArmorText(Player, "Lagoon Car");
-			MiniMap::SetVehicleType(Player, 3);
-		}
-		// ---------------------------------- //
-		// Not in a car
-		default : {
-			Interfancy::SetArmorText(Player, "");
-			MiniMap::SetVehicleType(Player, -1);
-		}
-	}
-
 	// ---------------------------------- //
 	// Init player's inventory
 	Inventory::ResetInventory(Player);
@@ -332,11 +289,46 @@ foreach (Player in Players) {
 	Inventory::CreateItemSlot(Player, "StadiumCar", CSmModeEvent::EActionInput::Activable2, -1, "StadiumCar.png");
 	Inventory::CreateItemSlot(Player, "ValleyCar", CSmModeEvent::EActionInput::Activable3, -1, "ValleyCar.png");
 	Inventory::CreateItemSlot(Player, "LagoonCar", CSmModeEvent::EActionInput::Activable4, -1, "LagoonCar.png");
+	
+	// ---------------------------------- //
+	// Set player model
+	if (Player.ForceModelId == NullId) Models::SetCanyonCar(Player);
 	switch (Player.ForceModelId) {
-		case G_Vehicles["CanyonCar"] : Inventory::SetActiveItem(Player, "CanyonCar");
-		case G_Vehicles["StadiumCar"] : Inventory::SetActiveItem(Player, "StadiumCar");
-		case G_Vehicles["ValleyCar"] : Inventory::SetActiveItem(Player, "ValleyCar");
-		case G_Vehicles["LagoonCar"] : Inventory::SetActiveItem(Player, "LagoonCar");
+		// ---------------------------------- //
+		// Canyon car
+		case Models::CanyonCar() : {
+			Interfancy::SetArmorText(Player, "Canyon Car");
+			Inventory::SetActiveItem(Player, "CanyonCar");
+			MiniMap::SetVehicleType(Player, 0);
+		}
+		// ---------------------------------- //
+		// Stadium car
+		case Models::StadiumCar() : {
+			Interfancy::SetArmorText(Player, "Stadium Car");
+			Inventory::SetActiveItem(Player, "StadiumCar");
+			MiniMap::SetVehicleType(Player, 1);
+		}
+		// ---------------------------------- //
+		// Valley car
+		case Models::ValleyCar() : {
+			Interfancy::SetArmorText(Player, "Valley Car");
+			Inventory::SetActiveItem(Player, "ValleyCar");
+			MiniMap::SetVehicleType(Player, 2);
+		}
+		// ---------------------------------- //
+		// Lagoon car
+		case Models::LagoonCar() : {
+			Interfancy::SetArmorText(Player, "Lagoon Car");
+			Inventory::SetActiveItem(Player, "LagoonCar");
+			MiniMap::SetVehicleType(Player, 3);
+		}
+		// ---------------------------------- //
+		// Not in a car
+		default : {
+			Interfancy::SetArmorText(Player, "");
+			Inventory::SetActiveItem(Player, "LagoonCar");
+			MiniMap::SetVehicleType(Player, -1);
+		}
 	}
 
 	// Need to set weapon if player is spawned inside of a vehicle

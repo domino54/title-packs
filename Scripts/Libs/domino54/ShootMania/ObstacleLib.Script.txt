@@ -1,0 +1,839 @@
+// -------------------------------------- //
+//  LIBRARY OBSTACLE by domino54          //
+//  script version: 2017-05-16            //
+// -------------------------------------- //
+
+/**
+ *	Library used to handle race-related functions in Obstacle v2 game mode.
+ */
+
+#Const	Version		"2017-05-16"
+#Const	ScriptName	"Libs/domino54/ShootMania/ObstacleLib.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/ShootMania/SM2.Script.txt" as SM
+// Custom libs
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/" 
+#Const C_LibObstacle_WidgetsRotation	2.		///< Rotation of the Armor and Ammo gauge widgets
+#Const C_LibObstacle_FrameHideawayPos	-16.	///< Offset for hiding gauges below the bottom screen edge
+#Const C_LibObstacle_InvalidTimeColor	<1., .5, 0.>
+
+#Const C_LibObstacle_ChronoPos	<-154., -84.>
+#Const C_LibObstacle_CPDiffPos	<0., 60.>
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident[] G_LibObstacle_CurMapSpawnPoints;
+declare Ident[][Integer] G_LibObstacle_CurMapCheckpoints;
+declare Ident[] G_LibObstacle_CurMapFinishLines;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for chrono module.
+ *
+ *	@return		The chrono manialink.
+ */
+Text Private_CreateManialinkChrono() {
+	return """
+<manialink version="3" name="LibObstacle:Chrono">
+<stylesheet>
+	<style class="count" valign="center2" textsize="6" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
+	<style class="desc" valign="center2" textsize="1" textemboss="1" textfont="Eurostile_Bold" />
+</stylesheet>
+
+<frame id="Frame_HMDClip" size="320 180" halign="center" valign="center">
+
+<frame id="Frame_WidgetChrono" pos="{{{C_LibObstacle_ChronoPos.X^" "^C_LibObstacle_ChronoPos.Y + C_LibObstacle_FrameHideawayPos}}}" rot="{{{-C_LibObstacle_WidgetsRotation}}}" z-index="10">
+	<quad pos="0 -.25" size="10 10" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/StopwatchGauge.png" id="Quad_TimerGauge" />
+	<quad pos="0 -.25" size="10 10" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/Stopwatch.png" />
+	
+	<label pos="5 1.5" class="count" id="Label_ChronoValue" text="0:00.000" />
+	
+	<frame pos="5 -2.75">
+		<label class="desc" id="Label_ChronoInfoText" />
+		<label class="desc" id="Label_ChronoInfoGhost" />
+	</frame>
+</frame>
+
+</frame>
+<script><!--
+/**
+ *	LibObstacle: Chrono
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_WidgetChrono	<=> (Page.GetFirstChild("Frame_WidgetChrono") as CMlFrame);
+declare Label_ChronoValue	<=> (Page.GetFirstChild("Label_ChronoValue") as CMlLabel);
+declare Label_ChronoInfoText	<=> (Page.GetFirstChild("Label_ChronoInfoText") as CMlLabel);
+declare Label_ChronoInfoGhost	<=> (Page.GetFirstChild("Label_ChronoInfoGhost") as CMlLabel);
+declare Quad_TimerGauge		<=> (Page.GetFirstChild("Quad_TimerGauge") as CMlQuad);
+
+// ---------------------------------- //
+// Variables
+declare DisplayChrono = True;
+declare ChronoVisible = False;
+declare InterfaceColor = 0.;
+declare BrightTextColor = <1., 1., 1.>;
+declare ChronoDescription = "";
+
+/// Update
+declare PrevChronoVisible = False;
+declare PrevInterfaceColor = -1.;
+declare PrevChronoDescription = "!";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+ChronoVisible = DisplayChrono && GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>;
+
+// ---------------------------------- //
+// Update chrono visibility
+if (PrevChronoVisible != ChronoVisible) {
+	PrevChronoVisible = ChronoVisible;
+
+	declare Easing = CAnimManager::EAnimManagerEasing::BackOut;
+	declare Position = <Frame_WidgetChrono.RelativePosition_V3.X, {{{C_LibObstacle_ChronoPos.Y}}}>;
+
+	if (!ChronoVisible) {
+		Easing = CAnimManager::EAnimManagerEasing::CircIn;
+		Position.Y += {{{C_LibObstacle_FrameHideawayPos}}};
+	}
+	
+	AnimMgr.Add(Frame_WidgetChrono, "<frame pos='"^Position.X^" "^Position.Y^"' />", 200, Easing);
+}
+
+if (!ChronoVisible) continue;
+
+// ---------------------------------- //
+// Get the interface color from the player
+if (GUIPlayer != Null && InterfaceColor != GUIPlayer.GetLinearHue) InterfaceColor = GUIPlayer.GetLinearHue;
+
+// ---------------------------------- //
+// Set interface color
+if (PrevInterfaceColor != InterfaceColor) {
+	PrevInterfaceColor = InterfaceColor;
+	declare NewUIColor = HsvToRgb(<ML::Clamp(InterfaceColor, 0., 1.), 1., 1.>);
+	BrightTextColor = Brightness(NewUIColor, 2.);
+}
+
+// ---------------------------------- //
+// Display current run time
+declare netread Integer Net_LibObstacle_RunStartTime for GUIPlayer.Score;
+declare netread Boolean Net_LibObstacle_IsCurRunInvalid for GUIPlayer.Score;
+
+declare RaceTime = ML::Max(GameTime - Net_LibObstacle_RunStartTime, 0);
+
+if (Net_LibObstacle_RunStartTime <= 0) {
+	Label_ChronoValue.Value = TimeToText(0, True);
+	Quad_TimerGauge.RelativeRotation = 0.;
+}
+else {
+	Label_ChronoValue.Value = TimeToText(RaceTime, True);
+	Quad_TimerGauge.RelativeRotation = 360. * RaceTime / 60000;
+}
+
+// ---------------------------------- //
+// Change color depending on current run validation
+if (Net_LibObstacle_IsCurRunInvalid) {
+	Label_ChronoValue.TextColor = {{{C_LibObstacle_InvalidTimeColor}}};
+	Label_ChronoInfoText.TextColor = {{{C_LibObstacle_InvalidTimeColor}}};
+	Label_ChronoInfoGhost.TextColor = {{{C_LibObstacle_InvalidTimeColor}}};
+	ChronoDescription = "Invalid time";
+}
+else {
+	Label_ChronoValue.TextColor = <1., 1., 1.>;
+	Label_ChronoInfoText.TextColor = BrightTextColor;
+	Label_ChronoInfoGhost.TextColor = BrightTextColor;
+	ChronoDescription = "Race time";
+}
+
+// ---------------------------------- //
+// Update Armor module information text
+if (PrevChronoDescription != ChronoDescription) {
+	PrevChronoDescription = ChronoDescription;
+
+	Label_ChronoInfoGhost.Value = Label_ChronoInfoText.Value;
+	Label_ChronoInfoText.Value = ReplaceChars(TL::ToUpperCase(TL::GetTranslatedText(ChronoDescription)));
+	
+	Label_ChronoInfoText.Opacity = 0.;
+	Label_ChronoInfoText.RelativePosition_V3.Y = 1.5;
+	Label_ChronoInfoGhost.Opacity = 1.;
+	Label_ChronoInfoGhost.RelativePosition_V3.Y = 0.;
+	
+	AnimMgr.Add(Label_ChronoInfoText, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Label_ChronoInfoGhost, "<label pos='0 -1.5' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+}
+***
+
+{{{ManialinkTools::Functions(["ReplaceChars", "Brightness", "HsvToRgb", "TimeToText"])}}}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Create manialink for checkpoint difference module.
+ *
+ *	@return		The checkpoint difference manialink.
+ */
+Text Private_CreateManialinkCheckpointDiff() {
+	return """
+<manialink version="3" name="LibObstacle:CheckpointDiff">
+<stylesheet>
+	<style class="F" halign="center" valign="center2" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
+</stylesheet>
+
+<frame id="Frame_CurCheckpointTime" pos="{{{C_LibObstacle_CPDiffPos.X^" "^C_LibObstacle_CPDiffPos.Y}}}">
+	<label pos="0 2.5" class="F" textsize="5" opacity="0" id="Label_CurCheckpointNb" />
+	<label pos="0 -2.5" class="F" textsize="3" opacity="0" id="Label_CurCheckpointTime" />
+</frame>
+
+<script><!--
+/**
+ *	LibObstacle: CheckpointDiff
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_CheckpointSoundBase	"{{{C_ImgBase}}}Sounds/checkpoint-time.wav"
+#Const C_CheckpointSoundAhead	"{{{C_ImgBase}}}Sounds/checkpoint-yes.wav"
+#Const C_CheckpointSoundLate	"{{{C_ImgBase}}}Sounds/checkpoint-no.wav"
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_CurCheckpointTime	<=> (Page.GetFirstChild("Frame_CurCheckpointTime") as CMlFrame);
+declare Label_CurCheckpointNb	<=> (Page.GetFirstChild("Label_CurCheckpointNb") as CMlLabel);
+declare Label_CurCheckpointTime	<=> (Page.GetFirstChild("Label_CurCheckpointTime") as CMlLabel);
+
+// ---------------------------------- //
+// Network
+declare netread Integer Net_LibObstacle_MapNbCheckpoints for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare DisplayCheckpointDiff = True;
+declare CanShowCheckpointDiff = False;
+declare CheckpointDiffVisible = False;
+declare CheckpointDiffDisplayEndTime = -1;
+declare CheckpointDiffPlayerId = NullId;
+
+/// Update
+declare PrevCheckpointUpdate = -1;
+declare PrevCheckpointDiffVisible = False;
+declare PrevGUIPlayerId = NullId;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Trigger checkpoint diff display
+CanShowCheckpointDiff = DisplayCheckpointDiff && GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>;
+
+if (CanShowCheckpointDiff) {
+	declare netread Integer Net_LibObstacle_CheckpointUpdate for GUIPlayer;
+	if (PrevCheckpointUpdate != Net_LibObstacle_CheckpointUpdate) {
+		PrevCheckpointUpdate = Net_LibObstacle_CheckpointUpdate;
+
+		// ---------------------------------- //
+		// Display the time difference
+		if (PrevGUIPlayerId == GUIPlayer.Id) {
+			CheckpointDiffDisplayEndTime = Now + 3000;
+			CheckpointDiffPlayerId = GUIPlayer.Id;
+
+			declare netread Integer Net_LibObstacle_LatestCPTime for GUIPlayer;
+			declare netread Integer Net_LibObstacle_LatestCPOrder for GUIPlayer;
+			declare netread Boolean Net_LibObstacle_LatestCPIsBetter for GUIPlayer;
+			declare netread Integer[Text] Net_LibObstacle_CPTimeDiffs for GUIPlayer;
+
+			Label_CurCheckpointNb.Value = TL::ToUpperCase(TL::Compose(
+				"%1 "^Net_LibObstacle_LatestCPOrder^"/"^Net_LibObstacle_MapNbCheckpoints,
+				TL::GetTranslatedText("Checkpoint")
+			));
+			Label_CurCheckpointTime.Value = TimeToText(Net_LibObstacle_LatestCPTime, True);
+
+			// ---------------------------------- //
+			// Play sound
+			declare CPSound = C_CheckpointSoundAhead;
+			if (!Net_LibObstacle_LatestCPIsBetter) CPSound = C_CheckpointSoundLate;
+			Audio.PlaySoundEvent(C_CheckpointSoundBase, -5.);
+			Audio.PlaySoundEvent(CPSound, -10., 250);
+		}
+	}
+}
+
+// Prevents from showing diff for incorrect player
+if (GUIPlayer != Null && PrevGUIPlayerId != GUIPlayer.Id) PrevGUIPlayerId = GUIPlayer.Id;
+
+// ---------------------------------- //
+// Set the checkpoint diff visibility
+CheckpointDiffVisible = CanShowCheckpointDiff && GUIPlayer.Id == CheckpointDiffPlayerId && Now <= CheckpointDiffDisplayEndTime;
+
+if (PrevCheckpointDiffVisible != CheckpointDiffVisible) {
+	PrevCheckpointDiffVisible = CheckpointDiffVisible;
+
+	declare CAnimManager::EAnimManagerEasing Easing;
+	declare Real Opacity;
+	declare Real Scale;
+
+	if (CheckpointDiffVisible) {
+		Easing = CAnimManager::EAnimManagerEasing::SineOut;
+		Opacity = 1.;
+		Scale = 1.;
+		Frame_CurCheckpointTime.RelativeScale = 1.125;
+		Label_CurCheckpointNb.Opacity = 0.;
+		Label_CurCheckpointTime.Opacity = 0.;
+	} else {
+		Easing = CAnimManager::EAnimManagerEasing::SineIn;
+		Opacity = 0.;
+		Scale = .75;
+		Frame_CurCheckpointTime.RelativeScale = 1.;
+		Label_CurCheckpointNb.Opacity = 1.;
+		Label_CurCheckpointTime.Opacity = 1.;
+	}
+	
+	AnimMgr.Add(Frame_CurCheckpointTime, "<frame scale='"^Scale^"' />", 125, Easing);
+	AnimMgr.Add(Label_CurCheckpointNb, "<label opacity='"^Opacity^"' />", 125, Easing);
+	AnimMgr.Add(Label_CurCheckpointTime, "<label opacity='"^Opacity^"' />", 125, Easing);
+}
+***
+
+{{{ManialinkTools::Functions(["Brightness", "TimeToText"])}}}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Display the checkpoint time and difference to a player.
+ *
+ *	@param	_Player		The player to show checkpoint time.
+ *	@param	_CPOrder	Order of the checkpoint to display.
+ *	@param	_CPTime		Time of the activated checkpoint.
+ *	@param	_IsBetter	Whether the time is better than previous or the leader's time.
+ *	@param	_CPDiffs	Time differences to display ["Best", "Leader", "ObsMania"].
+ */
+Void Private_DisplayCPDiff(CSmPlayer _Player, Integer _CPOrder, Integer _CPTime, Boolean _IsBetter, Integer[Text] _CPDiffs) {
+	if (_Player == Null || _CPOrder <= 0 || _CPTime <= 0) return;
+
+	declare netwrite Integer Net_LibObstacle_CheckpointUpdate for _Player;
+	declare netwrite Integer Net_LibObstacle_LatestCPTime for _Player;
+	declare netwrite Integer Net_LibObstacle_LatestCPOrder for _Player;
+	declare netwrite Boolean Net_LibObstacle_LatestCPIsBetter for _Player;
+	declare netwrite Integer[Text] Net_LibObstacle_CPTimeDiffs for _Player;
+
+	Net_LibObstacle_CheckpointUpdate = Now;
+	Net_LibObstacle_LatestCPTime = _CPTime;
+	Net_LibObstacle_LatestCPOrder = _CPOrder;
+	Net_LibObstacle_LatestCPIsBetter = _IsBetter;
+	Net_LibObstacle_CPTimeDiffs = _CPDiffs;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/// Initialize current map.
+Void InitMap() {
+	G_LibObstacle_CurMapSpawnPoints.clear();
+	G_LibObstacle_CurMapCheckpoints.clear();
+	G_LibObstacle_CurMapFinishLines.clear();
+
+	// ---------------------------------- //
+	// Get map spawn points
+	declare Ident[Integer] MapStartPoints;
+	foreach (MapLandmark in MapLandmarks_PlayerSpawn)
+		if (MapLandmark.Tag == "Spawn" && !MapStartPoints.existskey(MapLandmark.Order))
+			MapStartPoints[MapLandmark.Order] = MapLandmark.Id;
+
+	MapStartPoints = MapStartPoints.sortkey();
+	foreach (Order => Id in MapStartPoints) G_LibObstacle_CurMapSpawnPoints.add(Id);
+
+	// ---------------------------------- //
+	// Get map checkpoints
+	foreach (MapLandmark in MapLandmarks_Gauge) {
+		if (!TL::Find("Checkpoint", MapLandmark.Tag, True, True)) continue;
+
+		declare CpOrder = MapLandmark.Order;
+		if (!G_LibObstacle_CurMapCheckpoints.existskey(CpOrder)) G_LibObstacle_CurMapCheckpoints[CpOrder] = Ident[];
+		G_LibObstacle_CurMapCheckpoints[CpOrder].add(MapLandmark.Id);
+	}
+	G_LibObstacle_CurMapCheckpoints = G_LibObstacle_CurMapCheckpoints.sortkey();
+
+	// ---------------------------------- //
+	// Get map goals
+	foreach (MapLandmark in MapLandmarks_Gauge) {
+		if (MapLandmark.Tag == "Goal") G_LibObstacle_CurMapFinishLines.add(MapLandmark.Id);
+	}
+
+	// Update UI information
+	declare netwrite Integer Net_LibObstacle_MapNbCheckpoints for Teams[0];
+	Net_LibObstacle_MapNbCheckpoints = G_LibObstacle_CurMapCheckpoints.count;
+}
+
+// ---------------------------------- //
+/** Check if the current map is valid.
+ *
+ *	@return		Whether the map is valid or not.
+ */
+Boolean IsMapValid() {
+	if (G_LibObstacle_CurMapSpawnPoints.count <= 0) return False;
+	if (G_LibObstacle_CurMapFinishLines.count <= 0) return False;
+
+	// ---------------------------------- //
+	// Check checkpoints orders
+	if (G_LibObstacle_CurMapCheckpoints.count > 0) {
+		declare PrevCheckpointOrder = 0;
+		foreach (CpOrder => CpsIds in G_LibObstacle_CurMapCheckpoints) {
+			if (CpOrder <= PrevCheckpointOrder || CpsIds.count <= 0) return False;
+			PrevCheckpointOrder = CpOrder;
+		}
+	}
+
+	// The map is valid
+	return True;
+}
+
+// ---------------------------------- //
+/** Get amount of checkpoints on current map.
+ *
+ *	@return		Amount of checkpoints on the map.
+ */
+Integer MapNbCheckpoints() {
+	return G_LibObstacle_CurMapCheckpoints.count;
+}
+
+// ---------------------------------- //
+/** Get the ID of the start block with given position.
+ *
+ *	@param	_Position	Position of the start block to get.
+ *
+ *	@return		ID of the start block with given position.
+ */
+CSmMapLandmark GetStartBlock(Integer _Position) {
+	if (G_LibObstacle_CurMapSpawnPoints.count <= 0) return Null;
+	if (G_LibObstacle_CurMapSpawnPoints.count == 1) return MapLandmarks[G_LibObstacle_CurMapSpawnPoints[0]];
+
+	declare Key = ML::Clamp(_Position, 0, G_LibObstacle_CurMapSpawnPoints.count - 1);
+	return MapLandmarks[G_LibObstacle_CurMapSpawnPoints[Key]];
+}
+
+// ---------------------------------- //
+/**	Get the checkpoint occupied by the player.
+ *
+ *	@param	_Player		The player to get checkpoint.
+ *
+ *	@return		Id of checkpoint occupied by the player.
+ */
+Integer OccupiedCheckpoint(CSmPlayer _Player) {
+	if (_Player == Null || _Player.CapturedLandmark == Null) return 0;
+	if (!TL::Find("Checkpoint", _Player.CapturedLandmark.Tag, True, True)) return 0;
+	return ML::Max(_Player.CapturedLandmark.Order, 0);
+}
+
+// ---------------------------------- //
+/** Get amount of checkpoints passed by the player.
+ *
+ *	@param	_Player		The player to get checkpoints amount.
+ *
+ *	@return		Amount of checkpoints passed by the player.
+ */
+Integer PlayerNbCheckpoints(CSmPlayer _Player) {
+	if (_Player == Null) return 0;
+	declare Integer[] CapturedCheckpointsTimes for _Player.Score;
+	return CapturedCheckpointsTimes.count;
+}
+
+// ---------------------------------- //
+/** Get amount of checkpoints missed by the player.
+ *
+ *	@param	_Player		The player to get checkpoints amount.
+ *
+ *	@return		Amount of checkpoints missed by the player.
+ */
+Integer MissedCheckpoints(CSmPlayer _Player, Integer _CpOrder) {
+	if (_Player == Null || _CpOrder <= 0) return 0;
+	return _CpOrder - PlayerNbCheckpoints(_Player) - 1;
+}
+
+// ---------------------------------- //
+/** Get the latest checkpoint activated by the player.
+ *
+ *	@param	_Player		The player to get latest checkpoints.
+ *
+ *	@return		The latest checkpoint activated by the player.
+ */
+CSmMapLandmark GetLatestCheckpoint(CSmPlayer _Player) {
+	if (_Player == Null) return Null;
+	declare Ident[] CapturedCheckpoints for _Player.Score;
+	if (CapturedCheckpoints.count <= 0) return Null;
+
+	declare LatestCpId = CapturedCheckpoints[CapturedCheckpoints.count - 1];
+	if (MapLandmarks_Gauge.existskey(LatestCpId)) return MapLandmarks_Gauge[LatestCpId];
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get the player's best time.
+ *
+ *	@param	_Player		The player to get best time.
+ *
+ *	@return		The player's best time.
+ */
+Integer GetBestTime(CSmPlayer _Player) {
+	if (_Player == Null) return -1;
+	declare Integer BestRunRaceTime for _Player.Score;
+	return ML::Max(BestRunRaceTime, -1);
+}
+
+// ---------------------------------- //
+/** Set the player's start time.
+ *
+ *	@param	_Player		The player to set start time.
+ *	@param	_StartTime	The race start time.
+ */
+Void SetPlayerStartTime(CSmPlayer _Player, Integer _StartTime) {
+	if (_Player == Null) return;
+
+	declare netwrite Integer Net_LibObstacle_RunStartTime for _Player.Score;
+	declare Integer CurrentRunStartTime for _Player.Score;
+
+	CurrentRunStartTime = _StartTime;
+	Net_LibObstacle_RunStartTime = _StartTime;
+}
+
+// ---------------------------------- //
+/** Get the player's current run time.
+ *
+ *	@param	_Player		The player to get current run time.
+ *
+ *	@return		The player's current run time.
+ */
+Integer GetCurRunTime(CSmPlayer _Player) {
+	if (_Player == Null) return -1;
+	declare Integer CurrentRunStartTime for _Player.Score;
+	if (CurrentRunStartTime <= 0) return -1;
+	return Now - CurrentRunStartTime;
+}
+
+// ---------------------------------- //
+/** Get the player's best time on a checkpoint.
+ *
+ *	@param	_Player		The player to get current run time.
+ *
+ *	@return		The player's current run time.
+ */
+Integer GetCheckpointBest(CSmPlayer _Player, Integer _CpOrder) {
+	if (_Player == Null || _CpOrder <= 0) return -1;
+	declare Integer[] BestRunCheckpointsTimes for _Player.Score;
+	if (!BestRunCheckpointsTimes.existskey(_CpOrder)) return -1;
+	return BestRunCheckpointsTimes[_CpOrder];
+}
+
+// ---------------------------------- //
+/** Check if the player's current run is valid.
+ *
+ *	@param	_Player		The player to check if the run is valid.
+ *
+ *	@return		Whether the run is valid or not.
+ */
+Boolean IsRunValid(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	declare Boolean CurrentRunIsValid for _Player.Score;
+	return CurrentRunIsValid;
+}
+
+// ---------------------------------- //
+/** Set the player's current run validation status.
+ *
+ *	@param	_Player		The player to set run validation.
+ *	@param	_Valid		Whether the run is valid or not.
+ */
+Void SetRunValidation(CSmPlayer _Player, Boolean _Valid) {
+	if (_Player == Null) return;
+	declare netwrite Boolean Net_LibObstacle_IsCurRunInvalid for _Player.Score;
+	declare Boolean CurrentRunIsValid for _Player.Score;
+	Net_LibObstacle_IsCurRunInvalid = !_Valid;
+	CurrentRunIsValid = _Valid;
+}
+
+// ---------------------------------- //
+/** Reset a player's race.
+ *
+ *	@param	_Player		The player to reset race.
+ */
+Void ResetPlayer(CSmPlayer _Player) {
+	declare Boolean IsRaceInitialized for _Player.Score;
+	declare Integer[] CapturedCheckpointsTimes for _Player.Score;
+	declare Ident[] CapturedCheckpoints for _Player.Score;
+	declare Integer[] BestRunCheckpointsTimes for _Player.Score;
+	declare Integer BestRunRaceTime for _Player.Score;
+
+	IsRaceInitialized = False;
+	CapturedCheckpointsTimes.clear();
+	CapturedCheckpoints.clear();
+	BestRunCheckpointsTimes.clear();
+	BestRunRaceTime = -1;
+
+	SetPlayerStartTime(_Player, -1);
+	SetRunValidation(_Player, True);
+
+	declare netwrite Integer Net_LibObstacle_CheckpointUpdate for _Player;
+	declare netwrite Integer Net_LibObstacle_LatestCPTime for _Player;
+	declare netwrite Integer Net_LibObstacle_LatestCPOrder for _Player;
+	declare netwrite Boolean Net_LibObstacle_LatestCPIsBetter for _Player;
+	declare netwrite Integer[Text] Net_LibObstacle_CPTimeDiffs for _Player;
+
+	Net_LibObstacle_CheckpointUpdate = -1;
+	Net_LibObstacle_LatestCPTime = -1;
+	Net_LibObstacle_LatestCPOrder = -1;
+	Net_LibObstacle_LatestCPIsBetter = False;
+	Net_LibObstacle_CPTimeDiffs.clear();
+}
+
+// ---------------------------------- //
+/// Reset all players.
+Void ResetEveryone() {
+	foreach (Player in AllPlayers) ResetPlayer(Player);
+}
+
+// ---------------------------------- //
+/** Spawn the player for the race.
+ *
+ *	@param	_Player		The player to spawn.
+ *	@param	_StartTime	Start time of the race.
+ *	@param	_Position	The spawn position in the race.
+ */
+Void SpawnPlayer(CSmPlayer _Player, Integer _StartTime, Integer _Position) {
+	if (_Player == Null) return;
+
+	declare MapLandmark <=> GetStartBlock(_Position);
+	if (MapLandmark == Null) return;
+	SM::SpawnPlayer(_Player, 0, MapLandmark.PlayerSpawn, _StartTime);
+
+	// ---------------------------------- //
+	// Initialize the race
+	declare Boolean IsRaceInitialized for _Player.Score;
+	if (!IsRaceInitialized) {
+		IsRaceInitialized = True;
+		SetPlayerStartTime(_Player, _Player.StartTime);
+		SetRunValidation(_Player, True);
+
+		declare Integer[] CapturedCheckpointsTimes for _Player.Score;
+		declare Ident[] CapturedCheckpoints for _Player.Score;
+
+		CapturedCheckpointsTimes.clear();
+		CapturedCheckpoints.clear();
+	}
+	// ---------------------------------- //
+	// Respawn in the latest checkpoint
+	else if (PlayerNbCheckpoints(_Player) > 0) {
+		declare Boolean RespawnOnLatestCp for _Player;
+		RespawnOnLatestCp = True;
+	}
+}
+
+Void SpawnPlayer(CSmPlayer _Player) {
+	SpawnPlayer(_Player, Now + 3000, 0);
+}
+
+// ---------------------------------- //
+/** Tell the library to init player's race on next spawn.
+ *
+ *	@param	_Player		The player to init on next spawn.
+ */
+Void RestartOnSpawn(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	declare Boolean IsRaceInitialized for _Player.Score;
+	IsRaceInitialized = False;
+}
+
+// ---------------------------------- //
+/** Trigger next race checkpoint.	
+ *
+ *	@param	_Player			The player who triggers a checkpoint.
+ *	@param	_CheckpointId	The checkpoint to trigger.
+ *
+ *	@return		Whether the checkpoint has been captured or not.
+ */
+Boolean TriggerCheckpoint(CSmPlayer _Player, Ident _CheckpointId) {
+	if (_Player == Null || _CheckpointId == NullId) return False;
+
+	// Get the ID of the checkpoint
+	declare CpOrder = 0;
+	if (MapLandmarks.existskey(_CheckpointId)) CpOrder = MapLandmarks[_CheckpointId].Order;
+	if (CpOrder <= 0 || CpOrder > G_LibObstacle_CurMapCheckpoints.count) return False;
+
+	// ---------------------------------- //
+	// Notify player about missed checkpoints
+	declare MissedCheckpoints = MissedCheckpoints(_Player, CpOrder);
+	if (MissedCheckpoints > 0) {
+		declare Msg = _("You missed a checkpoint!");
+		if (MissedCheckpoints > 1) Msg = TL::Compose(_("You missed %1 checkpoints"), TL::ToText(MissedCheckpoints));
+		Message::SendStatusMessage(_Player, Msg, 2000, 2, CUIConfig::EUISound::Warning, 1);
+	}
+	if (MissedCheckpoints != 0) return False;
+
+	// ---------------------------------- //
+	// Capture checkpoint
+	declare Integer[] CapturedCheckpointsTimes for _Player.Score;
+	declare Ident[] CapturedCheckpoints for _Player.Score;
+
+	declare CurCheckpointTime = GetCurRunTime(_Player);
+	CapturedCheckpointsTimes.add(CurCheckpointTime);
+	CapturedCheckpoints.add(_CheckpointId);
+
+	// Check if the run is better
+	declare IsBetter = True;
+	declare PlayerCPBest = GetCheckpointBest(_Player, CpOrder);
+	if (PlayerCPBest > 0 && CurCheckpointTime > PlayerCPBest) IsBetter = False;
+
+	// Get the checkpoint differences
+	declare Integer[Text] Differences;
+	if (PlayerCPBest > 0) Differences["Best"] = CurCheckpointTime - PlayerCPBest;
+
+	Private_DisplayCPDiff(_Player, CpOrder, CurCheckpointTime, IsBetter, Differences);
+	return True;
+}
+
+// ---------------------------------- //
+/** Trigger the race goal.	
+ *
+ *	@param	_Player		The player who triggers a goal.
+ *	@param	_GoalId		The goal to trigger.
+ */
+Void TriggerGoal(CSmPlayer _Player, Ident _GoalId) {
+	if (_Player == Null) return;
+
+	declare GoalOrder = G_LibObstacle_CurMapCheckpoints.count + 1;
+	if (MissedCheckpoints(_Player, GoalOrder) != 0) return;
+
+	declare Integer[] CapturedCheckpointsTimes for _Player.Score;
+	declare Ident[] CapturedCheckpoints for _Player.Score;
+
+	declare CurCheckpointTime = GetCurRunTime(_Player);
+	CapturedCheckpointsTimes.add(CurCheckpointTime);
+	CapturedCheckpoints.add(_GoalId);
+
+	// ---------------------------------- //
+	// Compare with the best run
+	declare BestTime = GetBestTime(_Player);
+	if (BestTime <= 0 || CurCheckpointTime < BestTime) {
+		// Set new best
+	}
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	ResetEveryone();
+
+	// Reset map information
+	G_LibObstacle_CurMapSpawnPoints.clear();
+	G_LibObstacle_CurMapCheckpoints.clear();
+	G_LibObstacle_CurMapFinishLines.clear();
+
+	// Destroy custom interface layers
+	Layers::Detach("LibObstacle:Chrono");
+	Layers::Destroy("LibObstacle:Chrono");
+	Layers::Detach("LibObstacle:CheckpointDiff");
+	Layers::Destroy("LibObstacle:CheckpointDiff");
+
+	declare netwrite Integer Net_LibObstacle_MapNbCheckpoints for Teams[0];
+	Net_LibObstacle_MapNbCheckpoints = -1;
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+
+	// Create custom interfaces
+	Layers::Create("LibObstacle:Chrono", Private_CreateManialinkChrono());
+	Layers::Attach("LibObstacle:Chrono");
+	Layers::Create("LibObstacle:CheckpointDiff", Private_CreateManialinkCheckpointDiff());
+	Layers::Attach("LibObstacle:CheckpointDiff");
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	foreach (Player in Players) {
+		// ---------------------------------- //
+		// Respawn player on the latest checkpoint
+		declare Boolean RespawnOnLatestCp for Player;
+		if (RespawnOnLatestCp && Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+			RespawnOnLatestCp = False;
+
+			declare MapLandmark <=> GetLatestCheckpoint(Player);
+			if (MapLandmark != Null) RespawnPlayer(Player, MapLandmark);
+		}
+	}
+}

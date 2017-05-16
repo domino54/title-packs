@@ -1,0 +1,202 @@
+// -------------------------------------- //
+//  OBSTACLE V2 by domino54               //
+//  script version: 2017-05-16            //
+// -------------------------------------- //
+
+#Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
+
+#Const CompatibleMapTypes "ObstacleArena, ObstacleV2Arena, ObstacleTitleArena"
+#Const Version		"2017-05-16"
+#Const ScriptName	"Modes/ShootMania/ObstacleV2.Script.txt"
+
+#Include "Libs/Nadeo/Color.Script.txt" as Color
+#Include "Libs/domino54/ShootMania/ObstacleLib.Script.txt" as Obstacle
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit		1800 	as _("Time limit (seconds)")
+#Setting S_AutoManageAFK	False
+
+// ---------------------------------- //
+// Extend
+// ---------------------------------- //
+***LogVersion***
+***
+MB_LogVersion(ScriptName, Version);
+***
+
+// ---------------------------------- //
+// Adjust the scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+ST2::DestroyCol("LibST_SMRoundPoints");
+ST2::DestroyCol("LibST_SMPoints");
+TopScores::RemoveCategory("Support");
+TopScores::RemoveCategory("Hit");
+
+ST2::CreateCol("Checkpoints", "CP", "", 3., 80.);
+ST2::CreateCol("Respawns", "Res.", "", 3., 90.);
+ST2::CreateCol("BestTime", _("Best time"), "--:--.---", 10., 100.);
+ST2::SetColTextAlign("BestTime", CMlControl::AlignHorizontal::Right);
+***
+// ---------------------------------- //
+// Init server
+// ---------------------------------- //
+***InitServer***
+***
+UsePvPCollisions = False;
+UsePvPWeapons = False;
+
+// Disable all the beautiful Galaxy features
+GT_UseNoCollisionsStart = False;
+GT_UseAutospawnObjects = False;
+GT_UseComboWeapons = False;
+GT_UseRepliePickups = False;
+GT_UseRandomToads = False;
+GT_AutoManageOnHit = False;
+GT_AutoManageOnShoot = False;
+GT_AutoManageOnArmorEmpty = False;
+GT_AutoManageOnNearMiss = False;
+GT_AutoManageOnRespawn = False;
+GT_AutoManageOnObjectTouch = False;
+GT_AllowMatchmakingMode = False;
+
+// ---------------------------------- //
+// Set the rules in the SpawnScreen
+GT_SpawnScreenModeName = "Obstacle v2";
+GT_SpawnScreenModeType = _("Free for all");
+GT_SpawnScreenObjectives = TL::Compose(
+	_(""),
+	"$"^SpawnScreen::GetModeColor()
+);
+
+Obstacle::Load();
+Interfancy::SetArmorVisibility(False);
+UIManager.UIAll.OverlayHide321Go = False;
+***
+
+// ---------------------------------- //
+// Init map
+// ---------------------------------- //
+***InitMap***
+***
+declare CurrentTimeLimit = S_TimeLimit;
+
+ST2::ClearScores();
+Obstacle::InitMap();
+Obstacle::ResetEveryone();
+if (!Obstacle::IsMapValid()) GT_SkipInvalidMap();
+***
+
+// ---------------------------------- //
+// Start map
+// ---------------------------------- //
+***StartMap***
+***
+
+// Init scores
+declare LeadId = NullId;
+if (Scores.existskey(0)) LeadId = Scores[0].User.Id;
+
+// ---------------------------------- //
+// Wait for enough players to start game
+while (!ServerShutdownRequested && !MatchEndRequested && PlayersNbTotal <= 0) MB_Yield();
+
+// ---------------------------------- //
+// Start match
+StartTime = Now + S_RespawnTime;
+if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+else GT_DisableTimeLimit();
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+Interfancy::SetModuleVisibility("Countdown", True);
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***PlayLoop***
+***
+if (PlayersNbTotal <= 0) continue; ///< Let the server sleep when there are no players
+
+Obstacle::Loop();
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On player request respawn
+	if (Event.Type == CSmModeEvent::EType::OnPlayerRequestRespawn) {
+		declare MapLandmark <=> Obstacle::GetLatestCheckpoint(Event.Player);
+		if (Event.GiveUp || MapLandmark == Null) {
+			Obstacle::RestartOnSpawn(Event.Player);
+			UnspawnPlayer(Event.Player);
+		}
+		else RespawnPlayer(Event.Player, MapLandmark);
+	}
+}
+
+// ---------------------------------- //
+// Manage players functions
+foreach (Player in Players) {
+	// ---------------------------------- //
+	// Spawn player
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
+		GT_InitPlayer(Player);
+		Obstacle::SpawnPlayer(Player);
+	}
+
+	// ---------------------------------- //
+	// Custom event on captured landmark change
+	declare Ident PrevCapturedLandmark for Player;
+	if (Player.CapturedLandmark == Null && PrevCapturedLandmark != NullId) PrevCapturedLandmark = NullId;
+	if (Player.CapturedLandmark != Null && PrevCapturedLandmark != Player.CapturedLandmark.Id) {
+		PrevCapturedLandmark = Player.CapturedLandmark.Id;
+
+		switch (Player.CapturedLandmark.Tag) {
+			// ---------------------------------- //
+			// On Goal capture
+			case "Goal" : Obstacle::TriggerGoal(Player, PrevCapturedLandmark);
+
+			// ---------------------------------- //
+			// On Portal activation
+			case "Portal" : {
+
+			}
+			// ---------------------------------- //
+			// On no function touch
+			case "No-Function" : {
+				// Well, do nothing. It has no function after all...
+			}
+			// ---------------------------------- //
+			// Other
+			default : {
+				// ---------------------------------- //
+				// On Checkpoint capture
+				if (TL::Find("Checkpoint", Player.CapturedLandmark.Tag, True, True)) {
+					if (!Obstacle::TriggerCheckpoint(Player, PrevCapturedLandmark)) continue;
+				}
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update time limit
+if (CurrentTimeLimit != S_TimeLimit) {
+	CurrentTimeLimit = S_TimeLimit;
+	if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else GT_DisableTimeLimit();
+}
+***
+
+// ---------------------------------- //
+// End server
+// ---------------------------------- //
+***EndServer***
+***
+Obstacle::Unload();
+***

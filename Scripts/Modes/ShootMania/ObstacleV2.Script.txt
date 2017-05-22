@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  OBSTACLE V2 by domino54               //
-//  script version: 2017-05-19            //
+//  script version: 2017-05-21            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "ObstacleArena, ObstacleV2Arena, ObstacleTitleArena"
-#Const Version		"2017-05-19"
+#Const Version		"2017-05-21"
 #Const ScriptName	"Modes/ShootMania/ObstacleV2.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -17,6 +17,7 @@
 // ---------------------------------- //
 #Setting S_TimeLimit		1800 	as _("Time limit (seconds)")
 #Setting S_RespawnPenalty	0		as _("Respawn time penalty (milliseconds)")
+#Setting S_RaceNbLaps		-1		as _("Amount of laps (-1 = independant, 0 = map default)")
 #Setting S_AutoManageAFK	False
 
 // ---------------------------------- //
@@ -84,6 +85,7 @@ UIManager.UIAll.OverlayHide321Go = False;
 ***InitMap***
 ***
 declare CurrentTimeLimit = S_TimeLimit;
+declare PrevRaceNbLaps = S_RaceNbLaps;
 
 ST2::ClearScores();
 Obstacle::InitMap();
@@ -96,6 +98,7 @@ if (!Obstacle::IsMapValid()) GT_SkipInvalidMap();
 // ---------------------------------- //
 ***StartMap***
 ***
+Obstacle::SetModeNbLaps(S_RaceNbLaps);
 
 // Init scores
 declare LeadId = NullId;
@@ -172,14 +175,24 @@ foreach (Player in Players) {
 			// On Goal capture
 			case "Goal" : {
 				if (!Obstacle::TriggerLandmark(Player, PrevCapturedLandmark)) continue;
-				Obstacle::RestartOnSpawn(Player);
-				Obstacle::SpawnPlayer(Player);
-
-				Obstacle::ResetPlayerCurRun(Player);
-				Obstacle::SetPlayerStartTime(Player, Now);
-
 				UpdateRespawnsCount(Player);
 				UpdateCheckpointsCount(Player);
+
+				// Continue if the player hasn't finished the map
+				if (!Obstacle::HasFinished(Player)) continue;
+
+				// ---------------------------------- //
+				// Independant laps
+				if (Obstacle::IndependantLaps()) {
+					Obstacle::ResetPlayerCurRun(Player);
+					Obstacle::SetPlayerStartTime(Player, Now);
+				}
+				// ---------------------------------- //
+				// Race finished
+				else {
+					Obstacle::RestartOnSpawn(Player);
+					Obstacle::SpawnPlayer(Player);
+				}
 
 				// Update the best time shown in the scorestable
 				declare BestTime = Obstacle::GetBestTime(Player);
@@ -189,9 +202,9 @@ foreach (Player in Players) {
 
 			// ---------------------------------- //
 			// On Portal activation
-			case "Portal" : {
+			case "Portal"			: Obstacle::UsePortal(Player, PrevCapturedLandmark);
+			case "PortalEntrance"	: Obstacle::UsePortal(Player, PrevCapturedLandmark);
 
-			}
 			// ---------------------------------- //
 			// On no function touch
 			case "No-Function" : {
@@ -205,6 +218,9 @@ foreach (Player in Players) {
 				if (TL::Find("Checkpoint", Player.CapturedLandmark.Tag, True, True)) {
 					if (!Obstacle::TriggerLandmark(Player, PrevCapturedLandmark)) continue;
 					UpdateCheckpointsCount(Player);
+
+					// Checkpoint + Portal legacy combo
+					if (Player.CapturedLandmark.Tag == "CheckpointType3") Obstacle::UsePortal(Player, PrevCapturedLandmark);
 				}
 			}
 		}
@@ -217,6 +233,13 @@ if (CurrentTimeLimit != S_TimeLimit) {
 	CurrentTimeLimit = S_TimeLimit;
 	if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
 	else GT_DisableTimeLimit();
+}
+
+// ---------------------------------- //
+// Update laps amount
+if (PrevRaceNbLaps != S_RaceNbLaps) {
+	PrevRaceNbLaps = S_RaceNbLaps;
+	Obstacle::SetModeNbLaps(S_RaceNbLaps);
 }
 ***
 
@@ -271,20 +294,27 @@ Void UpdateCheckpointsCount(CSmPlayer _Player) {
 Void RespawnInLastCheckpoint(CSmPlayer _Player, Boolean _IsGiveUp) {
 	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return;
 
-	//Player has given up
+	// Player has given up
 	if (_IsGiveUp) {
 		Obstacle::RestartOnSpawn(_Player);
 		Obstacle::SpawnPlayer(_Player);
 		return;
 	}
 
-	declare JumpedCheckpoint <=> Obstacle::GetJumpCheckpoint(_Player);
-	declare PrevCheckpoint <=> Obstacle::GetLatestCheckpoint(_Player);
+	// There is a Portal spawn
+	declare PortalSpawn <=> Obstacle::GetPortalSpawn(_Player);
+	if (PortalSpawn != Null) {
+		SM::SpawnPlayer(_Player, 0, PortalSpawn.PlayerSpawn, Now);
+		Obstacle::IncrementRespawns(_Player, S_RespawnPenalty);
+		UpdateRespawnsCount(_Player);
+		return;
+	}
 
 	// Get the target checkpoint
 	declare CSmMapLandmark MapLandmark;
-	if (MapLandmark == Null && JumpedCheckpoint != Null) MapLandmark <=> JumpedCheckpoint;
-	if (MapLandmark == Null && PrevCheckpoint != Null) MapLandmark <=> PrevCheckpoint;
+	if (MapLandmark == Null) MapLandmark <=> Obstacle::GetPortalCheckpoint(_Player);
+	if (MapLandmark == Null) MapLandmark <=> Obstacle::GetJumpCheckpoint(_Player);
+	if (MapLandmark == Null) MapLandmark <=> Obstacle::GetLatestCheckpoint(_Player);
 
 	// Respawn from the beginning if there are no checkpoints
 	if (MapLandmark == Null) {

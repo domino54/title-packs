@@ -1,19 +1,20 @@
 // -------------------------------------- //
 //  LIBRARY OBSTACLE by domino54          //
-//  script version: 2017-05-19            //
+//  script version: 2017-05-21            //
 // -------------------------------------- //
 
 /**
  *	Library used to handle race-related functions in Obstacle v2 game mode.
  */
 
-#Const	Version		"2017-05-19"
+#Const	Version		"2017-05-21"
 #Const	ScriptName	"Libs/domino54/ShootMania/ObstacleLib.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/Message.Script.txt" as Message
+#Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
 #Include "Libs/Nadeo/ShootMania/SM2.Script.txt" as SM
 // Custom libs
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
@@ -273,6 +274,7 @@ for (I, 0, 3) Frame_CheckpointDiffs.add((Page.GetFirstChild("Frame_CheckpointDif
 // ---------------------------------- //
 // Network
 declare netread Integer Net_LibObstacle_MapNbCheckpoints for Teams[0];
+declare netread Integer Net_LibObstacle_ModeNbLaps for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -310,10 +312,12 @@ if (DisplayCheckpointDiff && (GUIPlayer != Null || InputPlayer != Null)) {
 
 			declare netread Integer Net_LibObstacle_LatestCPTime for Player;
 			declare netread Integer Net_LibObstacle_LatestCPOrder for Player.Score;
+			declare netread Integer Net_LibObstacle_RaceNbLaps for Player.Score;
 			declare netread Integer Net_LibObstacle_LatestCPPosition for Player;
 			declare netread Boolean Net_LibObstacle_LatestCPIsBetter for Player;
 			declare netread Integer[Text] Net_LibObstacle_CPTimeDiffs for Player;
 
+			declare CheckpointOrder = Net_LibObstacle_LatestCPOrder % (Net_LibObstacle_MapNbCheckpoints + 1);
 			Label_CurCheckpointTime.Value = TimeToText(Net_LibObstacle_LatestCPTime, True);
 
 			// Append position
@@ -321,12 +325,18 @@ if (DisplayCheckpointDiff && (GUIPlayer != Null || InputPlayer != Null)) {
 				Label_CurCheckpointTime.Value = Net_LibObstacle_LatestCPPosition^") "^Label_CurCheckpointTime.Value;
 
 			// ---------------------------------- //
-			// Checkpoint
-			if (Net_LibObstacle_LatestCPOrder <= Net_LibObstacle_MapNbCheckpoints) {
-				Label_CurCheckpointNb.Value = TL::ToUpperCase(TL::Compose(
-					"%1 "^Net_LibObstacle_LatestCPOrder^"/"^Net_LibObstacle_MapNbCheckpoints,
-					TL::GetTranslatedText("Checkpoint")
-				));
+			// Checkpoint / Lap
+			if (CheckpointOrder > 0 || Net_LibObstacle_RaceNbLaps < Net_LibObstacle_ModeNbLaps) {
+				if (CheckpointOrder > 0)
+					Label_CurCheckpointNb.Value = TL::ToUpperCase(TL::Compose(
+						"%1 "^CheckpointOrder^"/"^Net_LibObstacle_MapNbCheckpoints,
+						TL::GetTranslatedText("Checkpoint")
+					));
+				else
+					Label_CurCheckpointNb.Value = TL::ToUpperCase(ReplaceChars(TL::Compose(
+						TL::GetTranslatedText("Lap %1"),
+						Net_LibObstacle_RaceNbLaps^"/"^Net_LibObstacle_ModeNbLaps
+					)));
 
 				// Play checkpoint sound
 				declare CPSound = C_CheckpointSoundAhead;
@@ -487,7 +497,7 @@ Integer ObstaclePB_GetCheckpoint(Integer _Checkpoint) {
 	return Persistent_LibObstacle_PBMapCheckpoints[Map.MapInfo.MapUid][_Checkpoint - 1];
 }
 
-{{{ManialinkTools::Functions(["Brightness", "TimeToText"])}}}
+{{{ManialinkTools::Functions(["Brightness", "TimeToText", "ReplaceChars"])}}}
 
 main() {
 	---Main---
@@ -518,9 +528,11 @@ Text Private_CreateManialinkMarkers() {
 </stylesheet>
 
 <framemodel id="FrameModel_CPMarker">
-	<label pos="0 2.5" class="text" id="Label_MarkerDistance" />
-	<label pos="0 .5" class="text" scale="1.5" id="Label_MarkerGoalName" />
-	<quad pos="0 3" size="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" colorize="FFF" />
+	<frame id="Frame_MarkerVisibility">
+		<label pos="0 2.5" class="text" id="Label_MarkerDistance" />
+		<label pos="0 .5" class="text" scale="1.5" id="Label_MarkerGoalName" />
+		<quad pos="0 3" size="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" colorize="FFF" />
+	</frame>
 </framemodel>
 <frame id="Frame_CPMarkersFrame">
 	{{{MarkersFrames}}}
@@ -545,9 +557,12 @@ main() {
 	for (I, 0, 9) Frame_CPMarkers.add((Page.GetFirstChild("Frame_CPMarker#"^I) as CMlFrame));
 
 	// ---------------------------------- //
+	// Netcode
+	declare netread Integer Net_LibObstacle_MapNbCheckpoints for Teams[0];
+
+	// ---------------------------------- //
 	// Variables
 	declare MapCheckpoints = Vec3[][Integer];
-	declare MapNbCheckpoints = 0;
 	declare MapPortals = Vec3[];
 
 	/// Update
@@ -564,14 +579,11 @@ main() {
 		if (!TL::Find("Checkpoint", MapLandmark.Tag, True, True) && !TL::Find("Portal", MapLandmark.Tag, True, True)) continue;
 		if (!MapCheckpoints.existskey(MapLandmark.Order)) MapCheckpoints[MapLandmark.Order] = Vec3[];
 		MapCheckpoints[MapLandmark.Order].add(MapLandmark.Position);
-
-		if (MapNbCheckpoints < MapLandmark.Order) MapNbCheckpoints = MapLandmark.Order;
-		if (MapLandmark.Tag == "Portal" || MapLandmark.Tag == "PortalEntrance" || MapLandmark.Tag == "CheckpointType3") MapPortals.add(MapLandmark.Position);
+		if (MapLandmark.Tag == "Portal" || MapLandmark.Tag == "PortalEntrance") MapPortals.add(MapLandmark.Position);
 	}
-	MapNbCheckpoints += 1;
 	foreach (MapLandmark in MapLandmarks) if (MapLandmark.Tag == "Goal") {
-		if (!MapCheckpoints.existskey(MapNbCheckpoints)) MapCheckpoints[MapNbCheckpoints] = Vec3[];
-		MapCheckpoints[MapNbCheckpoints].add(MapLandmark.Position);
+		if (!MapCheckpoints.existskey(0)) MapCheckpoints[0] = Vec3[];
+		MapCheckpoints[0].add(MapLandmark.Position);
 	}
 
 	while (True) {
@@ -607,8 +619,9 @@ main() {
 
 		// ---------------------------------- //
 		// Show the distance to the marker landmark
-		foreach (Frame in Frame_CPMarkers) {
-			if (!Frame.Visible) continue;
+		foreach (I => Frame in Frame_CPMarkers) {
+			declare Frame_MarkerVisibility <=> (Frame.GetFirstChild("Frame_MarkerVisibility") as CMlFrame);
+			if (!Frame_MarkerVisibility.Visible) continue;
 			declare Label_MarkerDistance <=> (Frame.GetFirstChild("Label_MarkerDistance") as CMlLabel);
 			declare Vec3 MapLandmarkPosition for Frame;
 			Label_MarkerDistance.Value = "$n"^ML::FloorInteger(ML::Distance(GUIPlayer.Position, MapLandmarkPosition))^" M";
@@ -618,30 +631,32 @@ main() {
 		declare netread Integer Net_LibObstacle_LatestCPOrder for GUIPlayer.Score;
 		if (PrevPlayerCheckpoint == Net_LibObstacle_LatestCPOrder) continue;
 		PrevPlayerCheckpoint = Net_LibObstacle_LatestCPOrder;
-
+		declare NextCheckpointOrder = (PrevPlayerCheckpoint + 1) % (Net_LibObstacle_MapNbCheckpoints + 1);
+		
 		// Reset markers
 		ClientUI.MarkersXML = "";
 
 		// ---------------------------------- //
 		// Create markers for the landmarks
 		foreach (I => Frame in Frame_CPMarkers) {
-			Frame.Visible = MapCheckpoints.existskey(PrevPlayerCheckpoint + 1) && I < MapCheckpoints[PrevPlayerCheckpoint + 1].count;
-			if (!Frame.Visible) continue;
+			declare Frame_MarkerVisibility <=> (Frame.GetFirstChild("Frame_MarkerVisibility") as CMlFrame);
+			Frame_MarkerVisibility.Visible = MapCheckpoints.existskey(NextCheckpointOrder) && I < MapCheckpoints[NextCheckpointOrder].count;
+			if (!Frame_MarkerVisibility.Visible) continue;
 
 			// Get the landmark position
 			declare Vec3 MapLandmarkPosition for Frame;
-			MapLandmarkPosition = MapCheckpoints[PrevPlayerCheckpoint + 1][I];
+			MapLandmarkPosition = MapCheckpoints[NextCheckpointOrder][I];
 
 			// ---------------------------------- //
 			// Configure the landmark marker
 			declare OffsetY = 2.;
-			declare MarkerLabel = TL::GetTranslatedText("Checkpoint")^" #"^PrevPlayerCheckpoint + 1;
-			if (PrevPlayerCheckpoint + 1 == MapNbCheckpoints) {
+			declare MarkerLabel = TL::GetTranslatedText("Checkpoint")^" #"^NextCheckpointOrder;
+			if (NextCheckpointOrder == 0) {
 				OffsetY = 27.5;
 				MarkerLabel = TL::GetTranslatedText("|BlockInfo|Finish");
 			}
 			else if (MapPortals.exists(MapLandmarkPosition)) {
-				MarkerLabel = TL::GetTranslatedText("Portal")^" #"^PrevPlayerCheckpoint + 1;
+				MarkerLabel = TL::GetTranslatedText("Portal")^" #"^NextCheckpointOrder;
 			}
 
 			// Set the marker label
@@ -650,7 +665,7 @@ main() {
 
 			// Create the marker
 			declare Pos = MapLandmarkPosition.X^" "^MapLandmarkPosition.Y + OffsetY^" "^MapLandmarkPosition.Z;
-			ClientUI.MarkersXML = "<marker manialinkframeid='Frame_CPMarker#"^I^"' pos='"^Pos^"' visibility='WhenInFrustum' minimapvisibility='Never' />";
+			ClientUI.MarkersXML ^= "<marker manialinkframeid='Frame_CPMarker#"^I^"' pos='"^Pos^"' visibility='WhenInFrustum' minimapvisibility='Never' />";
 		}
 	}
 }
@@ -671,6 +686,8 @@ Text Private_CreateManialinkPersonalBest() {
 /**
  *	LibObstacle: PersonalBest
  */
+
+#Include "MathLib" as ML
 
 main() {
 	// ---------------------------------- //
@@ -760,6 +777,19 @@ Void Private_SetPlayerCpOrder(CSmPlayer _Player, Integer _CpOrder) {
 }
 
 // ---------------------------------- //
+/** Update the current player amount of laps.
+
+ *	@param	_Player		The player to update laps amount.
+ *	@param	_NbLaps		The amount of laps player has finished.
+ */
+Void Private_SetPlayerNbLaps(CSmPlayer _Player, Integer _NbLaps) {
+	if (_Player == Null) return;
+
+	declare netwrite Integer Net_LibObstacle_RaceNbLaps for _Player.Score;
+	Net_LibObstacle_RaceNbLaps = ML::Max(_NbLaps, 0);
+}
+
+// ---------------------------------- //
 // Public
 // ---------------------------------- //
 
@@ -784,7 +814,7 @@ Void InitMap() {
 	G_LibObstacle_CurMapCheckpoints.clear();
 	G_LibObstacle_CurMapFinishLines.clear();
 	G_LibObstacle_MapIsLapRace = False;
-	G_LibObstacle_MapNbLaps = -1;
+	G_LibObstacle_MapNbLaps = 1;
 
 	// ---------------------------------- //
 	// Get map spawn points
@@ -849,6 +879,57 @@ Boolean IsMapValid() {
  */
 Integer MapNbCheckpoints() {
 	return G_LibObstacle_CurMapCheckpoints.count;
+}
+
+// ---------------------------------- //
+/** Check if the map is a lap race.
+ *
+ *	@return		True, if the map is a lap race.
+ */
+Boolean MapIsLapRace() {
+	return G_LibObstacle_MapIsLapRace;
+}
+
+// ---------------------------------- //
+/** Get amount of laps specified by the map author (1 if it's not laps race).
+ *
+ *	@return		Amount of laps on a map.
+ */
+Integer MapNbLaps() {
+	if (!MapIsLapRace()) return 1;
+	return ML::Max(G_LibObstacle_MapNbLaps, 1);
+}
+
+// ---------------------------------- //
+/** Get amount of laps sset by the mode.
+ *
+ *	@return		Amount of laps specified by mode (-1 = independant).
+ */
+Integer ModeNbLaps() {
+	if (!MapIsLapRace()) return 1;
+	if (G_LibObstacle_ModeNbLaps <= -1) return -1;
+	if (G_LibObstacle_ModeNbLaps == 0) return MapNbLaps();
+	return G_LibObstacle_ModeNbLaps;
+}
+
+// ---------------------------------- //
+/** Set the amount of laps on the map.
+ *
+ *	@param	_NbLaps		Amount of laps to set (-1 = independant, 0 = map value).
+ */
+Void SetModeNbLaps(Integer _NbLaps) {
+	G_LibObstacle_ModeNbLaps = ML::Max(_NbLaps, -1);
+	declare netwrite Integer Net_LibObstacle_ModeNbLaps for Teams[0];
+	Net_LibObstacle_ModeNbLaps = ModeNbLaps();
+}
+
+// ---------------------------------- //
+/** Check if the mode is set to independant laps mode.
+ *
+ *	@return		True, if the mode is set to independant laps mode.
+ */
+Boolean IndependantLaps() {
+	return MapIsLapRace() && ModeNbLaps() <= -1;
 }
 
 // ---------------------------------- //
@@ -1130,6 +1211,185 @@ Void SetRunValidation(CSmPlayer _Player, Boolean _Valid) {
 }
 
 // ---------------------------------- //
+/** Check if the player has finished current run.
+ *
+ *	@param	_Player		The player to check.
+
+ *	@return		True, if the player has finished the run.
+ */
+Boolean HasFinished(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	declare Boolean CurRunHasFinished for _Player.Score;
+	return CurRunHasFinished;
+}
+
+// ---------------------------------- //
+/** Jump to a checkpoint by ID.	
+ *
+ *	@param	_Player			The player that jumps to a checkpoint.
+ *	@param	_CheckpointId	ID of the checkpoint player is jumping to.
+ */
+Void JumpToCheckpoint(CSmPlayer _Player, Ident _CheckpointId) {
+	if (_Player == Null || !MapLandmarks_Gauge.existskey(_CheckpointId)) return;
+
+	declare MapLandmark <=> MapLandmarks_Gauge[_CheckpointId];
+	if (MapLandmark.Tag == "Goal") return;
+
+	declare Ident CurRunJumpCheckpoint for _Player.Score;
+	CurRunJumpCheckpoint = _CheckpointId;
+
+	SetRunValidation(_Player, False);
+	RespawnPlayer(_Player, MapLandmark);
+}
+
+// ---------------------------------- //
+/** Jump to a checkpoint by order.	
+ *
+ *	@param	_Player		The player that jumps to a checkpoint.
+ *	@param	_CpOrder	Order of the checkpoint player is jumping to.
+ */
+Void JumpToCheckpoint(CSmPlayer _Player, Integer _CpOrder) {
+	if (_Player == Null || _CpOrder <= 0) return;
+
+	declare Ident[] PossibleCheckpoints;
+	foreach (MapLandmark in MapLandmarks_Gauge) {
+		if (!TL::Find("Checkpoint", MapLandmark.Tag, True, True) || MapLandmark.Order != _CpOrder) continue;
+		PossibleCheckpoints.add(MapLandmark.Id);
+	}
+
+	if (PossibleCheckpoints.count <= 0) return;
+	if (PossibleCheckpoints.count == 1) {
+		JumpToCheckpoint(_Player, PossibleCheckpoints[0]);
+		return;
+	}
+	JumpToCheckpoint(_Player, PossibleCheckpoints[ML::Rand(0, PossibleCheckpoints.count - 1)]);
+}
+
+// ---------------------------------- //
+/** Jump to a checkpoint by position.	
+ *
+ *	@param	_Player		The player that jumps to a checkpoint.
+ *	@param	_Position	Position of the checkpoint player is jumping to.
+ */
+Void JumpToCheckpoint(CSmPlayer _Player, Vec3 _Position) {
+	if (_Player == Null || _Position == <0., 0., 0.>) return;
+
+	foreach (MapLandmark in MapLandmarks_Gauge) {
+		if (MapLandmark.Tag == "Goal" || MapLandmark.Position != _Position) continue;
+		JumpToCheckpoint(_Player, MapLandmark.Id);
+		return;
+	}
+}
+
+// ---------------------------------- //
+/** Get the checkpoint the player has jumped to.	
+ *
+ *	@param	_Player		The player to get jumped checkpoint.
+ *
+ *	@return		The checkpoint the player has jumped to.
+ */
+CSmMapLandmark GetJumpCheckpoint(CSmPlayer _Player) {
+	if (_Player == Null) return Null;
+	declare Ident CurRunJumpCheckpoint for _Player.Score;
+	if (!MapLandmarks.existskey(CurRunJumpCheckpoint)) return Null;
+	return MapLandmarks[CurRunJumpCheckpoint];
+}
+
+// ---------------------------------- //
+/** Use a Portal on the map.
+ *
+ *	@param	_Player			The player who is using a Portal.
+ *	@param	_LandmarkId		ID of the Portal entrance landmark.
+ */
+Void UsePortal(CSmPlayer _Player, Ident _LandmarkId) {
+	if (_Player == Null || !MapLandmarks.existskey(_LandmarkId)) return;
+
+	declare MapLandmark <=> MapLandmarks[_LandmarkId];
+	declare Ident CurRunPortalSpawn for _Player.Score;
+	declare Ident CurRunPortalCheckpoint for _Player.Score;
+
+	switch (MapLandmark.Tag) {
+		// ---------------------------------- //
+		// New Portal type
+		case "PortalEntrance" : {
+			declare CSmMapLandmark[] PossibleExits;
+			foreach (PortalExit in MapLandmarks_Gauge) if (PortalExit.Tag == "PortalExit" && PortalExit.Order == MapLandmark.Order) PossibleExits.add(PortalExit);
+			if (PossibleExits.count <= 0) return;
+
+			// Quick respawn player in the found exit
+			declare PortalExit <=> PossibleExits[ML::Rand(0, PossibleExits.count - 1)];
+			RespawnPlayer(_Player, PortalExit);
+			CurRunPortalSpawn = NullId;
+			CurRunPortalCheckpoint = PortalExit.Id;
+		}
+		// ---------------------------------- //
+		// Legacy Portal type
+		default : {
+			if (MapLandmark.Tag != "Portal" && MapLandmark.Tag != "CheckpointType3") return;
+
+			// Find all possible exit spawns
+			declare Ident[] PossibleSpawns;
+			foreach (Spawn in MapLandmarks_PlayerSpawn) {
+				if (Spawn.Tag != "CPSpawn") continue;
+				if (MapLandmark.Order != 0 && Spawn.Order != MapLandmark.Order) continue;
+				PossibleSpawns.add(Spawn.Id);
+			}
+
+			// Unable to find matching spawns, use spawns for next checkpoint
+			if (PossibleSpawns.count <= 0) foreach (Spawn in MapLandmarks_PlayerSpawn) {
+				if (Spawn.Tag != "CPSpawn" || MapLandmark.Order <= Spawn.Order) continue;
+				PossibleSpawns.add(Spawn.Id);
+			}
+
+			// There are no spawns, somehow
+			if (PossibleSpawns.count <= 0) return;
+			
+			// Sort the possible spawns by distances
+			declare Real[Ident] SpawnsDistances;
+			foreach (SpawnId in PossibleSpawns) SpawnsDistances[SpawnId] = ML::Distance(MapLandmarks[SpawnId].Position, MapLandmark.Position);
+			SpawnsDistances = SpawnsDistances.sort();
+
+			// Spawn the player in nearest spawn
+			declare CSmMapLandmark ExitSpawn;
+			foreach (SpawnId => Distance in SpawnsDistances) { ExitSpawn <=> MapLandmarks_PlayerSpawn[SpawnId]; break; }
+			SM::SpawnPlayer(_Player, 0, ExitSpawn.PlayerSpawn, Now);
+			CurRunPortalSpawn = ExitSpawn.Id;
+			CurRunPortalCheckpoint = NullId;
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Get the latest Portal spawn the player was using.
+ *
+ *	@param	_Player			The player who is using a Portal.
+ *
+ *	@return		The latest Portal spawn.
+ */
+CSmMapLandmark GetPortalSpawn(CSmPlayer _Player) {
+	if (_Player == Null) return Null;
+
+	declare Ident CurRunPortalSpawn for _Player.Score;
+	if (!MapLandmarks_PlayerSpawn.existskey(CurRunPortalSpawn)) return Null;
+	return MapLandmarks_PlayerSpawn[CurRunPortalSpawn];
+}
+
+// ---------------------------------- //
+/** Get the latest Portal checkpoint the player was using.
+ *
+ *	@param	_Player			The player who is using a Portal.
+ *
+ *	@return		The latest Portal checkpoint.
+ */
+CSmMapLandmark GetPortalCheckpoint(CSmPlayer _Player) {
+	if (_Player == Null) return Null;
+
+	declare Ident CurRunPortalCheckpoint for _Player.Score;
+	if (!MapLandmarks_Gauge.existskey(CurRunPortalCheckpoint)) return Null;
+	return MapLandmarks_Gauge[CurRunPortalCheckpoint];
+}
+
+// ---------------------------------- //
 /** Tell the library to init player's race on next spawn.
  *
  *	@param	_Player		The player to init on next spawn.
@@ -1162,6 +1422,7 @@ Void ResetPlayerCurRun(CSmPlayer _Player) {
 	declare Ident CurRunPortalSpawn for _Player.Score;
 	declare Ident CurRunPortalCheckpoint for _Player.Score;
 	declare Ident CurRunJumpCheckpoint for _Player.Score;
+	declare Boolean CurRunHasFinished for _Player.Score;
 
 	CapturedCheckpointsTimes.clear();
 	CapturedCheckpoints.clear();
@@ -1170,6 +1431,7 @@ Void ResetPlayerCurRun(CSmPlayer _Player) {
 	CurRunPortalSpawn = NullId;
 	CurRunPortalCheckpoint = NullId;
 	CurRunJumpCheckpoint = NullId;
+	CurRunHasFinished = False;
 }
 
 // ---------------------------------- //
@@ -1186,7 +1448,7 @@ Void ResetPlayer(CSmPlayer _Player) {
 
 	BestRunCheckpointsTimes.clear();
 	BestRunRaceTime = -1;
-	BestRunRaceRespawns = -1;
+	BestRunRaceRespawns = 0;
 
 	ResetPlayerCurRun(_Player);
 	RestartOnSpawn(_Player);
@@ -1221,6 +1483,13 @@ Void ResetEveryone() {
  */
 Void SpawnPlayer(CSmPlayer _Player, Integer _StartTime, Integer _Position) {
 	if (_Player == Null) return;
+
+	// Portal was activated
+	declare PortalSpawn <=> GetPortalSpawn(_Player);
+	if (PortalSpawn != Null) {
+		SM::SpawnPlayer(_Player, 0, PortalSpawn.PlayerSpawn, Now);
+		return;
+	}
 
 	declare MapLandmark <=> GetStartBlock(_Position);
 	if (MapLandmark == Null) return;
@@ -1336,6 +1605,7 @@ Boolean TriggerLandmark(CSmPlayer _Player, Ident _LandmarkId, Boolean _CurRunMod
 	declare Integer[] CapturedCheckpointsTimes for _Player.Score;
 	declare Ident[] CapturedCheckpoints for _Player.Score;
 	declare Integer CurRunRaceRespawns for _Player.Score;
+	declare Boolean CurRunHasFinished for _Player.Score;
 
 	declare CurCheckpointTime = GetCurRunTime(_Player);
 	CapturedCheckpointsTimes.add(CurCheckpointTime);
@@ -1381,10 +1651,12 @@ Boolean TriggerLandmark(CSmPlayer _Player, Ident _LandmarkId, Boolean _CurRunMod
 
 	Private_DisplayCPDiff(_Player, CurCheckpointTime, Position, IsBetter, Differences);
 	Private_SetPlayerCpOrder(_Player, CpOrder);
+	Private_SetPlayerNbLaps(_Player, CurRunRaceNbLaps);
 
 	declare IndependantLaps = G_LibObstacle_ModeNbLaps <= 0;
-	declare StopRace = IsFinishBlock && (!G_LibObstacle_MapIsLapRace || IndependantLaps || CurRunRaceNbLaps >= G_LibObstacle_ModeNbLaps);
-	
+	declare StopRace = IsFinishBlock && (!MapIsLapRace() || IndependantLaps || CurRunRaceNbLaps >= G_LibObstacle_ModeNbLaps);
+	CurRunHasFinished = StopRace;
+
 	// ---------------------------------- //
 	// Compare with the best run
 	if (StopRace) {
@@ -1410,78 +1682,6 @@ Boolean TriggerLandmark(CSmPlayer _Player, Ident _LandmarkId) {
 }
 
 // ---------------------------------- //
-/** Jump to a checkpoint by ID.	
- *
- *	@param	_Player			The player that jumps to a checkpoint.
- *	@param	_CheckpointId	ID of the checkpoint player is jumping to.
- */
-Void JumpToCheckpoint(CSmPlayer _Player, Ident _CheckpointId) {
-	if (_Player == Null || !MapLandmarks_Gauge.existskey(_CheckpointId)) return;
-
-	declare MapLandmark <=> MapLandmarks_Gauge[_CheckpointId];
-	if (MapLandmark.Tag == "Goal") return;
-
-	declare Ident CurRunJumpCheckpoint for _Player.Score;
-	CurRunJumpCheckpoint = _CheckpointId;
-
-	SetRunValidation(_Player, False);
-	RespawnPlayer(_Player, MapLandmark);
-}
-
-// ---------------------------------- //
-/** Jump to a checkpoint by order.	
- *
- *	@param	_Player		The player that jumps to a checkpoint.
- *	@param	_CpOrder	Order of the checkpoint player is jumping to.
- */
-Void JumpToCheckpoint(CSmPlayer _Player, Integer _CpOrder) {
-	if (_Player == Null || _CpOrder <= 0) return;
-
-	declare Ident[] PossibleCheckpoints;
-	foreach (MapLandmark in MapLandmarks_Gauge) {
-		if (!TL::Find("Checkpoint", MapLandmark.Tag, True, True) || MapLandmark.Order != _CpOrder) continue;
-		PossibleCheckpoints.add(MapLandmark.Id);
-	}
-
-	if (PossibleCheckpoints.count <= 0) return;
-	if (PossibleCheckpoints.count == 1) {
-		JumpToCheckpoint(_Player, PossibleCheckpoints[0]);
-		return;
-	}
-	JumpToCheckpoint(_Player, PossibleCheckpoints[ML::Rand(0, PossibleCheckpoints.count - 1)]);
-}
-
-// ---------------------------------- //
-/** Jump to a checkpoint by position.	
- *
- *	@param	_Player		The player that jumps to a checkpoint.
- *	@param	_Position	Position of the checkpoint player is jumping to.
- */
-Void JumpToCheckpoint(CSmPlayer _Player, Vec3 _Position) {
-	if (_Player == Null || _Position == <0., 0., 0.>) return;
-
-	foreach (MapLandmark in MapLandmarks_Gauge) {
-		if (MapLandmark.Tag == "Goal" || MapLandmark.Position != _Position) continue;
-		JumpToCheckpoint(_Player, MapLandmark.Id);
-		return;
-	}
-}
-
-// ---------------------------------- //
-/** Get the checkpoint the player has jumped to.	
- *
- *	@param	_Player		The player to get jumped checkpoint.
- *
- *	@return		The checkpoint the player has jumped to.
- */
-CSmMapLandmark GetJumpCheckpoint(CSmPlayer _Player) {
-	if (_Player == Null) return Null;
-	declare Ident CurRunJumpCheckpoint for _Player.Score;
-	if (!MapLandmarks.existskey(CurRunJumpCheckpoint)) return Null;
-	return MapLandmarks[CurRunJumpCheckpoint];
-}
-
-// ---------------------------------- //
 /// Unload the library.
 Void Unload() {
 	ResetEveryone();
@@ -1490,7 +1690,9 @@ Void Unload() {
 	G_LibObstacle_CurMapSpawnPoints.clear();
 	G_LibObstacle_CurMapCheckpoints.clear();
 	G_LibObstacle_CurMapFinishLines.clear();
-	G_LibObstacle_ModeNbLaps = -1;
+	G_LibObstacle_MapIsLapRace = False;
+	G_LibObstacle_MapNbLaps = 1;
+	G_LibObstacle_ModeNbLaps = 0;
 
 	// Destroy custom interface layers
 	Layers::Detach("LibObstacle:Chrono");
@@ -1533,7 +1735,11 @@ Void Loop() {
 		if (RespawnOnLatestCp && Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
 			RespawnOnLatestCp = False;
 
-			declare MapLandmark <=> GetLatestCheckpoint(Player);
+			// Get the target checkpoint
+			declare CSmMapLandmark MapLandmark;
+			if (MapLandmark == Null) MapLandmark <=> GetPortalCheckpoint(Player);
+			if (MapLandmark == Null) MapLandmark <=> GetJumpCheckpoint(Player);
+			if (MapLandmark == Null) MapLandmark <=> GetLatestCheckpoint(Player);
 			if (MapLandmark != Null) RespawnPlayer(Player, MapLandmark);
 		}
 
@@ -1543,6 +1749,7 @@ Void Loop() {
 		if (ResetCPOrder > 0 && Now >= ResetCPOrder) {
 			ResetCPOrder = -1;
 			Private_SetPlayerCpOrder(Player, 0);
+			Private_SetPlayerNbLaps(Player, 0);
 		}
 	}
 }

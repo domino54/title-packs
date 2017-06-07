@@ -1,10 +1,10 @@
 // -------------------------------------- //
 //  LIBRARY MAP SELECTION by domino54     //
-//  script version: 2017-04-29            //
+//  script version: 2017-06-07            //
 // -------------------------------------- //
 
-#Const Version		"2017-04-29"
-#Const ScriptName	"MapSelection.Script.txt"
+#Const Version		"2017-06-07"
+#Const ScriptName	"Libs/domino54/MapSelection.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
@@ -16,6 +16,8 @@
 #Const C_LibMapSelection_MinNbMapsRequired	3	///< Minimal number of maps required on server to show map selection.
 #Const C_LibMapSelection_NbDisplayedMaps	6	///< Amount of maps displayed in the selection window.
 #Const C_LibMapSelection_LayerId "LibMapSelection:SelectionWindow"
+#Const C_LibMapSelection_MXAPIMapInfoRoute "https://api.mania-exchange.com/%1/maps/%2?format=xml"
+#Const C_LibMapSelection_MXAPIScreenshotRoute "https://%1.mania-exchange.com/tracks/screenshot/normal/%2?.png"
 
 // ---------------------------------- //
 // Global variables
@@ -26,6 +28,8 @@ declare Boolean G_LibMapSelection_UpdateVotes;		///< Trigger for updating the am
 declare Integer G_LibMapSelection_PrevNbPlayers;	///< Previous amount of players on the server.
 declare Integer G_LibMapSelection_SelectionEndTime;	///< End time of the map selection.
 declare Integer G_LibMapSelection_ChoosedMapIndex;	///< Index of the map choosed by the players.
+declare CHttpRequest G_LibMapSelection_MXRequest;	///< Mania Exchange maps data request.
+declare Integer G_LibMapSelection_MXRequestStart;	///< Mania Exchange maps data request start time.
 
 // ---------------------------------- //
 // Functions
@@ -98,7 +102,7 @@ Text Private_CreateManialinkMapSelection(Text _FontMedium, Text _FontBold) {
 
 			<!-- Map information -->
 			<label pos="29 -43" size="56 6" class="FontM" halign="center" textsize="2" id="Label_MapCardName" />
-			<quad size="58 40" keepratio="Clip" autoscale="0" id="Quad_MapCardThumbnail" />
+			<quad size="58 40" keepratio="Clip" id="Quad_MapCardThumbnail" />
 			<quad size="58 46" bgcolor="000" opacity=".75" />
 		</framemodel>
 		{{{SelectionCards}}}
@@ -186,6 +190,8 @@ declare netread Integer Net_LibMapSelection_VoteEndTime for Teams[0];
 declare netread Text[Text] Net_LibMapSelection_PlayersVotes for Teams[0];
 declare netread Integer Net_LibMapSelection_LastVotesUpdate for Teams[0];
 declare netread Text Net_LibMapSelection_SelectedMap for Teams[0];
+declare netread Integer[Text] Net_LibMapSelection_MapsMXIDs for Teams[0];
+declare netread Integer Net_LibMapSelection_MapsMXIDUpdate for Teams[0];
 
 // ---------------------------------- //
 // Local user selection
@@ -195,8 +201,13 @@ Net_LibMapSelection_UserSelectedMap = "";
 Net_LibMapSelection_PrevVoteTime = -1;
 
 // ---------------------------------- //
+// Persistent
+declare persistent Integer[Text] Persistent_LibMapSelection_MapsLocalMXIDs for LocalUser;
+
+// ---------------------------------- //
 // Variables
 declare IsSelectionOver = False;
+declare UpdateMapsCards = True;
 declare CurrentMapUID = Map.MapInfo.MapUid;
 
 /// Update
@@ -206,6 +217,7 @@ declare PrevUserSelectedMap = "!";
 declare PrevSelectedMap = "!";
 declare PrevIsSelectionOver = False;
 declare PrevReplayIsAvailable = False;
+declare PrevMapsMXIDUpdate = -1;
 ***
 
 // ---------------------------------- //
@@ -266,10 +278,24 @@ if (!PageIsVisible) continue;
 Frame_MapSelectionWindow.Visible = !IsInGameMenuDisplayed;
 if (!Frame_MapSelectionWindow.Visible) continue;
 
-// ---------------------------------- //
-// Update information about currently avaialble maps
+if (PrevMapsMXIDUpdate != Net_LibMapSelection_MapsMXIDUpdate) {
+	PrevMapsMXIDUpdate = Net_LibMapSelection_MapsMXIDUpdate;
+
+	foreach (MapUID => MXID in Net_LibMapSelection_MapsMXIDs)
+		Persistent_LibMapSelection_MapsLocalMXIDs[MapUID] = MXID;
+
+	UpdateMapsCards = True;
+}
+
 if (PrevMapsUpdateTime != Net_LibMapSelection_AvailableMapsUpdate) {
 	PrevMapsUpdateTime = Net_LibMapSelection_AvailableMapsUpdate;
+	UpdateMapsCards = True;
+}
+
+// ---------------------------------- //
+// Update information about currently avaialble maps
+if (UpdateMapsCards) {
+	UpdateMapsCards = False;
 
 	foreach (I => Frame in Frame_SelectionMapCards) {
 		Frame.Visible = Net_LibMapSelection_AvailableMaps.existskey(I);
@@ -279,10 +305,16 @@ if (PrevMapsUpdateTime != Net_LibMapSelection_AvailableMapsUpdate) {
 		declare Text CurMapUID for Frame;
 		CurMapUID = Net_LibMapSelection_AvailableMaps[I];
 
+		// Get map MX ID
+		declare MapMXID = -1;
+		if (Net_LibMapSelection_MapsMXIDs.existskey(CurMapUID)) MapMXID = Net_LibMapSelection_MapsMXIDs[CurMapUID];
+		if (Persistent_LibMapSelection_MapsLocalMXIDs.existskey(CurMapUID)) MapMXID = Persistent_LibMapSelection_MapsLocalMXIDs[CurMapUID];
+		
 		// ---------------------------------- //
 		// Get the map thumbnail image
 		declare Quad_MapCardThumbnail <=> (Frame.GetFirstChild("Quad_MapCardThumbnail") as CMlQuad);
-		Quad_MapCardThumbnail.ImageUrl = "file://Thumbnails/MapUid/"^CurMapUID;
+		if (MapMXID > 0) Quad_MapCardThumbnail.ImageUrl = GetMapManiaExchangeScreenshotURL(MapMXID);
+		else Quad_MapCardThumbnail.ImageUrl = "file://Thumbnails/MapUid/"^CurMapUID;
 
 		// ---------------------------------- //
 		// Set name of the map
@@ -419,6 +451,27 @@ if (!IsSelectionOver) Label_SelectionEndTime.Value = TL::TimeToText(Net_LibMapSe
 ***
 
 // ---------------------------------- //
+/** Get map Mania Exchange screenshot URL.
+ *
+ *	@param	_MXID	Mania Exchange map ID.
+ *
+ *	@return		The screenshot URL.
+ */
+Text GetMapManiaExchangeScreenshotURL(Integer _MXID) {
+	declare Platform = "";
+	switchtype (This) {
+		case CTmMlScriptIngame : Platform = "tm";
+		case CSmMlScriptIngame : Platform = "sm";
+	}
+	if (Platform == "") return "";
+
+	declare URL = "{{{C_LibMapSelection_MXAPIScreenshotRoute}}}";
+	URL = TL::Replace(URL, "%1", Platform);
+	URL = TL::Replace(URL, "%2", TL::ToText(_MXID));
+	return URL;
+}
+
+// ---------------------------------- //
 // Main
 // ---------------------------------- //
 main() {
@@ -494,6 +547,18 @@ Void Private_SetSelectedMap(Text _SelectedMapUID) {
 }
 
 // ---------------------------------- //
+/** Set the maps Mania Exchange IDs.
+ *
+ *	@param	_MXIDs	Mania Exchange maps IDs.
+ */
+Void Private_SetMapsMXIDs(Integer[Text] _MXIDs) {
+	declare netwrite Integer[Text] Net_LibMapSelection_MapsMXIDs for Teams[0];
+	declare netwrite Integer Net_LibMapSelection_MapsMXIDUpdate for Teams[0];
+	Net_LibMapSelection_MapsMXIDs = _MXIDs;
+	Net_LibMapSelection_MapsMXIDUpdate = Now;
+}
+
+// ---------------------------------- //
 /** Increase the play count of a selected map.
  *
  *	@param	_Map	The map to increase play count.
@@ -519,6 +584,43 @@ Integer Private_GetMapPlayCount(CMapInfo _Map) {
 
 	if (!Persistent_LibMapSelection_MapsPlayCount.existskey(MapUID)) return 0;
 	return Persistent_LibMapSelection_MapsPlayCount[MapUID];
+}
+
+// ---------------------------------- //
+/// Violently get rid of the current MX request.
+Void Private_DestroyMXRequest() {
+	G_LibMapSelection_MXRequestStart = -1;
+
+	if (G_LibMapSelection_MXRequest != Null) {
+		Http.Destroy(G_LibMapSelection_MXRequest);
+		G_LibMapSelection_MXRequest = Null;
+	}
+}
+
+// ---------------------------------- //
+/** Parse the Mania Exchange API response.
+ *
+ *	@param	_Document	Mania Exchange response XML document.
+ */
+Void Private_ParseMXResults(CXmlDocument _Document) {
+	if (_Document == Null || _Document.Root == Null) return;
+
+	declare persistent Integer[Text] Persistent_LibMapSelection_MapsMXIDs;
+
+	foreach (MapNode in _Document.Root.Children) {
+		declare MapMXID = -1;
+		declare MapUID = "";
+
+		foreach (Property in MapNode.Children) {
+			if (Property.Name == "TrackID") MapMXID = TL::ToInteger(Property.TextContents);
+			if (Property.Name == "TrackUID") MapUID = Property.TextContents;
+			if (Property.Name == "MapID") MapMXID = TL::ToInteger(Property.TextContents);
+			if (Property.Name == "MapUID") MapUID = Property.TextContents;
+		}
+
+		if (MapMXID <= 0 || MapUID == "") continue;
+		Persistent_LibMapSelection_MapsMXIDs[MapUID] = MapMXID;
+	}
 }
 
 // ---------------------------------- //
@@ -565,6 +667,20 @@ Integer GetMapIndex(CMapInfo _Map) {
 }
 
 // ---------------------------------- //
+/** Get the map Mania Exchange ID.
+ *
+ *	@param	_MapUID		UID of the map to get the ID.
+ *
+ *	@return		The Mania Exchange ID of the map.
+ */
+Integer GetMapManiaExchangeID(Text _MapUID) {
+	if (_MapUID == "") return -1;
+	declare persistent Integer[Text] Persistent_LibMapSelection_MapsMXIDs;
+	if (!Persistent_LibMapSelection_MapsMXIDs.existskey(_MapUID)) return -1;
+	return Persistent_LibMapSelection_MapsMXIDs[_MapUID];
+}
+
+// ---------------------------------- //
 /// Unload the library.
 Void Unload() {
 	Layers::Destroy(C_LibMapSelection_LayerId);
@@ -574,6 +690,8 @@ Void Unload() {
 	Private_SetPlayersVotes(Text[Text]);
 	Private_SetVotingEndTime(-1);
 	Private_SetSelectedMap("");
+	Private_SetMapsMXIDs(Integer[Text]);
+	Private_DestroyMXRequest();
 }
 
 // ---------------------------------- //
@@ -675,6 +793,34 @@ Boolean SelectionStart(Integer _EndTime, Boolean _ListLeastPlayedMaps) {
 	}
 
 	// ---------------------------------- //
+	// Launch the Mania Exchange IDs request
+	Private_DestroyMXRequest();
+
+	// Send available cached data to the manialink
+	declare Integer[Text] MXIDs;
+	foreach (MapUID in G_LibMapSelection_AvailableToVote) {
+		declare MapMXID = GetMapManiaExchangeID(MapUID);
+		if (MapMXID > 0) MXIDs[MapUID] = MapMXID;
+	}
+	Private_SetMapsMXIDs(MXIDs);
+
+	// Get platform name
+	declare Platform = "";
+	switchtype (This) {
+		case CTmMode : Platform = "tm";
+		case CSmMode : Platform = "sm";
+	}
+
+	// Get request URL
+	declare RequestURL = C_LibMapSelection_MXAPIMapInfoRoute;
+	RequestURL = TL::Replace(RequestURL, "%1", Platform);
+	RequestURL = TL::Replace(RequestURL, "%2", TL::Join(",", G_LibMapSelection_AvailableToVote));
+
+	// Create the request
+	G_LibMapSelection_MXRequest = Http.CreateGet(RequestURL, False);
+	G_LibMapSelection_MXRequestStart = Now;
+
+	// ---------------------------------- //
 	// Update interface values
 	Private_SetAvailableMaps(G_LibMapSelection_AvailableToVote, MapsNames);
 	Private_SetPlayersVotes(G_LibMapSelection_PlayersVotes);
@@ -773,6 +919,23 @@ Boolean SelectionLoop() {
 		// Skip the selection if all players have casted a vote
 		if (G_LibMapSelection_PlayersVotes.count >= Players.count) G_LibMapSelection_SelectionEndTime = -1;
 	}
+
+	// ---------------------------------- //
+	// Manage finished MX request
+	if (G_LibMapSelection_MXRequest != Null && G_LibMapSelection_MXRequest.IsCompleted) {
+		declare Document = Xml.Create(G_LibMapSelection_MXRequest.Result);
+		Private_ParseMXResults(Document);
+		Xml.Destroy(Document);
+		Private_DestroyMXRequest();
+
+		// Send updated data to the manialink
+		declare Integer[Text] MXIDs;
+		foreach (MapUID in G_LibMapSelection_AvailableToVote) {
+			declare MapMXID = GetMapManiaExchangeID(MapUID);
+			if (MapMXID > 0) MXIDs[MapUID] = MapMXID;
+		}
+		Private_SetMapsMXIDs(MXIDs);
+	}
 	
 	// Continue if there is pending vote
 	if (Now < G_LibMapSelection_SelectionEndTime) return False;
@@ -792,6 +955,8 @@ Void SelectionEnd() {
 	Private_SetPlayersVotes(Text[Text]);
 	Private_SetVotingEndTime(-1);
 	Private_SetSelectedMap("");
+	Private_SetMapsMXIDs(Integer[Text]);
+	Private_DestroyMXRequest();
 	
 	// Restore previous sequence
 	declare CUIConfig::EUISequence PrevUISequence for This;

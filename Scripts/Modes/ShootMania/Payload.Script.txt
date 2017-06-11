@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PAYLOAD by domino54                   //
-//  script version: 2017-06-03            //
+//  script version: 2017-06-11            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"PayloadArena"
-#Const Version		"2017-06-03"
+#Const Version		"2017-06-11"
 #Const ScriptName	"Payload.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -72,6 +72,7 @@ TopScores::AddCategory("Attack", "Atk", 2.25, 60.);
 // ---------------------------------- //
 // Set the mode options
 UseClans = True;
+GT_UseNoCollisionsStart = False;
 G_AttackingClan = 1;
 
 // ---------------------------------- //
@@ -90,10 +91,12 @@ PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Attackers goal is to push the P
 // ---------------------------------- //
 // Create custom interface
 Layers::Create("Payload:Interface", CreateManialinkPayloadUI());
+Layers::Create("Payload:Markers", CreateManialinkMarkers());
+Layers::SetType("Payload:Markers", CUILayer::EUILayerType::Markers);
 
 // ---------------------------------- //
 // Load objects
-G_ObjectsIds["Crystal"] = ItemList_Add("SMCommon\\Collectibles\\Gold.Item.gbx");
+G_ObjectsIds["Payload"] = ItemList_Add("SMCommon\\Payload\\Payload.Item.gbx");
 
 // ---------------------------------- //
 // Variables
@@ -104,6 +107,7 @@ declare LastPayloadInteractionTime = 0;
 declare IsPreparationPhase = False;
 declare NextCheckpointDistance = 0.;
 declare CurSectorStartTime = 0;
+declare TeamsPayloadMaxDist = [0., 0., 0.];
 
 declare PrevCheckpointDistance = 0.;
 declare PrevPayloadDistance = G_PayloadTrackCurrentDist;
@@ -122,6 +126,9 @@ G_PayloadTrackTotalDist = 0.;
 G_PayloadTrackPointsDist.clear();
 G_CurMapTotalNbSectors = 0;
 G_SectorCheckpointsDist.clear();
+
+// Reset markers
+UIManager.UIAll.MarkersXML = "";
 
 // ---------------------------------- //
 // Check if the map is valid
@@ -163,6 +170,9 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 ***StartMap***
 ***
+TeamsPayloadMaxDist = [0., 0., 0.];
+Layers::Attach("Payload:Interface");
+
 // ---------------------------------- //
 // Get the complete data about the Payload track
 declare Vec3 PrevPointpos;
@@ -257,11 +267,13 @@ UISetCheckpointsDistances(G_SectorCheckpointsDist);
 UISetNbPlayersPushingPayload(0);
 UISetLastPushTime(-1);
 G_CapturedSectors = 0;
-G_IsOvertime = False;
 IsPreparationPhase = True;
 NextCheckpointDistance = G_SectorCheckpointsDist[G_CapturedSectors + 1];
 PrevCheckpointDistance = 0.;
 PrevPayloadDistance = -1.;
+
+G_IsOvertime = False;
+UISetIsOvertime(G_IsOvertime);
 
 // Swap the currently attacking team
 G_AttackingClan = 3 - G_AttackingClan;
@@ -283,11 +295,12 @@ PayloadStructureObjects.clear();
 
 // ---------------------------------- //
 // Create new Payload structure objects
-PayloadStructureObjects.add(ObjectCreate(G_ObjectsIds["Crystal"]).Id);
+PayloadStructureObjects.add(ObjectCreate(G_ObjectsIds["Payload"]).Id);
 
 // Reset the payload position
 G_PayloadPosition = GetPayloadPosition(G_PayloadTrackCurrentDist);
 SetObjectsPosition(PayloadStructureObjects, G_PayloadPosition);
+UpdateMarkers(PayloadStructureObjects[0]);
 
 // ---------------------------------- //
 // Decapture all used Gauges
@@ -340,6 +353,10 @@ UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 LastPayloadInteractionTime = UIManager.UIAll.CountdownEndTime;
 if (S_AllowPayloadReversing) UISetLastPushTime(LastPayloadInteractionTime);
 
+// Disable PvP
+UsePvPCollisions = False;
+UsePvPWeapons = False;
+
 Message::SendBigMessage(
 	TL::Compose("%1 "^MB_SectionRoundNb + 1^" / "^S_NbRoundsPerTeam * 2, _("Round")),
 	3000, 0, CUIConfig::EUISound::StartRound, 0
@@ -352,6 +369,7 @@ else GT_DisableTimeLimit();
 
 // Apply custom interface
 Layers::Attach("Payload:Interface");
+Layers::Attach("Payload:Markers");
 ***
 
 // ---------------------------------- //
@@ -382,6 +400,10 @@ if (IsPreparationPhase && Now >= UIManager.UIAll.CountdownEndTime) {
 	UIManager.UIAll.CountdownEndTime = -1;
 	CurSectorStartTime = Now;
 	IsPreparationPhase = False;
+
+	// Enable PvP
+	UsePvPCollisions = True;
+	UsePvPWeapons = True;
 	
 	// ---------------------------------- //
 	// Match beginning sound
@@ -477,27 +499,35 @@ if (S_AllowPayloadReversing && Now > LastPayloadInteractionTime + C_PayloadRever
 		G_PayloadTrackCurrentDist = PrevCheckpointDistance;
 		UISetLastPushTime(-1);
 	}
+
+	// Stop the round in overtime
+	if (G_IsOvertime) {
+		UIManager.UIAll.SendNotice(
+			"", CUIConfig::ENoticeLevel::MatchInfo, Null,
+			CUIConfig::EAvatarVariant::Default,
+			CUIConfig::EUISound::VictoryPoint, 0
+		);
+		MB_StopRound();
+	}
 }
 
 // ---------------------------------- //
 // Payload distance has changed
 if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
-	PrevPayloadDistance = G_PayloadTrackCurrentDist;
-	
-	// Update distance on the UI
 	UISetPayloadDistance(G_PayloadTrackCurrentDist);
 	
 	// Update the Payload position
 	G_PayloadPosition = GetPayloadPosition(G_PayloadTrackCurrentDist);
 	SetObjectsPosition(PayloadStructureObjects, G_PayloadPosition);
 	
-	MiniMap::SetMarker("Payload", "Ball.png", Teams[G_AttackingClan - 1].ColorPrimary, G_PayloadPosition);
+	MiniMap::SetMarker("Payload", "Payload.png", Teams[G_AttackingClan - 1].ColorPrimary, G_PayloadPosition);
 	
 	// ---------------------------------- //
 	// Attackers captured a Checkpoint
-	if (PrevPayloadDistance >= NextCheckpointDistance) {
+	if (G_PayloadTrackCurrentDist >= NextCheckpointDistance) {
 		G_CapturedSectors += 1;
 		UpdateBasesColors();
+		UpdateMarkers(PayloadStructureObjects[0]);
 		GalaxyTitles::SetObjectsSpawnTier(G_CapturedSectors + 1);
 		
 		// Give point for the attacking team
@@ -509,6 +539,10 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 		if (G_CapturedSectors < G_CurMapTotalNbSectors) {
 			PrevCheckpointDistance = NextCheckpointDistance;
 			NextCheckpointDistance = G_SectorCheckpointsDist[G_CapturedSectors + 1];
+
+			// Disable overtime
+			G_IsOvertime = False;
+			UISetIsOvertime(G_IsOvertime);
 			
 			Message::SendBigMessage(TL::Compose(
 				_("%1 captured %2 checkpoints"), Teams[G_AttackingClan - 1].ColorizedName, TL::ToText(G_CapturedSectors)),
@@ -532,7 +566,7 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 	}
 	
 	// Get the current Checkpoint progres
-	declare CheckpointProgres = (PrevPayloadDistance - PrevCheckpointDistance) / (NextCheckpointDistance - PrevCheckpointDistance);
+	declare CheckpointProgres = (G_PayloadTrackCurrentDist - PrevCheckpointDistance) / (NextCheckpointDistance - PrevCheckpointDistance);
 	
 	// ---------------------------------- //
 	// Show Payload progress on Checkpoints gauges
@@ -557,6 +591,11 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 		else if (MapLandmark.Gate.ManualClosed) MapLandmark.Gauge.ValueReal = 1. - CheckpointProgres;
 		else MapLandmark.Gauge.ValueReal = 0.;
 	}
+
+	// Save the furthest distance
+	if (G_PayloadTrackCurrentDist > PrevPayloadDistance) TeamsPayloadMaxDist[G_AttackingClan] = G_PayloadTrackCurrentDist;
+	
+	PrevPayloadDistance = G_PayloadTrackCurrentDist;
 }
 
 // ---------------------------------- //
@@ -578,7 +617,13 @@ if (PrevAllowPayloadReversing != S_AllowPayloadReversing) {
 
 // ---------------------------------- //
 // Victory conditions
-if (GT_TimeReachedLimit()) MB_StopRound = True;
+if (GT_TimeReachedLimit()) {
+	if (S_AllowPayloadReversing && Now < LastPayloadInteractionTime + C_PayloadReversingTimeLimit) {
+		G_IsOvertime = True;
+		UISetIsOvertime(G_IsOvertime);
+	}
+	else MB_StopRound();
+}
 ***
 
 // ---------------------------------- //
@@ -587,6 +632,8 @@ if (GT_TimeReachedLimit()) MB_StopRound = True;
 ***EndRound***
 ***
 SM::UnspawnAllPlayers();
+Layers::Detach("Payload:Markers");
+UISetIsOvertime(False);
 
 // ---------------------------------- //
 // Set the round winner
@@ -640,23 +687,39 @@ if (MB_SectionRoundNb >= S_NbRoundsPerTeam * 2) MB_StopMatch = True;
 // ---------------------------------- //
 ***EndMapBeforeCloseLadder***
 ***
-// ---------------------------------- //
-// Play Sudden Death mode in case there is a draw
-if (ClanScores[1] > 0 && ClanScores[1] == ClanScores[2]) {
+if (ClanScores[1] == ClanScores[2]) {
 	// ---------------------------------- //
-	// Open all Gates
-	foreach (MapLandmark in MapLandmarks_Gate) {
-		MapLandmark.Gate.Automatic = False;
-		MapLandmark.Gate.ManualClosed = False;
-		MapLandmark.Gauge.ValueReal = 0.;
+	// Team with furthest distance wins
+	if (TeamsPayloadMaxDist[1] != TeamsPayloadMaxDist[2]) {
+		declare AdvantageTeam = 1;
+		if (TeamsPayloadMaxDist[2] > TeamsPayloadMaxDist[1]) AdvantageTeam = 2;
+		declare Diff = ML::Abs(TeamsPayloadMaxDist[1] - TeamsPayloadMaxDist[2]);
+
+		Translations::SendStatusMessage([
+			"$<%1$> have delivered the Payload %2 m further",
+			Teams[AdvantageTeam - 1].ColorizedName, TL::FormatReal(Diff, 2, False, False)],
+			5000, 0);
+		ClanScores[AdvantageTeam] += 1;
 	}
-	
-	// Award one point to the winner
-	declare SuddenDeathWinner = GT_SuddenDeath(
-		Map::GetLandmarkPlayerSpawn("SpawnAtk", 1),
-		Map::GetLandmarkPlayerSpawn("SpawnDef", 1)
-	);
-	ClanScores[SuddenDeathWinner] += 1;
+
+	// ---------------------------------- //
+	// Play Sudden Death mode in case there is a draw
+	else {
+		// ---------------------------------- //
+		// Open all Gates
+		foreach (MapLandmark in MapLandmarks_Gate) {
+			MapLandmark.Gate.Automatic = False;
+			MapLandmark.Gate.ManualClosed = False;
+			MapLandmark.Gauge.ValueReal = 0.;
+		}
+		
+		// Award one point to the winner
+		declare SuddenDeathWinner = GT_SuddenDeath(
+			Map::GetLandmarkPlayerSpawn("SpawnAtk", 1),
+			Map::GetLandmarkPlayerSpawn("SpawnDef", 1)
+		);
+		ClanScores[SuddenDeathWinner] += 1;
+	}
 }
 ***
 
@@ -666,6 +729,7 @@ if (ClanScores[1] > 0 && ClanScores[1] == ClanScores[2]) {
 ***EndServer***
 ***
 Layers::Destroy("Payload:Interface");
+Layers::Destroy("Payload:Markers");
 ***
 
 // ---------------------------------- //
@@ -758,7 +822,31 @@ Void SetObjectsPosition(Ident[] _Objects, Vec3 _Position) {
 		declare Object = Objects[ObjectId];
 		
 		if (_Position == <0., 0., 0.>) Object.SetUnspawned();
-		else Object.SetPosition(_Position); 
+		else Object.SetPosition(_Position + <0., 1.25, 0.>); 
+	}
+
+	// Send position to the interface
+	declare netwrite Vec3 Net_Payload_PayloadPosition for Teams[0];
+	Net_Payload_PayloadPosition = _Position;
+}
+
+// ---------------------------------- //
+/** Update the markers manialink.
+ *
+ *	@param	_PayloadObjectId	Id of the Payload object to get position from.
+ */
+Void UpdateMarkers(Ident _PayloadObjectId) {
+	UIManager.UIAll.MarkersXML = "";
+
+	// Payload object marker
+	UIManager.UIAll.MarkersXML ^= "<marker manialinkframeid='Frame_MarkerPayload' visibility='WhenInFrustum' objectid='"^_PayloadObjectId^"' box='0 2 0' />";
+
+	// Next checkpoint marker
+	declare CurSector = ML::Clamp(G_CapturedSectors + 1, 1, G_CurMapTotalNbSectors);
+	declare MapLandmark <=> Map::GetLandmarkGauge("Checkpoint", CurSector);
+	if (MapLandmark != Null) {
+		declare Pos = MapLandmark.Position.X^" "^MapLandmark.Position.Y + 2^" "^MapLandmark.Position.Z;
+		UIManager.UIAll.MarkersXML ^= "<marker manialinkframeid='Frame_MarkerCheckpoint' visibility='WhenInFrustum' pos='"^Pos^"' />";
 	}
 }
 
@@ -776,6 +864,10 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	declare HasWaited = False;
 	declare WasPause = False;
 	StartTime = Now;
+
+	// Enable PvP
+	UsePvPCollisions = True;
+	UsePvPWeapons = True;
 	
 	foreach (Player in AllPlayers) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 	
@@ -902,9 +994,25 @@ Void UISetNbPlayersPushingPayload(Integer _PlayersNb) {
 	Net_Payload_NbPlayersPushingPayload = ML::Max(0, _PlayersNb);
 }
 
+// ---------------------------------- //
+/** Set the latest push time.
+ *
+ *	@param	_Time	Latest push time.
+ */
 Void UISetLastPushTime(Integer _Time) {
 	declare netwrite Integer Net_Payload_LastPushTime for Teams[0];
 	Net_Payload_LastPushTime = _Time;
+}
+
+// ---------------------------------- //
+/** Set the overtime status.
+ *
+ *	@param	_IsOvertime		If overtime is active or not.
+ */
+Void UISetIsOvertime(Boolean _IsOvertime) {
+	declare netwrite Boolean Net_Payload_IsOvertime for Teams[0];
+	Net_Payload_IsOvertime = _IsOvertime;
+	Interfancy::SetModuleVisibility("Countdown", !_IsOvertime);
 }
 
 // ---------------------------------- //
@@ -919,8 +1027,10 @@ Text CreateManialinkPayloadUI() {
 	return """
 <manialink version="3" name="Payload:Interface">
 <stylesheet>
-	<style id="Label_PayloadMarker" textsize="2" textcolor="FFF" textfont="Eurostile" />
+	<style id="Label_PayloadMarker" textsize="2" textcolor="FFF" textfont="Eurostile_Bold" />
 	<style class="CircGauge" size="16 16" halign="center" valign="center" colorize="FFF" />
+	<style id="Label_TextOvertime" halign="center" valign="center2" textsize="2" textemboss="1" textfont="Eurostile_Bold" textcolor="FB0" textprefix="$t" />
+	<style id="Label_CaptureProgress" halign="center" valign="center2" textsize="3" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
 </stylesheet>
 
 <framemodel id="FrameModel_Sector">
@@ -948,6 +1058,19 @@ Text CreateManialinkPayloadUI() {
 	</frame>
 </frame>
 
+<frame id="Frame_OvertimeGauge" pos="0 86.5" hidden="1">
+	<label pos="0 .5" id="Label_TextOvertime" text="Overtime" translate="1" />
+	<gauge pos="0 -2" size="0 7" halign="center" valign="center" drawbg="0" drawblockbg="0" color="FB0" id="Gauge_OvertimeProgress" />
+</frame>
+
+<frame id="Frame_CaptureProgress" pos="0 -54">
+	<frame id="Frame_CaptureProgAnim">
+		<label id="Label_CaptureProgress" opacity="0" />
+		<quad pos="0 8" size="12 12" halign="center" valign="center" id="Quad_CaptureProgIcon" opacity="0" />
+		<gauge pos="0 -3" size="52 8" halign="center" valign="center" drawbg="0" id="Gauge_CaptureProgress" hidden="1" />
+	</frame>
+</frame>
+
 <label id="Label_DistanceDebug" scale="0" />
 
 <script><!--
@@ -960,9 +1083,10 @@ Text CreateManialinkPayloadUI() {
 
 #Const C_TotalProgressBarWidth	120.
 #Const C_GaugeBarsSpacing		.5
+#Const C_CaptureBarImgBase		"file://Media/Manialinks/ShootMania/Common/"
 
-{{{Manialink::Animations(["EaseOutSine"])}}}
-{{{ManialinkTools::Functions(["SetGaugeRatio"])}}}
+{{{Translations::InjectInManialink(["Payload is reversing", "Payload is stopped", "Escorting the Payload", "Blocking the Payload"])}}}
+{{{ManialinkTools::Functions(["SetGaugeRatio", "ComputeWidth", "HsvToRgb"])}}}
 
 // ---------------------------------- //
 // Main
@@ -973,23 +1097,40 @@ main() {
 	declare Frame_PayloadProgress <=> (Page.GetFirstChild("Frame_PayloadProgress") as CMlFrame);
 	declare Quad_EmblemLeft <=> (Page.GetFirstChild("Quad_EmblemLeft") as CMlQuad);
 	declare Quad_EmblemRight <=> (Page.GetFirstChild("Quad_EmblemRight") as CMlQuad);
+
 	declare Frame_PayloadMarker <=> (Page.GetFirstChild("Frame_PayloadMarker") as CMlFrame);
 	declare Label_PayloadMarker <=> (Page.GetFirstChild("Label_PayloadMarker") as CMlLabel);
 	declare Label_DistanceDebug <=> (Page.GetFirstChild("Label_DistanceDebug") as CMlLabel);
 	declare Quad_GaugeBg <=> (Page.GetFirstChild("Quad_GaugeBg") as CMlQuad);
 	declare Quad_GaugeL <=> (Page.GetFirstChild("Quad_GaugeL") as CMlQuad);
 	declare Quad_GaugeR <=> (Page.GetFirstChild("Quad_GaugeR") as CMlQuad);
+
+	declare Frame_OvertimeGauge <=> (Page.GetFirstChild("Frame_OvertimeGauge") as CMlFrame);
+	declare Label_TextOvertime <=> (Page.GetFirstChild("Label_TextOvertime") as CMlLabel);
+	declare Gauge_OvertimeProgress <=> (Page.GetFirstChild("Gauge_OvertimeProgress") as CMlGauge);
+
+	declare Frame_CaptureProgress <=> (Page.GetFirstChild("Frame_CaptureProgress") as CMlFrame);
+	declare Frame_CaptureProgAnim <=> (Page.GetFirstChild("Frame_CaptureProgAnim") as CMlLabel);
+	declare Label_CaptureProgress <=> (Page.GetFirstChild("Label_CaptureProgress") as CMlLabel);
+	declare Quad_CaptureProgIcon <=> (Page.GetFirstChild("Quad_CaptureProgIcon") as CMlQuad);
+	declare Gauge_CaptureProgress <=> (Page.GetFirstChild("Gauge_CaptureProgress") as CMlGauge);
 	
 	declare CMlFrame[] Frame_SectorProgress;
 	for (I, 0, {{{C_MapMaximumNbSectors - 1}}}) Frame_SectorProgress.add((Page.GetFirstChild("Frame_SectorProgress#"^I) as CMlFrame));
+
+	Label_TextOvertime.Value = _("Overtime");
+	Label_TextOvertime.Size.X = ML::Min(ComputeWidth(Label_TextOvertime), 18.);
+	Gauge_OvertimeProgress.Size.X = Label_TextOvertime.Size.X + 4.;
 	
 	// ---------------------------------- //
 	// Netcode
 	declare netread Real[] Net_Payload_CheckpointDistances for Teams[0];
 	declare netread Real Net_Payload_PayloadDistance for Teams[0];
+	declare netread Vec3 Net_Payload_PayloadPosition for Teams[0];
 	declare netread Integer Net_Payload_AttackingTeam for Teams[0];
 	declare netread Integer Net_Payload_NbPlayersPushingPayload for Teams[0];
 	declare netread Integer Net_Payload_LastPushTime for Teams[0];
+	declare netread Boolean Net_Payload_IsOvertime for Teams[0];
 	
 	// Wait for at least one checkpoint distance
 	wait(Net_Payload_CheckpointDistances.count > 0);
@@ -998,6 +1139,8 @@ main() {
 	// Variables
 	declare SpacingSub = (Net_Payload_CheckpointDistances.count - 1) * C_GaugeBarsSpacing;
 	declare TotalDistance = Net_Payload_CheckpointDistances[Net_Payload_CheckpointDistances.count - 1];
+	declare CaptureProgressVisible = False;
+	declare CaptureMesageType = 0;
 	declare UpdateColors = True;
 	declare GaugeRatio = 0.;
 	
@@ -1010,6 +1153,8 @@ main() {
 	declare PrevFramePosX = 0.;
 	declare PrevPlayersPushingPayload = -1;
 	declare PrevGaugeRatio = -1.;
+	declare PrevCaptureProgressVisible = False;
+	declare PrevCaptureMesageType = -1;
 	
 	// ---------------------------------- //
 	// Compute 
@@ -1032,17 +1177,16 @@ main() {
 	// Yield
 	// ---------------------------------- //
 	while (True) {
-		// ---------------------------------- //
+		yield;
+		if (!PageIsVisible) continue;
+
 		// Payload marker visibility
 		Frame_PayloadMarker.Visible = Net_Payload_PayloadDistance < TotalDistance;
 		
-		// ---------------------------------- //
 		// Payload distance has changed
 		if (PrevPayloadDistance != Net_Payload_PayloadDistance) {
 			PrevPayloadDistance = Net_Payload_PayloadDistance;
-			
-			LibManialink_AnimStop(Label_DistanceDebug);
-			LibManialink_Anim(Label_DistanceDebug, "<label scale='"^PrevPayloadDistance^"' />", 125, "EaseLinear");
+			AnimMgr.Add(Label_DistanceDebug, "<label scale='"^PrevPayloadDistance^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 		}
 		
 		// ---------------------------------- //
@@ -1056,15 +1200,14 @@ main() {
 			Frame_PayloadMarker.RelativePosition_V3.X = C_TotalProgressBarWidth * PrevAnimDistance / TotalDistance - C_TotalProgressBarWidth / 2;
 			
 			foreach (I => Frame in Frame_SectorProgress) {
-				if (!Frame.Visible) continue;
+				if (!Frame.Visible || !Net_Payload_CheckpointDistances.existskey(I)) continue;
 				
 				declare CurCPDistance = Net_Payload_CheckpointDistances[I];
 				declare Gauge_CPProgress <=> (Frame.GetFirstChild("Gauge_CPProgress") as CMlGauge);
 				
 				declare Ratio = 0.;
 				if (Net_Payload_PayloadDistance >= CurCPDistance) Ratio = 1.;
-				else Ratio = ML::Clamp((PrevAnimDistance - AllSegmentsDist) / (CurCPDistance - AllSegmentsDist),	0., 1.
-				);
+				else Ratio = ML::Clamp((PrevAnimDistance - AllSegmentsDist) / (CurCPDistance - AllSegmentsDist), 0., 1.);
 				
 				SetGaugeRatio(Gauge_CPProgress, Ratio);
 				
@@ -1075,14 +1218,12 @@ main() {
 			if (PrevPayloadDistance >= TotalDistance) Quad_EmblemRight.Substyle = "#"^Net_Payload_AttackingTeam;
 		}
 		
-		// ---------------------------------- //
 		// Attacking team has changed
 		if (PrevAttackingTeam != Net_Payload_AttackingTeam) {
 			PrevAttackingTeam = Net_Payload_AttackingTeam;
 			UpdateColors = True;
 		}
 		
-		// ---------------------------------- //
 		// Attacking team color changed
 		foreach (I => Team in Teams) {
 			if (I != Net_Payload_AttackingTeam - 1) continue;
@@ -1091,15 +1232,13 @@ main() {
 			PrevAttackingTeamColor = Team.ColorPrimary;
 		}
 		
-		// ---------------------------------- //
 		// Amount of players pushing Payload changed
 		if (PrevPlayersPushingPayload != Net_Payload_NbPlayersPushingPayload) {
 			PrevPlayersPushingPayload = Net_Payload_NbPlayersPushingPayload;
 			if (PrevPlayersPushingPayload > 0) GaugeRatio = 1.;
 			Label_PayloadMarker.SetText(TL::ToText(PrevPlayersPushingPayload));
 		}
-		
-		// ---------------------------------- //
+
 		// Set reversing time limit gauge ratio
 		if (PrevPlayersPushingPayload <= 0) {
 			GaugeRatio = 0.;
@@ -1109,11 +1248,17 @@ main() {
 			}
 			else Label_PayloadMarker.SetText("0");
 		}
+
+		// Overtime gauge
+		Frame_OvertimeGauge.Visible = Net_Payload_IsOvertime;
 		
 		// ---------------------------------- //
 		// Reversing time limit gauge
 		if (PrevGaugeRatio != GaugeRatio) {
 			PrevGaugeRatio = GaugeRatio;
+
+			// Overtime gauge
+			SetGaugeRatio(Gauge_OvertimeProgress, GaugeRatio);
 			
 			// ---------------------------------- //
 			// Set ratio
@@ -1149,9 +1294,182 @@ main() {
 			Quad_GaugeL.Colorize = PrevAttackingTeamColor;
 			Quad_GaugeR.Colorize = PrevAttackingTeamColor;
 		}
-		
-		LibManialink_AnimLoop();
+
+		// ---------------------------------- //
+		// Set capture progress visibility
+		CaptureProgressVisible =
+			GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> && Net_Payload_PayloadPosition != <0., 0., 0.> &&
+			ML::Distance(GUIPlayer.Position, Net_Payload_PayloadPosition) <= {{{C_PayloadActivationRadius}}};
+
+		if (PrevCaptureProgressVisible != CaptureProgressVisible) {
+			PrevCaptureProgressVisible = CaptureProgressVisible;
+			Gauge_CaptureProgress.Visible = CaptureProgressVisible;
+			
+			Frame_CaptureProgAnim.RelativePosition.Y = 0.;
+			Label_CaptureProgress.Opacity = 1.;
+			declare PositionY = -2.;
+			declare Opacity = 0.;
+			
+			if (CaptureProgressVisible) {
+				Frame_CaptureProgAnim.RelativePosition.Y = -PositionY;
+				Label_CaptureProgress.Opacity = 0.;
+				PositionY = 0.;
+				Opacity = 1.;
+			}
+			
+			declare Easing = CAnimManager::EAnimManagerEasing::Linear;
+			AnimMgr.Add(Frame_CaptureProgAnim, "<frame pos='0 "^PositionY^"'/>", 125, Easing);
+			AnimMgr.Add(Label_CaptureProgress, "<label opacity='"^Opacity^"' />", 125, Easing);
+			AnimMgr.Add(Quad_CaptureProgIcon, "<quad opacity='"^Opacity^"' />", 125, Easing);
+		}
+
+		// ---------------------------------- //
+		// Display information
+		if (CaptureProgressVisible) {
+			Gauge_CaptureProgress.Color = HsvToRgb(<GUIPlayer.GetLinearHue, 1., 1.>);
+
+			// Checkpoint progress for attackers
+			if (GUIPlayer.CurrentClan == Net_Payload_AttackingTeam) {
+				declare Ratio = 0.;
+				declare PrevDist = 0.;
+
+				foreach (Distance in Net_Payload_CheckpointDistances) {
+					if (PrevDist < Net_Payload_PayloadDistance && Net_Payload_PayloadDistance <= Distance)
+						Ratio = (Net_Payload_PayloadDistance - PrevDist) / (Distance - PrevDist);
+
+					PrevDist = Distance;
+				}
+
+				if (Net_Payload_NbPlayersPushingPayload <= 0) CaptureMesageType = 1;
+				else CaptureMesageType = 2;
+
+				SetGaugeRatio(Gauge_CaptureProgress, Ratio);
+			}
+
+			// Reversing gauge for opponents
+			else {
+				SetGaugeRatio(Gauge_CaptureProgress, 1 - GaugeRatio);
+				CaptureMesageType = 3;
+			}
+		}
+
+		// ---------------------------------- //
+		// Update payload capture message
+		if (PrevCaptureMesageType != CaptureMesageType) {
+			PrevCaptureMesageType = CaptureMesageType;
+			Quad_CaptureProgIcon.ImageUrl = C_CaptureBarImgBase;
+
+			switch (CaptureMesageType) {
+				case 1 : {
+					Label_CaptureProgress.Value = Translate("Payload is stopped");
+					Quad_CaptureProgIcon.ImageUrl ^= "c_goal_capture.dds";
+				}
+				case 2 : {
+					Label_CaptureProgress.Value = Translate("Escorting the Payload");
+					Quad_CaptureProgIcon.ImageUrl ^= "c_goal_shield.dds";
+				}
+				case 3 : {
+					Label_CaptureProgress.Value = Translate("Blocking the Payload");
+					Quad_CaptureProgIcon.ImageUrl ^= "c_goal_lock.dds";
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create manialink for the markers module.
+ *
+ *	@return		The markers manialink.
+ */
+Text CreateManialinkMarkers() {
+	declare R = 9/16.;
+	return """
+<manialink version="2" name="Payload:Markers">
+<stylesheet>
+	<style class="text" halign="center" valign="center2" textsize="0" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
+</stylesheet>
+
+<framemodel id="FrameModel_GoalMarker">
+	<label posn="0 .5" class="text" scale="1.5" textprefix="$t$n" id="Label_MarkerGoalName"/>
+	<quad posn="0 3" sizen="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon"/>
+</framemodel>
+
+<frameinstance modelid="FrameModel_GoalMarker" id="Frame_MarkerPayload" hidden="1" />
+<frameinstance modelid="FrameModel_GoalMarker" id="Frame_MarkerCheckpoint" hidden="1" />
+
+<script><!--
+/**
+ *	Payload: Markers
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+{{{Translations::InjectInManialink(["Payload"])}}}
+{{{ManialinkTools::Functions(["Brightness"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load interface elements
+	declare Frame_MarkerPayload <=> (Page.GetFirstChild("Frame_MarkerPayload") as CMlFrame);
+	declare Label_MarkerPayloadName <=> (Frame_MarkerPayload.GetFirstChild("Label_MarkerGoalName") as CMlLabel);
+	declare Quad_MarkerPayloadIcon <=> (Frame_MarkerPayload.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
+	declare Frame_MarkerCheckpoint <=> (Page.GetFirstChild("Frame_MarkerCheckpoint") as CMlFrame);
+	declare Label_MarkerCheckpointName <=> (Frame_MarkerCheckpoint.GetFirstChild("Label_MarkerGoalName") as CMlLabel);
+	declare Quad_MarkerCheckpointIcon <=> (Frame_MarkerCheckpoint.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
+
+	Label_MarkerPayloadName.Value = Translate("Payload");
+
+	declare CurCheckpointNb = 1;
+
+	declare PrevCheckpointNb = -1;
+	declare PrevAttackingTeam = -1;
+
+	// ---------------------------------- //
+	// Netcode
+	declare netread Real[] Net_Payload_CheckpointDistances for Teams[0];
+	declare netread Real Net_Payload_PayloadDistance for Teams[0];
+	declare netread Integer Net_Payload_AttackingTeam for Teams[0];
+
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
 		yield;
+		if (!PageIsVisible) continue;
+
+		// ---------------------------------- //
+		// Update Checkpoint marker
+		CurCheckpointNb = 1;
+		foreach (Distance in Net_Payload_CheckpointDistances) {
+			if (Net_Payload_PayloadDistance >= Distance) CurCheckpointNb += 1;
+			else break;
+		}
+
+		if (PrevCheckpointNb != CurCheckpointNb) {
+			PrevCheckpointNb = CurCheckpointNb;
+			Label_MarkerCheckpointName.Value = TL::Compose("%1 #"^CurCheckpointNb, ("Checkpoint"));
+		}
+
+		// ---------------------------------- //
+		// Update markers colors
+		if (PrevAttackingTeam != Net_Payload_AttackingTeam) {
+			PrevAttackingTeam = Net_Payload_AttackingTeam;
+			declare Team = ML::Clamp(Net_Payload_AttackingTeam - 1, 0, 1);
+
+			Quad_MarkerPayloadIcon.Colorize = Teams[Team].ColorPrimary;
+			Quad_MarkerCheckpointIcon.Colorize = Teams[1 - Team].ColorPrimary;
+
+			Label_MarkerPayloadName.TextColor = Brightness(Quad_MarkerPayloadIcon.Colorize, 2.);
+			Label_MarkerCheckpointName.TextColor = Brightness(Quad_MarkerCheckpointIcon.Colorize, 2.);
+		}
 	}
 }
 --></script>

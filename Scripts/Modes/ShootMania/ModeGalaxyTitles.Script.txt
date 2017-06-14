@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-06-11            //
+//  script version: 2017-06-14            //
 // -------------------------------------- //
 
 /**
@@ -9,8 +9,8 @@
 
 #Extends "Modes/ShootMania/Base/ModeMatchmaking.Script.txt"
 
-#Const BaseVersion		"2017-06-11"
-#Const BaseScriptName	"ModeGalaxyTitles.Script.txt"
+#Const BaseVersion		"2017-06-14"
+#Const BaseScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
 #Include "Libs/Nadeo/ShootMania/WarmUp2.Script.txt" as WarmUp2
@@ -27,6 +27,7 @@
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
 #Include "Libs/domino54/Translations.Script.txt" as Translations
+#Include "Libs/domino54/Webhook.Script.txt" as Webhook
 #Include "Libs/domino54/WebLayers.Script.txt" as WebLayers
 #Include "Libs/domino54/ShootMania/GalaxyTitles.Script.txt" as GalaxyTitles
 #Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
@@ -58,6 +59,7 @@
 #Setting S_MusicPlaylistURL		""		as "<hidden>" ///< URL of the server custom music playlist file
 #Setting S_EnableMapSelection	True	as "<hidden>" ///< Allow players to choose which map they want to play next
 #Setting S_PodiumTrackDuration	8000	as "<hidden>" ///< Duration of the podium sequence (10 max)
+#Setting S_WebhookURL			""		//as "<hidden>" ///< URL of the webhook to send notifications
 
 /// Clublinks settings
 #Setting S_UsePlayerClublinks	True	as _("Use players clublinks")
@@ -269,6 +271,7 @@ PauseMenu::Load();
 SM::SetupDefaultVisibility();
 Killfeed::Load();
 MapSelection::Load("Eurostile", "Eurostile_Bold");
+Webhook::SetMapSwitching(True);
 
 UIManager.UIAll.OverlayHide321Go = True;
 UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
@@ -362,6 +365,7 @@ TopScores::MatchBegin();
 Interfancy::ClearData();
 GalaxyTitles::ResetAll();
 CupAdmin::StartMap();
+Webhook::SetMapSwitching(False);
 
 // Clear all messages
 UIManager.UIAll.BigMessage = "";
@@ -460,6 +464,7 @@ if (!UsePvPCollisions) GT_NoCollisionsEndTime = StartTime + C_NoCollisionsDurati
 ***
 FakeUsers::Loop(S_NbFakeUsers);
 WebLayers::Update(S_CustomLayersURLs);
+Webhook::Loop(S_WebhookURL);
 Blacklist::Loop(S_CustomBlacklistURL);
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
 CupAdmin::Loop(S_AdminEnableCupMode, S_AdminPauseCompetition, S_AdminCupModeNbMaps, S_AdminCupName);
@@ -936,6 +941,8 @@ if (MM_IsMatchServer()) {
 		MM_MatchToLobby();
 	}
 }
+
+Webhook::SetMapSwitching(True);
 ***
 
 // ---------------------------------- //

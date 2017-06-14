@@ -1,0 +1,340 @@
+// -------------------------------------- //
+//  LIBRARY WEBHOOK by domino54           //
+//  script version: 2017-06-14            //
+// -------------------------------------- //
+
+/**
+ *	Library to send notifications through a webhook. Made
+ *	specifically for Discord chat, not tested with other
+ *	services.
+ */
+
+#Const Version		"2017-07-14"
+#Const ScriptName	"Libs/domino54/Webhook.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibWebhook_AdditionalHeaders	"Content-Type: application/json"
+#Const C_LibWebhook_RequestTimeout		5000
+
+// On player join message
+#Const C_LibWebhook_JoinMsgColor	<.3, .8, .3>
+#Const C_LibWebhook_JoinMsgText		"%1 **%2** joined the server."
+
+// On player leave message
+#Const C_LibWebhook_LeaveMsgColor	<.8, .3, .3>
+#Const C_LibWebhook_LeaveMsgText	"%1 **%2** has left the server."
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text G_LibWebhook_WebhookURL;
+declare CHttpRequest[Integer] G_LibWebhook_PendingRequests;
+declare Integer[] G_LibWebhook_RequestsToDestroy;
+declare Boolean G_LibWebhook_IsMapSwitching;
+
+declare Text G_LibWebhook_PrevLoopWebhookURL;
+declare Integer G_LibWebhook_PrevNbPlayers;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Check if the webhook service is available.
+ *
+ *	@return		True, if the webhook has been set and can push payloads.
+ */
+Boolean Private_WebhookAvailable() {
+	return Http.IsValidUrl(G_LibWebhook_WebhookURL) && Http.SlotsAvailable > 0;
+}
+
+// ---------------------------------- //
+/** Escape characters forbidden in JSON format. May cause issues on large strings.
+ *
+ *	@param	_String		The string to escape forbidden characters.
+ *
+ *	@return		The escaped string.
+ */
+Text Private_Escape(Text _String) {
+	if (_String == "") return "";
+
+	declare ForbiddenCharacters = [
+		"\"" => "\\\"",
+		"\\" => "\\\\",
+		"\n" => "\\n",
+		"\t" => "\\t"
+	];
+	
+	// No need to escape string if any of the forbidden characters doesn't exist
+	declare CharsExist = False;
+	foreach (Char in ForbiddenCharacters) {
+		if (!TL::Find("\"", _String, False, False)) continue;
+		CharsExist = True;
+		break;
+	}
+
+	// Escape characters
+	declare EscapedString = "";
+	for (I, 0, TL::Length(_String) - 1) {
+		declare Char = TL::SubText(_String, I, 1);
+		if (ForbiddenCharacters.existskey(Char)) Char = ForbiddenCharacters[Char];
+		EscapedString ^= Char;
+	}
+	return EscapedString;
+}
+
+// ---------------------------------- //
+/** Send the payload through the webhook.
+ *
+ *	@param	_PayloadBody	Raw body of the payload in JSON format.
+ */
+Void Private_PushPayload(Text _PayloadBody) {
+	if (!Private_WebhookAvailable()) return;
+
+	declare Key = Now;
+	while (G_LibWebhook_PendingRequests.existskey(Key)) Key += 1;
+
+	G_LibWebhook_PendingRequests[Key] = Http.CreatePost(
+		G_LibWebhook_WebhookURL, _PayloadBody,
+		C_LibWebhook_AdditionalHeaders
+	);
+}
+
+// ---------------------------------- //
+/** Format the players count status for a message footer.
+ *
+ *	@return		Raw body of the message in JSON format.
+ */
+Text Private_PlayersCountStatus() {
+	declare PlayersStatus = "Players: "^Players.count^"/"^ServerAdmin.ServerInfo.MaxPlayerCount;
+	if (Spectators.count > 0) PlayersStatus ^= " - Spectators: "^Spectators.count^"/"^ServerAdmin.ServerInfo.MaxSpectatorCount;
+	return PlayersStatus;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Update the current webhook URL.
+ *
+ *	@param	_WebhookURL		The new URL of the webhook.
+ */
+Void SetURL(Text _WebhookURL) {
+	if (!Http.IsValidUrl(_WebhookURL)) return;
+	G_LibWebhook_WebhookURL = _WebhookURL;
+}
+
+// ---------------------------------- //
+/** Compose a message out of several parameters.
+ *
+ *	@param	_Message	Contents of the message. First one is ued as the base.
+ *
+ *	@return		The composed message.
+ */
+Text Compose(Text[] _Message) {
+	if (_Message.count <= 0) return "";
+	if (_Message.count == 1) return _Message[0];
+
+	declare Message = _Message[0];
+	foreach (I => Param in _Message) {
+		if (I == 0) continue;
+		Message = TL::Replace(Message, "%"^I, Param);
+	}
+	return Message;
+}
+
+// ---------------------------------- //
+/** Escape formatting and forbidden JSON characters from a text.
+ *
+ *	@param	_Content	The string to escape.
+ *
+ *	@return		The escaped string.
+ */
+Text Escape(Text _Content) {
+	if (_Content == "") return "";
+	return Private_Escape(TL::StripFormatting(_Content));
+}
+
+// ---------------------------------- //
+/** Convert color vector to an integer.
+ *
+ *	@param	_Color	The color vector to convert.
+ *
+ *	@return		Color represented by an integer.
+ */
+Integer ColorToInt(Vec3 _Color) {
+	if (_Color == <0., 0., 0.>) return 0;
+	declare R = ML::NearestInteger(_Color.X * 255) * 65536;
+	declare G = ML::NearestInteger(_Color.Y * 255) * 256;
+	declare B = ML::NearestInteger(_Color.Z * 255);
+	return R + G + B;
+}
+
+// ---------------------------------- //
+/** Get the current server's name.
+ *
+ *	@return		String containing name of the server.
+ */
+Text GetServerName() { return Escape(ServerAdmin.ServerInfo.ServerName); }
+
+// ---------------------------------- //
+/** Send a raw message.
+ *
+ *	@param	_Message	The message contents.
+ */
+Void SendMessage(Text _Message) {
+	if (!Private_WebhookAvailable() || _Message == "") return;
+	Private_PushPayload("{ \"content\": \""^Escape(_Message)^"\" }");
+}
+
+// ---------------------------------- //
+/** Set if the mode is in map switching process
+ *	to prevent sending unnecessary join notifications.
+ *
+ *	@param	_IsMapSwitching		Whether the map is changing or not.
+ */
+Void SetMapSwitching(Boolean _IsMapSwitching) {
+	G_LibWebhook_IsMapSwitching = _IsMapSwitching;
+}
+
+// ---------------------------------- //
+/** Manage OnPlayerAdded events - join notifications.
+ *
+ *	@param	_Event	The event to proceed.
+ */
+Void OnPlayerAdded(CNod _Event) {
+	if (!Private_WebhookAvailable() || G_LibWebhook_IsMapSwitching || _Event == Null) return;
+	declare CPlayer Player;
+	
+	switchtype (_Event) {
+		// ---------------------------------- //
+		// TrackMania event
+		case CTmModeEvent : {
+			declare Event <=> (_Event as CTmModeEvent);
+			if (Event.Type != CTmModeEvent::EType::OnPlayerAdded || Event.Player == Null) return;
+			Player <=> Event.Player;
+		}
+		// ---------------------------------- //
+		// ShootMania event
+		case CSmModeEvent : {
+			declare Event <=> (_Event as CSmModeEvent);
+			if (Event.Type != CSmModeEvent::EType::OnPlayerAdded || Event.Player == Null) return;
+			Player <=> Event.Player;
+		}
+		// Ignore other classes
+		default : return;
+	}
+
+	// Get the player type
+	declare PlayerType = "Player";
+	if (Player.RequestsSpectate) PlayerType = "Spectator";
+	if (Player.User.IsFakeUser) PlayerType = "Bot";
+
+	// Send message
+	Private_PushPayload("""{
+		"embeds": [{
+			"title": "{{{GetServerName()}}}",
+			"color": {{{ColorToInt(C_LibWebhook_JoinMsgColor)}}},
+			"description": "{{{Escape(Compose([C_LibWebhook_JoinMsgText, PlayerType, Player.User.Name]))}}}",
+			"footer": { "text": "{{{Private_PlayersCountStatus()}}}" }
+		}]
+	}""");
+}
+
+// ---------------------------------- //
+/** Manage OnPlayerRemoved events - leave notifications.
+ *
+ *	@param	_Event	The event to proceed.
+ */
+Void OnPlayerRemoved(CNod _Event) {
+	if (!Private_WebhookAvailable() || G_LibWebhook_IsMapSwitching || _Event == Null) return;
+	declare CUser User;
+	
+	switchtype (_Event) {
+		// ---------------------------------- //
+		// TrackMania event
+		case CTmModeEvent : {
+			declare Event <=> (_Event as CTmModeEvent);
+			if (Event.Type != CTmModeEvent::EType::OnPlayerRemoved || Event.User == Null) return;
+			User <=> Event.User;
+		}
+		// ---------------------------------- //
+		// ShootMania event
+		case CSmModeEvent : {
+			declare Event <=> (_Event as CSmModeEvent);
+			if (Event.Type != CSmModeEvent::EType::OnPlayerRemoved || Event.User == Null) return;
+			User <=> Event.User;
+		}
+		// Ignore other classes
+		default : return;
+	}
+
+	// Get the player type
+	declare PlayerType = "Player";
+	if (User.RequestsSpectate) PlayerType = "Spectator";
+	if (User.IsFakeUser) PlayerType = "Bot";
+
+	// Send message
+	Private_PushPayload("""{
+		"embeds": [{
+			"title": "{{{GetServerName()}}}",
+			"color": {{{ColorToInt(C_LibWebhook_LeaveMsgColor)}}},
+			"description": "{{{Escape(Compose([C_LibWebhook_LeaveMsgText, PlayerType, User.Name]))}}}",
+			"footer": { "text": "{{{Private_PlayersCountStatus()}}}" }
+		}]
+	}""");
+}
+
+// ---------------------------------- //
+/// Manage all requests and connection notifications.
+Void Loop() {
+	// ---------------------------------- //
+	// Send join and leave messages
+	foreach (Event in PendingEvents) {
+		OnPlayerAdded(Event);
+		OnPlayerRemoved(Event);
+	}
+
+	// ---------------------------------- //
+	// Destroy finished and timed-out request.
+	foreach (RequestStartTime => Request in G_LibWebhook_PendingRequests) {
+		if (G_LibWebhook_RequestsToDestroy.exists(RequestStartTime)) continue;
+
+		if (Request.IsCompleted || Now > RequestStartTime + C_LibWebhook_RequestTimeout)
+			G_LibWebhook_RequestsToDestroy.add(RequestStartTime);
+	}
+
+	while (G_LibWebhook_RequestsToDestroy.existskey(0)) {
+		declare RequestStartTime = G_LibWebhook_RequestsToDestroy[0];
+		log(G_LibWebhook_PendingRequests[RequestStartTime].Result);
+		Http.Destroy(G_LibWebhook_PendingRequests[RequestStartTime]);
+
+		declare Boolean Removed;
+		Removed = G_LibWebhook_PendingRequests.removekey(RequestStartTime);
+		Removed = G_LibWebhook_RequestsToDestroy.removekey(0);
+	}
+}
+
+// ---------------------------------- //
+/** Overload Loop(): dynamically change webhook URL.
+ *
+ *	@param	_WebhookURL		Current URL of the webhook.
+ */
+Void Loop(Text _WebhookURL) {
+	Loop();
+
+	if (G_LibWebhook_PrevLoopWebhookURL != _WebhookURL) {
+		G_LibWebhook_PrevLoopWebhookURL = _WebhookURL;
+		SetURL(_WebhookURL);
+	}
+}

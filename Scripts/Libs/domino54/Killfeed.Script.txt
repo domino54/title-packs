@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY KILLFEED by domino54          //
-//  script version: 2016-12-12            //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 /**
@@ -10,8 +10,8 @@
  *	and display eliminations with weapon icon and assists.
  */
 
-#Const Version		"2016-12-12"
-#Const ScriptName	"Killfeed.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Libs/domino54/Killfeed.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
@@ -23,22 +23,26 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_LibKillfeed_DefaultWidgetPosn		<159., 89.>
-#Const C_LibKillfeed_DefaultSizeVertical	5.
-#Const C_LibKillfeed_MinimumSizeVertical	3.
-#Const C_LibKillfeed_DefaultTextScale		.85
-#Const C_LibKillfeed_MinimumTextScale		.5
-#Const C_LibKillFeed_NoticeElementsSpacing	1.
-
-#Const C_LibKillfeed_NotificationLifetime	5000
-#Const C_LibKillfeed_MaxNbNotifications		10
+#Const C_LibKillfeed_DefaultWidgetPosn		<159., 89.>	///< Default position of the killfeed notifications tray.
+#Const C_LibKillfeed_DefaultSizeVertical	5.		///< Default height of the notice.
+#Const C_LibKillfeed_MinimumSizeVertical	3.		///< Minimum height of the notice.
+#Const C_LibKillfeed_DefaultTextScale		.85		///< Default text size of the notice.
+#Const C_LibKillfeed_MinimumTextScale		.5		///< Minimum text size of the notice.
+#Const C_LibKillFeed_NoticeElementsSpacing	1.		///< Space between notice elements.
+#Const C_LibKillFeed_NoticeColorDefault		<0., 0., 0.>	///< Notice color for normal notices
+#Const C_LibKillFeed_NoticeColorCurPlayer	<.5, 0., 0.>	///< Notice color for spectated player notices
+#Const C_LibKillFeed_NoticeColorConnection	<0., .5, 0.>	///< Notice color for player connection
+#Const C_LibKillfeed_NotificationLifetime	5000	///< Duration before notice fades out.
+#Const C_LibKillfeed_MaxNbNotifications		10		///< Total amount of available notifications slots.
+#Const C_LibKillfeed_ComposedMessageTrigger	"*LibTranslations*"
 
 #Const C_LibKillfeed_DefaultWeaponsIcons [
 	0 => "file://Media/Manialinks/ShootMania/Common/ShieldWhite.dds",
 	1 => "file://Media/Manialinks/ShootMania/Common/LaserWhite.dds",
 	2 => "file://Media/Manialinks/ShootMania/Common/RocketWhite.dds",
 	3 => "file://Media/Manialinks/ShootMania/Common/NucleusWhite.dds",
-	5 => "file://Media/Manialinks/ShootMania/Common/ArrowWhite.dds"
+	5 => "file://Media/Manialinks/ShootMania/Common/ArrowWhite.dds",
+	6 => "file://Media/Manialinks/ShootMania/Common/RocketWhite.dds"
 ]
 
 // ---------------------------------- //
@@ -141,6 +145,7 @@ declare netread Text[][Integer] Net_LibKillfeed_Notifications for Teams[0];
 declare netread Integer Net_LibKillfeed_LastUpdateTime for Teams[0];
 
 declare LastUpdateTime = -1;
+declare PrevGUIPlayerId = NullId;
 ***
 
 // ---------------------------------- //
@@ -148,6 +153,18 @@ declare LastUpdateTime = -1;
 // ---------------------------------- //
 ***Yield***
 ***
+// ---------------------------------- //
+// Trigger notices update on GUIPlayer change
+if (GUIPlayer == Null) {
+	if (PrevGUIPlayerId != NullId) {
+		PrevGUIPlayerId = NullId;
+		LastUpdateTime = -1;
+	}
+} else if (PrevGUIPlayerId != GUIPlayer.Id) {
+	PrevGUIPlayerId = GUIPlayer.Id;
+	LastUpdateTime = -1;
+}
+
 // ---------------------------------- //
 // Update notices
 if (LastUpdateTime != Net_LibKillfeed_LastUpdateTime) {
@@ -211,8 +228,24 @@ G_NbGhostsInCurrentTick = 0;
 // Functions
 // ---------------------------------- //
 
-{{{ManialinkTools::Functions(["ComputeWidth", "Brightness"])}}}
+{{{ManialinkTools::Functions(["ComputeWidth", "Brightness", "HsvToRgb"])}}}
 {{{Translations::InsertToManialink(G_LibKillfeed_PreloadedTranslations)}}}
+
+// ---------------------------------- //
+/** Get a player from their login.
+ *
+ *	@param	_Login		Login of the player to get.
+ *
+ *	@return		Player with the given login (if found).
+ */
+CPlayer GetPlayer(Text _Login) {
+	if (_Login == "") return Null;
+	foreach (Player in Players) {
+		if (Player.User.Login != _Login) continue;
+		return Player;
+	}
+	return Null;
+}
 
 // ---------------------------------- //
 /** Remove color from nickname
@@ -242,106 +275,123 @@ Text RemoveColor(Text _Name) {
 }
 
 // ---------------------------------- //
-/** Get color of the player
+/** Get the color of a player.
  *
- *	@param	_Login		Login of the player to get color
+ *	@param	_Login		Login of the player to get their color.
  *
- *	@return		Player color (if exists)
+ *	@return		The player's color (white if not found).
  */
 Vec3 GetColor(Text _Login) {
 	declare Color = <1., 1., 1.>;
-	foreach (Player in Players) if (Player.User.Login == _Login) {
-		if (Player.CurrentClan > 0) Color = Brightness(Teams[Player.CurrentClan - 1].ColorPrimary, 2.);
-		// else Color = Brightness(Player.User.Color, 2.);
+	if (_Login == "") return Color;
+
+	declare Player <=> GetPlayer(_Login);
+	if (Player == Null) return Color;
+
+	switchtype (Player) {
+		case CSmPlayer : {
+			declare SmPlayer <=> (Player as CSmPlayer);
+			Color = HsvToRgb(<SmPlayer.GetLinearHue, 1., 1.>); ///< Proof ShootMania is better lol
+		}
+		case CTmMlPlayer : {
+			declare TmPlayer <=> (Player as CTmMlPlayer);
+			if (!Teams.existskey(TmPlayer.CurrentClan - 1)) Color = TmPlayer.User.Color;
+			else Color = Teams[TmPlayer.CurrentClan - 1].ColorPrimary;
+		}
+		default : return Color; ///< CWTFPlayer
 	}
-	return Color;
+
+	return Brightness(Color, 2.);
 }
 
 // ---------------------------------- //
-/** Get name of the player
+/** Get the name of a player.
  *
- *	@param	_Login		Login of the player to get name
+ *	@param	_Login		Login of the player to get their name.
  *
- *	@return		Player nickname (if exists)
+ *	@return		The player's name (or login if not found).
  */
 Text GetNickname(Text _Login) {
 	if (_Login == "") return "";
-	foreach (Player in Players) if (Player.User.Login == _Login) {
+	foreach (Player in Players) {
+		if (Player.User.Login != _Login) continue;
 		declare Nickname = Player.User.Name;
-		if (Player.CurrentClan != 0) {
-			// Nickname = RemoveColor(Nickname);
-			Nickname = "$"^TL::ColorToText(GetColor(_Login))^Nickname;
-		}
-		return Nickname;
+		// Nickname = RemoveColor(Nickname);
+		return "$"^TL::ColorToText(GetColor(_Login))^Nickname;
 	}
 	return _Login;
 }
 
 // ---------------------------------- //
-/** Configure notice model
+/** Configure the notice model.
  *
- *	@param	_Frame			Notice frame model
- *	@param	_NoticeData		Data of the notice
- *	@param	_Index			Id of the notice model
- *	@param	_Show			Trigger show animation
+ *	@param	_Frame			Frame used to configure the notice.
+ *	@param	_NoticeData		Array of all the information about the notice.
+ *	@param	_Index			Order of the notice model in killfeed frame.
+ *	@param	_SlideAnim		If True, "sliding" animation of a new notice is played.
  */
-Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _Show) {
+Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _SlideAnim) {
 	if (_Frame == Null || _NoticeData.count <= 0) return;
+
 	// ---------------------------------- //
 	// Load notice elements
-	declare Quad_NoticeBg	<=> (_Frame.GetFirstChild("Quad_NoticeBg") as CMlQuad);
-	declare Quad_NoticeIcon	<=> (_Frame.GetFirstChild("Quad_NoticeIcon") as CMlQuad);
+	declare Quad_NoticeBackground	<=> (_Frame.GetFirstChild("Quad_NoticeBg") as CMlQuad);
+	declare Quad_NoticeIcon			<=> (_Frame.GetFirstChild("Quad_NoticeIcon") as CMlQuad);
 	declare Label_PrimaryText		<=> (_Frame.GetFirstChild("Label_PrimaryText") as CMlLabel);
 	declare Label_SecondaryText		<=> (_Frame.GetFirstChild("Label_SecondaryText") as CMlLabel);
 	declare Label_ReplacementText	<=> (_Frame.GetFirstChild("Label_ReplacementText") as CMlLabel);
 	declare TotalLength = C_NoticeElementsSpacing / 2;
 	
-	// Set frame visibility and position
+	// Init frame visibility and position
 	_Frame.Show();
-	_Frame.RelativePosition_V3.Y = _Index * (Quad_NoticeBg.Size.Y + .5);
+	_Frame.RelativePosition_V3.Y = _Index * (Quad_NoticeBackground.Size.Y + .5);
 	
 	// ---------------------------------- //
 	// Obtain notice data
-	declare TextPrimary = "";
-	declare TextSecondary = "";
-	declare TextReplacement = "";
-	declare TextAssistant = "";
+	declare TextPrimary = "";		///< Victim name / Composed message trigger
+	declare TextSecondary = "";		///< Shooter name (+ Assistant name)
+	declare TextReplacement = "";	///< Icon URL or replacement text
+	declare TextAssistant = "";		///< Assistant name
 	
 	if (_NoticeData.existskey(0) && _NoticeData[0] != "") TextPrimary = _NoticeData[0];
 	if (_NoticeData.existskey(1) && _NoticeData[1] != "") TextReplacement = _NoticeData[1];
 	if (_NoticeData.existskey(2) && _NoticeData[2] != "") TextSecondary = _NoticeData[2];
 	if (_NoticeData.existskey(3) && _NoticeData[3] != "") TextAssistant = _NoticeData[3];
 	
-	declare IsComposedTranslation = TextPrimary == "*LibTranslations*";
+	declare IsMessageToCompose = TextPrimary == "{{{C_LibKillfeed_ComposedMessageTrigger}}}";
 	
-	// ---------------------------------- //
-	// Set primary notice text
+	/**
+	 *	Notice primary text.
+	 *	Displays victim's colorized name or a composed message.
+	 *	This label should be always visible.
+	 */
 	Label_PrimaryText.Visible = TextPrimary != "";
-	Label_PrimaryText.SetText("");
+	Label_PrimaryText.Value = "";
 	
 	if (Label_PrimaryText.Visible) {
-		declare Text LabelText;
-		
-		// Prepare composed message
-		if (IsComposedTranslation) {
+		// Display the victim's name
+		if (!IsMessageToCompose) Label_PrimaryText.Value = GetNickname(TextPrimary);
+
+		// Show a composed message
+		else {
 			declare Composes = _NoticeData;
 			declare Removed = Composes.removekey(0);
-			LabelText = Translate(Composes);
+			Label_PrimaryText.Value = Translate(Composes);
 		}
-		
-		// Set nickname
-		else LabelText = GetNickname(TextPrimary);
-		
-		Label_PrimaryText.SetText(TL::GetTranslatedText(LabelText));
 		
 		TotalLength += C_NoticeElementsSpacing / 2;
 		Label_PrimaryText.RelativePosition_V3.X = -TotalLength;
 		TotalLength += ComputeWidth(Label_PrimaryText) + C_NoticeElementsSpacing / 2;
 	}
 	
-	// ---------------------------------- //
-	// Set notice icon
-	Quad_NoticeIcon.Visible = Http.IsValidUrl(TextReplacement) && !IsComposedTranslation;
+	/**
+	 *	Notice icon image.
+	 *	Shows icon of the weapon, which lead to victim's elimination.
+	 *	If icon URL is not valid, raw text is shown.
+	 */
+	Quad_NoticeIcon.Visible = Http.IsValidUrl(TextReplacement) && !IsMessageToCompose;
+	Quad_NoticeIcon.ImageUrl = "";
+
 	if (Quad_NoticeIcon.Visible) {
 		Quad_NoticeIcon.ImageUrl = TextReplacement;
 		
@@ -350,64 +400,70 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 		TotalLength += Quad_NoticeIcon.Size.X + C_NoticeElementsSpacing / 2;
 	}
 	
-	// ---------------------------------- //
-	// Set notice replacement text
-	Label_ReplacementText.Visible = !Quad_NoticeIcon.Visible && TextReplacement != "" && !IsComposedTranslation;
-	Label_ReplacementText.SetText("");
+	/**
+	 *	Notice replacement text.
+	 *	This label is shown only if there was an icon URL specified, but it was not valid.
+	 */
+	Label_ReplacementText.Visible = !Quad_NoticeIcon.Visible && TextReplacement != "" && !IsMessageToCompose;
+	Label_ReplacementText.Value = "";
 	
 	if (Label_ReplacementText.Visible) {
-		Label_ReplacementText.SetText(Translate(TextReplacement));
+		Label_ReplacementText.Value = Translate(TextReplacement);
 		
 		TotalLength += C_NoticeElementsSpacing / 2;
 		Label_ReplacementText.RelativePosition_V3.X = -TotalLength;
 		TotalLength += ComputeWidth(Label_ReplacementText) + C_NoticeElementsSpacing / 2;
 	}
 	
-	// ---------------------------------- //
-	// Secondary notice text (mostly shooter name)
-	Label_SecondaryText.Visible = TextSecondary != "" && TextSecondary != TextPrimary && !IsComposedTranslation;
-	Label_SecondaryText.SetText("");
-	
+	/**
+	 *	Notice primary text.
+	 *	Displays shooter's colorized name (with assistant's colorized name, if specified).
+	 *	This label is visible only if there is a shooter and they're different from the victim.
+	 */
+	Label_SecondaryText.Visible = TextSecondary != "" && TextSecondary != TextPrimary && !IsMessageToCompose;
+	Label_SecondaryText.Value = "";
+
 	if (Label_SecondaryText.Visible) {
-		declare Text LabelText;
-		
-		// Elimination with assistance
-		if (TextAssistant != "")
-			LabelText = TL::Compose(
-				"$fff$<%1$z$> + $<%2$z$>", GetNickname(TextSecondary), GetNickname(TextAssistant)
-			);
-		
-		// Solo elimination
-		else LabelText = GetNickname(TextSecondary);
-			
-		Label_SecondaryText.SetText(TL::GetTranslatedText(LabelText));
+		// Only the shooter's name
+		if (TextAssistant == "") Label_SecondaryText.Value = GetNickname(TextSecondary);
+
+		// Notice with both shooter and the assistant
+		else {
+			declare NoticeText = "$fff$<%1$z$> + $<%2$z$>";
+			NoticeText = TL::Replace(NoticeText, "%1", GetNickname(TextSecondary));
+			NoticeText = TL::Replace(NoticeText, "%2", GetNickname(TextAssistant));
+			Label_SecondaryText.Value = NoticeText;
+		}
 		
 		TotalLength += C_NoticeElementsSpacing / 2;
 		Label_SecondaryText.RelativePosition_V3.X = -TotalLength;
 		TotalLength += ComputeWidth(Label_SecondaryText) + C_NoticeElementsSpacing / 2;
 	}
 	
-	// ---------------------------------- //
-	// Set notice background size
+	// Adjust the notice background size
 	TotalLength += C_NoticeElementsSpacing / 2;
-	Quad_NoticeBg.Size.X = TotalLength;
+	Quad_NoticeBackground.Size.X = TotalLength;
 	
 	// ---------------------------------- //
-	// Set notice background color
-	declare IsLocalUser =
-		TL::Find(LocalUser.Name, Label_PrimaryText.Value, False, False) ||
-		TL::Find(LocalUser.Name, Label_SecondaryText.Value, False, False);
-	
+	// Notice background color for special notices
 	declare IsNewConnection =
 		TL::Find("joined the game", TextPrimary, False, False) ||
 		TL::Find("left the game", TextPrimary, False, False);
+
+	declare IsCurrentPlayer = !IsNewConnection && GUIPlayer != Null && (
+		TextPrimary == GUIPlayer.User.Login ||
+		TextSecondary == GUIPlayer.User.Login ||
+		TextAssistant == GUIPlayer.User.Login ||
+		TL::Find(TextPrimary, GUIPlayer.User.Name, False, False) ||
+		TL::Find(TextReplacement, GUIPlayer.User.Name, False, False)
+	);
 	
 	if (IsNewConnection)
-		Quad_NoticeBg.BgColor = <0., .5, 0.>;
-	else if (IsLocalUser)
-		Quad_NoticeBg.BgColor = <.5, 0., 0.>;
+		Quad_NoticeBackground.BgColor = {{{C_LibKillFeed_NoticeColorConnection}}};
+	else if (IsCurrentPlayer)
+		Quad_NoticeBackground.BgColor = {{{C_LibKillFeed_NoticeColorCurPlayer}}};
 	else
-		Quad_NoticeBg.BgColor = Vec3;
+		Quad_NoticeBackground.BgColor = {{{C_LibKillFeed_NoticeColorDefault}}};
 	
 	// ---------------------------------- //
 	// Align frame to the left edge
@@ -416,7 +472,7 @@ Void SetupNotice(CMlFrame _Frame, Text[] _NoticeData, Integer _Index, Boolean _S
 	
 	// ---------------------------------- //
 	// New notice animation
-	if (_Show) {
+	if (_SlideAnim) {
 		declare EdgeDiff = 160. - ML::Abs({{{C_LibKillfeed_DefaultWidgetPosn.X}}});
 		declare TargetPosX = 0.;
 		
@@ -701,7 +757,7 @@ Void SendNotice(Text[] _Composes) {
 	if (_Composes.count <= 0) return;
 	if (_Composes.count == 1) SendNotice(_Composes[0]);
 	
-	declare NoticeData = ["*LibTranslations*"];
+	declare NoticeData = [C_LibKillfeed_ComposedMessageTrigger];
 	foreach (I => Compose in _Composes) {
 		if (I > 5) break;
 		NoticeData.add(Compose);
@@ -847,18 +903,18 @@ Void Load() {
 Void Build() { Layers::Update("LibKillfeed:Notices", Private_CreateManialinkKillfeed()); }
 
 // ---------------------------------- //
+/** Set if the mode is in map switching process
+ *	to prevent sending unnecessary join notifications.
+ *
+ *	@param	_IsMapSwitching		Whether the map is changing or not.
+ */
+Void SetMapSwitching(Boolean _IsMapSwitching) {
+	G_LibKillfeed_IsMapSwitching = _IsMapSwitching;
+}
+
+// ---------------------------------- //
 /// Loop
 Void Loop() {
-	// ---------------------------------- //
-	// Don't send join notice when map is switching
-	if (G_LibKillfeed_PrevNbPlayers != Players.count) {
-		G_LibKillfeed_IsMapSwitching = (
-			(G_LibKillfeed_PrevNbPlayers <= 0 && Players.count > 0) ||
-			(G_LibKillfeed_PrevNbPlayers > 0 && Players.count <= 0)
-		);
-		G_LibKillfeed_PrevNbPlayers = Players.count;
-	}
-	
 	// ---------------------------------- //
 	// Send join and leave messages
 	foreach (Event in PendingEvents) {

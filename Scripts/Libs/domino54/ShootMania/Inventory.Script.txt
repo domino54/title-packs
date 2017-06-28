@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2017-05-07            //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 /**
@@ -10,8 +10,8 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2017-04-29"
-#Const ScriptName	"Inventory.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Libs/domino54/ShootMania/Inventory.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
@@ -875,13 +875,13 @@ Void DestroyItemSlot(CSmPlayer _Player, Text _ItemName) {
 	// Completely remove the item from a player's inventory.
 	declare Boolean Removed;
 	Removed = LibInventory_PlayerItems.remove(_ItemName);
-	LibInventory_PlayerItemHotkey.removekey(_ItemName);
-	LibInventory_PlayerItemIcon.removekey(_ItemName);
-	LibInventory_PlayerItemAmount.removekey(_ItemName);
-	LibInventory_PlayerItemWeaponNum.removekey(_ItemName);
-	LibInventory_PlayerItemCooldownStart.removekey(_ItemName);
-	LibInventory_PlayerItemCooldownDuration.removekey(_ItemName);
-	LibInventory_PlayerActiveItems.remove(_ItemName);
+	Removed = LibInventory_PlayerItemHotkey.removekey(_ItemName);
+	Removed = LibInventory_PlayerItemIcon.removekey(_ItemName);
+	Removed = LibInventory_PlayerItemAmount.removekey(_ItemName);
+	Removed = LibInventory_PlayerItemWeaponNum.removekey(_ItemName);
+	Removed = LibInventory_PlayerItemCooldownStart.removekey(_ItemName);
+	Removed = LibInventory_PlayerItemCooldownDuration.removekey(_ItemName);
+	Removed = LibInventory_PlayerActiveItems.remove(_ItemName);
 	
 	// Organize player inventory
 	Organize(_Player);
@@ -976,6 +976,23 @@ Integer GetItemAmount(CSmPlayer _Player, Text _ItemName) {
 	declare Integer[Text] LibInventory_PlayerItemAmount for _Player;
 	if (LibInventory_PlayerItemAmount.existskey(_ItemName)) return ML::Max(-1, LibInventory_PlayerItemAmount[_ItemName]);
 	return -1;
+}
+
+// ---------------------------------- //
+/** Get the action key of an item slot.
+ *
+ *	@param	_Player		The player to get the given item hotkey.
+ *	@param	_ItemName	Name of the item to get hotkey.
+ *
+ *	@return		The hotkey of the item slot.
+ */
+CSmModeEvent::EActionInput GetSlotHotkey(CSmPlayer _Player, Text _ItemName) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return CSmModeEvent::EActionInput::None;
+	if (!ItemExists(_Player, _ItemName)) return CSmModeEvent::EActionInput::None;
+	
+	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Player;
+	if (!LibInventory_PlayerItemHotkey.existskey(_ItemName)) return CSmModeEvent::EActionInput::None;
+	return LibInventory_PlayerItemHotkey[_ItemName];
 }
 
 // ---------------------------------- //
@@ -1373,6 +1390,7 @@ Void ResetInventory(CSmPlayer _Player) {
 	declare Integer[Text] LibInventory_PlayerItemWeaponNum for _Player;
 	declare Integer[Text] LibInventory_PlayerItemCooldownStart for _Player;
 	declare Integer[Text] LibInventory_PlayerItemCooldownDuration for _Player;
+	declare Text[] LibInventory_PlayerActiveItems for _Player;
 	
 	LibInventory_PlayerItems.clear();
 	LibInventory_PlayerItemHotkey.clear();
@@ -1381,6 +1399,7 @@ Void ResetInventory(CSmPlayer _Player) {
 	LibInventory_PlayerItemWeaponNum.clear();
 	LibInventory_PlayerItemCooldownStart.clear();
 	LibInventory_PlayerItemCooldownDuration.clear();
+	LibInventory_PlayerActiveItems.clear();
 	
 	// Update interface
 	Private_UpdatePlayerUI(_Player);

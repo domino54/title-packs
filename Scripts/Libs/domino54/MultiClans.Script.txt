@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MULTICLANS by domino54        //
-//  script version: 2017-02-27            //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 /**
@@ -11,8 +11,8 @@
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const	Version		"2017-02-27"
-#Const	ScriptName	"MultiClans.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Libs/domino54/MultiClans.Script.txt"
 
 // ---------------------------------- //
 // Constants
@@ -34,6 +34,7 @@
 // ---------------------------------- //
 // Global varaibles
 // ---------------------------------- //
+declare Boolean G_LibMultiClans_UsePlayersNames;	///< If True, teams with 1 player will use this player's name.
 declare Text[Integer] G_LibMultiClans_TeamsNames;	///< Names of all teams
 declare Vec3[Integer] G_LibMultiClans_TeamsColors;	///< Colors of all teams
 
@@ -87,6 +88,15 @@ Text GetScriptName() { return ScriptName; }
  *	@return		Total amount of clans
  */
 Integer GetClansNbMax() { return C_LibMultiClans_MaxNbTeams; }
+
+// ---------------------------------- //
+/** Set if clans should use players names.
+ *
+ *	@param	_UsePlayersNames	If True, clan with 1 player will use this player's name.
+ */
+Void SetUsePlayersNames(Boolean _UsePlayersNames) {
+	G_LibMultiClans_UsePlayersNames = _UsePlayersNames;
+}
 
 // ---------------------------------- //
 /** Change clan of a player
@@ -188,6 +198,11 @@ Void ResetClanName(Integer _Clan) { SetClanName(_Clan, ""); }
 Text GetClanName(Integer _Clan) {
 	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return "";
 	
+	if (G_LibMultiClans_UsePlayersNames) {
+		declare Text[] ClanPlayers;
+		foreach (Player in Players) if (GetPlayerClan(Player) == _Clan) ClanPlayers.add(Player.User.Name);
+		if (ClanPlayers.count == 1) return ClanPlayers[0];
+	}
 	if (G_LibMultiClans_TeamsNames.existskey(_Clan)) return G_LibMultiClans_TeamsNames[_Clan];
 	if (C_LibMultiClans_DefaultTeamsNames.existskey(_Clan - 1)) return C_LibMultiClans_DefaultTeamsNames[_Clan - 1];
 	return "Team #"^_Clan;

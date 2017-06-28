@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-05-12            //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 /**
@@ -16,8 +16,8 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const	Version		"2017-05-12"
-#Const	ScriptName	"Interfancy.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Libs/domino54/ShootMania/Interfancy.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
@@ -191,7 +191,7 @@ Text Private_CreateManialinkGauges() {
 	"Rocket"	=> "{{{C_ImgBase}}}Icons/Rocket.png",
 	"Nucleus"	=> "{{{C_ImgBase}}}Icons/Nucleus.png",
 	"Arrow"		=> "{{{C_ImgBase}}}Icons/Arrow.png",
-	"Missile"	=> "{{{C_ImgBase}}}Icons/Rocket.png",
+	"Missile"	=> "{{{C_ImgBase}}}Icons/Missile.png",
 	"Stamina"	=> "{{{C_ImgBase}}}Icons/Jump.png",
 	"Sprint"	=> "{{{C_ImgBase}}}Icons/Run.png"
 ]
@@ -346,6 +346,8 @@ declare PrevShowReloadBoost = False;
 
 // Init
 G_ModulesIcons = C_ModulesIcons;
+
+ClientUI.OverlayHideGauges = True;
 ***
 
 // ---------------------------------- //
@@ -1802,7 +1804,8 @@ if (Frame_Crosshair.Visible) {
 	// Display weapon loading gauge
 	Frame_CrosshairGauge.Visible = GUIPlayer.CurAmmo < GUIPlayer.CurAmmoUnit || GameTime - GUIPlayer.StartTime < SpawnInvulnerabilityDuration;
 	if (Frame_CrosshairGauge.Visible) {
-		declare Ratio = ML::ToReal(GUIPlayer.CurAmmo) / GUIPlayer.CurAmmoUnit;
+		declare Ratio = 0.;
+		if (GUIPlayer.CurAmmoUnit > 0) Ratio = ML::ToReal(GUIPlayer.CurAmmo) / GUIPlayer.CurAmmoUnit;
 
 		// Show gauge also while recently spawned player is invincible
 		if (GameTime - GUIPlayer.StartTime < SpawnInvulnerabilityDuration)
@@ -1946,7 +1949,6 @@ Text GetScriptName() { return ScriptName; }
 Void SetModuleVisibility(Text _ModuleName, Boolean _Visible) {
 	if (Private_ModuleIsLoaded(_ModuleName)) {
 		switch (_ModuleName) {
-			case "Gauges"		: UIManager.UIAll.OverlayHideGauges = True;
 			case "Countdown"	: UIManager.UIAll.OverlayHideCountdown = True;
 			case "SpecInfo"		: UIManager.UIAll.OverlayHideSpectatorInfos = True;
 			case "321Go"		: UIManager.UIAll.OverlayHide321Go = True;

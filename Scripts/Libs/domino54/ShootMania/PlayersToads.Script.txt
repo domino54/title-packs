@@ -1,0 +1,841 @@
+// -------------------------------------- //
+//  LIBRARY PLAYERS TOADS by domino54     //
+//  script version: 2017-06-28            //
+// -------------------------------------- //
+
+/**
+ *	Library used to manage Toad companions for the players.
+ *	Players can have one Toad to assist them during the
+ *	match. Toad is added to a player's inventory, where
+ *	they can summon it or destory it.
+ */
+
+#Const Version		"2017-06-28"
+#Const ScriptName	"Libs/domino54/ShootMania/PlayersToads.Script.txt"
+
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Color.Script.txt" as Color
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/MultiClans.Script.txt" as Clans
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+#Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
+#Const C_LibPlayersToads_ToadModelName		"Characters\\ToadSample.Item.Gbx"
+#Const C_LibPlayersToads_GUILayerId			"LibPlayersToads:Status"
+#Const C_LibPlayersToads_InventoryItemId	"LibPlayersToads_Toad"
+#Const C_LibPlayersToads_DefaultActionInput	CSmModeEvent::EActionInput::Consumable2
+#Const C_LibPlayersToads_DefaultCooldown	10000	///< Default cooldown after Toad destruction.
+#Const C_LibPlayersToads_NbGaugesInModel	10		///< Amount of gauges in a single gauge widget.
+#Const C_LibPlayersToads_GaugeTotalLength	36.		///< Length of a widget's gauge bar.
+#Const C_LibPlayersToads_GaugeSpacingWidth	.5		///< Spaceing between smaller gauges in the widget.
+#Const C_LibPlayersToads_ToadInfoPos		<155., -48.>
+#Const C_LibPlayersToads_ToadShootPeriod	1000	///< Time between each shot of the Toad. Depends on AmmoGain.
+#Const C_LibPlayersToads_ItemSearchRadius	24.		///< Sphere, within which the Toad will search for items to pick.
+#Const C_LibPlayersToads_ItemSearchPeriod	500		///< Time between each object search of the Toad.
+#Const C_LibPlayersToads_TargetSearchPeriod	500		///< Time between each potential enemy search of the Toad.
+#Const C_LibPlayersToads_TgtHeightDiffMax	4.		///< Maximum height difference between Toad and a potential target.
+#Const C_LibPlayersToads_ToadAggroRadius	24.		///< Toad's aggressivity radius. Will searh for targets within this sphere.
+#Const C_LibPlayersToads_ToadDisengageDist	16.		///< Distance after aggro sphere the target will be discarded.
+#Const C_LibPlayersToads_ToadAccuracy		.875
+#Const C_LibPlayersToads_ToadArmorMax		300
+#Const C_LibPlayersToads_ToadSpeedPower		.875
+#Const C_LibPlayersToads_ToadAmmoGain		1.
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident G_LibPlayersToads_ToadModelId;		///< ID of the Toad item model.
+declare Ident[] G_LibPlayersToads_CreatedToads;		///< IDs of the Toads created by the library.
+declare Integer G_LibPlayersToads_ToadCooldown;		///< Cooldown before new Toad can be placed after destruction.
+declare Boolean G_LibPlayersToads_AutoDestroyToads;	///< Automatically destroy Toads.
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the Toad intormation.
+ *
+ *	@return		The Toad information mnaialink.
+ */
+Text Private_CreateManialinkToadsUI() {
+	declare Gauges = "";
+	for (I, 0, C_LibPlayersToads_NbGaugesInModel - 1)
+		Gauges ^= "<gauge size='0 7.5' valign='center' drawbg='0' drawblockbg='0' id='Gauge_Step#"^I^"' hidden='1' />";
+
+	return """
+<manialink version="3" name="{{{C_LibPlayersToads_GUILayerId}}}">
+<stylesheet>
+	<style class="count" valign="center2" textsize="2.25" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
+	<style class="desc" valign="center2" textsize=".875" textemboss="1" textfont="Eurostile_Bold" />
+</stylesheet>
+<frame halign="center" valign="center" size="320 180">
+
+<frame id="Frame_ToadInfo" pos="{{{C_LibPlayersToads_ToadInfoPos.X + C_LibPlayersToads_GaugeTotalLength + 10^" "^C_LibPlayersToads_ToadInfoPos.Y}}}" rot="0">
+	<quad size="7 7" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/Toad.png" />
+	
+	<label pos="-4 2.5" halign="right" class="count" id="Label_ToadInfoCounter" />
+	<frame id="Frame_GaugeAmmo" pos="-4 -.35" rot="-180">{{{Gauges}}}</frame>
+	
+	<frame pos="-4 -2.5">
+		<label halign="right" class="desc" id="Label_ToadInfoText" />
+		<label halign="right" class="desc" id="Label_ToadInfoGhost" />
+	</frame>
+</frame>
+
+</frame>
+<script><!--
+/**
+ *	{{{C_LibPlayersToads_GUILayerId}}}
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_GaugeTotalLength	{{{C_LibPlayersToads_GaugeTotalLength}}}
+#Const C_GaugeSpacingWidth	{{{C_LibPlayersToads_GaugeSpacingWidth}}}
+#Const C_GaugePositionFix	4.
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_ToadInfo			<=> (Page.GetFirstChild("Frame_ToadInfo") as CMlFrame);
+declare Label_ToadInfoCounter	<=> (Page.GetFirstChild("Label_ToadInfoCounter") as CMlLabel);
+declare Label_ToadInfoText		<=> (Page.GetFirstChild("Label_ToadInfoText") as CMlLabel);
+declare Label_ToadInfoGhost		<=> (Page.GetFirstChild("Label_ToadInfoGhost") as CMlLabel);
+
+declare CMlGauge[] Gauge_ToadInfoBar;
+for (I, 0, {{{C_LibPlayersToads_NbGaugesInModel - 1}}})
+	Gauge_ToadInfoBar.add((Page.GetFirstChild("Gauge_Step#"^I) as CMlGauge));
+
+// ---------------------------------- //
+// Variables
+declare ToadInfoVisible = False;
+declare UpdateToadGauge = True;
+declare CSmPlayer Toad;
+declare DescriptionText = "";
+
+/// Update
+declare PrevToadInfoVisible = False;
+declare PrevInterfaceColor = -1.;
+declare PrevToadArmor = -1;
+declare PrevToadArmorMax = -1;
+declare PrevDescriptionText = "!";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+if (!PageIsVisible) continue;
+
+Frame_ToadInfo.Visible = !IsInGameMenuDisplayed;
+if (!Frame_ToadInfo.Visible) continue;
+
+
+// ---------------------------------- //
+// Update Toad information visibility
+Toad = Null;
+if (GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>) foreach (Player in Players) {
+	if (!Player.IsBot || Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) continue;
+	declare netread Text Net_LibPlayersToads_ToadOwnerLogin for Player;
+	if (Net_LibPlayersToads_ToadOwnerLogin != GUIPlayer.User.Login) continue;
+	Toad <=> Player;
+	break; 
+}
+
+ToadInfoVisible = Toad != Null;
+
+if (PrevToadInfoVisible != ToadInfoVisible) {
+	PrevToadInfoVisible = ToadInfoVisible;
+
+	declare Easing = CAnimManager::EAnimManagerEasing::CircOut;
+	declare Position = <{{{C_LibPlayersToads_ToadInfoPos.X}}}, Frame_ToadInfo.RelativePosition_V3.Y>;
+	
+	if (!ToadInfoVisible) {
+		Easing = CAnimManager::EAnimManagerEasing::CircIn;
+		Position.X += C_GaugeTotalLength + 10.;
+	}
+	
+	AnimMgr.Add(Frame_ToadInfo, "<frame pos='"^Position.X^" "^Position.Y^"' />", 200, Easing);
+}
+
+if (!ToadInfoVisible) continue;
+
+// ---------------------------------- //
+// Update interface color
+if (PrevInterfaceColor != GUIPlayer.GetLinearHue) {
+	PrevInterfaceColor = GUIPlayer.GetLinearHue;
+	declare InterfaceColor = HsvToRgb(<PrevInterfaceColor, 1., 1.>);
+
+	foreach (Gauge in Gauge_ToadInfoBar) Gauge.Color = InterfaceColor;
+	Label_ToadInfoText.TextColor = Brightness(InterfaceColor, 4.);
+	Label_ToadInfoGhost.TextColor = Label_ToadInfoText.TextColor;
+}
+
+// Upate gauge on armor change
+if (PrevToadArmor != Toad.Armor) {
+	PrevToadArmor = Toad.Armor;
+	UpdateToadGauge = True;
+}
+
+// Update gauge on armor max change
+if (PrevToadArmorMax != Toad.ArmorMax) {
+	PrevToadArmorMax = Toad.ArmorMax;
+	UpdateToadGauge = True;
+}
+
+// Update gauge while Toad is spawning
+if (GameTime <= Toad.StartTime) UpdateToadGauge = True;
+
+// ---------------------------------- //
+// Update Toad gauge
+if (UpdateToadGauge) {
+	UpdateToadGauge = False;
+
+	// ---------------------------------- //
+	// Display the Toad summoning progress
+	if (GameTime < Toad.StartTime) {
+		declare Ratio = ML::Clamp(ML::ToReal(GameTime - Toad.StartTime + 3000) / (3000), 0., .99);
+
+		Label_ToadInfoCounter.Value = ML::NearestInteger(Ratio * 100)^"%";
+		SetModuleRatio(Gauge_ToadInfoBar, Ratio, 1);
+		DescriptionText = "Summoning Toad";
+		UpdateToadGauge = True;
+	}
+	// ---------------------------------- //
+	// Show the current player's Toad's armor
+	else {
+		declare GaugeRatio = PrevToadArmor / 100.;
+		declare GaugeSlots = PrevToadArmorMax / 100;
+
+		Label_ToadInfoCounter.Value = ML::FloorInteger(GaugeRatio)^"$777/"^GaugeSlots;
+		SetModuleRatio(Gauge_ToadInfoBar, GaugeRatio, GaugeSlots);
+		DescriptionText = "Toad";
+	}
+}
+
+// ---------------------------------- //
+// Update description label
+if (PrevDescriptionText != DescriptionText) {
+	PrevDescriptionText = DescriptionText;
+
+	Label_ToadInfoGhost.Value = Label_ToadInfoText.Value;
+	Label_ToadInfoText.Value = TL::ToUpperCase(Translate(DescriptionText));
+	
+	Label_ToadInfoText.Opacity = 0.;
+	Label_ToadInfoText.RelativePosition_V3.Y = 1.5;
+	Label_ToadInfoGhost.Opacity = 1.;
+	Label_ToadInfoGhost.RelativePosition_V3.Y = 0.;
+	
+	AnimMgr.Add(Label_ToadInfoText, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Label_ToadInfoGhost, "<label pos='0 -1.5' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+}
+***
+
+{{{ManialinkTools::Functions(["Brightness", "SetGaugeRatio", "HsvToRgb"])}}}
+{{{Translations::InjectInManialink(["Toad", "Summoning Toad"])}}}
+
+// ---------------------------------- //
+/** Set module value
+ *
+ *	@param	_Gauges		Array of gauges used by the module
+ *	@param	_Energy		Amount of currently loaded energy
+ *	@param	_Slots		Amount of available energy slots
+ */
+Void SetModuleRatio(CMlGauge[] _Gauges, Real _Energy, Integer _Slots) {
+	declare persistent Persistent_LibInterfancy_ShowGaugesBgs for LocalUser = False;
+	
+	// ---------------------------------- //
+	// Hide gauges if there are no slots
+	if (_Slots <= 0) {
+		foreach (Gauge in _Gauges) Gauge.Visible = False;
+		
+		// There is nothing more to do without slots
+		return;
+	}
+	// ---------------------------------- //
+	// Adjust up to N gauges for slots
+	else if (_Slots <= _Gauges.count) {
+		declare SpacingSizeSub = 0.;
+		if (_Slots >= 2) SpacingSizeSub = C_GaugeSpacingWidth * (_Slots - 1) / _Slots;
+		declare GaugeSlotSize = C_GaugeTotalLength / _Slots + C_GaugePositionFix - SpacingSizeSub;
+		
+		foreach (I => Gauge in _Gauges) {
+			Gauge.Visible = I <= _Slots - 1;
+			if (!Gauge.Visible) continue;
+			
+			Gauge.Size.X = GaugeSlotSize;
+			Gauge.RelativePosition_V3.X = (GaugeSlotSize - C_GaugePositionFix) * I - C_GaugePositionFix / 2;
+			Gauge.DrawBlockBackground = Persistent_LibInterfancy_ShowGaugesBgs;
+			if (I > 0) Gauge.RelativePosition_V3.X += C_GaugeSpacingWidth * I;
+		}
+	}
+	// ---------------------------------- //
+	// Use one gauge for over N slots
+	else {
+		foreach (I => Gauge in _Gauges) {
+			Gauge.Visible = I == 0;
+			if (!Gauge.Visible) continue;
+			
+			Gauge.Size.X = C_GaugeTotalLength + C_GaugePositionFix;
+			Gauge.RelativePosition_V3.X = -C_GaugePositionFix / 2;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Set gauges ratios
+	foreach (I => Gauge in _Gauges) {
+		if (!Gauge.Visible) continue;
+		
+		// Format ratios for gauges until N slots
+		if (_Slots <= _Gauges.count) SetGaugeRatio(Gauge, _Energy - I);
+		
+		// Format ratio for gauge above N slots
+		else SetGaugeRatio(Gauge, _Energy / _Slots);
+	}
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Update player information about their Toad.
+ *
+ *	@param	_Player		The player to update Toad information.
+ */
+Void Private_UpdatePlayerToadInfo(CSmPlayer _Player) {
+	if (_Player == Null) return;
+
+	declare Ident LibPlayersToads_PlayerToadId for _Player;
+	declare Integer LibPlayersToads_ToadCooldownStart for _Player;
+	declare Integer LibPlayersToads_ToadCooldownDuration for _Player;
+
+	Inventory::SetItemIsActive(_Player, C_LibPlayersToads_InventoryItemId, LibPlayersToads_PlayerToadId != NullId);
+	Inventory::SetItemCooldown(
+		_Player, C_LibPlayersToads_InventoryItemId,
+		LibPlayersToads_ToadCooldownStart,
+		LibPlayersToads_ToadCooldownDuration
+	);
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Check if the player has their Toad spawned.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player has their Toad spawned.
+ */
+Boolean HasToadSpawned(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	declare Ident LibPlayersToads_PlayerToadId for _Player;
+	return LibPlayersToads_PlayerToadId != NullId;
+}
+
+// ---------------------------------- //
+/** Get all Toads created by the library.
+ *	/!\ Use for one frame duration only! /!\
+ *
+ *	@return		Toads created by the library.
+ */
+CSmPlayer[] GetToads() {
+	declare CSmPlayer[] LibraryToads;
+	foreach (ToadId in G_LibPlayersToads_CreatedToads) {
+		if (!BotPlayers.existskey(ToadId)) continue;
+		LibraryToads.add(BotPlayers[ToadId]);
+	}
+	return LibraryToads;
+}
+
+// ---------------------------------- //
+/** Check if the Toad belongs to the library.
+ *
+ *	@param	_Toad	The Toad to ckeck.
+ *
+ *	@return		True, if the Toad belongs to the library.
+ */
+Boolean BelongsToLib(CSmPlayer _Toad) {
+	return _Toad != Null && G_LibPlayersToads_CreatedToads.exists(_Toad.Id);
+}
+
+// ---------------------------------- //
+/** Get the Toad of a player.
+ *
+ *	@param	_Player		The player to get their Toad.
+ *
+ *	@return		The player's Toad.
+ */
+CSmPlayer GetPlayerToad(CSmPlayer _Player) {
+	if (_Player == Null || !HasToadSpawned(_Player)) return Null;
+	declare Ident LibPlayersToads_PlayerToadId for _Player;
+	declare ToadId = LibPlayersToads_PlayerToadId;
+	if (BotPlayers.existskey(ToadId)) return BotPlayers[ToadId];
+	return Null;
+}
+
+// ---------------------------------- //
+/** Destroy a Toad.
+ *
+ *	@param	_ToadId		The ID of the Toad to destroy.
+ *	@param	_Cooldown	Time before the player can summon a new Toad.
+ *
+ *	@return		True, if the Toad has been destroyed.
+ */
+Boolean DestroyToad(Ident _ToadId, Integer _Cooldown) {
+	if (_ToadId == NullId || !G_LibPlayersToads_CreatedToads.exists(_ToadId)) return False;
+
+	declare Removed = G_LibPlayersToads_CreatedToads.remove(_ToadId);
+	
+	if (!BotPlayers.existskey(_ToadId)) return True;
+	declare Toad <=> BotPlayers[_ToadId];
+	
+	if (AllPlayers.exists(Toad.Driver.Owner)) {
+		declare Ident LibPlayersToads_PlayerToadId for Toad.Driver.Owner;
+		declare Integer LibPlayersToads_ToadCooldownStart for Toad.Driver.Owner;
+		declare Integer LibPlayersToads_ToadCooldownDuration for Toad.Driver.Owner;
+		LibPlayersToads_PlayerToadId = NullId;
+
+		if (_Cooldown > 0) {
+			LibPlayersToads_ToadCooldownStart = Now;
+			LibPlayersToads_ToadCooldownDuration = _Cooldown;
+		}
+		Private_UpdatePlayerToadInfo(Toad.Driver.Owner);
+	}
+
+	UnspawnPlayer(Toad);
+	DestroyBotPlayer(Toad);
+	return True;
+}
+
+Boolean DestroyToad(Ident _ToadId) {
+	return DestroyToad(_ToadId, 0);
+}
+
+// ---------------------------------- //
+/** Destroy the Toad of a player.
+ *
+ *	@param	_Player		The player to destroy their Toad.
+ *	@param	_Cooldown	Time before the player can summon a new Toad.
+ *
+ *	@return		True, if the Toad has been destroyed.
+ */
+Boolean DestroyToad(CSmPlayer _Player, Integer _Cooldown) {
+	if (_Player == Null || !HasToadSpawned(_Player)) return False;
+
+	declare Ident LibPlayersToads_PlayerToadId for _Player;
+	return DestroyToad(LibPlayersToads_PlayerToadId, _Cooldown);
+}
+
+Boolean DestroyToad(CSmPlayer _Player) {
+	return DestroyToad(_Player, 0);
+}
+
+// ---------------------------------- //
+/// Destroy all Toads creaded by the library.
+Void DestroyAllToads() {
+	while (G_LibPlayersToads_CreatedToads.count > 0) {
+		declare Destroyed = DestroyToad(G_LibPlayersToads_CreatedToads[0]);
+	}
+}
+
+// ---------------------------------- //
+/** Create a Toad under a player.
+ *
+ *	@param	_Player		The player to create their Toad.
+ *
+ *	@return		Created Toad.
+ */
+CSmPlayer CreateToad(CSmPlayer _Player) {
+	if (_Player == Null || HasToadSpawned(_Player)) return Null;
+	if (!Inventory::ItemExists(_Player, C_LibPlayersToads_InventoryItemId)) return Null;
+	if (!Inventory::CooldownIsReady(_Player, C_LibPlayersToads_InventoryItemId)) return Null;
+
+	// Create a Toad
+	declare Toad <=> CreateBotPlayer(G_LibPlayersToads_ToadModelId, _Player.CurrentClan);
+	if (Toad == Null) return Null;
+	G_LibPlayersToads_CreatedToads.add(Toad.Id);
+
+	// ---------------------------------- //
+	// Confifure the Toad
+	Toad.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::IA;
+	Toad.Driver.AttackFilter = CSmPlayerDriver::ESmAttackFilter::AllOpposite;
+	Toad.Driver.TargetsToAvoid.add(_Player);
+	Toad.Driver.TargetMinDistance = 2.;
+	Toad.Driver.AggroRadius = C_LibPlayersToads_ToadAggroRadius;
+	Toad.Driver.ShootRadius = Toad.Driver.AggroRadius;
+	Toad.Driver.DisengageDistance = Toad.Driver.AggroRadius + C_LibPlayersToads_ToadDisengageDist;
+	Toad.Driver.Accuracy = C_LibPlayersToads_ToadAccuracy;
+
+	Toad.ArmorMax = C_LibPlayersToads_ToadArmorMax;
+	Toad.SpeedPower = C_LibPlayersToads_ToadSpeedPower;
+	Toad.AmmoGain = C_LibPlayersToads_ToadAmmoGain;
+	Toad.ForceColor = Color::HsvToRgb(<_Player.GetLinearHue, 1., 1.>);
+	
+	SetPlayerAmmoMax(Toad, CSmMode::EWeapon::Laser, 0);
+	SetPlayerWeapon(Toad, CSmMode::EWeapon::Rocket, False);
+	SetPlayerReloadAllWeapons(Toad, True);
+	Clans::SetPlayerClan(Toad, Clans::GetPlayerClan(_Player));
+
+	// Spawn Toad
+	SpawnBotPlayer(Toad, _Player, Toad.ArmorMax, Vec3, Now + 3000);
+
+	// Bind the Toad to their owner
+	declare Ident LibPlayersToads_PlayerToadId for _Player;
+	LibPlayersToads_PlayerToadId = Toad.Id;
+
+	// Send information about the owner
+	declare netwrite Text Net_LibPlayersToads_ToadOwnerLogin for Toad;
+	Net_LibPlayersToads_ToadOwnerLogin = _Player.Login;
+
+	Private_UpdatePlayerToadInfo(_Player);
+	return Toad;
+}
+
+// ---------------------------------- //
+/** Add the Toad to a player's inventory.
+ *
+ *	@param	_Player			The player to add Toad to their inventory.
+ *	@param	_ActionInput	The button player will have to press to use their Toad.
+ */
+Void AddToInventory(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
+	if (_Player == Null || Inventory::ItemExists(_Player, C_LibPlayersToads_InventoryItemId)) return;
+
+	declare ActionInput = C_LibPlayersToads_DefaultActionInput;
+	if (_ActionInput != CSmModeEvent::EActionInput::None) ActionInput = _ActionInput;
+
+	Inventory::CreateItemSlot(_Player, C_LibPlayersToads_InventoryItemId, ActionInput, -1, "Toad.png");
+	Private_UpdatePlayerToadInfo(_Player);
+}
+
+Void AddToInventory(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	AddToInventory(_Player, C_LibPlayersToads_DefaultActionInput);
+}
+
+// ---------------------------------- //
+/** Remove the Toad from a player's inventory.
+ *
+ *	@param	_Player		The player to remove Toad from inventory.
+ */
+Void RemoveFromInventory(CSmPlayer _Player) {
+	if (_Player == Null || !Inventory::ItemExists(_Player, C_LibPlayersToads_InventoryItemId)) return;
+	Inventory::DestroyItemSlot(_Player, C_LibPlayersToads_InventoryItemId);
+	declare Destroyed = DestroyToad(_Player);
+}
+
+// ---------------------------------- //
+/** Use the Toad in a player's inventory.
+ *
+ *	@param	_Player			The player who is using an inventory item.
+ *	@param	_ActionInput	The key that has been pressed by the player.
+ *
+ *	@return		True, if the action has been processed by the library.
+ */
+Boolean UseActionButton(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
+	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return False;
+	if (!Inventory::ItemExists(_Player, C_LibPlayersToads_InventoryItemId)) return False;
+
+	declare ToadHotkey = Inventory::GetSlotHotkey(_Player, C_LibPlayersToads_InventoryItemId);
+	if (_ActionInput != ToadHotkey) return False;
+
+	if (HasToadSpawned(_Player)) {
+		declare Destroyed = DestroyToad(_Player, G_LibPlayersToads_ToadCooldown);
+	} else {
+		declare Toad <=> CreateToad(_Player);
+	}
+	return True;
+}
+
+// ---------------------------------- //
+/** Completely reset a player.
+ *
+ *	@param	_Player		The player to reset.
+ */
+Void ResetPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	declare Destroyed = DestroyToad(_Player);
+	RemoveFromInventory(_Player);
+
+	declare Ident LibPlayersToads_PlayerToadId for _Player;
+	declare Integer LibPlayersToads_ToadCooldownStart for _Player;
+	declare Integer LibPlayersToads_ToadCooldownDuration for _Player;
+
+	LibPlayersToads_PlayerToadId = NullId;
+	LibPlayersToads_ToadCooldownStart = -1;
+	LibPlayersToads_ToadCooldownDuration = -1;
+
+	Private_UpdatePlayerToadInfo(_Player);
+}
+
+// ---------------------------------- //
+/// Reset all players.
+Void ResetAllPlayers() {
+	foreach (Player in AllPlayers) ResetPlayer(Player);
+}
+
+// ---------------------------------- //
+/** Set the Toad cooldown.
+ *
+ *	@param	_Cooldown	The new cooldown.
+ */
+Void SetCooldown(Integer _Cooldown) {
+	declare Cooldown = _Cooldown;
+	if (Cooldown < 0) Cooldown = C_LibPlayersToads_DefaultCooldown; 
+	G_LibPlayersToads_ToadCooldown = ML::Max(Cooldown, 0);
+}
+
+// ---------------------------------- //
+/** Get the Toad cooldown.
+ *
+ *	@return		Current cooldown value.
+ */
+Integer GetCooldown() {
+	return G_LibPlayersToads_ToadCooldown;
+}
+
+// ---------------------------------- //
+/** Set if the library will automatically destroy Toads.
+ *
+ *	@param	_AutoDestroyToads	Updated setting.
+ */
+Void SetAutoDestroyToads(Boolean _AutoDestroyToads) {
+	G_LibPlayersToads_AutoDestroyToads = _AutoDestroyToads;
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	DestroyAllToads();
+	ResetAllPlayers();
+
+	Layers::Detach(C_LibPlayersToads_GUILayerId);
+	Layers::Destroy(C_LibPlayersToads_GUILayerId);
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+
+	G_LibPlayersToads_ToadModelId = ItemList_Add(C_LibPlayersToads_ToadModelName);
+	SetCooldown(-1);
+	SetAutoDestroyToads(True);
+
+	Layers::Create(C_LibPlayersToads_GUILayerId, Private_CreateManialinkToadsUI());
+	Layers::Attach(C_LibPlayersToads_GUILayerId);
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	// ---------------------------------- //
+	// Manage players
+	foreach (Player in AllPlayers) {
+		// ---------------------------------- //
+		// Destroy Toad if the player has changed their clan
+		declare Toad <=> GetPlayerToad(Player);
+		if (Toad != Null && Toad.CurrentClan != Player.CurrentClan) {
+			declare Destroyed = DestroyToad(Toad.Id);
+		}
+	}
+
+	declare Ident[] ToadsToDestroy;
+
+	// ---------------------------------- //
+	// Manage events
+	foreach (Event in PendingEvents) {
+		if (Event.Shooter == Null) continue;
+
+		foreach (Toad in GetToads()) {
+			if (Event.Shooter == Toad.Driver.Owner) continue;
+			if (Event.Shooter.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || Event.Shooter.Armor <= 0) continue;
+			if (Toad.CurrentClan != 0 && Toad.CurrentClan == Event.Shooter.CurrentClan) continue;
+			if (Clans::AreTeammates(Event.Shooter, Toad)) continue;
+			if (ML::Abs(Event.Shooter.Position.Y - Toad.Position.Y) > C_LibPlayersToads_TgtHeightDiffMax) continue;
+			if (ML::Distance(Event.Shooter.Position, Toad.Position) > Toad.Driver.AggroRadius) continue;
+
+			// Force the shooter as nearby Toads target
+			Toad.Driver.ForcedTarget = Event.Shooter;
+			SetPlayerWeapon(Toad, CSmMode::EWeapon::Rocket, False);
+		}
+	}
+
+	// ---------------------------------- //
+	// Manage Toads
+	foreach (Toad in GetToads()) {
+		// Unspawn Toads in water
+		if (Toad.IsInWater) Toad.Armor = 0;
+
+		// Destroy Toads without owners
+		if (Toad.Driver.Owner == Null || !Players.exists(Toad.Driver.Owner)) Toad.Armor = 0;
+
+		// ---------------------------------- //
+		// Destroy eliminated Toads
+		if (
+			G_LibPlayersToads_AutoDestroyToads &&
+			(Toad.Armor <= 0 || Toad.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned)
+		)
+			ToadsToDestroy.add(Toad.Id);
+
+		if (Toad.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || !Players.exists(Toad.Driver.Owner)) continue;
+
+		// ---------------------------------- //
+		// Adjust shoot period
+		declare ShootPeriod = 0;
+		if (Toad.AmmoGain > 0) ShootPeriod = ML::NearestInteger(C_LibPlayersToads_ToadShootPeriod / Toad.AmmoGain);
+		Toad.Driver.ShootPeriodMin = ShootPeriod;
+		Toad.Driver.ShootPeriodMax = Toad.Driver.ShootPeriodMin;
+
+		// ---------------------------------- //
+		// Cancel attacking random target
+		if (Toad.Driver.ForcedTarget != Toad.Driver.Owner) {
+			if (
+				Toad.Driver.ForcedTarget == Null || Toad.Driver.ForcedTarget.Armor <= 0 ||
+				Toad.Driver.ForcedTarget.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned ||
+				ML::Distance(Toad.Driver.ForcedTarget.Position, Toad.Position) > Toad.Driver.DisengageDistance
+			) {
+				SetPlayerWeapon(Toad, CSmMode::EWeapon::Laser, False);
+				Toad.Driver.ForcedTarget = Toad.Driver.Owner;
+			}
+		}
+		// ---------------------------------- //
+		// Look for targets nearby
+		else {
+			declare Integer LibPlayersToads_ToadNextTgtCheckTime for Toad;
+			if (Now >= LibPlayersToads_ToadNextTgtCheckTime) {
+				LibPlayersToads_ToadNextTgtCheckTime = Now + C_LibPlayersToads_TargetSearchPeriod;
+				declare Real[Ident] PotentialTargets;
+
+				// ---------------------------------- //
+				// Get players nearby
+				foreach (Player in AllPlayers) {
+					if (Player == Toad || Player == Toad.Driver.Owner) continue;
+					if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || Player.Armor <= 0 || Player.IsInWater) continue;
+					if (Toad.CurrentClan != 0 && Toad.CurrentClan == Player.CurrentClan) continue;
+					if (Clans::AreTeammates(Toad, Player)) continue;
+					if (ML::Abs(Player.Position.Y - Toad.Position.Y) > C_LibPlayersToads_TgtHeightDiffMax) continue;
+					
+					declare Distance = ML::Distance(Toad.Position, Player.Position);
+					if (Distance > Toad.Driver.AggroRadius) continue;
+					PotentialTargets[Player.Id] = Distance;
+				}
+
+				// ---------------------------------- //
+				// Choose nearest player
+				if (PotentialTargets.count > 0) {
+					PotentialTargets = PotentialTargets.sort();
+					foreach (PlayerId => Distance in PotentialTargets) {
+						Toad.Driver.ForcedTarget = AllPlayers[PlayerId];
+						break;
+					}
+					SetPlayerWeapon(Toad, CSmMode::EWeapon::Rocket, False);
+				}
+			}
+		}
+
+		// ---------------------------------- //
+		// Find items nearby to pick
+		declare Vec3 LibPlayersToads_NearestItemLocation for Toad;
+		declare Integer LibPlayersToads_ToadNextItemCheckTime for Toad;
+
+		if (
+			Toad.Driver.ForcedTarget == Toad.Driver.Owner &&
+			LibPlayersToads_NearestItemLocation == <0., 0., 0.> &&
+			Now >= LibPlayersToads_ToadNextItemCheckTime
+		) {
+			LibPlayersToads_ToadNextItemCheckTime = Now + C_LibPlayersToads_ItemSearchPeriod;
+			declare Real[Ident] PotentialItems;
+
+			// ---------------------------------- //
+			// Get nearby items
+			foreach (Object in Objects) {
+				if (Object.Status != CSmObject::EStatus::InWorld && Object.Status != CSmObject::EStatus::OnAnchor) continue;
+
+				declare Vec3 Position for Object;
+				Position = Object.Position;
+				if (Object.AnchorLandmark != Null) Position = Object.AnchorLandmark.Position; 
+
+				declare Distance = ML::Distance(Toad.Driver.Owner.Position, Position);
+				if (Distance > C_LibPlayersToads_ItemSearchRadius) continue;
+				PotentialItems[Object.Id] = Distance;
+			}
+
+			// ---------------------------------- //
+			// Choose the nearest item
+			if (PotentialItems.count > 0) {
+				PotentialItems = PotentialItems.sort();
+				foreach (ObjectId => Distance in PotentialItems) {
+					declare Object = Objects[ObjectId];
+					declare Vec3 Position for Object;
+
+					Toad.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::Scripted;
+					LibPlayersToads_NearestItemLocation = Position;
+					ScriptedBot_MoveAndAim(Toad, Position);
+					break;
+				}
+			}
+		}
+
+		// ---------------------------------- //
+		// Item picked up of too far away
+		if (
+			LibPlayersToads_NearestItemLocation != <0., 0., 0.> &&
+			(
+				Toad.Driver.ForcedTarget != Toad.Driver.Owner ||
+				ML::Distance(LibPlayersToads_NearestItemLocation, Toad.Driver.Owner.Position) > C_LibPlayersToads_ItemSearchRadius ||
+				ML::Distance(Toad.Driver.Owner.Position, Toad.Position) > ML::Distance(Toad.Driver.Owner.Position, LibPlayersToads_NearestItemLocation)
+			)
+		) {
+			LibPlayersToads_NearestItemLocation = <0., 0., 0.>;
+			Toad.Driver.Behaviour = CSmPlayerDriver::ESmDriverBehaviour::IA;
+		}
+	}
+
+	// Destroy unnecessary Toads
+	while (ToadsToDestroy.count > 0) {
+		declare Boolean Removed;
+		Removed = DestroyToad(ToadsToDestroy[0], G_LibPlayersToads_ToadCooldown);
+		Removed = ToadsToDestroy.removekey(0);
+	}
+}

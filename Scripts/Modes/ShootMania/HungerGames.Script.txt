@@ -1,13 +1,13 @@
 // -------------------------------------- //
-//  HUNGER GAMES 3.1.1 by domino54        //
-//  script version: 2017-04-10            //
+//  HUNGER GAMES 3.2.0 by domino54        //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2017-04-10"
-#Const ScriptName	"HungerGames.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Modes/ShootMania/HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
 
@@ -32,6 +32,8 @@
 #Setting S_ObjectsRespawnTime	300
 #Setting S_ToadsRespawnTime		240
 #Setting S_ToadsSpawnRatio		1.
+
+#Setting S_NeutralEmblemUrl "file://Media/Manialinks/ShootMania/GalaxyTitles/EmblemHungerGames.dds"
 
 // ---------------------------------- //
 // Constants
@@ -93,10 +95,10 @@ declare Ident G_LatestSpawnId;	///< Previously tossed Spawn
 // ---------------------------------- //
 // Extend
 // ---------------------------------- //
-***LogVersion***
+***Match_LogVersions***
 ***
-MB_LogVersion(ScriptName, Version);
-MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
@@ -112,12 +114,21 @@ ST2::DestroyCol("LibST_SMRoundPoints");
 ***
 
 // ---------------------------------- //
-// Init server
+// Update the mode rules
 // ---------------------------------- //
-***InitServer***
+***Match_Rules***
 ***
+ModeInfo::SetName("Jailbreak v2");
+ModeInfo::SetType(ModeInfo::C_Type_FreeForAll);
+ModeInfo::SetRules("1. You have only one life per map.\n2. At the very beginning of the map, you must activate your skills by touching the Goal.\n3. To get more weapons and develop your character abilities, search and pick up items on the map.\n4. If you are eliminated, you will spectate the rest of the map.\n5. The last player alive wins the game.");
+ModeInfo::SetStatusMessage(Description);
+***
+
 // ---------------------------------- //
-// Disable unused Galaxy base script features
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
 GT_UseAutoEndSequence = False;
 GT_UseAutospawnObjects = False;
 GT_UseComboWeapons = False;
@@ -126,29 +137,19 @@ GT_AutoManageOnRespawn = False;
 GT_AutoManageOnObjectTouch = False;
 GT_AllowMatchmakingMode = False;
 GT_KillfeedTranslations = ["$<%1$> is now playing in Games", "$<%1$> tried to escape arena"];
+***
 
 // ---------------------------------- //
-// Set the mode rules
-GT_SpawnScreenModeName = "Hunger Games";
-GT_SpawnScreenModeType = _("Free for all");
-GT_SpawnScreenObjectives = TL::Compose(
-	_("$<%11. $>You have only one life per map.\n$<%12. $>At the very beginning of the map, you must activate your skills by touching the Goal.\n$<%13. $>To get more weapons and develop your character abilities, search and pick up items on the map.\n$<%14. $>If you are eliminated, you will spectate the rest of the map.\n$<%15. $>The last player alive wins the game."),
-	"$"^SpawnScreen::GetModeColor()
-);
-
+// Init server
 // ---------------------------------- //
-// Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "The last player alive wins the game. You have only one life per map. You must activate your skills by touching the Goal at the very beginning of the map. Get more weapons and develop your character abilities with items spread all over the map.", "");
-
-// ---------------------------------- //
+***Match_InitServer***
+***
 // Load objects
 G_ObjectId["Weapon"]	= ItemList_Add("HungerGames\\Weapon.Item.Gbx");
 G_ObjectId["Charge"]	= ItemList_Add("HungerGames\\Charge.Item.Gbx");
 G_ObjectId["Mini"]		= ItemList_Add("HungerGames\\Mini.Item.Gbx");
 
-// ---------------------------------- //
 // Create custom interfaces
-MB_NeutralEmblemUrl = C_ImgBase^"EmblemHungerGames.dds";
 UIManager.UIAll.SpectatorForceCameraType = 1; ///< Disables the free-cam ("Cam 7")
 Layers::Create("HungerGames:Interface", CreateManialinkInterface());
 Layers::Attach("HungerGames:Interface");
@@ -164,9 +165,9 @@ declare SpawnedToads = False;
 // ---------------------------------- //
 // Map start
 // ---------------------------------- //
-***InitMap***
+***Match_InitMap***
 ***
-ST2::SetFooterText(TL::Compose("%1-", _("Remaining players: ")));
+ST2::SetFooterText(TL::Compose("%1 -", _("Remaining players: ")));
 UIResetAll();
 UISetStartTime(-1);
 DestroyAllObjects();
@@ -177,7 +178,6 @@ declare CenterGoalLandmarkId = NullId;
 declare CenterGoal <=> Map::GetLandmarkSector("Goal", 0);
 declare MapValidated = CenterGoal != Null && MapLandmarks_PlayerSpawn.count > 0;
 
-// ---------------------------------- //
 // Skip map if not valid
 if (!MapValidated) GT_SkipInvalidMap();
 ***
@@ -305,7 +305,7 @@ if (S_RandomizeObjectsSpawns) foreach (Type => ObjectAmount in NbObjectsToSpawn)
 // ---------------------------------- //
 // Round start
 // ---------------------------------- //
-***InitRound***
+***Match_InitRound***
 ***
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
 Interfancy::SetModuleVisibility("Countdown", False);
@@ -377,22 +377,31 @@ UIManager.UIAll.BigMessage = "";
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
 StartTime = Now + C_StartCountdownDuration + 1000;
 UISetStartTime(StartTime);
+StoragePlayer::SetCountdown(StartTime, 10000);
 
 // Set the Tornado activation countdown
 if (S_OffZoneActivationTime <= 0) UIManager.UIAll.CountdownEndTime = -1;
 else UIManager.UIAll.CountdownEndTime = StartTime + S_OffZoneActivationTime * 1000;
+
+// Setup interface
+Layers::Attach("HungerGames:Statistics");
+ST2::SetPos(C_ScoresTablePosition[True]);
+ST2::Build("SM");
+***
+
+// ---------------------------------- //
+// Start play loop
+// ---------------------------------- //
+***Match_StartPlayLoop***
+***
+MiniMap::Hide();
 
 // ---------------------------------- //
 // Spawn players for the game
 foreach (Player in Players) HG_SpawnPlayer(Player);
 PrevPlayersNbAlive = PlayersNbAlive;
 UISetNbPlayersAlive(PlayersNbAlive);
-
-// Setup interface
-Layers::Attach("HungerGames:Statistics");
-ST2::SetFooterText(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")));
-ST2::SetPos(C_ScoresTablePosition[True]);
-ST2::Build("SM");
+ST2::SetFooterText(TL::Compose("%1 "^PlayersNbAlive, _("Remaining players: ")));
 ***
 
 // ---------------------------------- //
@@ -491,9 +500,8 @@ if (PlayerRequestsRespawn) {
 // ---------------------------------- //
 // Play loop
 // ---------------------------------- //
-***PlayLoop***
+***Match_PlayLoop***
 ***
-// ---------------------------------- //
 // Spawn the objects (only after players are spawned)
 if (Now >= StartTime) SpawnObjects();
 
@@ -784,7 +792,7 @@ foreach (Player in Players) {
 // ---------------------------------- //
 // Update amount of players alive
 if (PrevPlayersNbAlive != PlayersNbAlive) {
-	ST2::SetFooterText(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")));
+	ST2::SetFooterText(TL::Compose("%1 "^PlayersNbAlive, _("Remaining players: ")));
 	UISetNbPlayersAlive(PlayersNbAlive);
 	
 	if (Now > StartTime) {
@@ -794,9 +802,9 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 			foreach (Player in Players) {
 				if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 				TopScores::AddPoints(Player.Score, "Survival", 1);
-				Score::AddPoints(Player, C_PlayerPointsForSurvival);
+				Scores::AddPlayerRoundPoints(Player.Score, C_PlayerPointsForSurvival);
 			}
-			if (PlayersNbAlive >= 2) Message::SendStatusMessage(TL::Compose("%1"^PlayersNbAlive, _("Remaining players: ")), 4000, 2);
+			if (PlayersNbAlive >= 2) Message::SendStatusMessage(TL::Compose("%1 "^PlayersNbAlive, _("Remaining players: ")), 4000, 2);
 		}
 	
 		// ---------------------------------- //
@@ -820,13 +828,13 @@ foreach (Score in Scores) {
 }
 
 // Victory conditions
-if (Now > StartTime && PlayersNbAlive <= 1) MB_StopMap = True;
+if (Now > StartTime && PlayersNbAlive <= 1) MB_StopMatch();
 ***
 
 // ---------------------------------- //
 // Map end
 // ---------------------------------- //
-***EndMapBeforePodium***
+***Match_EndMap***
 ***
 Interfancy::SetModuleVisibility("Countdown", False);
 UISetNbPlayersAlive(0);
@@ -887,7 +895,7 @@ UIManager.UIAll.BigMessage = "";
 // ---------------------------------- //
 // Server end
 // ---------------------------------- //
-***EndServer***
+***Match_EndServer***
 ***
 Layers::Detach("HungerGames:Interface");
 Layers::Destroy("HungerGames:Interface");
@@ -968,7 +976,10 @@ Void HG_SpawnPlayer(CSmPlayer _Player) {
 	// Initialize through mode base and enable all weapon slots
 	GT_InitPlayer(_Player);
 	Inventory::SetAvailableWeapons(_Player, [
-		CSmMode::EWeapon::Laser, CSmMode::EWeapon::Nucleus, CSmMode::EWeapon::Arrow, CSmMode::EWeapon::Rocket
+		CSmMode::EWeapon::Laser,
+		CSmMode::EWeapon::Nucleus,
+		CSmMode::EWeapon::Arrow,
+		CSmMode::EWeapon::Rocket
 	]);
 	Inventory::SetFirstWeapon(_Player);
 	
@@ -993,9 +1004,8 @@ Void HG_SpawnPlayer(CSmPlayer _Player) {
 	G_LatestSpawnId = SpawnId;
 	declare Removed = G_SpawnsList.remove(SpawnId);
 	
-	// ---------------------------------- //
 	// Spawn the player
-	SM::SpawnPlayer(_Player, 0, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+	SM::Spawn(_Player, 0, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
 	G_SpawnedPlayers.add(_Player.Login);
 }
 
@@ -1166,7 +1176,7 @@ Boolean PickUpObject(CSmModeEvent _Event) {
 			
 			// Notify player about the new weapon received
 			declare WeaponName = TL::Split("::", ""^NewWeapon);
-			Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1", WeaponName[WeaponName.count - 1]], 2000);
+			Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1 ", WeaponName[WeaponName.count - 1]], 2000);
 			
 			// Heal the player (if object was naturally generated)
 			if (!DroppedByPlayer) GalaxyTitles::GivePlayerArmor(_Event.Player, C_WeaponItemArmorBonus);
@@ -1181,7 +1191,7 @@ Boolean PickUpObject(CSmModeEvent _Event) {
 			// Notify player about new abilities
 			Interfancy::SendCrosshairNote(
 				_Event.Player,
-				["+%1% %2", TL::ToText(C_ChargeItemSkillPoints), "Skills"],
+				["+%1% %2 ", TL::ToText(C_ChargeItemSkillPoints), "Skills"],
 				2000
 			);
 		}
@@ -1198,7 +1208,7 @@ Boolean PickUpObject(CSmModeEvent _Event) {
 			// Notify player about new abilities
 			Interfancy::SendCrosshairNote(
 				_Event.Player,
-				["+%1% %2", TL::ToText(C_ChargeItemSkillPoints * C_MiniItemBonusMultiplier), "Skills"],
+				["+%1% %2 ", TL::ToText(C_ChargeItemSkillPoints * C_MiniItemBonusMultiplier), "Skills"],
 				2000
 			);
 		}
@@ -1212,7 +1222,7 @@ Boolean PickUpObject(CSmModeEvent _Event) {
 	// ---------------------------------- //
 	// Give points for picking up the item
 	TopScores::AddPoints(_Event.Player.Score, "Items", 1);
-	Score::AddPoints(_Event.Player, C_PlayerPointsForObjects);
+	Scores::AddPlayerRoundPoints(_Event.Player.Score, C_PlayerPointsForObjects);
 	
 	// Destroy object
 	declare Destroyed = DestroyObject(_Event.Object);
@@ -1322,27 +1332,27 @@ Void UIResetAll() {
  */
 Text CreateManialinkInterface() {
 	return """
-<manialink version="2" name="HungerGames:Interface">
+<manialink version="3" name="HungerGames:Interface">
 <stylesheet>
-	<style class="font" halign="center" valign="center2" textsize="1" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
+	<style class="font" halign="center" valign="center2" textsize="1" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
 </stylesheet>
 
-<frame id="Frame_RespawnProgress" posn="0 -54 5">
+<frame id="Frame_RespawnProgress" pos="0 -54 5">
 	<frame id="Frame_RespawnProgAnim">
-		<quad posn="0 8 -.1" sizen="12 12" halign="center" valign="center" id="Quad_RespawnProgIcon" opacity="0"/>
-		<label class="font" textsize="3" id="Label_RespawnProgress" opacity="0"/>
-		<gauge posn="0 -3 -.1" sizen="52 8" halign="center" valign="center" drawbg="0" id="Gauge_RespawnProgress" hidden="1"/>
+		<label class="font" textsize="3" id="Label_RespawnProgress" opacity="0" />
+		<quad pos="0 8" size="12 12" halign="center" valign="center" id="Quad_RespawnProgIcon" opacity="0" />
+		<gauge pos="0 -3" size="52 8" halign="center" valign="center" drawbg="0" id="Gauge_RespawnProgress" hidden="1" />
 	</frame>
 </frame>
 
 <frame id="Frame_Countdown">
-	<quad sizen="40 40" halign="center" valign="center" id="Quad_DigitPri"/>
-	<quad sizen="40 40" halign="center" valign="center" id="Quad_DigitSec" posn="0 0 -1"/>
+	<quad size="40 40" halign="center" valign="center" id="Quad_DigitPri" />
+	<quad size="40 40" halign="center" valign="center" id="Quad_DigitSec" />
 </frame>
 
-<frame id="Frame_TouchGoal" posn="0 76">
-	<label posn="0 2" class="font" textsize="4" textprefix="$T" id="Label_TouchGoalTitle" opacity="0"/>
-	<label posn="0 -2" class="font" textprefix="$T" id="Label_TouchGoalDesc" opacity="0"/>
+<frame id="Frame_TouchGoal" pos="0 76">
+	<label pos="0 2" class="font" textsize="4" textprefix="$T" id="Label_TouchGoalTitle" opacity="0" />
+	<label pos="0 -2" class="font" textprefix="$T" id="Label_TouchGoalDesc" opacity="0" />
 </frame>
 
 <script><!--
@@ -1422,28 +1432,25 @@ TouchGoalAlertVisible = GUIPlayer != Null && GameTime >= GUIPlayer.StartTime && 
 if (PrevTouchGoalAlertVisible != TouchGoalAlertVisible) {
 	PrevTouchGoalAlertVisible = TouchGoalAlertVisible;
 	
-	LibManialink_AnimStop(Label_TouchGoalTitle);
-	LibManialink_AnimStop(Label_TouchGoalDesc);
-	
 	// ---------------------------------- //
 	// Show alert
 	if (TouchGoalAlertVisible) {
-		Label_TouchGoalTitle.RelativePosition.Y = 4.;
-		Label_TouchGoalDesc.RelativePosition.Y = 0.;
+		Label_TouchGoalTitle.RelativePosition_V3.Y = 4.;
+		Label_TouchGoalDesc.RelativePosition_V3.Y = 0.;
 		Label_TouchGoalTitle.Opacity = 0.;
 		Label_TouchGoalDesc.Opacity = 0.;
-		LibManialink_Anim(Label_TouchGoalTitle, "<label posn='0 2' opacity=1 />", 125, "EaseLinear");
-		LibManialink_Anim(Label_TouchGoalDesc, "<label posn='0 -2' opacity=1 />", 125, "EaseLinear");
+		AnimMgr.Add(Label_TouchGoalTitle, "<label pos='0 2' opacity='1' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+		AnimMgr.Add(Label_TouchGoalDesc, "<label pos='0 -2' opacity='1' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 	}
 	// ---------------------------------- //
 	// Hide alert
 	else {
-		Label_TouchGoalTitle.RelativePosition.Y = 2.;
-		Label_TouchGoalDesc.RelativePosition.Y = -2.;
+		Label_TouchGoalTitle.RelativePosition_V3.Y = 2.;
+		Label_TouchGoalDesc.RelativePosition_V3.Y = -2.;
 		Label_TouchGoalTitle.Opacity = 1.;
 		Label_TouchGoalDesc.Opacity = 1.;
-		LibManialink_Anim(Label_TouchGoalTitle, "<label posn='0 0' opacity=0 />", 125, "EaseLinear");
-		LibManialink_Anim(Label_TouchGoalDesc, "<label posn='0 -4' opacity=0 />", 125, "EaseLinear");
+		AnimMgr.Add(Label_TouchGoalTitle, "<label pos='0 0' opacity='0' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+		AnimMgr.Add(Label_TouchGoalDesc, "<label pos='0 -4' opacity='0' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 	}
 }
 
@@ -1485,20 +1492,17 @@ if (PrevCountdownTick != CountdownTick) {
 		Quad_DigitPri.ImageUrl = "{{{C_ImgBase}}}Countdown/main_"^CountdownTick^".png";
 		Quad_DigitSec.ImageUrl = "{{{C_ImgBase}}}Countdown/sec_"^CountdownTick^".png";
 		
-		LibManialink_AnimStop(Quad_DigitPri);
-		LibManialink_AnimStop(Quad_DigitSec);
-		
 		Quad_DigitPri.RelativeScale = 2.;
 		Quad_DigitSec.RelativeScale = 1.;
 		
 		Quad_DigitPri.Opacity = 1.;
 		Quad_DigitSec.Opacity = 1.;
 		
-		LibManialink_Anim(Quad_DigitPri, "<quad scale=1 />", 1000, "EaseOutCirc");
-		LibManialink_Anim(Quad_DigitSec, "<quad scale=1.5 />", 1000, "EaseLinear");
+		AnimMgr.Add(Quad_DigitPri, "<quad scale='1' />", 1000, CAnimManager::EAnimManagerEasing::CircOut);
+		AnimMgr.Add(Quad_DigitSec, "<quad scale='1.5' />", 1000, CAnimManager::EAnimManagerEasing::Linear);
 		
-		LibManialink_AnimChain(Quad_DigitPri, "<quad opacity=0 />", 250, "EaseLinear");
-		LibManialink_AnimChain(Quad_DigitSec, "<quad opacity=0 />", 250, "EaseLinear");
+		AnimMgr.AddChain(Quad_DigitPri, "<quad opacity='0' />", 250, CAnimManager::EAnimManagerEasing::Linear);
+		AnimMgr.AddChain(Quad_DigitSec, "<quad opacity='0' />", 250, CAnimManager::EAnimManagerEasing::Linear);
 		
 		// ---------------------------------- //
 		// Manage countdown sound
@@ -1527,27 +1531,23 @@ RespawnProgressVisible = GUIPlayer != Null && RespawnStartTime > 0 && GameTime -
 
 if (PrevRespawnProgressVisible != RespawnProgressVisible) {
 	PrevRespawnProgressVisible = RespawnProgressVisible;
-	
-	LibManialink_AnimStop(Frame_RespawnProgAnim);
-	LibManialink_AnimStop(Label_RespawnProgress);
-	LibManialink_AnimStop(Quad_RespawnProgIcon);
 	Gauge_RespawnProgress.Visible = RespawnProgressVisible;
 	
-	Frame_RespawnProgAnim.RelativePosition.Y = 0.;
+	Frame_RespawnProgAnim.RelativePosition_V3.Y = 0.;
 	Label_RespawnProgress.Opacity = 1.;
 	declare PositionY = -2.;
 	declare Opacity = 0.;
 	
 	if (RespawnProgressVisible) {
-		Frame_RespawnProgAnim.RelativePosition.Y = -PositionY;
+		Frame_RespawnProgAnim.RelativePosition_V3.Y = -PositionY;
 		Label_RespawnProgress.Opacity = 0.;
 		PositionY = 0.;
 		Opacity = 1.;
 	}
 	
-	LibManialink_Anim(Frame_RespawnProgAnim, "<frame posn='0 "^PositionY^"'/>", 125, "EaseLinear");
-	LibManialink_Anim(Label_RespawnProgress, "<label opacity="^Opacity^" />", 125, "EaseLinear");
-	LibManialink_Anim(Quad_RespawnProgIcon, "<quad opacity="^Opacity^" />", 125, "EaseLinear");
+	AnimMgr.Add(Frame_RespawnProgAnim, "<frame pos='0 "^PositionY^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Label_RespawnProgress, "<label opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Quad_RespawnProgIcon, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 	
 	// ---------------------------------- //
 	// Play sound
@@ -1581,7 +1581,6 @@ if (RespawnProgressVisible) {
 }
 ***
 
-{{{Manialink::Animations(["EaseOutCirc"])}}}
 {{{ManialinkTools::Functions(["Pulse", "SetGaugeRatio", "ReplaceChars"])}}}
 {{{Translations::InjectInManialink(["Touch the Goal!", "You must touch the Goal to be able to pick up items!", "Respawning...", "Respawned!"])}}}
 
@@ -1592,7 +1591,6 @@ main() {
 	---Main---
 	while (True) {
 		yield;
-		LibManialink_AnimLoop();
 		---Yield---
 	}
 }
@@ -1610,25 +1608,25 @@ Text CreateManialinkStatistics() {
 	return """
 <manialink version="2" name="HungerGames:Statistics">
 <stylesheet>
-	<style class="font" valign="center2" textemboss="1" textcolor="FFF" textsize="1" textfont="Eurostile_Bold"/>
+	<style class="font" valign="center2" textemboss="1" textcolor="FFF" textsize="1" textfont="Eurostile_Bold" />
 </stylesheet>
 
 <framemodel id="FrameModel_StatGauge">
-	<label posn="0 3" class="font" halign="center" textsize="3" id="Label_StatValueCur" text="0%"/>
-	<label posn="-25 2.25" class="font" halign="left" textcolor="888" id="Label_StatValueMin" text="0%"/>
-	<label posn="25 2.25" class="font" halign="right" textcolor="888" id="Label_StatValueMax" text="0%"/>
-	<gauge sizen="54 8" halign="center" valign="center" drawbg="0" id="Gauge_StatProgress"/>
-	<label posn="0 -3" sizen="50 0" class="font" halign="center" textprefix="$t" id="Label_StatDescription" text="---"/>
+	<label pos="0 3" class="font" halign="center" textsize="3" id="Label_StatValueCur" text="0%" />
+	<label pos="-25 2.25" class="font" halign="left" textcolor="888" id="Label_StatValueMin" text="0%" />
+	<label pos="25 2.25" class="font" halign="right" textcolor="888" id="Label_StatValueMax" text="0%" />
+	<gauge size="54 8" halign="center" valign="center" drawbg="0" id="Gauge_StatProgress" />
+	<label pos="0 -3" size="50 0" class="font" halign="center" textprefix="$t" id="Label_StatDescription" text="---" />
 </framemodel>
 
-<frame posn="-84 -44 10" clip="1" clipposn="84 -10" clipsizen="170 22">
-	<quad posn="0 36" sizen="10 50" image="{{{WB}}}BottomLeft.png" colorize="000"/>
-	<quad posn="10 36" sizen="148 50" image="{{{WB}}}Bottom.png" colorize="000"/>
-	<quad posn="158 36" sizen="10 50" image="{{{WB}}}BottomRight.png" colorize="000"/>
+<frame pos="-84 -44 10" clip="1" clippos="84 -10" clipsize="170 22">
+	<quad pos="0 36" size="10 50" image="{{{WB}}}BottomLeft.png" colorize="000" />
+	<quad pos="10 36" size="148 50" image="{{{WB}}}Bottom.png" colorize="000" />
+	<quad pos="158 36" size="10 50" image="{{{WB}}}BottomRight.png" colorize="000" />
 	
-	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#0" posn="31 -6 1"/>
-	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#1" posn="84 -6 1"/>
-	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#2" posn="137 -6 1"/>
+	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#0" pos="31 -6 1" />
+	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#1" pos="84 -6 1" />
+	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#2" pos="137 -6 1" />
 </frame>
 
 <script><!--

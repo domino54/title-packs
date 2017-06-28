@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  INVASION by domino54                  //
-//  script version: v3.2.1 @2017-05-07    //
+//  script version: v3.2.1 @2017-06-28    //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"InvasionArena, HordeArena"
-#Const Version				"2017-05-07"
-#Const ScriptName			"Invasion.Script.txt"
+#Const Version				"2017-06-28"
+#Const ScriptName			"Modes/ShootMania/Invasion.Script.txt"
 
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -28,6 +28,8 @@
 #Setting S_MaxNbToadsAtOnce			60		as "<hidden>" ///< Maximum amount of Toads spawned at once
 #Setting S_MaximumNbReplies			5		///< Increased Replies limit
 #Setting S_UsePlayerClublinks		False	///< Disable Clublinks
+
+#Setting S_NeutralEmblemUrl "file://Media/Manialinks/ShootMania/GalaxyTitles/EmblemInvasion.dds"
 
 // ---------------------------------- //
 // Constants
@@ -157,12 +159,12 @@ declare Ident[Text] G_ActionId; ///< List of all available actions
 // ---------------------------------- //
 // Extend
 // ---------------------------------- //
-***LogVersion***
+***Match_LogVersions***
 ***
-MB_LogVersion(ScriptName, Version);
-MB_LogVersion(InvasionUI::GetScriptName(), InvasionUI::GetScriptVersion());
-MB_LogVersion(Sound::GetScriptName(), Sound::GetScriptVersion());
-MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(InvasionUI::GetScriptName(), InvasionUI::GetScriptVersion());
+Log::RegisterScript(Sound::GetScriptName(), Sound::GetScriptVersion());
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
@@ -186,12 +188,21 @@ Label_Col.Value = TL::ToText(Score.Points * 10);""");
 ***
 
 // ---------------------------------- //
-// Init server
+// Update the mode rules
 // ---------------------------------- //
-***InitServer***
+***Match_Rules***
 ***
+ModeInfo::SetName("Invasion");
+ModeInfo::SetType(ModeInfo::C_Type_FreeForAll);
+ModeInfo::SetRules("1. Player has to protect Goal from Toads attack as long as it's possible.\n2. Fact: You don't have time to read these rules.\n3. Toads become stronger over time and later start to appear one by one.\n4. In Solo Campaign player has to score enough points to get a medal.\n5. In multiplayer mode player or team with most points wins.\n6. Players can switch their weapons with mouse roll and 1 - 4 keys.\n7. Blue Crystal increases reload speed for a fet seconds when picked up.\n8. Gold Crystal gives random powerful weapon for a short amount of time.\n9. With Evolution mode on, you can increase your Armors amount with Evolution levels.\n10. To earn Evolution points, just shoot the Toads.");
+ModeInfo::SetStatusMessage(Description);
+***
+
 // ---------------------------------- //
-// Disable unused Galaxy base script features
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
 GT_UseNoCollisionsStart = False;
 GT_UseComboWeapons = False;
 GT_UseRandomToads = False;
@@ -200,15 +211,18 @@ GT_AutoManageOnShoot = False;
 GT_AutoManageOnArmorEmpty = False;
 GT_AutoManageOnNearMiss = False;
 GT_AllowMatchmakingMode = False;
+***
 
 // ---------------------------------- //
-// Set the mode options
+// Init server
+// ---------------------------------- //
+***Match_InitServer***
+***
 UseClans = S_UseTeamsMode;
 UseAmmoBonusOnHit = False;
 
 // ---------------------------------- //
 // Setup interface
-MB_NeutralEmblemUrl = C_ImgBase^"EmblemInvasion.dds";
 SM::SetupDefaultVisibility();
 Sound::Load();
 
@@ -221,17 +235,6 @@ InvasionUI::SetDisplayInterface(False);
 
 // Unload minimap
 MiniMap::Unload();
-
-// ---------------------------------- //
-// Rules
-ModeStatusMessage = Description;
-GT_SpawnScreenModeName = "Invasion";
-GT_SpawnScreenModeType = _("Cooperation");
-GT_SpawnScreenObjectives = TL::Compose("$<%11. $>Player has to protect Goal from Toads attack as long as it's possible.\n$<%12. $>Fact: You don't have time to read these rules.\n$<%13. $>Toads become stronger over time and later start to appear one by one.\n$<%14. $>In Solo Campaign player has to score enough points to get a medal.\n$<%15. $>In multiplayer mode player or team with most points wins.\n$<%16. $>Players can switch their weapons with mouse roll and 1 - 4 keys.\n$<%17. $>Blue Crystal increases reload speed for a fet seconds when picked up.\n$<%18. $>Gold Crystal gives random powerful weapon for a short amount of time.\n$<%19. $>With Evolution mode on, you can increase your Armors amount with Evolution levels.\n$<%110. $>To earn Evolution points, just shoot the Toads.", "$"^SpawnScreen::GetModeColor());
-
-// ---------------------------------- //
-// Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Protect Pole from Toads attack as long as it's possible. Switch weapons with mouse roll and 1 - 4 keys. Game is over when 20 of Toads reach the Pole.", "");
 
 // ---------------------------------- //
 // Load objects
@@ -247,37 +250,6 @@ G_ActionId["FrozenArrow"]	= ActionList_Add("Invasion\\FrozenArrow.Action.Gbx");
 G_ActionId["PlasmaGrenade"]	= ActionList_Add("Invasion\\PlasmaGrenade.Action.Gbx");
 G_ActionId["Torpede"]		= ActionList_Add("Invasion\\Torpede.Action.Gbx");
 G_ActionId["WideRail"]		= ActionList_Add("Invasion\\WideRail.Action.Gbx");
-***
-
-// ---------------------------------- //
-// Initialize map
-// ---------------------------------- //
-***InitMap***
-***
-UpdateScoresTableFooter(S_ToadsReachedPoleLimit, C_ToadArmorPointsMin);
-GalaxyTitles::SetObjectsAffectEveryone(True);
-InvasionUI::InitializeMatch();
-
-// ---------------------------------- //
-// Check if the map is valid
-declare MapValidated = True;
-for (Order, 1, 2) {
-	if (Map::GetLandmarkPlayerSpawn("Spawn", 0) == Null) MapValidated = False;
-	if (Map::GetLandmarkBotPath("BotPath", 0) == Null) MapValidated = False;
-	if (Map::GetLandmarkGauge("Goal", 0) == Null) MapValidated = False;
-}
-
-// ---------------------------------- //
-// Skip map if not valid
-if (!MapValidated) GT_SkipInvalidMap();
-***
-
-// ---------------------------------- //
-// Start map
-// ---------------------------------- //
-***StartMap***
-***
-UseLaserSkewering = False;
 
 // ---------------------------------- //
 // Mode variables
@@ -298,14 +270,67 @@ declare NbWavesToNextToadArmor = 0;	///< Amount of waves to next Armor increment
 declare NextArmorIncrementTime = 0;	///< Time of the next Armor incrementation in Invasion mode
 declare GoldNextSpawnTime = 0;		///< Spawn time of the Gold item
 declare GoldCrystalUnspawnTime = 0;	///< Lifetime of the Gold object
+declare MapCanSpawnGoldCrystal = False;
 
 declare EvolutionPointsPerLevel = [0];	///< Amount of points per every Evolution level
 declare UpdateGiantsInfo = True;		///< Force update information about Giants
+declare LeadId = NullId;
 
 /// Update variables
 declare PrevUseEvolution = False;
 declare PrevPoleLimit = -1;
 declare PrevLeadingClan = -1;
+***
+
+// ---------------------------------- //
+// Initialize map
+// ---------------------------------- //
+***Match_InitMap***
+***
+UpdateScoresTableFooter(S_ToadsReachedPoleLimit, C_ToadArmorPointsMin);
+GalaxyTitles::SetObjectsAffectEveryone(True);
+InvasionUI::InitializeMatch();
+
+// ---------------------------------- //
+// Check if the map is valid
+declare MapValidated = True;
+for (Order, 1, 2) {
+	if (Map::GetLandmarkPlayerSpawn("Spawn", 0) == Null) MapValidated = False;
+	if (Map::GetLandmarkBotPath("BotPath", 0) == Null) MapValidated = False;
+	if (Map::GetLandmarkGauge("Goal", 0) == Null) MapValidated = False;
+}
+
+// Skip map if not valid
+if (!MapValidated) GT_SkipInvalidMap();
+***
+
+// ---------------------------------- //
+// Start map
+// ---------------------------------- //
+***Match_StartMap***
+***
+UseLaserSkewering = False;
+
+GameplaySequence = 0;
+MatchEndReason = 0;
+CurLeadingClan = 0;
+SoloTimeScore = 0;
+
+NbToadsSpawned = 0;
+NbToadsReachedPole = 0;
+NbWavesSpawned = 0;
+NextWaveSpawnTime = 0;
+UpdatePoleGauge = True;
+GameDifficulty = 0.;
+
+CurToadsArmorPoints = C_ToadArmorPointsMin;
+NbWavesToNextToadArmor = 0;
+NextArmorIncrementTime = 0;
+GoldNextSpawnTime = 0;
+GoldCrystalUnspawnTime = 0;
+
+EvolutionPointsPerLevel = [0];
+UpdateGiantsInfo = True;
 
 // ---------------------------------- //
 // Set weapons icons
@@ -343,15 +368,14 @@ foreach (MapLandmark in MapLandmarks) {
 }
 
 // Init teams emblems
-foreach (Team in Teams) Team.EmblemUrl = MB_NeutralEmblemUrl;
+foreach (Team in Teams) Team.EmblemUrl = S_NeutralEmblemUrl;
 
 // ---------------------------------- //
 // Wait for enough players to start game
-WaitForPlayers();
+GT_WaitForPlayers();
 
 // ---------------------------------- //
 // Check if there are Gold crystals on the map
-declare MapCanSpawnGoldCrystal = False;
 foreach (MapLandmark in MapLandmarks_ObjectAnchor) if (MapLandmark.Tag == "Gold") {
 	MapCanSpawnGoldCrystal = True;
 	break;
@@ -385,7 +409,6 @@ foreach (Score in Scores) {
 	declare Integer LastPoint for Score;
 	LastPoint = 0;
 }
-declare LeadId = NullId;
 if (Scores.existskey(0)) LeadId = Scores[0].User.Id;
 
 CurLeadingClan = 0;
@@ -442,7 +465,7 @@ PickUpObject(Event.Player, Event.Object);
 // ---------------------------------- //
 // Play loop
 // ---------------------------------- //
-***PlayLoop***
+***Match_PlayLoop***
 ***
 // ---------------------------------- //
 // Events management
@@ -1117,18 +1140,18 @@ if (!G_IsSoloMode) {
 // End conditions
 if (S_ToadsReachedPoleLimit > 0 && NbToadsReachedPole >= S_ToadsReachedPoleLimit) {
 	MatchEndReason = 1;
-	MB_StopMatch = True;
+	MB_StopMatch();
 }
 else if (Players.count <= 0) {
 	MatchEndReason = 2;
-	MB_StopMatch = True;
+	MB_StopMatch();
 }
 ***
 
 // ---------------------------------- //
 // Round end
 // ---------------------------------- //
-***EndRound***
+***Match_EndRound***
 ***
 UIManager.UIAll.CountdownEndTime = -1;
 SoloTimeScore = (Now - StartTime - C_SafePhaseDuration) / 1000;
@@ -1174,7 +1197,7 @@ MB_Sleep(5000);
 // ---------------------------------- //
 // End server
 // ---------------------------------- //
-***EndServer***
+***Match_EndServer***
 ***
 InvasionUI::UnloadAllModules();
 Sound::Unload();
@@ -1450,7 +1473,7 @@ Void SwitchWeapon(CSmPlayer _Player, CSmModeEvent::EActionInput _Input) {
 Void CycleWeapon(CSmPlayer _Player, Integer _Step) {
 	if (_Player == Null || _Step == 0) return;
 	
-	declare Weapons = [1, 3, 5, 2];
+	declare Weapons = [1, 3, 5, 2, 6];
 	declare NewWeapon = _Player.CurWeapon;
 	declare Key = Weapons.keyof(NewWeapon) + _Step;
 	
@@ -1458,7 +1481,12 @@ Void CycleWeapon(CSmPlayer _Player, Integer _Step) {
 	else if (Key < 0) Key = Weapons.count - 1;
 	NewWeapon = Weapons[Key];
 	
-	declare WeaponFromNum = [1 => ::EWeapon::Laser, 3 => ::EWeapon::Nucleus, 5 => ::EWeapon::Arrow, 2 => ::EWeapon::Rocket];
+	declare WeaponFromNum = [
+		1 => ::EWeapon::Laser,
+		2 => ::EWeapon::Rocket,
+		3 => ::EWeapon::Nucleus,
+		5 => ::EWeapon::Arrow
+	];
 	if (WeaponFromNum.existskey(NewWeapon)) SetPlayerWeapon(_Player, WeaponFromNum[NewWeapon], False);
 }
 

@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GIANT HUNT by domino54                //
-//  script version: 2017-05-07            //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"GiantHuntArena"
-#Const Version		"2017-05-07"
-#Const ScriptName	"GiantHunt.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Modes/ShootMania/GiantHunt.Script.txt"
 
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -69,10 +69,10 @@ declare Ident[Text] G_ActionId; ///< List of all available actions
 // ---------------------------------- //
 ***LogVersion***
 ***
-MB_LogVersion(ScriptName, Version);
-MB_LogVersion(Sound::GetScriptName(), Sound::GetScriptVersion());
-MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
-MB_LogVersion(InvasionUI::GetScriptName(), InvasionUI::GetScriptVersion());
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(Sound::GetScriptName(), Sound::GetScriptVersion());
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(InvasionUI::GetScriptName(), InvasionUI::GetScriptVersion());
 ***
 
 // ---------------------------------- //
@@ -88,44 +88,46 @@ TopScores::RemoveCategory("Hit");
 ***
 
 // ---------------------------------- //
+// Update the mode rules
+// ---------------------------------- //
+***Match_Rules***
+***
+ModeInfo::SetName("Golden Dunk v2");
+ModeInfo::SetType(ModeInfo::C_Type_FreeForAll);
+ModeInfo::SetRules("");
+//ModeInfo::SetStatusMessage(Description);
+***
+
+// ---------------------------------- //
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
+GT_AutoManageOnNearMiss = False;
+GT_AllowMatchmakingMode = False;
+***
+
+// ---------------------------------- //
 // Server start
 // ---------------------------------- //
-***StartServer***
+***Match_StartServer***
 ***
 UseClans = True;
 UseForcedClans = True;
-GT_AutoManageOnNearMiss = False;
-GT_AllowMatchmakingMode = False;
 
 // Don't use statistics in this mode
 Statistics::Unload();
 
-// ---------------------------------- //
-// Set the rules in the SpawnScreen
-GT_SpawnScreenModeName = "Giant Hunt";
-GT_SpawnScreenModeType = _("Free for all");
-GT_SpawnScreenObjectives = TL::Compose(
-	_(""),
-	"$"^SpawnScreen::GetModeColor()
-);
-
-// ---------------------------------- //
-// Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "", "");
-
-// ---------------------------------- //
 // Setup custom interfaces
-MB_NeutralEmblemUrl = C_ImgBase^"EmblemInvasion.dds";
+// MB_NeutralEmblemUrl = C_ImgBase^"EmblemInvasion.dds";
 InvasionUI::LoadModules(["GoldMarker", "CustomWeaponBar", "BossHealth"]);
 InvasionUI::SetDisplayInterface(False);
 Sound::Load();
 
-// ---------------------------------- //
 // Load objects
 G_ObjectId["Giant"]	= ItemList_Add("Characters\\StormManBig.Item.Gbx");
 G_ObjectId["Gold"]	= ItemList_Add("SMCommon\\Collectibles\\Gold.Item.gbx");
 
-// ---------------------------------- //
 // Load actions
 G_ActionId["EnergyCharge"]	= ActionList_Add("Invasion\\EnergyCharge.Action.Gbx");
 G_ActionId["FrozenArrow"]	= ActionList_Add("Invasion\\FrozenArrow.Action.Gbx");
@@ -137,12 +139,13 @@ G_ActionId["WideRail"]		= ActionList_Add("Invasion\\WideRail.Action.Gbx");
 // ---------------------------------- //
 // Map begin
 // ---------------------------------- //
-***InitMap***
+***Match_InitMap***
 ***
 InvasionUI::InitializeMatch();
 
 declare CurrentTimeLimit = S_TimeLimit;
 declare LatestGiantHealth = ML::Max(S_GiantArmorPoints, C_GiantArmorPointsMin) * 100;
+declare MapCanSpawnGoldCrystal = False;
 declare GoldNextSpawnTime = 0;		///< Spawn time of the Gold item
 declare GoldCrystalUnspawnTime = 0;	///< Lifetime of the Gold object
 declare PrevGoalCaptureTime = S_GoalCaptureTime;
@@ -165,7 +168,7 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 // Start map
 // ---------------------------------- //
-***StartMap***
+***Match_StartMap***
 ***
 G_GiantPlayerId = NullId;
 G_SpawnsList.clear();
@@ -209,7 +212,6 @@ foreach (MapLandmarkId in G_CheckpointsList) {
 
 // ---------------------------------- //
 // Check if there are Gold crystals on the map
-declare MapCanSpawnGoldCrystal = False;
 foreach (MapLandmark in MapLandmarks_ObjectAnchor) if (MapLandmark.Tag == "Gold") {
 	MapCanSpawnGoldCrystal = True;
 	break;
@@ -248,7 +250,7 @@ if (Event.Victim.Id == G_GiantPlayerId) {
 		TL::Compose(_("%1 has been eliminated."), "$<"^Event.Victim.Name^"$>"),
 		3000, 3, CUIConfig::EUISound::VictoryPoint, 0
 	);
-	MB_StopMap = True;
+	MB_StopMatch();
 }
 ***
 
@@ -290,7 +292,7 @@ if (Event.Player.Id == G_GiantPlayerId) { Discard(Event); continue; } ///< TODO
 // ---------------------------------- //
 // Play loop
 // ---------------------------------- //
-***PlayLoop***
+***Match_PlayLoop***
 ***
 // ---------------------------------- //
 // Manage events
@@ -364,7 +366,7 @@ if (G_GiantPlayerId == NullId && Now >= UIManager.UIAll.CountdownEndTime) {
 	declare GiantSpawnId = GiantSpawnLandmarks[ML::Rand(0, GiantSpawnLandmarks.count - 1)];
 
 	SetPlayerClan(Giant, 2);
-	SM::SpawnPlayer(Giant, 0, MapLandmarks_PlayerSpawn[GiantSpawnId].PlayerSpawn, Now + S_RespawnTime);
+	SM::Spawn(Giant, 0, MapLandmarks_PlayerSpawn[GiantSpawnId].PlayerSpawn, Now + S_RespawnTime);
 
 	// Restore previous Giant health, if changed
 	Giant.Armor = LatestGiantHealth;
@@ -434,7 +436,7 @@ if (G_CurrentCheckpointId != NullId) {
 				TL::Compose(_("$<%1$> gets the final hit!"), Giant.User.Name),
 				3000, 2, CUIConfig::EUISound::VictoryPoint, 0
 			);
-			MB_StopMap = True;
+			MB_StopMatch();
 		}
 	}
 }
@@ -608,15 +610,14 @@ if (G_GoldCrystalObject != Null && Now >= GoldCrystalUnspawnTime) {
 	G_GoldCrystalObject = Null;
 }
 
-// ---------------------------------- //
 // Victory conditions
-if (GT_TimeReachedLimit() || Players.count <= 0) MB_StopMap = True;
+if (GT_TimeReachedLimit() || Players.count <= 0) MB_StopMatch();
 ***
 
 // ---------------------------------- //
 // Map end
 // ---------------------------------- //
-***EndMap***
+***Match_EndMap***
 ***
 UpdateScores();
 
@@ -663,9 +664,8 @@ Void GH_SpawnPlayer(CSmPlayer _Player) {
 	}
 	G_LatestSpawnId = SpawnId;
 	
-	// ---------------------------------- //
 	// Spawn player
-	SM::SpawnPlayer(_Player, _Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn, Now + S_RespawnTime);
+	SM::Spawn(_Player, _Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn, Now + S_RespawnTime);
 	declare Removed = G_SpawnsList.remove(SpawnId);
 }
 

@@ -1,15 +1,16 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2017-04-10            //
+//  script version: 2017-06-28            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2017-04-10"
-#Const ScriptName	"GoldenDunkV2.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Modes/ShootMania/GoldenDunkV2.Script.txt"
 
+#Include "Libs/Nadeo/Color.Script.txt" as Color
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
 
 // ---------------------------------- //
@@ -57,10 +58,11 @@ declare Boolean G_IsOvertime;		///< True, if game is in overtime mode
 // ---------------------------------- //
 // Extend
 // ---------------------------------- //
-***LogVersion***
+***Match_LogVersions***
 ***
-MB_LogVersion(ScriptName, Version);
-MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(Color::GetScriptName(), Color::GetScriptVersion());
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
@@ -73,32 +75,34 @@ TopScores::AddCategory("Dunks", "Dk", 2.25, 60.);
 ***
 
 // ---------------------------------- //
+// Update the mode rules
+// ---------------------------------- //
+***Match_Rules***
+***
+ModeInfo::SetName("Golden Dunk v2");
+ModeInfo::SetType(ModeInfo::C_Type_Teams);
+ModeInfo::SetRules("1. Pick up balls from the checkpoint in the middle of map.\n2. Take the ball to enemy hoop area to score 2 points for your team.\n3. Dropped balls will disappear after 5 seconds.\n4. If the map features Poles, capture your team Pole to be immune to OffZone.\n5. Team, which has more points when time ends, wins the round.");
+ModeInfo::SetStatusMessage(Description);
+***
+
+// ---------------------------------- //
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
+GT_AutoManageOnArmorEmpty = False;
+***
+
+// ---------------------------------- //
 // Server start
 // ---------------------------------- //
-***InitServer***
+***Match_InitServer***
 ***
-// ---------------------------------- //
-// Set mode options
 UseClans = True;
-GT_AutoManageOnArmorEmpty = False;
 
 declare ClanRoundScores = [0 => 0, 1 => 0, 2 => 0];
 declare netwrite Net_GoldenDunk_IsOvertime for Teams[0] = False;
 
-// ---------------------------------- //
-// Set the rules in the SpawnScreen
-GT_SpawnScreenModeName = "Golden Dunk v2";
-GT_SpawnScreenModeType = _("Team versus Team");
-GT_SpawnScreenObjectives = TL::Compose(
-	_("$<%11. $>Pick up balls from the checkpoint in the middle of map.\n$<%12. $>Take the ball to enemy hoop area to score 2 points for your team.\n$<%13. $>Dropped balls will disappear after 5 seconds.\n$<%14. $>If the map features Poles, capture your team Pole to be immune to OffZone.\n$<%15. $>Team, which has more points when time ends, wins the round."),
-	"$"^SpawnScreen::GetModeColor()
-);
-
-// ---------------------------------- //
-// Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Pick up a ball from the checkpoint in the middle of map and bring it to the enemy hoop area, to score 2 points for your team. If the map features Poles, you can capture your team Pole to be immune to OffZone.", "");
-
-// ---------------------------------- //
 // Create custom interface
 Layers::Create("GoldenDunk:Interface", CreateManialinkInterface());
 Layers::Create("GoldenDunk:Markers", CreateManialinkMarkers());
@@ -113,7 +117,7 @@ G_ObjectsIds["Ball"] = ItemList_Add("SMCommon\\SpeedBall\\Ball.Item.Gbx");
 // ---------------------------------- //
 // Map begin
 // ---------------------------------- //
-***InitMap***
+***Match_InitMap***
 ***
 // ---------------------------------- //
 // Check if the map is valid
@@ -137,7 +141,6 @@ for (Order, 1, 2) {
 	else MapValidated = False;
 }
 
-// ---------------------------------- //
 // Skip map if not valid
 if (!MapValidated) GT_SkipInvalidMap();
 ***
@@ -145,7 +148,7 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 // Map start
 // ---------------------------------- //
-***StartMap***
+***Match_StartMap***
 ***
 // ---------------------------------- //
 // Reset round scores
@@ -157,7 +160,7 @@ UIManager.UIAll.ScoreSummary_RoundPoints2 = 0;
 // ---------------------------------- //
 // Round start
 // ---------------------------------- //
-***InitRound***
+***Match_InitRound***
 ***
 declare CurrentTimeLimit = S_TimeLimit;
 declare Integer LeadClan;
@@ -179,7 +182,7 @@ UIManager.UIAll.MarkersXML = "";
 
 // ---------------------------------- //
 // Bind landmarks to teams
-declare BlueTeamSideOrder = MB_SectionRoundNb % 2 + 1;
+declare BlueTeamSideOrder = MB_GetRoundCount() % 2 + 1;
 UI_SetBlueTeamLandmarksOrder(BlueTeamSideOrder);
 
 // Get spawns
@@ -244,9 +247,8 @@ foreach (Player in Players) {
 
 UpdateMarkers();
 
-// ---------------------------------- //
 // Wait for enough players to start the game
-WaitForPlayers(S_NbPlayersPerTeamMin);
+GT_WaitForPlayers(S_NbPlayersPerTeamMin);
 
 Layers::Attach("GoldenDunk:Interface");
 Layers::Attach("GoldenDunk:Markers");
@@ -259,6 +261,14 @@ StartTime = Now + S_RespawnTime;
 if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
 else GT_DisableTimeLimit();
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+***
+
+// ---------------------------------- //
+// Customize waiting sequence
+// ---------------------------------- //
+***GalaxyTitles_StartWaiting***
+***
+GT_WaitingDisableOffZone = True;
 ***
 
 // ---------------------------------- //
@@ -292,9 +302,17 @@ if (PickUpBall(Event)) continue;
 ***
 
 // ---------------------------------- //
+// On player request action
+// ---------------------------------- //
+***Before_OnActionEvent***
+***
+if (DropBall(Event.Player, Event.ActionInput)) continue;
+***
+
+// ---------------------------------- //
 // Play loop
 // ---------------------------------- //
-***PlayLoop***
+***Match_PlayLoop***
 ***
 // ---------------------------------- //
 // Update maximum amount of balls
@@ -354,13 +372,6 @@ foreach (Event in PendingEvents) {
 			---PremadeOnArmorEmpty---
 		}
 	}
-	// ---------------------------------- //
-	// On player request action
-	else if (Event.Type == CSmModeEvent::EType::OnActionEvent) {
-		// ---------------------------------- //
-		// Drop carried ball
-		if (Event.ActionInput == CSmModeEvent::EActionInput::Consumable2) DropBall(Event.Player);
-	}
 }
 
 // ---------------------------------- //
@@ -374,7 +385,7 @@ if (PrevCheckpointBallVisible != (G_NbBallsTotal < G_NbBallsMax)) {
 	if (PrevCheckpointBallVisible) {
 		if (CentralBall == Null) {
 			CentralBall = ObjectCreate(G_ObjectsIds["Ball"]);
-			CentralBall.SetPosition(G_CentralCheckpointLandmark.Position - <0., .25, 0.>);
+			CentralBall.SetPosition(G_CentralCheckpointLandmark.Position + <0., .5, 0.>);
 		}
 	}
 	// ---------------------------------- //
@@ -405,7 +416,7 @@ foreach (Player in Players) {
 		
 		// Spawn player
 		declare PlayerSpawn <=> G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
-		SM::SpawnPlayer(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
+		SM::Spawn(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
 	}
 	
 	// ---------------------------------- //
@@ -454,7 +465,7 @@ foreach (Player in Players) {
 	
 	if (PlayerShieldPercLoaded - PrevPlayerShieldPercLoaded > C_GoalPercentPerPoint) {
 		TopScores::AddPoints(Player.Score, "Shield", 1);
-		Score::AddPoints(Player, 1);
+		Scores::AddPlayerRoundPoints(Player.Score, 1);
 		PrevPlayerShieldPercLoaded = PlayerShieldPercLoaded;
 	}
 }
@@ -572,20 +583,20 @@ if (!G_IsOvertime && CurrentTimeLimit != S_TimeLimit) {
 // ---------------------------------- //
 // Victory conditions
 if (GT_TimeReachedLimit()) {
-	if (ClanScores[1] != ClanScores[2]) MB_StopRound = True;
+	if (ClanScores[1] != ClanScores[2]) MB_StopRound();
 	else {
 		GT_DisableTimeLimit();
 		G_IsOvertime = True;
 		Net_GoldenDunk_IsOvertime = True;
 	}
 }
-if (G_IsOvertime && ClanScores[1] != ClanScores[2]) MB_StopRound = True;
+if (G_IsOvertime && ClanScores[1] != ClanScores[2]) MB_StopRound();
 ***
 
 // ---------------------------------- //
 // Round end
 // ---------------------------------- //
-***EndRound***
+***Match_EndRound***
 ***
 SM::UnspawnAllPlayers();
 G_NbBallsTotal = 0;
@@ -602,13 +613,10 @@ foreach (MapLandmark in G_ClanGoalLandmarks) {
 	MapLandmark.Gauge.Speed = 0;
 }
 
-// ---------------------------------- //
 // Set the round winner
 declare RoundWinner = 0;
-if (!MB_StopMap && !MatchEndRequested) {
-	foreach (Clan => Points in ClanScores)
-		if (Clan != 0 && Points > ClanScores[3 - Clan]) RoundWinner = Clan;
-}
+foreach (Clan => Points in ClanScores)
+	if (Clan != 0 && Points > ClanScores[3 - Clan]) RoundWinner = Clan;
 
 MB_Sleep(3000);
 
@@ -651,16 +659,19 @@ foreach (Clan => Points in ClanRoundScores) {
 		Points >= S_RoundsLimit ||
 		(Points >= S_RoundsToWin && Points - ClanRoundScores[3 - Clan] >= S_RoundGapToWin)
 	)
-		MB_StopMap = True;
+		MB_StopMatch();
 }
+***
 
-if (MB_StopMap) foreach (Clan => Points in ClanRoundScores) ClanScores[Clan] = Points;
+***EndMapBeforeCloseLadder***
+***
+foreach (Clan => Points in ClanRoundScores) ClanScores[Clan] = Points;
 ***
 
 // ---------------------------------- //
 // Server end
 // ---------------------------------- //
-***EndServer***
+***Match_EndServer***
 ***
 Layers::Destroy("GoldenDunk:Interface");
 Layers::Destroy("GoldenDunk:Markers");
@@ -741,7 +752,7 @@ Void UpdateMarkers() {
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerCheckpoint#1"
 				visibility="WhenInFrustum" minimapvisibility="Never" box="1 1 1"
-			/>
+			 />
 		""";
 	}
 	
@@ -756,12 +767,12 @@ Void UpdateMarkers() {
 		
 		// ---------------------------------- //
 		// World marker
-		declare Pos = Position + <0., 35., 0.>;
+		declare Pos = Position + <0., 25., 0.>;
 		UIManager.UIAll.MarkersXML ^= """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerHoop#{{{Clan}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never"
-			/>
+			 />
 		""";
 	}
 	
@@ -781,7 +792,7 @@ Void UpdateMarkers() {
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerGoal#{{{Clan}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never"
-			/>
+			 />
 		""";
 	}
 	
@@ -798,10 +809,7 @@ Void UpdateMarkers() {
 		// Minimap marker
 		declare MarkerId = "Ball:"^Player.User.Login;
 		G_CreatedUIMarkers.add(MarkerId);
-		MiniMap::SetMarker(
-			MarkerId, "Ball.png",
-			Teams[Player.CurrentClan -1].ColorPrimary, Player.User.Login
-		);
+		MiniMap::SetMarker(MarkerId, "Ball.png", Color::HsvToRgb(<Player.GetLinearHue, 1., 1.>), Player.User.Login);
 		
 		// ---------------------------------- //
 		// World marker
@@ -809,7 +817,7 @@ Void UpdateMarkers() {
 			<marker
 				playerid="{{{PlayerId}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never" box="1 2 1"
-			/>
+			 />
 		""";
 	}
 	
@@ -833,7 +841,7 @@ Void UpdateMarkers() {
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never" box="0 .75 0"
-			/>
+			 />
 		""";
 	}
 }
@@ -908,7 +916,7 @@ Boolean PickUpBall(CSmModeEvent _Event) {
 	Discard(_Event);
 	
 	// Return if the player already has a ball
-	if (IsCarryingBall(_Event.Player)) return True;
+	if (_Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || _Event.Player.IsBot || IsCarryingBall(_Event.Player)) return True;
 	
 	// ---------------------------------- //
 	// Pick up only if item is not forbidden
@@ -966,6 +974,18 @@ Void DropBall(CSmPlayer _Player) {
 }
 
 // ---------------------------------- //
+/** Request drop a ball by the player.
+ *
+ *	@param	_Player			The player to drop the ball.
+ *	@param	_ActionInput	The key pressed by the player.
+ */
+Boolean DropBall(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
+	if (_Player == Null || !IsCarryingBall(_Player) || _ActionInput != CSmMode::EActionInput::Consumable2) return False;
+	DropBall(_Player);
+	return True;
+}
+
+// ---------------------------------- //
 /** Score the ball in enemy hoop
  *
  *	@param	_Player		The player that scored the ball
@@ -980,7 +1000,7 @@ Void ScoreBall(CSmPlayer _Player) {
 	if (_Player.CurrentClan == 0) return;
 	
 	ClanScores[_Player.CurrentClan] += 2;
-	Score::AddPoints(_Player, 1);
+	Scores::AddPlayerRoundPoints(_Player.Score, 1);
 	TopScores::AddPoints(_Player.Score, "Dunks", 1);
 	Statistics::TrackEvent(_Player, "BallsScored", 1);
 	
@@ -1021,100 +1041,6 @@ Void ScoreBall(CSmPlayer _Player) {
 }
 
 // ---------------------------------- //
-/** Wait for enough players to play
- *
- *	@param	_MinimumNbPlayers	The number of players to wait in each clan before starting the map
- */
-Void WaitForPlayers(Integer _MinimumNbPlayers) {
-	// ---------------------------------- //
-	// Initialize
-	declare OldSequence = UIManager.UIAll.UISequence;
-	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
-	
-	declare HasWaited = False;
-	declare WasPause = False;
-	StartTime = Now;
-	
-	foreach (Player in AllPlayers) SetPlayerClan(Player, GT_GetRequestedClan(Player));
-	
-	// ---------------------------------- //
-	// Initialize objects
-	GalaxyTitles::ResetAll();
-	GalaxyTitles::InitObjects();
-	
-	// ---------------------------------- //
-	// Waiting for players play loop
-	while (!ServerShutdownRequested && !MatchEndRequested) {
-		MB_Yield();
-		
-		// Let the server sleep if there's no players on it
-		if (PlayersNbTotal <= 0) continue;
-		
-		// Stop waiting if there are enough players to start the game
-		if (ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers && !CupAdmin::IsCupPaused()) break;
-		
-		// ---------------------------------- //
-		// Display big message
-		if (!HasWaited) {
-			UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
-			
-			if (CupAdmin::IsCupPaused()) {
-				Translations::SetStatusMessage("Competition has been paused");
-				UIManager.UIAll.BigMessage = TL::Compose("$F90%1", _("Pause"));
-				WasPause = True;
-			}
-			else UIManager.UIAll.BigMessage = _("Waiting for players in each team...");
-			
-			HasWaited = True;
-		}
-		
-		GalaxyTitles::SpawnObjects();
-		GT_UnspawnPlayersChangingClan();
-		WarmUp2::ManageEvents();
-		
-		// ---------------------------------- //
-		// Spawn players
-		foreach (Player in Players) {
-			if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
-				// ---------------------------------- //
-				// Initialize player
-				SetPlayerClan(Player, GT_GetRequestedClan(Player));
-				Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
-				Player.StaminaMax = C_PlayerStaminaMax;
-				
-				// Spawn player
-				if (Player.CurrentClan == 0) continue;
-				SM::SpawnPlayer(Player, Player.CurrentClan, G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn, Now + S_RespawnTime);
-			}
-		}
-	}
-	
-	StartTime = -1;
-	
-	// ---------------------------------- //
-	// Player joined the game
-	if (HasWaited) {
-		SM::UnspawnAllPlayers();
-		GalaxyTitles::ResetAll();
-		
-		if (!ServerShutdownRequested && !MatchEndRequested) {
-			declare Message = _("A new player joins the game.");
-			if (WasPause) Message = "Competition has been resumed!";
-			
-			Translations::SendBigMessage(Message, 5000, 0, CUIConfig::EUISound::Default, 0);
-			MB_Sleep(5000);
-		}
-	}
-	
-	// ---------------------------------- //
-	// Revert changes
-	UIManager.UIAll.BigMessage = "";
-	UIManager.UIAll.StatusMessage = "";
-	UIManager.UIAll.UISequence = OldSequence;
-	---UpdateClublinks---
-}
-
-// ---------------------------------- //
 /** Create manialink for the interface module
  *
  *	@return		The interface manialink
@@ -1123,61 +1049,61 @@ Text CreateManialinkInterface() {
 	// ---------------------------------- //
 	// Create manialink
 	return """
-<manialink version="2" name="GoldenDunk:Interface">
+<manialink version="3" name="GoldenDunk:Interface">
 <stylesheet>
-	<style class="EscapeMessage" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
-	<style class="BallCarrier" halign="center" valign="center" sizen="20 20" image="{{{C_ImgBase}}}BallCarrier.png" opacity=".875"/>
-	<style class="CircGauge" sizen="16 16" halign="center" valign="center" colorize="FFF"/>
+	<style class="EscapeMessage" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF" />
+	<style class="BallCarrier" halign="center" valign="center" size="20 20" image="{{{C_ImgBase}}}BallCarrier.png" opacity=".875" />
+	<style class="CircGauge" size="16 16" halign="center" valign="center" colorize="FFF" />
 </stylesheet>
 
 <framemodel id="FrameModel_PoleGauge">
-	<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeBg.png" id="Quad_GaugeBg"/>
-	<frame posn="-.05 0 1" clip="1" clipposn="4" clipsizen="8 16">
-		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeL" hidden="1"/>
+	<label pos="0 -2.75" class="EscapeMessage" textsize="2" text="0%" id="Label_Ratio" />
+	<quad pos="0 1.25" size="6 6" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_Emblem" />
+	<frame size="8 16" halign="left" valign="center">
+		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeL" hidden="1" />
 	</frame>
-	<frame posn="0 0 1" clip="1" clipposn="-4" clipsizen="8 16">
-		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeR" hidden="1" rot="180"/>
+	<frame size="8 16" halign="right" valign="center">
+		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeR" hidden="1" rot="180" />
 	</frame>
-	<quad posn="0 1.25 2" sizen="6 6" halign="center" valign="center" style="Emblems" substyle="#0" id="Quad_Emblem"/>
-	<label posn="0 -2.75 2" class="EscapeMessage" textsize="2" text="0%" id="Label_Ratio"/>
+	<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeBg.png" id="Quad_GaugeBg" />
 	<quad
-		posn="0 0 -1" sizen="14 14" halign="center" valign="center"
+		size="14 14" halign="center" valign="center"
 		image="file://Media/Manialinks/Common/disc.dds" colorize="FFF" opacity="0" id="Quad_CaptureAlert"
-	/>
+	 />
 </framemodel>
 
-<frame id="Frame_GaugeMessage" posn="0 -54 5">
+<frame id="Frame_GaugeMessage" pos="0 -54 5">
 	<frame id="Frame_GaugeMessageAnim">
-		<quad posn="0 8 -.1" sizen="12 12" halign="center" valign="center" autoscale="0" id="Quad_CurLandmarkIcon"/>
-		<label class="EscapeMessage" id="Label_CurLandmarkMessage"/>
-		<gauge posn="0 -3 -.1" sizen="52 8" halign="center" valign="center" drawbg="0" id="Gauge_CurLandmarkValue" hidden="1"/>
+		<label class="EscapeMessage" id="Label_CurLandmarkMessage" />
+		<quad pos="0 8" size="12 12" halign="center" valign="center" autoscale="0" id="Quad_CurLandmarkIcon" />
+		<gauge pos="0 -3" size="52 8" halign="center" valign="center" drawbg="0" id="Gauge_CurLandmarkValue" hidden="1" />
 	</frame>
 </frame>
 
 <frame id="Frame_BallCarrier">
-	<quad class="BallCarrier" id="Quad_BallCarrierL" opacity="0" posn="-30"/>
-	<quad class="BallCarrier" id="Quad_BallCarrierR" opacity="0" posn="30" rot="180"/>
+	<quad class="BallCarrier" id="Quad_BallCarrierL" opacity="0" pos="-30" />
+	<quad class="BallCarrier" id="Quad_BallCarrierR" opacity="0" pos="30" rot="180" />
 </frame>
 
-<frameinstance modelid="FrameModel_PoleGauge" id="Frame_PoleGauge#1" scale=".875" hidden="1" posn="-40 82"/>
-<frameinstance modelid="FrameModel_PoleGauge" id="Frame_PoleGauge#2" scale=".875" hidden="1" posn="40 82"/>
+<frameinstance modelid="FrameModel_PoleGauge" id="Frame_PoleGauge#1" scale=".875" hidden="1" pos="-40 82" />
+<frameinstance modelid="FrameModel_PoleGauge" id="Frame_PoleGauge#2" scale=".875" hidden="1" pos="40 82" />
 
 <quad
-	posn="0 75" sizen="48 12" halign="center" valign="center"
+	pos="0 75" size="48 12" halign="center" valign="center"
 	image="{{{C_ImgBase}}}GoldenDunk.png" id="Quad_GoldenDunk" opacity="0"
-/>
+ />
 
-<frame id="Frame_OffZoneShield" posn="0 75">
-	<quad
-		sizen="48 12" halign="center" valign="center"
-		image="{{{C_ImgBase}}}OffZoneShield.png" id="Quad_OffZoneShield" opacity="0"
-	/>
-	<frame id="Frame_OffZoneShieldBlink" clip="1" cliposn="-250" clipsizen="3 12">
+<frame id="Frame_OffZoneShield" pos="0 75">
+	<frame id="Frame_OffZoneShieldBlink" clip="1" clipos="-250" clipsize="3 12">
 		<quad
-			posn="0 0 1" sizen="48 12" halign="center" valign="center"
+			size="48 12" halign="center" valign="center"
 			image="{{{C_ImgBase}}}OffZoneShieldBlink.png"
-		/>
+		 />
 	</frame>
+	<quad
+		size="48 12" halign="center" valign="center"
+		image="{{{C_ImgBase}}}OffZoneShield.png" id="Quad_OffZoneShield" opacity="0"
+	 />
 </frame>
 
 <script><!--
@@ -1334,7 +1260,6 @@ foreach (I => MapLandmark in ClanGoalLandmarks) {
 		
 		if (GaugeSpeed != 0) {
 			declare Quad_CaptureAlert <=> (Frame.GetFirstChild("Quad_CaptureAlert") as CMlQuad);
-			LibManialink_AnimStop(Quad_CaptureAlert);
 			
 			declare Color = <1., 1., 1.>;
 			if (GUIPlayer != Null && GUIPlayer.CurrentClan != 0) {
@@ -1350,7 +1275,7 @@ foreach (I => MapLandmark in ClanGoalLandmarks) {
 			Quad_CaptureAlert.RelativeScale = 1.;
 			Quad_CaptureAlert.Opacity = .75;
 			
-			LibManialink_Anim(Quad_CaptureAlert, "<quad scale=1.75 opacity=0 />", 1500, "EaseOutCirc");
+			AnimMgr.Add(Quad_CaptureAlert, "<quad scale='1.75' opacity='0' />", 1500, CAnimManager::EAnimManagerEasing::CircOut);
 		}
 	}
 }
@@ -1498,9 +1423,6 @@ else {
 if (PrevGaugeMessageVisible != GaugeMessageVisible) {
 	PrevGaugeMessageVisible = GaugeMessageVisible;
 	
-	LibManialink_AnimStop(Frame_GaugeMessageAnim);
-	LibManialink_AnimStop(Label_CurLandmarkMessage);
-	LibManialink_AnimStop(Quad_CurLandmarkIcon);
 	Gauge_CurLandmarkValue.Visible = GaugeMessageVisible;
 	
 	declare PositionY = -2.;
@@ -1515,9 +1437,9 @@ if (PrevGaugeMessageVisible != GaugeMessageVisible) {
 		Opacity = 1.;
 	}
 	
-	LibManialink_Anim(Frame_GaugeMessageAnim, "<frame posn=\"0 "^PositionY^"\"/>", 125, "EaseLinear");
-	LibManialink_Anim(Label_CurLandmarkMessage, "<label opacity=\""^Opacity^"\"/>", 125, "EaseLinear");
-	LibManialink_Anim(Quad_CurLandmarkIcon, "<quad opacity=\""^Opacity^"\"/>", 125, "EaseLinear");
+	AnimMgr.Add(Frame_GaugeMessageAnim, "<frame pos='0 "^PositionY^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Label_CurLandmarkMessage, "<label opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Quad_CurLandmarkIcon, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 }
 
 // ---------------------------------- //
@@ -1525,14 +1447,11 @@ if (PrevGaugeMessageVisible != GaugeMessageVisible) {
 if (PrevBallCarrierVisible != BallCarrierVisible) {
 	PrevBallCarrierVisible = BallCarrierVisible;
 	
-	LibManialink_AnimStop(Quad_BallCarrierL);
-	LibManialink_AnimStop(Quad_BallCarrierR);
-	
 	declare Opacity = 0.;
 	if (BallCarrierVisible) Opacity = 1.;
 	
-	LibManialink_Anim(Quad_BallCarrierL, "<quad opacity=\""^Opacity^"\"/>", 200, "EaseInOutSine");
-	LibManialink_Anim(Quad_BallCarrierR, "<quad opacity=\""^Opacity^"\"/>", 200, "EaseInOutSine");
+	AnimMgr.Add(Quad_BallCarrierL, "<quad opacity='"^Opacity^"' />", 200, CAnimManager::EAnimManagerEasing::SineInOut);
+	AnimMgr.Add(Quad_BallCarrierR, "<quad opacity='"^Opacity^"' />", 200, CAnimManager::EAnimManagerEasing::SineInOut);
 }
 
 // ---------------------------------- //
@@ -1540,10 +1459,9 @@ if (PrevBallCarrierVisible != BallCarrierVisible) {
 if (PrevIsOvertime != Net_GoldenDunk_IsOvertime) {
 	PrevIsOvertime = Net_GoldenDunk_IsOvertime;
 	
-	LibManialink_AnimStop(Quad_GoldenDunk);
 	declare Opacity = 0.;
 	if (Net_GoldenDunk_IsOvertime) Opacity = 1.;
-	LibManialink_Anim(Quad_GoldenDunk, "<quad opacity=\""^Opacity^"\"/>", 250, "EaseInOutSine");
+	AnimMgr.Add(Quad_GoldenDunk, "<quad opacity='"^Opacity^"' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
 }
 
 // ---------------------------------- //
@@ -1551,10 +1469,9 @@ if (PrevIsOvertime != Net_GoldenDunk_IsOvertime) {
 if (PrevOffZoneShieldVisible != OffZoneShieldVisible) {
 	PrevOffZoneShieldVisible = OffZoneShieldVisible;
 	
-	LibManialink_AnimStop(Quad_OffZoneShield);
 	declare Opacity = 0.;
 	if (OffZoneShieldVisible) Opacity = 1.;
-	LibManialink_Anim(Quad_OffZoneShield, "<quad opacity=\""^Opacity^"\"/>", 250, "EaseInOutSine");
+	AnimMgr.Add(Quad_OffZoneShield, "<quad opacity='"^Opacity^"' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
 }
 
 // ---------------------------------- //
@@ -1568,24 +1485,6 @@ if (Frame_OffZoneShieldBlink.Visible) {
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
-
-// ---------------------------------- //
-/** Change color brightness
- *
- *	@param	_Color			Input color
- *	@param	_Brightness		Target brightness
- *
- *	@return		New color
- */
-Vec3 Brightness(Vec3 _Color, Real _Brightness) {
-	if (_Brightness == 1) return _Color;
-	if (_Brightness <= 0) return Vec3;
-	
-	declare Vec3 OutputColor;
-	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
-	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
-	return OutputColor;
-}
 
 // ---------------------------------- //
 /**	Get a landmark with a gauge from its tag and order
@@ -1623,7 +1522,6 @@ Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
 }
 
 {{{Translations::InjectInManialink(["Pole blocked by enemy", "Shield is destroyed!", "Destroying enemy Shield...", "Shield is loaded!", "Loading Shield..."])}}}
-{{{Manialink::Animations(["EaseLinear", "EaseInOutSine", "EaseOutCirc"])}}}
 
 // ---------------------------------- //
 // Main
@@ -1632,7 +1530,6 @@ main() {
 	+++Main+++
 	while (True) {
 		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
 	}
 }
@@ -1650,46 +1547,46 @@ Text CreateManialinkMarkers() {
 	
 	declare Text BallsMarkers;
 	for (I, 0, 9)
-		BallsMarkers ^= """<frameinstance modelid="FrameModel_BallMarker" id="Frame_BallMarker#{{{I}}}" hidden="1"/>""";
+		BallsMarkers ^= """<frameinstance modelid="FrameModel_BallMarker" id="Frame_BallMarker#{{{I}}}" hidden="1" />""";
 	
 	return """
-<manialink version="1" name="GoldenDunk:Markers">
+<manialink version="3" name="GoldenDunk:Markers">
 <framemodel id="FrameModel_GoalMarker">
-	<label halign="center" valign="center2" textsize="1" textemboss="1" textfont="Eurostile_Bold" id="Label_MarkerText"/>
-	<quad posn="0 2.5" sizen="{{{8 * Ratio}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon"/>
+	<label halign="center" valign="center2" textsize="1" textemboss="1" textfont="Eurostile_Bold" id="Label_MarkerText" />
+	<quad pos="0 2.5" size="{{{8 * Ratio}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" />
 </framemodel>
 
 <framemodel id="FrameModel_BallMarker">
-	<quad
-		sizen="{{{Ratio * 7}}} 7" halign="center" valign="center" colorize="FFF"
-		image="{{{C_ImgBase}}}Minimap/Ball.png" id="Quad_MarkerIcon"
-	/>
 	<label
-		posn="0 5" halign="center" valign="center2" textemboss="1" textcolor="FFF"
+		pos="0 5" halign="center" valign="center2" textemboss="1" textcolor="FFF"
 		textfont="Eurostile_Bold" id="Label_MarkerText"
-	/>
+	 />
+	<quad
+		size="{{{Ratio * 7}}} 7" halign="center" valign="center" colorize="FFF"
+		image="{{{C_ImgBase}}}Minimap/Ball.png" id="Quad_MarkerIcon"
+	 />
 </framemodel>
 
 <framemodel id="FrameModel_CenterMarker">
 	<frame id="Frame_Offset">
 		<quad
-			sizen="{{{Ratio * 7}}} 7" valign="center" colorize="FFF"
+			size="{{{Ratio * 7}}} 7" valign="center" colorize="FFF"
 			image="{{{C_ImgBase}}}Minimap/Ball.png"
-		/>
+		 />
 		<label
-			posn="{{{Ratio * 7}}}" valign="center2" textemboss="1" textcolor="FFF"
+			pos="{{{Ratio * 7}}}" valign="center2" textemboss="1" textcolor="FFF"
 			textfont="Eurostile_Bold" id="Label_MarkerText2"
-		/>
+		 />
 	</frame>
 </framemodel>
 
-<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#1" hidden="1"/>
-<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#2" hidden="1"/>
+<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#1" hidden="1" />
+<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#2" hidden="1" />
 
-<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerHoop#1" hidden="1"/>
-<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerHoop#2" hidden="1"/>
+<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerHoop#1" hidden="1" />
+<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerHoop#2" hidden="1" />
 
-<frameinstance modelid="FrameModel_CenterMarker" id="Frame_MarkerCheckpoint#1" hidden="1"/>
+<frameinstance modelid="FrameModel_CenterMarker" id="Frame_MarkerCheckpoint#1" hidden="1" />
 
 {{{BallsMarkers}}}
 
@@ -1827,7 +1724,7 @@ if (UpdateMarkers) {
 		if (!Frame.Visible) Frame.Show();
 		
 		Quad_MarkerIcon.Colorize = Teams[Clan - 1].ColorPrimary;
-		Label_MarkerText.TextColor = Brightness(Quad_MarkerIcon.Colorize, 1.5);
+		Label_MarkerText.TextColor = Brightness(Quad_MarkerIcon.Colorize, 2.);
 		
 		// ---------------------------------- //
 		// Set marker text
@@ -1855,7 +1752,7 @@ if (UpdateMarkers) {
 		if (!Frame.Visible) Frame.Show();
 		
 		Quad_MarkerIcon.Colorize = Teams[Clan - 1].ColorPrimary;
-		Label_MarkerText.TextColor = Brightness(Quad_MarkerIcon.Colorize, 1.5);
+		Label_MarkerText.TextColor = Brightness(Quad_MarkerIcon.Colorize, 2.);
 		
 		// ---------------------------------- //
 		// Set marker text
@@ -1904,25 +1801,8 @@ Real ComputeWidth(CMlLabel _Label) {
 	return _Label.ComputeWidth(_Label.Value) * _Label.RelativeScale;
 }
 
-// ---------------------------------- //
-/** Change color brightness
- *
- *	@param	_Color			Input color
- *	@param	_Brightness		Target brightness
- *
- *	@return		New color
- */
-Vec3 Brightness(Vec3 _Color, Real _Brightness) {
-	if (_Brightness == 1) return _Color;
-	if (_Brightness <= 0) return Vec3;
-	
-	declare Vec3 OutputColor;
-	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
-	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
-	return OutputColor;
-}
-
 {{{Translations::InjectInManialink(["Teammates Shield", "Opponents Shield", "$<%1$> Shield", "$<%1$> Drop Zone", "Defend", "Score ball"])}}}
+{{{ManialinkTools::Functions(["Brightness"])}}}
 
 // ---------------------------------- //
 // Main

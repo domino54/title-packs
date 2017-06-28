@@ -1,14 +1,14 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2017-04-10            //
+//  script version: 2017-06-28            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
-#Const CompatibleMapTypes	"JailbreakArena JailbreakV2Arena"
-#Const Version		"2017-04-10"
-#Const ScriptName	"JailbreakV2.Script.txt"
+#Const CompatibleMapTypes	"JailbreakArena, JailbreakV2Arena"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Modes/ShootMania/JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
 
@@ -56,10 +56,10 @@ declare Integer G_RoundDelayedEndTime;		///< Additional play time after end cond
 // ---------------------------------- //
 // Extend
 // ---------------------------------- //
-***LogVersion***
+***Match_LogVersions***
 ***
-MB_LogVersion(ScriptName, Version);
-MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
@@ -72,29 +72,31 @@ ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerR
 ***
 
 // ---------------------------------- //
-// Initialize server
+// Update the mode rules
 // ---------------------------------- //
-***InitServer***
+***Match_Rules***
 ***
+ModeInfo::SetName("Jailbreak v2");
+ModeInfo::SetType(ModeInfo::C_Type_Teams);
+ModeInfo::SetRules("1. Eliminate opponents to send them to the jail.\n2. Players can escape from the jail, if at least one teammate stands on the Goal.\n3. Team wins, if all opponents are in jail.\n4. If the time limit is reached, team with more free players wins.");
+ModeInfo::SetStatusMessage(Description);
+***
+
 // ---------------------------------- //
-// Set the mode options
-UseClans = True;
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
 GT_AutoManageOnArmorEmpty = False;
 GT_KillfeedTranslations = ["$<%1$> released $<%2$>"];
+***
 
 // ---------------------------------- //
-// Set the mode rules
-GT_SpawnScreenModeName = "Jailbreak v2";
-GT_SpawnScreenModeType = _("Team versus Team");
-GT_SpawnScreenObjectives = TL::Compose(
-	_("$<%11. $>Eliminate opponents to send them to the jail.\n$<%12. $>Players can escape from the jail, if at least one teammate stands on the Goal.\n$<%13. $>Team wins, if all opponents are in jail.\n$<%14. $>If the time limit is reached, team with more free players wins.\n$<%15. $>The first team to win %2 rounds wins the match."),
-	"$"^SpawnScreen::GetModeColor(),
-	TL::ToText(S_RoundsToWin)
-);
-
+// Initialize server
 // ---------------------------------- //
-// Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "When a player is eliminated, they will be respawned in Jail. To let teammates escape, at least one team member has to stand on the Goal. Game ends after time reach the limit or one team doesn't have any players outside of the Jail.", "");
+***Match_InitServer***
+***
+UseClans = True;
 
 // ---------------------------------- //
 // Register callbacks
@@ -109,17 +111,23 @@ XmlRpc::RegisterCallback("Jailbreak_PlayerReleased", """
 * Note : This callback is sent when a player leaves the jail.
 """);
 
-// ---------------------------------- //
 // Create custom interface
 Layers::Create("JailbreakInterface", CreateManialinkInterface());
 Layers::Create("JailbreakMarkers", CreateManialinkMarkers());
 Layers::SetType("JailbreakMarkers", CUILayer::EUILayerType::Markers);
+
+// ---------------------------------- //
+// Variables
+declare NextMissingPlayersCheckTime = Now;
+declare PrevPlayersCount = -1;
+declare PrevSpectatorsCount = -1;
+declare CurrentTimeLimit = S_TimeLimit;
 ***
 
 // ---------------------------------- //
 // Map begin
 // ---------------------------------- //
-***InitMap***
+***Match_InitMap***
 ***
 // ---------------------------------- //
 // Check if the map is valid
@@ -131,7 +139,6 @@ for (Order, 1, 2) {
 }
 if (GetLandmarksGate("Gate", 1).count != GetLandmarksGate("Gate", 2).count) MapValidated = False;
 
-// ---------------------------------- //
 // Skip map if not valid
 if (!MapValidated) GT_SkipInvalidMap();
 ***
@@ -139,21 +146,15 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 // Map start
 // ---------------------------------- //
-***StartMap***
+***Match_StartMap***
 ***
 ClearGlobalVariables();
-
-// Variables
-declare Integer NextMissingPlayersCheckTime;
-declare Integer PrevPlayersCount;
-declare Integer PrevSpectatorsCount;
-declare CurrentTimeLimit = S_TimeLimit;
 ***
 
 // ---------------------------------- //
 // Round start
 // ---------------------------------- //
-***InitRound***
+***Match_InitRound***
 ***
 ClearGlobalVariables();
 ResetPlayersColors();
@@ -163,7 +164,7 @@ UIManager.UIAll.MarkersXML = "";
 
 // ---------------------------------- //
 // Bind landmarks to teams
-declare BlueTeamSideOrder = MB_SectionRoundNb % 2 + 1;
+declare BlueTeamSideOrder = MB_GetRoundCount() % 2 + 1;
 UI_SetBlueTeamLandmarksOrder(BlueTeamSideOrder);
 
 // Get spawns
@@ -218,8 +219,8 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 	// Create marker
 	UIManager.UIAll.MarkersXML ^= """<marker
 		pos="{{{MapLandmark.Position.X^" "^MapLandmark.Position.Y + 25^" "^MapLandmark.Position.Z}}}"
-		manialinkframeid="Frame_MarkerGoal#{{{Clan}}}"
-	/>""";
+		manialinkframeid="Frame_MarkerGoal#{{{Clan}}}" visibility="WhenInFrustum"
+	 />""";
 }
 
 foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
@@ -239,9 +240,8 @@ foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
 
 ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
 
-// ---------------------------------- //
 // Wait for enough players to start the game
-WaitForPlayers(S_NbPlayersPerTeamMin);
+GT_WaitForPlayers(S_NbPlayersPerTeamMin);
 
 // Attach interface
 Layers::Attach("JailbreakInterface");
@@ -259,6 +259,20 @@ StartTime = Now + S_RespawnTime;
 if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
 else GT_DisableTimeLimit();
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+***
+
+// ---------------------------------- //
+// Customize waiting sequence
+// ---------------------------------- //
+***GalaxyTitles_StartWaiting***
+***
+GT_WaitingDisableOffZone = True;
+
+// Disable gates
+foreach (MapLandmark in MapLandmarks_Gate) {
+	MapLandmark.Gate.ManualClosed = False;
+	MapLandmark.Gauge.ValueReal = 0.;
+}
 ***
 
 // ---------------------------------- //
@@ -282,7 +296,7 @@ JailPlayer(Event.Player, Null);
 // ---------------------------------- //
 // Play loop
 // ---------------------------------- //
-***PlayLoop***
+***Match_PlayLoop***
 ***
 // ---------------------------------- //
 // Manage events
@@ -362,9 +376,10 @@ foreach (Player in Players) {
 		else
 			PlayerSpawn <=> G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
 		
-		// ---------------------------------- //
 		// Spawn player
-		SM::SpawnPlayer(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
+		SM::Spawn(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
+
+		// Dimming players inside jail
 		Player.HasShield = !IsInJail(Player);
 	}
 	
@@ -436,14 +451,14 @@ if (CurrentTimeLimit != S_TimeLimit) {
 
 // ---------------------------------- //
 // Victory conditions
-for (Clan, 1, 2) if (ClansNbPlayers[Clan] <= 0 || G_ClansFreePlayers[Clan].count <= 0) MB_StopRound = True;
-if (GT_TimeReachedLimit()) MB_StopRound = True;
+for (Clan, 1, 2) if (ClansNbPlayers[Clan] <= 0 || G_ClansFreePlayers[Clan].count <= 0) MB_StopRound();
+if (GT_TimeReachedLimit()) MB_StopRound();
 ***
 
 // ---------------------------------- //
 // Round end
 // ---------------------------------- //
-***EndRoundBeforeSetScores***
+***Match_EndRound***
 ***
 UpdateClansPlayersLists();
 Message::CleanBigMessages();
@@ -452,28 +467,23 @@ ResetPlayersColors();
 
 // ---------------------------------- //
 // Victory sound
-if (GT_TimeReachedLimit() && !MB_StopMap && !MatchEndRequested) {
+if (!GT_TimeReachedLimit()) {
 	UIManager.UIAll.SendNotice(
 		"", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default,
 		CUIConfig::EUISound::VictoryPoint, 0
 	);
 	MB_Sleep(1250);
 }
-***
 
-***EndRound***
-***
 // ---------------------------------- //
 // Set the round winner
 declare RoundWinner = 0;
-if (!MB_StopMap && !MatchEndRequested) {
-	for (Clan, 1, 2) if (ClansNbPlayers[Clan] > 0 && ClansNbPlayers[3 - Clan] == 0) RoundWinner = Clan;
-	if (
-		RoundWinner == 0 && (G_ClansJailedPlayers[1].count > 0 || G_ClansJailedPlayers[2].count > 0) &&
-		G_ClansFreePlayers[1].count != G_ClansFreePlayers[2].count
-	)
-		for (Clan, 1, 2) if (G_ClansFreePlayers[Clan].count > G_ClansFreePlayers[3 - Clan].count) RoundWinner = Clan;
-}
+for (Clan, 1, 2) if (ClansNbPlayers[Clan] > 0 && ClansNbPlayers[3 - Clan] == 0) RoundWinner = Clan;
+if (
+	RoundWinner == 0 && (G_ClansJailedPlayers[1].count > 0 || G_ClansJailedPlayers[2].count > 0) &&
+	G_ClansFreePlayers[1].count != G_ClansFreePlayers[2].count
+)
+	for (Clan, 1, 2) if (G_ClansFreePlayers[Clan].count > G_ClansFreePlayers[3 - Clan].count) RoundWinner = Clan;
 
 MB_Sleep(1000);
 
@@ -513,22 +523,14 @@ foreach (Clan => Points in ClanScores) {
 		Points >= S_RoundsLimit ||
 		(Points >= S_RoundsToWin && Points - ClanScores[3 - Clan] >= S_RoundGapToWin)
 	)
-		MB_StopMap = True;
+		MB_StopMatch();
 }
-***
-
-// ---------------------------------- //
-// Map end
-// ---------------------------------- //
-***EndMapBeforePodium***
-***
-Message::CleanBigMessages();
 ***
 
 // ---------------------------------- //
 // Server end
 // ---------------------------------- //
-***EndServer***
+***Match_EndServer***
 ***
 Layers::Destroy("JailbreakInterface");
 Layers::Destroy("JailbreakMarkers");
@@ -731,11 +733,12 @@ Void JailPlayer(CSmPlayer _Victim, CSmPlayer _Shooter) {
 		);
 	}
 	
-	// ---------------------------------- //
+	/*
 	// Send callback
 	declare Text ShooterLogin;
 	if (_Shooter != Null && !_Shooter.IsBot && !_Shooter.IsFakePlayer) ShooterLogin = _Shooter.Login;
 	XmlRpc::SendCallbackArray("Jailbreak_PlayerJailed", [_Victim.Login, ShooterLogin]);
+	*/
 	
 	// Update clans players lists
 	UpdateClansPlayersLists();
@@ -765,7 +768,7 @@ Void ReleasePlayer(CSmPlayer _Player) {
 			if (Player == Null || Player.CurrentClan != Clan) continue;
 			if (Releaser == Null) Releaser <=> Player;
 			
-			Score::AddPoints(Player, 1);
+			Scores::AddPlayerRoundPoints(Player.Score, 1);
 			TopScores::AddPoints(Player.Score, "Release", 1);
 			
 			// List logins for the callback
@@ -790,9 +793,8 @@ Void ReleasePlayer(CSmPlayer _Player) {
 		);
 	}
 	
-	// ---------------------------------- //
 	// Send callback
-	XmlRpc::SendCallbackArray("Jailbreak_PlayerReleased", [_Player.Login, ReleasersLogins]);
+	// XmlRpc::SendCallbackArray("Jailbreak_PlayerReleased", [_Player.Login, ReleasersLogins]);
 	
 	// Update clans players lists
 	UpdateClansPlayersLists();
@@ -832,102 +834,6 @@ Void ResetPlayersColors() {
 }
 
 // ---------------------------------- //
-/** Wait for enough players to play
- *
- *	@param	_MinimumNbPlayers	The number of players to wait in each clan before starting the map
- */
-Void WaitForPlayers(Integer _MinimumNbPlayers) {
-	// ---------------------------------- //
-	// Initialize
-	declare OldSequence = UIManager.UIAll.UISequence;
-	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
-	
-	declare HasWaited = False;
-	declare WasPause = False;
-	StartTime = Now;
-	
-	foreach (Player in AllPlayers) SetPlayerClan(Player, GT_GetRequestedClan(Player));
-	
-	// ---------------------------------- //
-	// Initialize objects
-	GalaxyTitles::ResetAll();
-	GalaxyTitles::InitObjects();
-	
-	// ---------------------------------- //
-	// Waiting for players play loop
-	while (!ServerShutdownRequested && !MatchEndRequested) {
-		MB_Yield();
-		
-		// Let the server sleep if there's no players on it
-		if (PlayersNbTotal <= 0) continue;
-		
-		// Stop waiting if there are enough players to start the game
-		if (ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers && !CupAdmin::IsCupPaused()) break;
-		
-		// ---------------------------------- //
-		// Display big message
-		if (!HasWaited) {
-			UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
-			
-			if (CupAdmin::IsCupPaused()) {
-				Translations::SetStatusMessage("Competition has been paused");
-				UIManager.UIAll.BigMessage = TL::Compose("$F90%1", _("Pause"));
-				WasPause = True;
-			}
-			else UIManager.UIAll.BigMessage = _("Waiting for players in each team...");
-			
-			HasWaited = True;
-		}
-		
-		GalaxyTitles::SpawnObjects();
-		GT_UnspawnPlayersChangingClan();
-		WarmUp2::ManageEvents();
-		
-		// ---------------------------------- //
-		// Spawn players
-		foreach (Player in Players) {
-			if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) {
-				// ---------------------------------- //
-				// Initialize player
-				SetPlayerClan(Player, GT_GetRequestedClan(Player));
-				
-				Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
-				Player.StaminaMax = C_PlayerStaminaMax;
-				
-				// Spawn player
-				if (Player.CurrentClan == 0) continue;
-				SM::SpawnPlayer(Player, Player.CurrentClan, G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn, Now + S_RespawnTime);
-			}
-		}
-	}
-	
-	StartTime = -1;
-	
-	// ---------------------------------- //
-	// Player joined the game
-	if (HasWaited) {
-		SM::UnspawnAllPlayers();
-		GalaxyTitles::ResetAll();
-		
-		if (!ServerShutdownRequested && !MatchEndRequested) {
-			declare Message = _("A new player joins the game.");
-			if (WasPause) Message = "Competition has been resumed!";
-			
-			Translations::SendBigMessage(Message, 5000, 0, CUIConfig::EUISound::Default, 0);
-			MB_Sleep(5000);
-		}
-	}
-	
-	// ---------------------------------- //
-	// Revert changes
-	UIManager.UIAll.BigMessage = "";
-	UIManager.UIAll.StatusMessage = "";
-	UIManager.UIAll.UISequence = OldSequence;
-	
-	---UpdateClublinks---
-}
-
-// ---------------------------------- //
 /** Create manialink for the interface module
  *
  *	@return		The interface manialink
@@ -940,36 +846,36 @@ Text CreateManialinkInterface() {
 		declare PosX = (I % C_UIPlayersIconsNbInRow) * C_UIPlayersIconsSize.X;
 		declare PosY = (I / C_UIPlayersIconsNbInRow) * -C_UIPlayersIconsSize.Y;
 		if (Clan == 1) PosX *= -1;
-		Icons[Clan] ^= """<quad posn="{{{PosX^" "^PosY}}}" sizen="5 5" halign="center" valign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/DefendersLeft.dds" id="Quad_PlayerIcon{{{Clan^"#"^I}}}" hidden="1"/>""";
+		Icons[Clan] ^= """<quad pos="{{{PosX^" "^PosY}}}" size="5 5" halign="center" valign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/DefendersLeft.dds" id="Quad_PlayerIcon{{{Clan^"#"^I}}}" hidden="1" />""";
 	}
 	
 	// ---------------------------------- //
 	// Create manialink
 	return """
-<manialink version="2">
+<manialink version="3" name="Jailbreak:Interface">
 <stylesheet>
-	<style class="EscapeMessage" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF"/>
+	<style class="EscapeMessage" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF" />
 </stylesheet>
 
-<frame id="Frame_PlayersIcons" posn="0 {{{C_UIPlayersIconsPosition.Y^" "^C_UIPlayersIconsPosition.Z}}}">
-	<frame posn="{{{-ML::Abs(C_UIPlayersIconsPosition.X)}}}">{{{Icons[1]}}}</frame>
-	<frame posn="{{{ML::Abs(C_UIPlayersIconsPosition.X)}}}">{{{Icons[2]}}}</frame>
+<frame id="Frame_PlayersIcons" pos="0 {{{C_UIPlayersIconsPosition.Y^" "^C_UIPlayersIconsPosition.Z}}}">
+	<frame pos="{{{-ML::Abs(C_UIPlayersIconsPosition.X)}}}">{{{Icons[1]}}}</frame>
+	<frame pos="{{{ML::Abs(C_UIPlayersIconsPosition.X)}}}">{{{Icons[2]}}}</frame>
 </frame>
 
-<frame id="Frame_EscapeStatusMessage" posn="0 70 5">
-	<label class="EscapeMessage" id="Label_EscapeStatusMessage"/>
-	<label class="EscapeMessage" id="Label_EscapeStatusMessageGhost"/>
+<frame id="Frame_EscapeStatusMessage" pos="0 70">
+	<label class="EscapeMessage" id="Label_EscapeStatusMessage" />
+	<label class="EscapeMessage" id="Label_EscapeStatusMessageGhost" />
 </frame>
 
-<frame id="Frame_YouCanEscapeLabel" posn="0 62 5">
-	<label class="EscapeMessage" textsize="7" id="Label_YouCanEscapeLabel" opacity="0"/>
+<frame id="Frame_YouCanEscapeLabel" pos="0 62">
+	<label class="EscapeMessage" textsize="7" id="Label_YouCanEscapeLabel" opacity="0" />
 </frame>
 
-<frame id="Frame_GaugeMessage" posn="0 -54 5">
+<frame id="Frame_GaugeMessage" pos="0 -54">
 	<frame id="Frame_GaugeMessageAnim">
-		<quad posn="0 8 -.1" sizen="12 12" halign="center" valign="center" autoscale="0" id="Quad_CurLandmarkIcon"/>
-		<label class="EscapeMessage" id="Label_CurLandmarkMessage"/>
-		<gauge posn="0 -3 -.1" sizen="52 8" halign="center" valign="center" drawbg="0" id="Qauge_CurLandmarkValue" hidden="1"/>
+		<label class="EscapeMessage" id="Label_CurLandmarkMessage" />
+		<quad pos="0 8" size="12 12" halign="center" valign="center" autoscale="0" id="Quad_CurLandmarkIcon" />
+		<gauge pos="0 -3" size="52 8" halign="center" valign="center" drawbg="0" id="Qauge_CurLandmarkValue" hidden="1" />
 	</frame>
 </frame>
 
@@ -979,6 +885,7 @@ Text CreateManialinkInterface() {
  */
 
 #Include "TextLib" as TL
+#Include "MathLib" as ML
 
 #Const C_GoalIconsPath "file://Media/Manialinks/ShootMania/Common/"
 
@@ -1174,17 +1081,14 @@ if (UpdateGoalsStatusMessage) {
 	Label_EscapeStatusMessageGhost.SetText(Label_EscapeStatusMessage.Value);
 	Label_EscapeStatusMessage.SetText(Translations_Get(GoalsStatusMessage));
 	
-	LibManialink_AnimStop(Label_EscapeStatusMessage);
-	LibManialink_AnimStop(Label_EscapeStatusMessageGhost);
-	
 	Label_EscapeStatusMessage.Opacity = 0.;
 	Label_EscapeStatusMessage.RelativePosition.Y = 2.;
 	Label_EscapeStatusMessageGhost.Opacity = 1.;
 	Label_EscapeStatusMessageGhost.RelativePosition.Y = 0.;
 	
 	declare PosX = Label_EscapeStatusMessage.RelativePosition.X;
-	LibManialink_Anim(Label_EscapeStatusMessage, "<label posn=\""^PosX^" 0\" opacity=\"1\"/>", 125, "EaseLinear");
-	LibManialink_Anim(Label_EscapeStatusMessageGhost, "<label posn=\""^PosX^" -2\" opacity=\"0\"/>", 125, "EaseLinear");
+	AnimMgr.Add(Label_EscapeStatusMessage, "<label pos='"^PosX^" 0' opacity='1' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Label_EscapeStatusMessageGhost, "<label pos='"^PosX^" -2' opacity='0' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 }
 
 // ---------------------------------- //
@@ -1196,7 +1100,6 @@ else GUIPlayerIsJailed = False;
 // Update "You can escape" label
 if (PrevGUIPlayerCanEscape != (GUIPlayerCanEscape && GUIPlayerIsJailed)) {
 	PrevGUIPlayerCanEscape = GUIPlayerCanEscape && GUIPlayerIsJailed;
-	LibManialink_AnimStop(Label_YouCanEscapeLabel);
 	
 	declare PosX = Label_YouCanEscapeLabel.RelativePosition.X;
 	Label_YouCanEscapeLabel.RelativePosition.Y = 0.;
@@ -1209,7 +1112,7 @@ if (PrevGUIPlayerCanEscape != (GUIPlayerCanEscape && GUIPlayerIsJailed)) {
 		Opacity = 1.;
 	}
 	
-	LibManialink_Anim(Label_YouCanEscapeLabel, "<label posn=\""^PosX^" "^PosY^"\" opacity=\""^Opacity^"\"/>", 125, "EaseLinear");
+	AnimMgr.Add(Label_YouCanEscapeLabel, "<label pos='"^PosX^" "^PosY^"' opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 }
 
 // ---------------------------------- //
@@ -1290,9 +1193,6 @@ else if (PrevGUIPlayerLandmark != NullId) {
 if (PrevGaugeMessageVisible != GaugeMessageVisible) {
 	PrevGaugeMessageVisible = GaugeMessageVisible;
 	
-	LibManialink_AnimStop(Frame_GaugeMessageAnim);
-	LibManialink_AnimStop(Label_CurLandmarkMessage);
-	LibManialink_AnimStop(Quad_CurLandmarkIcon);
 	Qauge_CurLandmarkValue.Visible = GaugeMessageVisible;
 	
 	declare PositionY = -2.;
@@ -1307,33 +1207,15 @@ if (PrevGaugeMessageVisible != GaugeMessageVisible) {
 		Opacity = 1.;
 	}
 	
-	LibManialink_Anim(Frame_GaugeMessageAnim, "<frame posn=\"0 "^PositionY^"\"/>", 125, "EaseLinear");
-	LibManialink_Anim(Label_CurLandmarkMessage, "<label opacity=\""^Opacity^"\"/>", 125, "EaseLinear");
-	LibManialink_Anim(Quad_CurLandmarkIcon, "<quad opacity=\""^Opacity^"\"/>", 125, "EaseLinear");
+	AnimMgr.Add(Frame_GaugeMessageAnim, "<frame pos='0 "^PositionY^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Label_CurLandmarkMessage, "<label opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Quad_CurLandmarkIcon, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 }
 ***
 
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
-
-// ---------------------------------- //
-/** Change color brightness
- *
- *	@param	_Color			Input color
- *	@param	_Brightness		Target brightness
- *
- *	@return		New color
- */
-Vec3 Brightness(Vec3 _Color, Real _Brightness) {
-	if (_Brightness == 1) return _Color;
-	if (_Brightness <= 0) return Vec3;
-	
-	declare Vec3 OutputColor;
-	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
-	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
-	return OutputColor;
-}
 
 // ---------------------------------- //
 /**	Get a landmark with a gauge from its tag and order
@@ -1350,28 +1232,13 @@ CSmMapLandmark GetLandmarkGauge(Text _Tag, Integer _Order) {
 	return Null;
 }
 
-// ---------------------------------- //
-/** Set gauge ratio with value cut fix
- *
- *	@param	_Gauge		The gauge to set ratio
- *	@param	_Ratio		Ratio to set
- */
-Void SetGaugeRatio(CMlGauge _Gauge, Real _Ratio) {
-	if (_Gauge == Null) return;
-	if (_Ratio <= 0.) {
-		_Gauge.Ratio = 0.;
-		return;
-	}
-	if (_Ratio >= 1.) {
-		_Gauge.Ratio = 1.;
-		return;
-	}
-	declare GaugeCutOff = 4 / _Gauge.Size.X;
-	_Gauge.Ratio = _Ratio * (1 - GaugeCutOff) + GaugeCutOff;
-}
-
-{{{Translations::InjectInManialink(["$<%1$> can escape!", "$<%1$> and $<%2$> can escape!", "Teammates", "Opponents", "You can escape!", "Blocking enemy pole", "Pole blocked by enemy", "Teammates released!", "Releasing teammates..."])}}}
-{{{Manialink::Animations(["EaseLinear"])}}}
+{{{ManialinkTools::Functions(["Brightness", "SetGaugeRatio"])}}}
+{{{Translations::InjectInManialink([
+	"$<%1$> can escape!", "$<%1$> and $<%2$> can escape!",
+	"Teammates", "Opponents", "You can escape!",
+	"Blocking enemy pole", "Pole blocked by enemy",
+	"Teammates released!", "Releasing teammates..."
+])}}}
 
 // ---------------------------------- //
 // Main
@@ -1380,7 +1247,6 @@ main() {
 	+++Main+++
 	while (True) {
 		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
 	}
 }
@@ -1396,14 +1262,14 @@ main() {
 Text CreateManialinkMarkers() {
 	declare Ratio = 9/16.;
 	return """
-<manialink version="2" name="Jailbreak:Markers">
+<manialink version="3" name="Jailbreak:Markers">
 <framemodel id="FrameModel_GoalMarker">
-	<label halign="center" valign="center2" textsize="1" textemboss="1" textfont="Eurostile_Bold" id="Label_MarkerText"/>
-	<quad posn="0 2.5" sizen="{{{8 * Ratio}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon"/>
+	<label halign="center" valign="center2" textsize="1" textemboss="1" textfont="Eurostile_Bold" id="Label_MarkerText" />
+	<quad pos="0 2.5" size="{{{8 * Ratio}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" />
 </framemodel>
 
-<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#1"/>
-<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#2"/>
+<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#1" />
+<frameinstance modelid="FrameModel_GoalMarker" scale=".875" id="Frame_MarkerGoal#2" />
 
 <script><!--
 /**
@@ -1459,7 +1325,7 @@ if (UpdateMarkers) {
 		declare Quad_MarkerIcon <=> (Frame.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
 		
 		Quad_MarkerIcon.Colorize = Teams[Clan - 1].ColorPrimary;
-		Label_MarkerText.TextColor = Brightness(Quad_MarkerIcon.Colorize, 1.5);
+		Label_MarkerText.TextColor = Brightness(Quad_MarkerIcon.Colorize, 2.);
 		
 		// ---------------------------------- //
 		// Set marker text
@@ -1483,25 +1349,8 @@ if (UpdateMarkers) {
 // Functions
 // ---------------------------------- //
 
-// ---------------------------------- //
-/** Change color brightness
- *
- *	@param	_Color			Input color
- *	@param	_Brightness		Target brightness
- *
- *	@return		New color
- */
-Vec3 Brightness(Vec3 _Color, Real _Brightness) {
-	if (_Brightness == 1) return _Color;
-	if (_Brightness <= 0) return Vec3;
-	
-	declare Vec3 OutputColor;
-	if (_Brightness < 1) for (I, 0, 2) OutputColor[I] = _Color[I] * _Brightness;
-	else if (_Brightness > 1) for (I, 0, 2) OutputColor[I] = 1 - (1 / _Brightness) + _Color[I] * (1 / _Brightness);
-	return OutputColor;
-}
-
 {{{Translations::InjectInManialink(["Teammates", "Opponents"])}}}
+{{{ManialinkTools::Functions(["Brightness"])}}}
 
 // ---------------------------------- //
 // Main

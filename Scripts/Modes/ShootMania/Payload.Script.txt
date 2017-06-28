@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PAYLOAD by domino54                   //
-//  script version: 2017-06-14            //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"PayloadArena"
-#Const Version		"2017-06-14"
+#Const Version		"2017-06-28"
 #Const ScriptName	"Modes/ShootMania/Payload.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -17,6 +17,7 @@
 #Setting S_NbRoundsPerTeam			1		as _("Attack rounds per team")
 #Setting S_TimeLimit				300 	as _("Time limit (seconds)")
 #Setting S_AllowPayloadReversing	True	as _("Allow Payload to move backwards")
+#Setting S_EnableDebugMode			False	as _("Debug mode (for developers only)")
 
 // ---------------------------------- //
 // Constants
@@ -50,10 +51,10 @@ declare Ident[Text] G_ObjectsIds;	///< Ids of the objects models
 // ---------------------------------- //
 // Extend
 // ---------------------------------- //
-***LogVersion***
+***Match_LogVersions***
 ***
-MB_LogVersion(ScriptName, Version);
-MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
@@ -65,35 +66,36 @@ TopScores::AddCategory("Attack", "Atk", 2.25, 60.);
 ***
 
 // ---------------------------------- //
+// Update the mode rules
+// ---------------------------------- //
+***Match_Rules***
+***
+ModeInfo::SetName("Payload");
+ModeInfo::SetType(ModeInfo::C_Type_Teams);
+ModeInfo::SetRules("1. Attackers goal is to push the Payload to the end of its route, while defenders try to stop them.\n2. Attacking team will get 1 point for every Checkpoint reached.\n3. If attackers leave Payload for enough time, it will start to slowly go backwards.\n4. After both teams have finished their attack round, the team with more points wins.\n5. If teams end up with the same score, Sudden Death mode is played to decide the winner.");
+ModeInfo::SetStatusMessage(Description);
+***
+
+// ---------------------------------- //
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
+GT_UseNoCollisionsStart = False;
+***
+
+// ---------------------------------- //
 // Server start
 // ---------------------------------- //
-***InitServer***
+***Match_InitServer***
 ***
-// ---------------------------------- //
-// Set the mode options
 UseClans = True;
-GT_UseNoCollisionsStart = False;
 
-// ---------------------------------- //
-// Set the rules in the SpawnScreen
-GT_SpawnScreenModeName = "Payload";
-GT_SpawnScreenModeType = _("Team versus Team");
-GT_SpawnScreenObjectives = TL::Compose(
-	_("$<%11. $>Attackers goal is to push the Payload to the end of its route, while defenders try to stop them.\n$<%12. $>Attacking team will get 1 point for every Checkpoint reached.\n$<%13. $>If attackers leave Payload for enough time, it will start to slowly go backwards.\n$<%14. $>After both teams have finished their attack round, the team with more points wins.\n$<%15. $>If teams end up with the same score, Sudden Death mode is played to decide the winner."),
-	"$"^SpawnScreen::GetModeColor()
-);
-
-// ---------------------------------- //
-// Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Attackers goal is to push the Payload to the end of its route, while defenders try to stop them. After both teams have finished their attack round, the team with more points wins.", "");
-
-// ---------------------------------- //
 // Create custom interface
 Layers::Create("Payload:Interface", CreateManialinkPayloadUI());
 Layers::Create("Payload:Markers", CreateManialinkMarkers());
 Layers::SetType("Payload:Markers", CUILayer::EUILayerType::Markers);
 
-// ---------------------------------- //
 // Load objects
 G_ObjectsIds["Payload"] = ItemList_Add("SMCommon\\Payload\\Payload.Item.gbx");
 
@@ -117,7 +119,7 @@ declare CurrentTimeLimit = S_TimeLimit;
 // ---------------------------------- //
 // Map begin
 // ---------------------------------- //
-***InitMap***
+***Match_InitMap***
 ***
 // ---------------------------------- //
 // Reset map parameters
@@ -168,7 +170,7 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 // Start map
 // ---------------------------------- //
-***StartMap***
+***Match_StartMap***
 ***
 TeamsPayloadMaxDist = [0., 0., 0.];
 Layers::Attach("Payload:Interface");
@@ -262,7 +264,7 @@ UISetCheckpointsDistances(G_SectorCheckpointsDist);
 // ---------------------------------- //
 // Initialize round
 // ---------------------------------- //
-***InitRound***
+***Match_InitRound***
 ***
 UISetNbPlayersPushingPayload(0);
 UISetLastPushTime(-1);
@@ -329,9 +331,8 @@ foreach (Player in Players) {
 	PrevTimeNearPayload = 0.;
 }
 
-// ---------------------------------- //
 // Wait for enough players to start the game
-WaitForPlayers(S_NbPlayersPerTeamMin);
+GT_WaitForPlayers(S_NbPlayersPerTeamMin);
 
 // ---------------------------------- //
 // Close Gates after warm-up
@@ -350,6 +351,9 @@ StartTime = Now + S_RespawnTime;
 UIManager.UIAll.CountdownEndTime = StartTime + C_SetupPhaseDuration;
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 
+// Faster gate activation in debug mode
+if (S_EnableDebugMode) UIManager.UIAll.CountdownEndTime = StartTime + 3000;
+
 LastPayloadInteractionTime = UIManager.UIAll.CountdownEndTime;
 if (S_AllowPayloadReversing) UISetLastPushTime(LastPayloadInteractionTime);
 
@@ -358,7 +362,7 @@ UsePvPCollisions = False;
 UsePvPWeapons = False;
 
 Message::SendBigMessage(
-	TL::Compose("%1 "^MB_SectionRoundNb + 1^" / "^S_NbRoundsPerTeam * 2, _("Round")),
+	TL::Compose("%1 "^MB_GetRoundCount()^" / "^S_NbRoundsPerTeam * 2, _("Round")),
 	3000, 0, CUIConfig::EUISound::StartRound, 0
 );
 Message::SendStatusMessage(TL::Compose(_("$<%1$> is attacking!"), Teams[G_AttackingClan - 1].ColorizedName), 3000, 0);
@@ -383,7 +387,7 @@ Discard(Event);
 // ---------------------------------- //
 // Play loop
 // ---------------------------------- //
-***PlayLoop***
+***Match_PlayLoop***
 ***
 // ---------------------------------- //
 // Preparation phase countdown as opening first Sector Gates
@@ -439,7 +443,7 @@ foreach (Player in Players) {
 		
 		// ---------------------------------- //
 		// Spawn player
-		if (PlayerSpawn != Null) SM::SpawnPlayer(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
+		if (PlayerSpawn != Null) SM::Spawn(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
 	}
 }
 
@@ -465,7 +469,7 @@ foreach (Player in Players) {
 	
 	if (TimeNearPayload - PrevTimeNearPayload > C_PayloadTimePerPoint) {
 		PrevTimeNearPayload = TimeNearPayload;
-		Score::AddPoints(Player, 1);
+		Scores::AddPlayerRoundPoints(Player.Score, 1);
 		TopScores::AddPoints(Player.Score, "Attack", 1);
 	}
 }
@@ -484,10 +488,13 @@ if (G_CapturedSectors < G_CurMapTotalNbSectors && NbAttackersPushingPayload >= 1
 		LastPayloadInteractionTime = Now;
 		UISetLastPushTime(LastPayloadInteractionTime);
 	}
+
+	// Increased speed in debug mode
+	if (S_EnableDebugMode) PayloadSpeed *= 10.;
 	
 	// Increase travelled distance
 	G_PayloadTrackCurrentDist += PayloadSpeed / C_ScriptTicksPerSecond;
-	if (G_PayloadTrackCurrentDist > G_PayloadTrackTotalDist) G_PayloadTrackCurrentDist = G_PayloadTrackTotalDist;
+	if (G_PayloadTrackCurrentDist >= G_PayloadTrackTotalDist) G_PayloadTrackCurrentDist = G_PayloadTrackTotalDist;
 }
 
 // ---------------------------------- //
@@ -557,7 +564,7 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 		// ---------------------------------- //
 		// Stop the round
 		else {
-			MB_StopRound = True;
+			MB_StopRound();
 			Message::SendBigMessage(TL::Compose(
 				_("$<%1$> captured the last pole."), Teams[G_AttackingClan - 1].ColorizedName),
 				3000, 0, CUIConfig::EUISound::VictoryPoint, 0
@@ -584,11 +591,12 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 	// ---------------------------------- //
 	// Show Payload progress as opening Gates
 	foreach (MapLandmark in MapLandmarks_Gate) {
-		if (MapLandmark.Tag != "Gate" || MapLandmark.Order < 2) continue;
+		if (MapLandmark.Tag != "Gate" || MapLandmark.Order <= 1) continue;
 		
-		MapLandmark.Gate.ManualClosed = MapLandmark.Order > G_CapturedSectors;
-		if (MapLandmark.Order > G_CapturedSectors + 1) MapLandmark.Gauge.ValueReal = 1.;
-		else if (MapLandmark.Gate.ManualClosed) MapLandmark.Gauge.ValueReal = 1. - CheckpointProgres;
+		MapLandmark.Gate.ManualClosed = MapLandmark.Order > G_CapturedSectors + 1;
+
+		if (MapLandmark.Order == G_CapturedSectors + 2) MapLandmark.Gauge.ValueReal = ML::Clamp(1.05 - CheckpointProgres, .05, 1.);
+		else if (MapLandmark.Order > G_CapturedSectors + 2) MapLandmark.Gauge.ValueReal = 1.;
 		else MapLandmark.Gauge.ValueReal = 0.;
 	}
 
@@ -629,7 +637,7 @@ if (GT_TimeReachedLimit()) {
 // ---------------------------------- //
 // Round end
 // ---------------------------------- //
-***EndRound***
+***Match_EndRound***
 ***
 SM::UnspawnAllPlayers();
 Layers::Detach("Payload:Markers");
@@ -637,11 +645,8 @@ UISetIsOvertime(False);
 
 // ---------------------------------- //
 // Set the round winner
-declare RoundWinner = 0;
-if (!MB_StopMap && !MatchEndRequested) {
-	if (G_CapturedSectors >= G_CurMapTotalNbSectors) RoundWinner = G_AttackingClan;
-	else RoundWinner = 3 - G_AttackingClan;
-}
+declare RoundWinner = 3 - G_AttackingClan;
+if (G_CapturedSectors >= G_CurMapTotalNbSectors) RoundWinner = G_AttackingClan;
 
 MB_Sleep(3000);
 
@@ -677,15 +682,14 @@ MB_Sleep(6000);
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
 UIManager.UIAll.BigMessage = "";
 
-// ---------------------------------- //
 // Map end conditions
-if (MB_SectionRoundNb >= S_NbRoundsPerTeam * 2) MB_StopMatch = True;
+if (MB_GetRoundCount() >= S_NbRoundsPerTeam * 2) MB_StopMatch();
 ***
 
 // ---------------------------------- //
 // Map end
 // ---------------------------------- //
-***EndMapBeforeCloseLadder***
+***Match_EndMap***
 ***
 if (ClanScores[1] == ClanScores[2]) {
 	// ---------------------------------- //
@@ -726,7 +730,7 @@ if (ClanScores[1] == ClanScores[2]) {
 // ---------------------------------- //
 // Server end
 // ---------------------------------- //
-***EndServer***
+***Match_EndServer***
 ***
 Layers::Destroy("Payload:Interface");
 Layers::Destroy("Payload:Markers");
@@ -754,22 +758,22 @@ Vec3 GetPayloadPosition(Real _RawDistance) {
 	
 	// ---------------------------------- //
 	// Get the segment start and end positions and distances
-	declare SegmentStartpos = Vec3;
+	declare SegmentStartPosn = Vec3;
 	declare SegmentStartDist = 0.;
-	declare SegmentEndpos = Vec3;
+	declare SegmentEndPosn = Vec3;
 	declare SegmentEndDist = 0.;
-	declare PrevPointpos = Vec3;
+	declare PrevPointPosn = Vec3;
 	declare PrevPointDist = 0.;
 	
-	foreach (PointPosition => PointDistance in G_PayloadTrackPointsDist) {
+	foreach (PointPosnition => PointDistance in G_PayloadTrackPointsDist) {
 		if (PointDistance >= Distance) {
-			SegmentStartpos = PrevPointpos;
+			SegmentStartPosn = PrevPointPosn;
 			SegmentStartDist = PrevPointDist;
-			SegmentEndpos = PointPosition;
+			SegmentEndPosn = PointPosnition;
 			SegmentEndDist = PointDistance;
 			break;
 		}
-		PrevPointpos = PointPosition;
+		PrevPointPosn = PointPosnition;
 		PrevPointDist = PointDistance;
 	}
 	
@@ -778,7 +782,7 @@ Vec3 GetPayloadPosition(Real _RawDistance) {
 	
 	// Compute the final position
 	declare Vec3 PayloadPosition;
-	for (I, 0, 2) PayloadPosition[I] = SegmentStartpos[I] + (SegmentEndpos[I] - SegmentStartpos[I]) * SegmentOffset;
+	for (I, 0, 2) PayloadPosition[I] = SegmentStartPosn[I] + (SegmentEndPosn[I] - SegmentStartPosn[I]) * SegmentOffset;
 	return PayloadPosition;
 }
 
@@ -801,9 +805,12 @@ Void UpdateBasesColors() {
 		if (MapLandmark.Tag == "SpawnAtk" || MapLandmark.Tag == "Gate") {
 			declare Clan = 3 - G_AttackingClan;
 			if (MapLandmark.Order <= G_CapturedSectors + 1) Clan = G_AttackingClan;
-			
 			if (MapLandmark.Base != Null) MapLandmark.Base.Clan = Clan;
-			if (MapLandmark.Gauge != Null) MapLandmark.Gauge.Clan = Clan;
+
+			if (MapLandmark.Gauge != Null) {
+				if (MapLandmark.Order == 1) MapLandmark.Gauge.Clan = G_AttackingClan;
+				else MapLandmark.Gauge.Clan = 3 - G_AttackingClan;
+			}
 		}
 	}
 }
@@ -837,6 +844,7 @@ Void SetObjectsPosition(Ident[] _Objects, Vec3 _Position) {
  */
 Void UpdateMarkers(Ident _PayloadObjectId) {
 	UIManager.UIAll.MarkersXML = "";
+	if (S_EnableDebugMode) return;
 
 	// Payload object marker
 	UIManager.UIAll.MarkersXML ^= "<marker manialinkframeid='Frame_MarkerPayload' visibility='WhenInFrustum' objectid='"^_PayloadObjectId^"' box='0 2 0' />";
@@ -879,7 +887,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 
 	// ---------------------------------- //
 	// Waiting for players play loop
-	while (!ServerShutdownRequested && !MatchEndRequested) {
+	while (!ServerShutdownRequested && !MatchEndRequested && !S_EnableDebugMode) {
 		MB_Yield();
 
 		// Let the server sleep if there's no players on it
@@ -905,7 +913,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 		
 		GalaxyTitles::SpawnObjects();
 		GT_UnspawnPlayersChangingClan();
-		WarmUp2::ManageEvents();
+		WarmUp::ManageEvents();
 		
 		// ---------------------------------- //
 		// Spawn players
@@ -923,7 +931,7 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 			declare CSmMapPlayerSpawn PlayerSpawn;
 			if (Player.CurrentClan == G_AttackingClan) PlayerSpawn <=> Map::GetPlayerSpawn("SpawnAtk", 1);
 			else PlayerSpawn <=> Map::GetPlayerSpawn("SpawnDef", 1);
-			if (PlayerSpawn != Null) SM::SpawnPlayer(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
+			if (PlayerSpawn != Null) SM::Spawn(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
 		}
 	}
 	
@@ -949,7 +957,6 @@ Void WaitForPlayers(Integer _MinimumNbPlayers) {
 	UIManager.UIAll.BigMessage = "";
 	UIManager.UIAll.StatusMessage = "";
 	UIManager.UIAll.UISequence = OldSequence;
-	---UpdateClublinks---
 }
 
 // ---------------------------------- //
@@ -1085,7 +1092,7 @@ Text CreateManialinkPayloadUI() {
 #Include "TextLib" as TL
 
 #Const C_TotalProgressBarWidth	120.
-#Const C_GaugeBarsSpacing		.5
+#Const C_GaugeBarsSpacing		.75
 #Const C_CaptureBarImgBase		"file://Media/Manialinks/ShootMania/Common/"
 
 {{{Translations::InjectInManialink(["Payload is reversing", "Payload is stopped", "Escorting the Payload", "Blocking the Payload"])}}}
@@ -1153,7 +1160,6 @@ main() {
 	declare PrevAttackingTeam = -1;
 	declare PrevAttackingTeamColor = Vec3;
 	declare PrevCheckpointDistance = 0.;
-	declare PrevFramePosX = 0.;
 	declare PrevPlayersPushingPayload = -1;
 	declare PrevGaugeRatio = -1.;
 	declare PrevCaptureProgressVisible = False;
@@ -1174,9 +1180,12 @@ main() {
 
 			Label_DistanceDebug.RelativeScale = 0.;
 			PrevPayloadDistance = -1.;
+			PrevCheckpointDistance = 0.;
+			UpdateColors = True;
 
 			TotalDistance = Net_Payload_CheckpointDistances[Net_Payload_CheckpointDistances.count - 1];
 			declare SpacingSub = (Net_Payload_CheckpointDistances.count - 1) * C_GaugeBarsSpacing;
+			declare PrevFramePosX = 0.;
 
 			foreach (I => Frame in Frame_SectorProgress) {
 				Frame.Visible = Net_Payload_CheckpointDistances.existskey(I);

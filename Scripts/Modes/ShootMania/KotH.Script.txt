@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-05-12            //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-05-12"
-#Const ScriptName	"KotH.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Modes/ShootMania/KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
@@ -21,7 +21,6 @@
 #Setting S_UseDefaultTeams		False	as _("Use default teams (Blue vs Red)")
 #Setting S_GoalCaptureDuration	100		as _("Time team requires to capture the Goal")
 #Setting S_DarkerGoalColor		False	as "<hidden>"
-#Setting S_UseAutoBalance		True
 
 // ---------------------------------- //
 // Constants
@@ -50,11 +49,11 @@ declare Ident G_LatestSpawnId;	///< Id of the last landmark used
 // ---------------------------------- //
 // Extend
 // ---------------------------------- //
-***LogVersion***
+***Match_LogVersion***
 ***
-MB_LogVersion(ScriptName, Version);
-MB_LogVersion(Map::GetScriptName(), Map::GetScriptVersion());
-MB_LogVersion(Clans::GetScriptName(), Clans::GetScriptVersion());
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
+Log::RegisterScript(Clans::GetScriptName(), Clans::GetScriptVersion());
 ***
 
 // ---------------------------------- //
@@ -67,9 +66,20 @@ if (!UseClans) ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_Img
 ***
 
 // ---------------------------------- //
+// Update the mode rules
+// ---------------------------------- //
+***Match_Rules***
+***
+ModeInfo::SetName("King of the Hill");
+ModeInfo::SetType(ModeInfo::C_Type_Teams);
+ModeInfo::SetRules("1. Multiple teams try to capture single Goal.\n2. Each team has its own capture progress shown below the timer.\n3. The first team to capture the Goal by themselves or team with biggest progress when time runs out wins.");
+ModeInfo::SetStatusMessage(Description);
+***
+
+// ---------------------------------- //
 // Init server
 // ---------------------------------- //
-***InitServer***
+***Match_InitServer***
 ***
 // ---------------------------------- //
 // Set the mode options
@@ -78,20 +88,8 @@ GT_UseAutoEndSequence = UseClans;
 GT_DisableTimeLimit();
 
 // ---------------------------------- //
-// Set the mode rules
-GT_SpawnScreenModeName = "King of the Hill";
-GT_SpawnScreenModeType = _("2 - 4 teams");
-GT_SpawnScreenObjectives = TL::Compose(
-	_("$<%11. $>Multiple teams try to capture single Goal.\n$<%12. $>Each team has its own capture progress shown below the timer.\n$<%13. $>The first team to capture the Goal by themselves or team with biggest progress when time runs out wins."),
-	"$"^SpawnScreen::GetModeColor()
-);
-
-// ---------------------------------- //
-// Set the rules in the pause menu
-PauseMenu::SetModeRules(GT_SpawnScreenModeName, "Multiple teams try to capture single Goal. Each team has its own capture progress shown below the timer. The first team to capture the Goal by themselves or team with biggest progress when time runs out wins.", "");
-
-// ---------------------------------- //
 // Initialize teams
+Clans::SetUsePlayersNames(True);
 for (Clan, 1, 10) {
 	if (C_TeamsNames.existskey(Clan - 1)) Clans::SetClanName(Clan, C_TeamsNames[Clan - 1]);
 	if (C_TeamsColors.existskey(Clan - 1)) Clans::SetClanColor(Clan, C_TeamsColors[Clan - 1]);
@@ -128,7 +126,7 @@ declare PrevRoundsToWin = S_RoundsToWin;
 // ---------------------------------- //
 // Server start
 // ---------------------------------- //
-***StartServer***
+***Match_StartServer***
 ***
 Interfancy::SetModuleVisibility("ScoreSummary", True);
 ***
@@ -136,7 +134,7 @@ Interfancy::SetModuleVisibility("ScoreSummary", True);
 // ---------------------------------- //
 // Map begin
 // ---------------------------------- //
-***InitMap***
+***Match_InitMap***
 ***
 // ---------------------------------- //
 // Check if the map is valid
@@ -144,7 +142,6 @@ declare MapValidated = True;
 declare CentralGoal <=> Map::GetLandmarkGauge("Goal", 0);
 if (CentralGoal == Null || MapLandmarks_PlayerSpawn.count <= 0) MapValidated = False;
 
-// ---------------------------------- //
 // Skip map if not valid
 if (!MapValidated) GT_SkipInvalidMap();
 ***
@@ -152,7 +149,7 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 // Map start
 // ---------------------------------- //
-***StartMap***
+***Match_StartMap***
 ***
 Clans::ResetClansPoints();
 for (Clan, 1, C_TeamsNbMax) Interfancy::ResetCustomTeamPoints(Clan);
@@ -164,7 +161,7 @@ G_LatestSpawnId = NullId;
 // ---------------------------------- //
 // Initialize round
 // ---------------------------------- //
-***InitRound***
+***Match_InitRound***
 ***
 for (I, 1, C_TeamsNbMax) {
 	TeamsCaptureValues[I] = 0.;
@@ -233,7 +230,7 @@ if (Clans::AreTeammates(Event.Shooter, Event.Victim)) {
 // ---------------------------------- //
 // Play loop
 // ---------------------------------- //
-***PlayLoop***
+***Match_PlayLoop***
 ***
 // ---------------------------------- //
 // Manage players
@@ -265,6 +262,7 @@ if (!UseClans) foreach (PlayerId => Clan in PauseMenu::CustomTeamsRequests()) {
 
 	UnspawnPlayer(Player);
 	KotH_SetPlayerClan(Player, Clan);
+	declare Destroyed = Toads::DestroyToad(Player);
 }
 
 CapturingTeam = 0;
@@ -275,8 +273,8 @@ if (CentralGoal.Sector.PlayersIds.count > 0) {
 	NbPlayersCapturing = 0;
 	
 	foreach (PlayerId in CentralGoal.Sector.PlayersIds) {
-		if (!Players.existskey(PlayerId)) continue;
-		declare Player = Players[PlayerId];
+		if (!AllPlayers.existskey(PlayerId)) continue;
+		declare Player = AllPlayers[PlayerId];
 		
 		declare PlayerClan = KotH_GetPlayerClan(Player);
 		if (CapturingTeam > 0 && PlayerClan != CapturingTeam) { CapturingTeam = 0; break; }
@@ -288,8 +286,8 @@ if (CentralGoal.Sector.PlayersIds.count > 0) {
 	// ---------------------------------- //
 	// Give points for players capturing Goal
 	foreach (PlayerId in CentralGoal.Sector.PlayersIds) {
-		if (!Players.existskey(PlayerId)) continue;
-		declare Player = Players[PlayerId];
+		if (!AllPlayers.existskey(PlayerId)) continue;
+		declare Player = AllPlayers[PlayerId];
 		if (KotH_GetPlayerClan(Player) != CapturingTeam) continue; 
 		
 		declare Integer TimeCapturingGoal for Player;
@@ -299,7 +297,7 @@ if (CentralGoal.Sector.PlayersIds.count > 0) {
 		if (TimeCapturingGoal - PrevTimeCapturingGoal >= C_GoalCaptureTimePerPoint) {
 			PrevTimeCapturingGoal = TimeCapturingGoal;
 			TopScores::AddPoints(Player.Score, "Capture", 1);
-			Score::AddPoints(Player, 1);
+			Scores::AddPlayerRoundPoints(Player.Score, 1);
 		}
 	}
 }
@@ -452,13 +450,13 @@ if (PrevRoundsToWin != S_RoundsToWin) {
 
 // ---------------------------------- //
 // Victory conditions
-if (GT_TimeReachedLimit()) MB_StopRound = True;
+if (GT_TimeReachedLimit()) MB_StopRound();
 ***
 
 // ---------------------------------- //
 // Round end
 // ---------------------------------- //
-***EndRound***
+***Match_EndRound***
 ***
 CentralGoal.Gauge.Speed = 0; ///< Spooky Goal
 SM::UnspawnAllPlayers();
@@ -500,18 +498,18 @@ UIManager.UIAll.BigMessage = "";
 // ---------------------------------- //
 // Map end conditions
 if (UseClans) {
-	foreach (Team => Points in ClanScores) if (Points >= S_RoundsToWin) MB_StopMap = True;
+	foreach (Team => Points in ClanScores) if (Points >= S_RoundsToWin) MB_StopMatch();
 } else {
 	declare Integer[Integer] TeamsScores;
 	for (Team, 1, G_NbTeams) TeamsScores[Team] = Clans::GetClanPoints(Team);
-	foreach (Team => Points in TeamsScores) if (Points >= S_RoundsToWin) MB_StopMap = True;
+	foreach (Team => Points in TeamsScores) if (Points >= S_RoundsToWin) MB_StopMatch();
 }
 ***
 
 // ---------------------------------- //
 // Round end
 // ---------------------------------- //
-***EndMapBeforePodium***
+***Match_PodiumSequence***
 ***
 if (!GT_UseAutoEndSequence) {
 	// ---------------------------------- //
@@ -585,7 +583,7 @@ Void MeleeSpawnPlayer(CSmPlayer _Player) {
 	}
 	G_LatestSpawnId = SpawnId;
 	
-	SM::SpawnPlayer(_Player, _Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+	SM::Spawn(_Player, _Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
 	declare Removed = G_SpawnsList.remove(SpawnId);
 }
 
@@ -698,7 +696,7 @@ Void KotH_AutoBalance() {
 // ---------------------------------- //
 /// Update scores table footer
 Void UpdateScoresTableFooter() {
-	ST2::SetFooterText(TL::Compose("%1 #"^MB_SectionRoundNb+1^"\t$<$777///$>\tFirst to reach "^S_RoundsToWin, _("Round")));
+	ST2::SetFooterText(TL::Compose("%1 #"^MB_GetRoundCount()^"\t$<$777///$>\tFirst to reach "^S_RoundsToWin, _("Round")));
 }
 
 // ---------------------------------- //

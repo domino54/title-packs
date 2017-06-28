@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-05-07            //
+//  script version: 2017-06-28            //
 // -------------------------------------- //
 
 /**
@@ -13,8 +13,8 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-05-07"
-#Const ScriptName	"GalaxyTitles.Script.txt"
+#Const Version		"2017-06-28"
+#Const ScriptName	"Libs/domino54/ShootMania/GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
@@ -25,6 +25,8 @@
 #Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
 #Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
 #Include "Libs/domino54/ShootMania/MiniMap.Script.txt" as MiniMap
+#Include "Libs/domino54/ShootMania/PlayersToads.Script.txt" as Toads
+#Include "Libs/domino54/ShootMania/PlayersTurrets.Script.txt" as Turrets
 
 // ---------------------------------- //
 // Constants
@@ -137,6 +139,66 @@ Vec3 Private_GetThirdClanColor(Vec3 _Color1, Vec3 _Color2) {
 	for (I, 0, 2) if (Sum[I] > Max) Max = Sum[I];
 	if (Max > 0) for (I, 0, 2) Sum[I] *= 1 / Max;
 	return Sum;
+}
+
+// ---------------------------------- //
+/** Check if the player can use the healing ability.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player can use the healing ability.
+ */
+Boolean Private_CanUseHealing(CSmPlayer _Player) {
+	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return False;
+
+	// Player can heal themselves
+	if (_Player.Armor < _Player.ArmorMax) return True;
+	
+	// ---------------------------------- //
+	// Check if players nearby can be healed
+	foreach (Player in Players) {
+		if (Player.Armor >= Player.ArmorMax) continue;
+		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			if (_Player.CurrentClan == 0) break;
+			if (Player.CurrentClan != _Player.CurrentClan && !Clans::AreTeammates(Player, _Player)) continue;
+		}
+		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
+		return True;
+	}
+
+	// ---------------------------------- //
+	// Check if Toads nearby can be healed
+	foreach (Toad in Toads::GetToads()) {
+		if (Toad.Armor >= Toad.ArmorMax) continue;
+		if (ML::Distance(_Player.Position, Toad.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
+
+		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			if (Toad.Driver.Owner == _Player) return True;
+			if (Clans::AreTeammates(_Player, Toad)) return True;
+			if (_Player.CurrentClan == 0 || Toad.CurrentClan != _Player.CurrentClan) continue;
+		}
+		return True;
+	}
+
+	// ---------------------------------- //
+	// Check if turrets nearby can be repaired
+	foreach (Turret in Turrets::GetTurrets()) {
+		if (Turret.Armor >= Turret.ArmorMax) continue;
+
+		declare TurretPosition = Turrets::GetTurretPosition(Turret);
+		if (ML::Distance(_Player.Position, TurretPosition) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
+
+		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			declare TurretOwner <=> Turrets::GetTurretOwner(Turret);
+			if (TurretOwner == _Player) return True; 
+
+			declare TurretClan = Turrets::GetTurretClan(Turret);
+			if (_Player.CurrentClan == 0 || TurretClan != _Player.CurrentClan) continue;
+		}
+		return True;
+	}
+
+	return False;
 }
 
 // ---------------------------------- //
@@ -288,7 +350,8 @@ Void Load() {
 		CSmMode::EWeapon::Laser		=> "Laser.png",
 		CSmMode::EWeapon::Nucleus	=> "Nucleus.png",
 		CSmMode::EWeapon::Arrow		=> "Arrow.png",
-		CSmMode::EWeapon::Rocket	=> "Rocket.png"
+		CSmMode::EWeapon::Rocket	=> "Rocket.png",
+		CSmMode::EWeapon::Missile	=> "Missile.png"
 	]);
 }
 
@@ -379,6 +442,223 @@ Void GivePlayerArmor(CSmPlayer _Player, Integer _Amount) {
 }
 
 // ---------------------------------- //
+/** Load Replie particles for a player.
+ *
+ *	@param	_Player		The player to load particles.
+ */
+Void LoadReplieParticles(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	ActionLoad(_Player, C_LibGalaxyTitles_ReplieActionSlot, G_LibGalaxyTitles_Actions["Replie"]);
+	ActionBind(_Player, C_LibGalaxyTitles_ReplieActionSlot, CSmMode::EActionInput::None);
+}
+
+// ---------------------------------- //
+/** Use the healing ability of a player.
+ *
+ *	@param	_Player		The player who is healing.
+ *
+ *	@return		Amount of other entities affected by healing.
+ */
+Integer UseHealing(CSmPlayer _Player) {
+	if (_Player == Null || !Private_CanUseHealing(_Player)) return -1;
+
+	// Amount of each entity type
+	declare NbAffected_Total = 0;
+	declare Text[] AffectedPlayers;
+	declare Text[] AffectedTurrets;
+	declare Text[] AffectedToads;
+
+	// Heal the player themself
+	if (_Player.Armor < _Player.ArmorMax) GivePlayerArmor(_Player, C_LibGalaxyTitles_ArmorHealAmount);
+
+	// ---------------------------------- //
+	// Heal player's teammates
+	foreach (Player in Players) {
+		if (Player == _Player || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || Player.Armor >= Player.ArmorMax) continue;
+		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			if (_Player.CurrentClan == 0) break;
+			if (Player.CurrentClan != _Player.CurrentClan && !Clans::AreTeammates(Player, _Player)) continue;
+		}
+		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
+
+		// Heal the player
+		GivePlayerArmor(Player, C_LibGalaxyTitles_ArmorHealAmount);
+		AffectedPlayers.add(Player.User.Name);
+		
+		// Notify player about who healed them
+		Interfancy::SendCrosshairNote(
+			Player, ["$<%1$> healed you!", _Player.User.Name],
+			C_LibGalaxyTitles_NoteDisplayTime
+		);
+	}
+
+	// ---------------------------------- //
+	// Heal Toads nearby
+	foreach (Toad in Toads::GetToads()) {
+		if (Toad.Armor >= Toad.ArmorMax) continue;
+		if (Toad.Driver.Owner != _Player && !G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			if (_Player.CurrentClan == 0) continue;
+			if (!Clans::AreTeammates(_Player, Toad) || Toad.CurrentClan != _Player.CurrentClan) continue;
+		}
+		if (ML::Distance(_Player.Position, Toad.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
+		
+		// Heal the Toad
+		GivePlayerArmor(Toad, C_LibGalaxyTitles_ArmorHealAmount);
+		AffectedToads.add(Toad.Driver.Owner.User.Name);
+	}
+
+	// ---------------------------------- //
+	// Repair nearby turrets
+	foreach (Turret in Turrets::GetTurrets()) {
+		if (Turret.Armor >= Turret.ArmorMax) continue;
+
+		declare TurretPosition = Turrets::GetTurretPosition(Turret);
+		if (ML::Distance(_Player.Position, TurretPosition) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
+		declare TurretOwner <=> Turrets::GetTurretOwner(Turret);
+
+		if (TurretOwner != _Player && !G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			declare TurretClan = Turrets::GetTurretClan(Turret);
+			if (TurretOwner == Null || TurretClan != _Player.CurrentClan) continue;
+		}
+
+		Turret.Armor += C_LibGalaxyTitles_ArmorHealAmount;
+		AffectedTurrets.add(TurretOwner.User.Name);
+
+		// Notify th eowner their turret was healed
+		if (TurretOwner != _Player) Interfancy::SendCrosshairNote(
+			TurretOwner, ["$<%1$> healed your turret!", _Player.User.Name],
+			C_LibGalaxyTitles_NoteDisplayTime
+		);
+	}
+	
+	// ---------------------------------- //
+	// Notify player how many entities they've healed
+	NbAffected_Total = AffectedPlayers.count + AffectedTurrets.count + AffectedToads.count;
+	if (NbAffected_Total > 0) {
+		declare Message = Text[];
+
+		// Healed only players
+		if (AffectedPlayers.count == NbAffected_Total) {
+			if (AffectedPlayers.count == 1) Message = ["Healed $<%1$>", AffectedPlayers[0]];
+			else Message = ["Healed %1 players", TL::ToText(AffectedPlayers.count)];
+		}
+
+		// Healed only turrets
+		else if (AffectedTurrets.count == NbAffected_Total) {
+			if (AffectedTurrets.count == 1) {
+				if (AffectedTurrets[0] == _Player.User.Name) Message = ["Healed your turret"];
+				else Message = ["Healed turret of $<%1$>", AffectedTurrets[0]];
+			}
+			else Message = ["Healed %1 turrets", TL::ToText(AffectedTurrets.count)];
+		}
+
+		// Healed only toads
+		else if (AffectedToads.count == NbAffected_Total) {
+			if (AffectedToads.count == 1) {
+				if (AffectedToads[0] == _Player.User.Name) Message = ["Healed your Toad"];
+				else Message = ["Healed Toad of $<%1$>", AffectedToads[0]];
+			}
+			else Message = ["Healed %1 Toads", TL::ToText(AffectedToads.count)];
+		}
+
+		// Healed multiple types of entities
+		else Message = ["Healed %1 entities", TL::ToText(NbAffected_Total)];
+
+		Interfancy::SendCrosshairNote(_Player, Message, C_LibGalaxyTitles_NoteDisplayTime);
+		Statistics::TrackEvent(_Player, "PlayersHealed", NbAffected_Total);
+	}
+
+	return NbAffected_Total;
+}
+
+// ---------------------------------- //
+/** Use the boost ability of a player.
+ *
+ *	@param	_Player		The player who is boosting.
+ *
+ *	@return		Amount of other entities affected by the boost.
+ */
+Integer UseBoost(CSmPlayer _Player) {
+	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return -1;
+
+	// Amount of each entity type
+	declare NbAffected_Total = 0;
+	declare Text[] AffectedPlayers;
+	declare Text[] AffectedToads;
+
+	// Boost the player themself
+	if (G_LibGalaxyTitles_FuelGivesReloadBoost) AddReloadBoost(_Player);
+	_Player.Stamina = ML::FloorInteger(_Player.StaminaMax * 3600);
+
+	// ---------------------------------- //
+	// Boost player's teammates
+	foreach (Player in Players) {
+		if (Player == _Player || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			if (_Player.CurrentClan == 0) break;
+			if (Player.CurrentClan != _Player.CurrentClan && !Clans::AreTeammates(Player, _Player)) continue;
+		}
+		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
+
+		// Boost the player
+		if (G_LibGalaxyTitles_FuelGivesReloadBoost) AddReloadBoost(Player);
+		Player.Stamina = ML::FloorInteger(Player.StaminaMax * 3600);
+		AffectedPlayers.add(Player.User.Name);
+		
+		// Notify player about who boosted them
+		Interfancy::SendCrosshairNote(
+			Player, ["$<%1$> boosted you!", _Player.User.Name],
+			C_LibGalaxyTitles_NoteDisplayTime
+		);
+	}
+
+	// ---------------------------------- //
+	// Boost Toads nearby
+	foreach (Toad in Toads::GetToads()) {
+		if (Toad.Driver.Owner != _Player && !G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			if (_Player.CurrentClan == 0) continue;
+			if (!Clans::AreTeammates(_Player, Toad) || Toad.CurrentClan != _Player.CurrentClan) continue;
+		}
+		if (ML::Distance(_Player.Position, Toad.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
+
+		// Noost the Toad
+		if (G_LibGalaxyTitles_FuelGivesReloadBoost) AddReloadBoost(Toad);
+		Toad.Stamina = ML::FloorInteger(Toad.StaminaMax * 3600);
+		AffectedToads.add(Toad.Driver.Owner.User.Name);
+	}
+
+	// ---------------------------------- //
+	// Notify player how many entities they've boosted
+	NbAffected_Total = AffectedPlayers.count + AffectedToads.count;
+	if (NbAffected_Total > 0) {
+		declare Message = Text[];
+
+		// Boosted only players
+		if (AffectedPlayers.count == NbAffected_Total) {
+			if (AffectedPlayers.count == 1) Message = ["Boosted $<%1$>", AffectedPlayers[0]];
+			else Message = ["Boosted %1 players", TL::ToText(AffectedPlayers.count)];
+		}
+
+		// Boosted only toads
+		else if (AffectedToads.count == NbAffected_Total) {
+			if (AffectedToads.count == 1) {
+				if (AffectedToads[0] == _Player.User.Name) Message = ["Boosted your Toad"];
+				else Message = ["Boosted Toad of $<%1$>", AffectedToads[0]];
+			}
+			else Message = ["Boosted %1 Toads", TL::ToText(AffectedToads.count)];
+		}
+
+		// Boosted multiple types of entities
+		else Message = ["Boosted %1 entities", TL::ToText(NbAffected_Total)];
+
+		Interfancy::SendCrosshairNote(_Player, Message, C_LibGalaxyTitles_NoteDisplayTime);
+		Statistics::TrackEvent(_Player, "PlayersBoosted", NbAffected_Total);
+	}
+
+	return NbAffected_Total;
+}
+
+// ---------------------------------- //
 /** Destroy all objects and reset landmarks settings
  *
  *	@param	_UseWeapons		Enable weapons pickups (if available to be picked up on map)
@@ -411,7 +691,7 @@ Void InitObjects(Boolean _UseWeapons, Boolean _UseReplies) {
 			if (!G_LibGalaxyTitles_AvailableWeapons.exists(MapLandmark.Tag))
 				G_LibGalaxyTitles_AvailableWeapons.add(MapLandmark.Tag);
 		}
-		
+
 		// Check if Replies are available
 		if (_UseReplies && G_LibGalaxyTitles_InventoryMaxReplies != 0 && MapLandmark.Tag == "Replie")
 			G_LibGalaxyTitles_RepliesAvailable = True;
@@ -529,7 +809,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		// Get Ids of the object anchors
 		declare Ident[] PlayerWeaponsToDrop for Player;
 		if (PlayerWeaponsToDrop.count <= 0) continue;
-		
+
 		foreach (MapLandmarkId in PlayerWeaponsToDrop) {
 			if (!MapLandmarks_ObjectAnchor.existskey(MapLandmarkId)) continue;
 			declare MapLandmark <=> MapLandmarks_ObjectAnchor[MapLandmarkId];
@@ -541,13 +821,17 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			
 			// ---------------------------------- //
 			// Create object
-			declare Object = SpawnObject(MapLandmarkId, MapLandmark.Tag);
+			declare Object = SpawnObject(Position, MapLandmark.Tag);
 			LibGalaxyTitles_ObjectSpawned = Object != Null;
 			if (!LibGalaxyTitles_ObjectSpawned) continue;
 			
 			// Reset weapon carrier
 			declare Ident LibGalaxyTitles_ObjectPlayerId for MapLandmark;
 			LibGalaxyTitles_ObjectPlayerId = NullId;
+
+			// Save anchor id in the object
+			declare Ident LibGalaxyTitles_AnchorId for Object;
+			LibGalaxyTitles_AnchorId = MapLandmarkId;
 			
 			// Create weapon marker
 			if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
@@ -605,8 +889,10 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		if (MapLandmarks_ObjectAnchor.existskey(LibGalaxyTitles_AnchorId)) {
 			declare MapLandmark <=> MapLandmarks_ObjectAnchor[LibGalaxyTitles_AnchorId];
 			declare Boolean LibGalaxyTitles_ObjectSpawned for MapLandmark;
+			declare Ident LibGalaxyTitles_ObjectPlayerId for MapLandmark;
 			LibGalaxyTitles_ObjectSpawned = False;
-			
+			LibGalaxyTitles_ObjectPlayerId = NullId;
+
 			// ---------------------------------- //
 			// Destroy weapon marker
 			declare MarkerTag = "Object#"^LibGalaxyTitles_AnchorId;
@@ -701,9 +987,7 @@ Void ResetObjectsSpawnTier() {
 Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfPick) {
 	if (
 		_Event == Null || _Event.Type != CSmModeEvent::EType::OnPlayerTouchesObject ||
-		_Event.Object == Null || _Event.Player == Null || _Event.Player.IsBot ||
-		_Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned ||
-		!G_LibGalaxyTitles_LibraryLoaded
+		_Event.Object == Null || !G_LibGalaxyTitles_LibraryLoaded || _Event.Player == Null
 	) return False;
 	
 	declare Text LibGalaxyTitles_ObjectTag for _Event.Object;
@@ -713,7 +997,17 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 	if (!C_LibGalaxyTitles_AcceptedObjects.exists(LibGalaxyTitles_ObjectTag)) return False;
 	
 	if (!_TrueIfPick) Discard(_Event);
-	
+
+	if (_Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return !_TrueIfPick;
+
+	// ---------------------------------- //
+	// Get the player (if Toad has owner, pick up the item for the owner)
+	declare Player <=> _Event.Player;
+	if (Player.IsBot) {
+		if (Player.Driver.Owner == Null || Player.Driver.Owner.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return !_TrueIfPick;
+		else Player <=> Player.Driver.Owner;
+	}
+
 	// ---------------------------------- //
 	// Pick conditions
 	declare CanPickUpObject = True;
@@ -721,25 +1015,8 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 	switch (LibGalaxyTitles_ObjectTag) {
 		// ---------------------------------- //
 		// Armor conditions
-		case "Armor" : {
-			CanPickUpObject = _Event.Player.Armor < _Event.Player.ArmorMax;
-			
-			// Check if players nearby can be healed
-			if (!CanPickUpObject) foreach (Player in Players) {
-				if (
-					Player.Armor >= Player.ArmorMax ||
-					ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius ||
-					!(
-						G_LibGalaxyTitles_ObjectsAffectEveryone ||
-						(_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) ||
-						Clans::AreTeammates(Player, _Event.Player)
-					)
-				) continue;
-				
-				CanPickUpObject = True;
-				break;
-			}
-		}
+		case "Armor" : CanPickUpObject = Private_CanUseHealing(Player);
+		
 		// ---------------------------------- //
 		// Replie conditions
 		case "Replie" : {
@@ -748,7 +1025,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 			
 			// Limited Replies amount
 			else if (G_LibGalaxyTitles_InventoryMaxReplies > 0) {
-				declare PlayerReplies = Inventory::GetItemAmount(_Event.Player, C_LibGalaxyTitles_ReplieItemId);
+				declare PlayerReplies = Inventory::GetItemAmount(Player, C_LibGalaxyTitles_ReplieItemId);
 				CanPickUpObject = PlayerReplies < G_LibGalaxyTitles_InventoryMaxReplies;
 			}
 		}
@@ -768,7 +1045,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 					default : Weapon = CSmMode::EWeapon::Rocket;
 				}
 				
-				declare PlayerWeaponAmmoMax = Inventory::GetWeaponSlots(_Event.Player, Weapon);
+				declare PlayerWeaponAmmoMax = Inventory::GetWeaponSlots(Player, Weapon);
 				CanPickUpObject = PlayerWeaponAmmoMax < C_LibGalaxyTitles_InitialWeaponsAmmoMax[Weapon] + G_LibGalaxyTitles_InventoryMaxWeapons;
 			}
 		}
@@ -792,7 +1069,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 		// Set weapon carrier
 		if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
 			LibGalaxyTitles_ObjectNextSpawn = Now;
-			LibGalaxyTitles_ObjectPlayerId = _Event.Player.Id;
+			LibGalaxyTitles_ObjectPlayerId = Player.Id;
 			
 			// ---------------------------------- //
 			// Destroy weapon marker
@@ -804,116 +1081,52 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 	
 	// ---------------------------------- //
 	// Apply effect
-	declare NbOtherPlayersAffected = 0;
+	declare NbAffected_Total = 0;
+	declare NbAffected_Players = 0;
+	declare NbAffected_Turrets = 0;
 	declare Message = Text[];
 	
 	switch (LibGalaxyTitles_ObjectTag) {
-		// ---------------------------------- //
 		// Armor - heal players
-		case "Armor" : {
-			foreach (Player in Players) {
-				declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) || Clans::AreTeammates(Player, _Event.Player);
-				
-				if (
-					!Affected || Player.Armor >= Player.ArmorMax ||
-					ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius
-				)
-					continue;
-				
-				// Heal the player
-				GivePlayerArmor(Player, C_LibGalaxyTitles_ArmorHealAmount);
-				
-				// ---------------------------------- //
-				// Notify player about who healed them
-				if (Player == _Event.Player) continue;
-				NbOtherPlayersAffected += 1;
-				
-				Interfancy::SendCrosshairNote(
-					Player, ["$<%1$> healed you!", _Event.Player.User.Name],
-					C_LibGalaxyTitles_NoteDisplayTime
-				);
-			}
-			
-			// ---------------------------------- //
-			// Notify player how many teammates they've healed
-			if (NbOtherPlayersAffected > 0) {
-				if (NbOtherPlayersAffected > 1) Message = ["Healed %1 players", TL::ToText(NbOtherPlayersAffected)];
-				else Message = ["Healed 1 player"];
-				Statistics::TrackEvent(_Event.Player, "PlayersHealed", NbOtherPlayersAffected);
-			}
-		}
-		// ---------------------------------- //
+		case "Armor" : NbAffected_Total = UseHealing(Player);
+
 		// Fuel - reload boost and stamina
-		case "Fuel" : {
-			foreach (Player in Players) {
-				declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) || Clans::AreTeammates(Player, _Event.Player);
-				
-				if (!Affected || ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
-				
-				// ---------------------------------- //
-				// Boost player
-				if (G_LibGalaxyTitles_FuelGivesReloadBoost) AddReloadBoost(Player);
-				Player.Stamina = ML::FloorInteger(Player.StaminaMax * 3600);
-				
-				// ---------------------------------- //
-				// Notify player about who boosted them
-				if (Player == _Event.Player) continue;
-				NbOtherPlayersAffected += 1;
-				
-				Interfancy::SendCrosshairNote(
-					Player, ["$<%1$> boosted you!", _Event.Player.User.Name],
-					C_LibGalaxyTitles_NoteDisplayTime
-				);
-			}
-			
-			// ---------------------------------- //
-			// Notify player how many teammates they've boosted
-			if (NbOtherPlayersAffected > 0) {
-				if (NbOtherPlayersAffected > 1) Message = ["Boosted %1 players", TL::ToText(NbOtherPlayersAffected)];
-				else Message = ["Boosted 1 player"];
-				Statistics::TrackEvent(_Event.Player, "PlayersBoosted", NbOtherPlayersAffected);
-			}
-		}
-		// ---------------------------------- //
+		case "Fuel" : NbAffected_Total = UseBoost(Player);
+		
 		// Give Laser weapon slot
-		case "Laser" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Laser, 1);
+		case "Laser" : Inventory::AddWeaponSlots(Player, CSmMode::EWeapon::Laser, 1);
 		
-		// ---------------------------------- //
 		// Give Nucleus weapon slot
-		case "Nucleus" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Nucleus, 1);
+		case "Nucleus" : Inventory::AddWeaponSlots(Player, CSmMode::EWeapon::Nucleus, 1);
 		
-		// ---------------------------------- //
 		// Give Arrow weapon slot
-		case "Arrow" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Arrow, 1);
+		case "Arrow" : Inventory::AddWeaponSlots(Player, CSmMode::EWeapon::Arrow, 1);
 		
-		// ---------------------------------- //
 		// Give Rocket weapon slot
-		case "Rocket" : Inventory::AddWeaponSlots(_Event.Player, CSmMode::EWeapon::Rocket, 1);
+		case "Rocket" : Inventory::AddWeaponSlots(Player, CSmMode::EWeapon::Rocket, 1);
 		
-		// ---------------------------------- //
 		// Give Replie consumable item
 		case "Replie" : {
-			Inventory::AddItems(_Event.Player, C_LibGalaxyTitles_ReplieItemId, 1);
-			Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1", "Replie"], C_LibGalaxyTitles_NoteDisplayTime);
+			Inventory::AddItems(Player, C_LibGalaxyTitles_ReplieItemId, 1);
+			Interfancy::SendCrosshairNote(Player, ["+1 $<%1$>", "Replie"], C_LibGalaxyTitles_NoteDisplayTime);
 		}
 	}
 	
 	// ---------------------------------- //
 	// Send notice and give points if player has affected somebody
-	if (NbOtherPlayersAffected > 0) {
-		Interfancy::SendCrosshairNote(_Event.Player, Message, C_LibGalaxyTitles_NoteDisplayTime);
-		Score::AddPoints(_Event.Player, NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
-		TopScores::AddPoints(_Event.Player.Score, "Support", NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
+	if (NbAffected_Total > 0) {
+		Score::AddPoints(Player, NbAffected_Total * G_LibGalaxyTitles_PointsForPick);
+		TopScores::AddPoints(Player.Score, "Support", NbAffected_Total * G_LibGalaxyTitles_PointsForPick);
 	}
 	
 	if (C_LibGalaxyTitles_WeaponItemsTags.exists(LibGalaxyTitles_ObjectTag)) {
 		// ---------------------------------- //
 		// Crosshair notice on weapon added
-		Interfancy::SendCrosshairNote(_Event.Player, ["+1 %1", LibGalaxyTitles_ObjectTag], C_LibGalaxyTitles_NoteDisplayTime);
+		Interfancy::SendCrosshairNote(Player, ["+1 $<%1$>", LibGalaxyTitles_ObjectTag], C_LibGalaxyTitles_NoteDisplayTime);
 		
 		// ---------------------------------- //
 		// Add weapon to drop
-		declare Ident[] PlayerWeaponsToDrop for _Event.Player;
+		declare Ident[] PlayerWeaponsToDrop for Player;
 		if (!PlayerWeaponsToDrop.exists(LibGalaxyTitles_AnchorId)) PlayerWeaponsToDrop.add(LibGalaxyTitles_AnchorId);
 	}
 	
@@ -1130,7 +1343,10 @@ Void ToadsLoop(Integer _ToadsRespawnTime) {
 	) {
 		G_LibGalaxyTitles_PrevTeamsColors[I] = Team.ColorPrimary;
 		declare NewToadsColor = Private_GetThirdClanColor(Teams[0].ColorPrimary, Teams[1].ColorPrimary);
-		foreach (BotPlayer in BotPlayers) BotPlayer.ForceColor = NewToadsColor;
+		foreach (BotPlayer in BotPlayers) {
+			if (!G_LibGalaxyTitles_SpawnedToads.exists(BotPlayer.Id)) continue;
+			BotPlayer.ForceColor = NewToadsColor;
+		}
 	}
 }
 
@@ -1223,39 +1439,43 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	if (_Player == Null || !G_LibGalaxyTitles_LibraryLoaded) return;
 	Inventory::ResetInventory(_Player);
 	
+	// Load action used to show particle effect on the player
+	LoadReplieParticles(_Player);
+	
+	// Reset weapons to drop
+	declare Ident[] PlayerWeaponsToDrop for _Player;
+	PlayerWeaponsToDrop.clear();
+
 	// ---------------------------------- //
 	// Load Replies in the Inventory
 	if (G_LibGalaxyTitles_RepliesAvailable) {
 		Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_ReplieItemId, CSmModeEvent::EActionInput::Consumable1, 0, "Replie.png");
 	}
 
-	// Load action used to show particle effect on the player
-	ActionLoad(_Player, C_LibGalaxyTitles_ReplieActionSlot, G_LibGalaxyTitles_Actions["Replie"]);
-	ActionBind(_Player, C_LibGalaxyTitles_ReplieActionSlot, CSmMode::EActionInput::None);
-	
-	if (!G_LibGalaxyTitles_WeaponItemsAvailable) return;
-	
 	// ---------------------------------- //
 	// Get the available weapons
-	declare PlayerWeapons = [CSmMode::EWeapon::Rocket];
-	declare TextToWeapon = ["Laser" => CSmMode::EWeapon::Laser, "Nucleus" => CSmMode::EWeapon::Nucleus, "Arrow" => CSmMode::EWeapon::Arrow];
-	
-	foreach (WeaponName in G_LibGalaxyTitles_AvailableWeapons) {
-		if (!TextToWeapon.existskey(WeaponName)) continue;
-		declare Weapon = TextToWeapon[WeaponName];
-		if (!PlayerWeapons.exists(Weapon)) PlayerWeapons.add(Weapon);
+	if (G_LibGalaxyTitles_WeaponItemsAvailable) {
+		declare PlayerWeapons = [CSmMode::EWeapon::Rocket];
+		declare TextToWeapon = [
+			"Laser" => CSmMode::EWeapon::Laser,
+			"Nucleus" => CSmMode::EWeapon::Nucleus,
+			"Arrow" => CSmMode::EWeapon::Arrow,
+			"Missile" => CSmMode::EWeapon::Missile
+		];
+		
+		foreach (WeaponName in G_LibGalaxyTitles_AvailableWeapons) {
+			if (!TextToWeapon.existskey(WeaponName)) continue;
+			declare Weapon = TextToWeapon[WeaponName];
+			if (!PlayerWeapons.exists(Weapon)) PlayerWeapons.add(Weapon);
+		}
+		
+		Inventory::SetAvailableWeapons(_Player, PlayerWeapons);
+		
+		// ---------------------------------- //
+		// Init weapons
+		foreach (Weapon => Amount in C_LibGalaxyTitles_InitialWeaponsAmmoMax) Inventory::SetWeaponSlots(_Player, Weapon, Amount);
+		Inventory::SetFirstWeapon(_Player);
 	}
-	
-	Inventory::SetAvailableWeapons(_Player, PlayerWeapons);
-	
-	// ---------------------------------- //
-	// Init weapons
-	foreach (Weapon => Amount in C_LibGalaxyTitles_InitialWeaponsAmmoMax) Inventory::SetWeaponSlots(_Player, Weapon, Amount);
-	Inventory::SetFirstWeapon(_Player);
-	
-	// Reset weapons to drop
-	declare Ident[] PlayerWeaponsToDrop for _Player;
-	PlayerWeaponsToDrop.clear();
 }
 
 // ---------------------------------- //
@@ -1277,9 +1497,6 @@ Void InitPlayer(CSmPlayer _Player) {
 Void UseConsumableItems(CSmModeEvent _Event) {
 	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnActionEvent || _Event.Player == Null) return;
 	
-	declare NbOtherPlayersAffected = 0;
-	declare Message = Text[];
-
 	// Get the target item's id through the ugly way
 	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Event.Player;
 	if (!LibInventory_PlayerItemHotkey.exists(_Event.ActionInput)) return;
@@ -1288,73 +1505,19 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 	// ---------------------------------- //
 	// Use a Replie
 	if (ItemName == C_LibGalaxyTitles_ReplieItemId) {
-		// ---------------------------------- //
-		// Check if the replie can be used
-		declare CanUseReplie = _Event.Player.Armor < _Event.Player.ArmorMax;
-			
-		// Check if players nearby can be healed
-		if (!CanUseReplie) foreach (Player in Players) {
-			if (
-				Player.Armor >= Player.ArmorMax ||
-				ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius ||
-				!(
-					G_LibGalaxyTitles_ObjectsAffectEveryone ||
-					(_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) ||
-					Clans::AreTeammates(Player, _Event.Player)
-				)
-			) continue;
-			
-			CanUseReplie = True;
-			break;
-		}
-		
-		// Replie can't be used
-		if (!CanUseReplie) return;
+		if (!Private_CanUseHealing(_Event.Player)) return;
 		
 		// Use Replie
 		if (!Inventory::UseItem(_Event.Player, ItemName, C_LibGalaxyTitles_ReplieUseCooldown, False)) return;
 		Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
-		
+		declare NbAffected_Total = UseHealing(_Event.Player);
+
 		// ---------------------------------- //
-		// Heal player and their teammates
-		foreach (Player in Players) {
-			declare Affected = Player == _Event.Player || G_LibGalaxyTitles_ObjectsAffectEveryone || (_Event.Player.CurrentClan != 0 && Player.CurrentClan == _Event.Player.CurrentClan) || Clans::AreTeammates(Player, _Event.Player);
-			
-			if (
-				!Affected || Player.Armor >= Player.ArmorMax ||
-				ML::Distance(_Event.Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius
-			)
-				continue;
-			
-			// Heal the player
-			GivePlayerArmor(Player, C_LibGalaxyTitles_ArmorHealAmount);
-			
-			// ---------------------------------- //
-			// Notify player about who healed them
-			if (Player == _Event.Player) continue;
-			NbOtherPlayersAffected += 1;
-			
-			Interfancy::SendCrosshairNote(
-				Player, ["$<%1$> healed you!", _Event.Player.User.Name],
-				C_LibGalaxyTitles_NoteDisplayTime
-			);
+		// Send notice and give points if player has affected somebody
+		if (NbAffected_Total > 0) {
+			Score::AddPoints(_Event.Player, NbAffected_Total * G_LibGalaxyTitles_PointsForPick);
+			TopScores::AddPoints(_Event.Player.Score, "Support", NbAffected_Total * G_LibGalaxyTitles_PointsForPick);
 		}
-		
-		// ---------------------------------- //
-		// Notify player how many teammates they've healed
-		if (NbOtherPlayersAffected > 0) {
-			if (NbOtherPlayersAffected > 1) Message = ["Healed %1 players", TL::ToText(NbOtherPlayersAffected)];
-			else Message = ["Healed 1 player"];
-			Statistics::TrackEvent(_Event.Player, "PlayersHealed", NbOtherPlayersAffected);
-		}
-	}
-	
-	// ---------------------------------- //
-	// Send notice and give points if player has affected somebody
-	if (NbOtherPlayersAffected > 0) {
-		Interfancy::SendCrosshairNote(_Event.Player, Message, C_LibGalaxyTitles_NoteDisplayTime);
-		Score::AddPoints(_Event.Player, NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
-		TopScores::AddPoints(_Event.Player.Score, "Support", NbOtherPlayersAffected * G_LibGalaxyTitles_PointsForPick);
 	}
 }
 

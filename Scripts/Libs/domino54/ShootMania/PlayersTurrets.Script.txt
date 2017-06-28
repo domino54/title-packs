@@ -1,0 +1,873 @@
+// -------------------------------------- //
+//  LIBRARY PLAYERS TURRETS by domino54   //
+//  script version: 2017-06-28            //
+// -------------------------------------- //
+
+/**
+ *	Library used to manage placing and usage of turrets
+ *	by the players. Players can have one turret to assist
+ *	them during the match. Turret is added to a player's
+ *	inventory, where they can deploy it or destory, if it
+ *	has been already placed.
+ */
+
+#Const Version		"2017-06-28"
+#Const ScriptName	"Libs/domino54/ShootMania/PlayersTurrets.Script.txt"
+
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+#Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
+#Const C_LibPlayersTurrets_TurretModelPath		"SMCommon\\Turrets\\Turret1.Item.Gbx"
+#Const C_LibPlayersTurrets_GUILayerId			"LibPlayersTurrets:Status"
+#Const C_LibPlayersTurrets_InventoryItemId		"LibPlayersTurrets_Turret"
+#Const C_LibPlayersTurrets_DefaultActionInput	CSmModeEvent::EActionInput::Consumable2
+#Const C_LibPlayersTurrets_DefaultDeployTime	1500	///< Default turret deploy time.
+#Const C_LibPlayersTurrets_DefaultCooldown		10000	///< Default cooldown after turret destruction.
+#Const C_LibPlayersTurrets_DeployCancelDist		.75		///< Distance after which deploy is aborted.
+#Const C_LibPlayersTurrets_NbGaugesInModel		10		///< Amount of gauges in a single gauge widget.
+#Const C_LibPlayersTurrets_GaugeTotalLength		36.		///< Length of a widget's gauge bar.
+#Const C_LibPlayersTurrets_GaugeSpacingWidth	.5		///< Spaceing between smaller gauges in the widget.
+#Const C_LibPlayersTurrets_TurretInfoPos		<155., -48.>
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Ident G_LibPlayersTurrets_TurretModelId;	///< ID of the turret item model.
+declare Ident[] G_LibPlayersTurrets_CreatedTurrets;	///< IDs of the turrets created by the library.
+declare Integer G_LibPlayersTurrets_DeployTime;		///< Cooldown before new turret can be placed after destruction.
+declare Integer G_LibPlayersTurrets_TurretCooldown;	///< Cooldown before new turret can be placed after destruction.
+
+/// Turrets information
+declare Ident[Ident] G_LibPlayersTurrets_TurretPlayerId;	///< ID of the turret's owner.
+declare Integer[Ident] G_LibPlayersTurrets_TurretClan;		///< Clan of the turret.
+declare Vec3[Ident] G_LibPlayersTurrets_TurretPosition;		///< Position of the turret.
+
+/// Update
+declare Integer[Ident] G_LibPlayersTurrets_PrevTurretArmor;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the turret intormation.
+ *
+ *	@return		The turret information mnaialink.
+ */
+Text Private_CreateManialinkTurretsUI() {
+	declare Gauges = "";
+	for (I, 0, C_LibPlayersTurrets_NbGaugesInModel - 1)
+		Gauges ^= "<gauge size='0 7.5' valign='center' drawbg='0' drawblockbg='0' id='Gauge_Step#"^I^"' hidden='1' />";
+
+	return """
+<manialink version="3" name="{{{C_LibPlayersTurrets_GUILayerId}}}">
+<stylesheet>
+	<style class="count" valign="center2" textsize="2.25" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
+	<style class="desc" valign="center2" textsize=".875" textemboss="1" textfont="Eurostile_Bold" />
+</stylesheet>
+<frame halign="center" valign="center" size="320 180">
+
+<frame id="Frame_TurretInfo" pos="{{{C_LibPlayersTurrets_TurretInfoPos.X + C_LibPlayersTurrets_GaugeTotalLength + 10^" "^C_LibPlayersTurrets_TurretInfoPos.Y}}}" rot="0">
+	<quad size="7 7" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/Turret2.png" />
+	
+	<label pos="-4 2.5" halign="right" class="count" id="Label_TurretInfoCounter" />
+	<frame id="Frame_GaugeAmmo" pos="-4 -.35" rot="-180">{{{Gauges}}}</frame>
+	
+	<frame pos="-4 -2.5">
+		<label halign="right" class="desc" id="Label_TurretInfoText" />
+		<label halign="right" class="desc" id="Label_TurretInfoGhost" />
+	</frame>
+</frame>
+
+</frame>
+<script><!--
+/**
+ *	{{{C_LibPlayersTurrets_GUILayerId}}}
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_GaugeTotalLength	{{{C_LibPlayersTurrets_GaugeTotalLength}}}
+#Const C_GaugeSpacingWidth	{{{C_LibPlayersTurrets_GaugeSpacingWidth}}}
+#Const C_GaugePositionFix	4.
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_TurretInfo		<=> (Page.GetFirstChild("Frame_TurretInfo") as CMlFrame);
+declare Label_TurretInfoCounter	<=> (Page.GetFirstChild("Label_TurretInfoCounter") as CMlLabel);
+declare Label_TurretInfoText	<=> (Page.GetFirstChild("Label_TurretInfoText") as CMlLabel);
+declare Label_TurretInfoGhost	<=> (Page.GetFirstChild("Label_TurretInfoGhost") as CMlLabel);
+
+declare CMlGauge[] Gauge_TurretInfoBar;
+for (I, 0, {{{C_LibPlayersTurrets_NbGaugesInModel - 1}}})
+	Gauge_TurretInfoBar.add((Page.GetFirstChild("Gauge_Step#"^I) as CMlGauge));
+
+// ---------------------------------- //
+// Variables
+declare TurretInfoVisible = False;
+declare UpdateTurretGauge = True;
+declare DescriptionText = "";
+
+/// Update
+declare PrevTurretInfoVisible = False;
+declare PrevInterfaceColor = -1.;
+declare PrevTurretArmor = -1;
+declare PrevTurretArmorMax = -1;
+declare PrevDescriptionText = "!";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+if (!PageIsVisible) continue;
+
+Frame_TurretInfo.Visible = !IsInGameMenuDisplayed;
+if (!Frame_TurretInfo.Visible) continue;
+
+// ---------------------------------- //
+// Update turret information visibility
+if (GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>) {
+	declare netread Integer Net_LibPlayersTurrets_TurretDeployTime for GUIPlayer;
+	TurretInfoVisible = Net_LibPlayersTurrets_TurretDeployTime > 0;
+}
+else TurretInfoVisible = False;
+
+if (PrevTurretInfoVisible != TurretInfoVisible) {
+	PrevTurretInfoVisible = TurretInfoVisible;
+
+	declare Easing = CAnimManager::EAnimManagerEasing::CircOut;
+	declare Position = <{{{C_LibPlayersTurrets_TurretInfoPos.X}}}, Frame_TurretInfo.RelativePosition_V3.Y>;
+	
+	if (!TurretInfoVisible) {
+		Easing = CAnimManager::EAnimManagerEasing::CircIn;
+		Position.X += C_GaugeTotalLength + 10.;
+	}
+	
+	AnimMgr.Add(Frame_TurretInfo, "<frame pos='"^Position.X^" "^Position.Y^"' />", 200, Easing);
+}
+
+if (!TurretInfoVisible) continue;
+
+// ---------------------------------- //
+// Update interface color
+if (PrevInterfaceColor != GUIPlayer.GetLinearHue) {
+	PrevInterfaceColor = GUIPlayer.GetLinearHue;
+	declare InterfaceColor = HsvToRgb(<PrevInterfaceColor, 1., 1.>);
+
+	foreach (Gauge in Gauge_TurretInfoBar) Gauge.Color = InterfaceColor;
+	Label_TurretInfoText.TextColor = Brightness(InterfaceColor, 4.);
+	Label_TurretInfoGhost.TextColor = Label_TurretInfoText.TextColor;
+}
+
+// ---------------------------------- //
+// Upate gauge on armor change
+declare netread Integer Net_LibPlayersTurrets_TurretArmor for GUIPlayer;
+if (PrevTurretArmor != Net_LibPlayersTurrets_TurretArmor) {
+	PrevTurretArmor = Net_LibPlayersTurrets_TurretArmor;
+	UpdateTurretGauge = True;
+}
+
+// ---------------------------------- //
+// Update gauge on armor max change
+declare netread Integer Net_LibPlayersTurrets_TurretArmorMax for GUIPlayer;
+if (PrevTurretArmorMax != Net_LibPlayersTurrets_TurretArmorMax) {
+	PrevTurretArmorMax = Net_LibPlayersTurrets_TurretArmorMax;
+	UpdateTurretGauge = True;
+}
+
+// Update gauge while turret is being deployed
+declare netread Integer Net_LibPlayersTurrets_TurretSpawnTime for GUIPlayer;
+if (GameTime <= Net_LibPlayersTurrets_TurretSpawnTime + 500) UpdateTurretGauge = True;
+
+// ---------------------------------- //
+// Update turret gauge
+if (UpdateTurretGauge) {
+	UpdateTurretGauge = False;
+
+	// ---------------------------------- //
+	// Display the turret deploying progress
+	if (GameTime < Net_LibPlayersTurrets_TurretSpawnTime) {
+		declare netread Integer Net_LibPlayersTurrets_TurretDeployTime for GUIPlayer;
+		declare Ratio = ML::Clamp(
+			ML::ToReal(GameTime - Net_LibPlayersTurrets_TurretDeployTime) /
+			(Net_LibPlayersTurrets_TurretSpawnTime - Net_LibPlayersTurrets_TurretDeployTime),
+			0., .99
+		);
+
+		Label_TurretInfoCounter.Value = ML::NearestInteger(Ratio * 100)^"%";
+		SetModuleRatio(Gauge_TurretInfoBar, Ratio, 1);
+		DescriptionText = "Deploying turret";
+	}
+	// ---------------------------------- //
+	// Show the current player's turret's armor
+	else {
+		declare GaugeRatio = PrevTurretArmor / 100.;
+		declare GaugeSlots = PrevTurretArmorMax / 100;
+
+		Label_TurretInfoCounter.Value = ML::FloorInteger(GaugeRatio)^"$777/"^GaugeSlots;
+		SetModuleRatio(Gauge_TurretInfoBar, GaugeRatio, GaugeSlots);
+		DescriptionText = "Turret";
+	}
+}
+
+// ---------------------------------- //
+// Update description label
+if (PrevDescriptionText != DescriptionText) {
+	PrevDescriptionText = DescriptionText;
+
+	Label_TurretInfoGhost.Value = Label_TurretInfoText.Value;
+	Label_TurretInfoText.Value = TL::ToUpperCase(Translate(DescriptionText));
+	
+	Label_TurretInfoText.Opacity = 0.;
+	Label_TurretInfoText.RelativePosition_V3.Y = 1.5;
+	Label_TurretInfoGhost.Opacity = 1.;
+	Label_TurretInfoGhost.RelativePosition_V3.Y = 0.;
+	
+	AnimMgr.Add(Label_TurretInfoText, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+	AnimMgr.Add(Label_TurretInfoGhost, "<label pos='0 -1.5' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+}
+***
+
+{{{ManialinkTools::Functions(["Brightness", "SetGaugeRatio", "HsvToRgb"])}}}
+{{{Translations::InjectInManialink(["Turret", "Deploying turret"])}}}
+
+// ---------------------------------- //
+/** Set module value
+ *
+ *	@param	_Gauges		Array of gauges used by the module
+ *	@param	_Energy		Amount of currently loaded energy
+ *	@param	_Slots		Amount of available energy slots
+ */
+Void SetModuleRatio(CMlGauge[] _Gauges, Real _Energy, Integer _Slots) {
+	declare persistent Persistent_LibInterfancy_ShowGaugesBgs for LocalUser = False;
+	
+	// ---------------------------------- //
+	// Hide gauges if there are no slots
+	if (_Slots <= 0) {
+		foreach (Gauge in _Gauges) Gauge.Visible = False;
+		
+		// There is nothing more to do without slots
+		return;
+	}
+	// ---------------------------------- //
+	// Adjust up to N gauges for slots
+	else if (_Slots <= _Gauges.count) {
+		declare SpacingSizeSub = 0.;
+		if (_Slots >= 2) SpacingSizeSub = C_GaugeSpacingWidth * (_Slots - 1) / _Slots;
+		declare GaugeSlotSize = C_GaugeTotalLength / _Slots + C_GaugePositionFix - SpacingSizeSub;
+		
+		foreach (I => Gauge in _Gauges) {
+			Gauge.Visible = I <= _Slots - 1;
+			if (!Gauge.Visible) continue;
+			
+			Gauge.Size.X = GaugeSlotSize;
+			Gauge.RelativePosition_V3.X = (GaugeSlotSize - C_GaugePositionFix) * I - C_GaugePositionFix / 2;
+			Gauge.DrawBlockBackground = Persistent_LibInterfancy_ShowGaugesBgs;
+			if (I > 0) Gauge.RelativePosition_V3.X += C_GaugeSpacingWidth * I;
+		}
+	}
+	// ---------------------------------- //
+	// Use one gauge for over N slots
+	else {
+		foreach (I => Gauge in _Gauges) {
+			Gauge.Visible = I == 0;
+			if (!Gauge.Visible) continue;
+			
+			Gauge.Size.X = C_GaugeTotalLength + C_GaugePositionFix;
+			Gauge.RelativePosition_V3.X = -C_GaugePositionFix / 2;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Set gauges ratios
+	foreach (I => Gauge in _Gauges) {
+		if (!Gauge.Visible) continue;
+		// Gauge.DrawBlockBackground = _Module == "Stamina";
+		
+		// ---------------------------------- //
+		// Format ratios for gauges until N slots
+		if (_Slots <= _Gauges.count) SetGaugeRatio(Gauge, _Energy - I);
+		
+		// ---------------------------------- //
+		// Format ratio for gauge above N slots
+		else SetGaugeRatio(Gauge, _Energy / _Slots);
+	}
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Update player information about their turret.
+ *
+ *	@param	_Player		The player to update turret information.
+ */
+Void Private_UpdatePlayerTurretInfo(CSmPlayer _Player) {
+	if (_Player == Null) return;
+
+	declare Integer LibPlayersTurrets_TurretDeployTime for _Player;
+	declare Integer LibPlayersTurrets_TurretSpawnTime for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployPos for _Player;
+	declare Integer LibPlayersTurrets_TurretCooldownStart for _Player;
+	declare Integer LibPlayersTurrets_TurretCooldownDuration for _Player;
+
+	declare netwrite Integer Net_LibPlayersTurrets_TurretDeployTime for _Player;
+	declare netwrite Integer Net_LibPlayersTurrets_TurretSpawnTime for _Player;
+	declare netwrite Vec3 Net_LibPlayersTurrets_TurretDeployPos for _Player;
+
+	Net_LibPlayersTurrets_TurretDeployTime = LibPlayersTurrets_TurretDeployTime;
+	Net_LibPlayersTurrets_TurretSpawnTime = LibPlayersTurrets_TurretSpawnTime;
+	Net_LibPlayersTurrets_TurretDeployPos = LibPlayersTurrets_TurretDeployPos;
+
+	Inventory::SetItemIsActive(_Player, C_LibPlayersTurrets_InventoryItemId, LibPlayersTurrets_TurretDeployTime > 0);
+	Inventory::SetItemCooldown(
+		_Player, C_LibPlayersTurrets_InventoryItemId,
+		LibPlayersTurrets_TurretCooldownStart,
+		LibPlayersTurrets_TurretCooldownDuration
+	);
+}
+
+// ---------------------------------- //
+/** Update UI information about turret's armor.
+ *
+ *	@param	_TurretId	ID of the turret to update information.
+ */
+Void Private_UpdateTurretArmorInfo(Ident _TurretId) {
+	if (_TurretId == NullId || !TurretsManager.Turrets.existskey(_TurretId) || !G_LibPlayersTurrets_CreatedTurrets.exists(_TurretId)) return;
+	declare Turret <=> TurretsManager.Turrets[_TurretId];
+
+	declare PlayerId = G_LibPlayersTurrets_TurretPlayerId[_TurretId];
+	if (!AllPlayers.existskey(PlayerId)) return;
+	declare Player <=> AllPlayers[PlayerId];
+
+	declare netwrite Integer Net_LibPlayersTurrets_TurretArmor for Player;
+	declare netwrite Integer Net_LibPlayersTurrets_TurretArmorMax for Player;
+
+	Net_LibPlayersTurrets_TurretArmor = Turret.Armor;
+	Net_LibPlayersTurrets_TurretArmorMax = Turret.ArmorMax;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Get the spawn time of a player's turret.
+ *
+ *	@param	_Player		The player to get turret spawn time.
+ *
+ *	@return		Spawn time of the turret.
+ */
+Integer GetTurretSpawnTime(CSmPlayer _Player) {
+	if (_Player == Null) return -1;
+	declare Integer LibPlayersTurrets_TurretSpawnTime for _Player;
+	return LibPlayersTurrets_TurretSpawnTime;
+}
+
+// ---------------------------------- //
+/** Check if the player has deployed their turret.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player has deployed their turret.
+ */
+Boolean HasTurretDeployed(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	return GetTurretSpawnTime(_Player) > 0;
+}
+
+// ---------------------------------- //
+/** Check if the player has their turret spawned.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player has their turret spawned.
+ */
+Boolean HasTurretSpawned(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+	declare Ident LibPlayersTurrets_PlayerTurretId for _Player;
+	return LibPlayersTurrets_PlayerTurretId != NullId;
+}
+
+// ---------------------------------- //
+/** Get all turrets created by the library.
+ *	/!\ Use for one frame duration only! /!\
+ *
+ *	@return		Turrets created by the library.
+ */
+CModeTurret[] GetTurrets() {
+	declare CModeTurret[] LibraryTurrets;
+	foreach (TurretId in G_LibPlayersTurrets_CreatedTurrets) {
+		if (!TurretsManager.Turrets.existskey(TurretId)) continue;
+		LibraryTurrets.add(TurretsManager.Turrets[TurretId]);
+	}
+	return LibraryTurrets;
+}
+
+// ---------------------------------- //
+/** Get the turret of a player.
+ *
+ *	@param	_Player		The player to get their turret.
+ *
+ *	@return		The player's turret.
+ */
+CModeTurret GetPlayerTurret(CSmPlayer _Player) {
+	if (_Player == Null || !HasTurretSpawned(_Player)) return Null;
+	declare Ident LibPlayersTurrets_PlayerTurretId for _Player;
+	declare TurretId = LibPlayersTurrets_PlayerTurretId;
+	if (TurretsManager.Turrets.existskey(TurretId)) return TurretsManager.Turrets[TurretId];
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get the owner of a turret.
+ *
+ *	@param	_Turret		The turret to get its owner.
+ *
+ *	@return		The owner of the turret.
+ */
+CSmPlayer GetTurretOwner(CModeTurret _Turret) {
+	if (_Turret == Null || !G_LibPlayersTurrets_CreatedTurrets.exists(_Turret.Id)) return Null;
+
+	if (G_LibPlayersTurrets_TurretPlayerId.existskey(_Turret.Id)) {
+		declare PlayerId = G_LibPlayersTurrets_TurretPlayerId[_Turret.Id];
+		if (AllPlayers.existskey(PlayerId)) return AllPlayers[PlayerId];
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get the clan of a turret.
+ *
+ *	@param	_Turret		The turret to get its clan.
+ *
+ *	@return		The clan of the turret.
+ */
+Integer GetTurretClan(CModeTurret _Turret) {
+	if (_Turret == Null || !G_LibPlayersTurrets_CreatedTurrets.exists(_Turret.Id)) return -1;
+	if (!G_LibPlayersTurrets_TurretClan.existskey(_Turret.Id)) return -1;
+	return G_LibPlayersTurrets_TurretClan[_Turret.Id];
+}
+
+// ---------------------------------- //
+/** Get the position of a turret.
+ *
+ *	@param	_Turret		The turret to get its position.
+ *
+ *	@return		The position of the turret.
+ */
+Vec3 GetTurretPosition(CModeTurret _Turret) {
+	if (_Turret == Null || !G_LibPlayersTurrets_CreatedTurrets.exists(_Turret.Id)) return Vec3;
+	if (!G_LibPlayersTurrets_TurretPosition.existskey(_Turret.Id)) return Vec3;
+	return G_LibPlayersTurrets_TurretPosition[_Turret.Id];
+}
+
+// ---------------------------------- //
+/** Destroy a turret.
+ *
+ *	@param	_TurretId	The ID of the turret to destroy.
+ *	@param	_Cooldown	Time before the player can deploy a new turret.
+ *
+ *	@return		True, if the turret has been destroyed.
+ */
+Boolean DestroyTurret(Ident _TurretId, Integer _Cooldown) {
+	if (_TurretId == NullId || !G_LibPlayersTurrets_CreatedTurrets.exists(_TurretId)) return False;
+
+	if (TurretsManager.Turrets.existskey(_TurretId)) {
+		declare Turret <=> TurretsManager.Turrets[_TurretId];
+		TurretsManager.Turret_Destroy(Turret);
+	}
+
+	if (G_LibPlayersTurrets_TurretPlayerId.existskey(_TurretId)) {
+		declare PlayerId = G_LibPlayersTurrets_TurretPlayerId[_TurretId];
+		if (AllPlayers.existskey(PlayerId)) {
+			declare Player <=> AllPlayers[PlayerId];
+	
+			declare Integer LibPlayersTurrets_TurretDeployTime for Player;
+			declare Integer LibPlayersTurrets_TurretSpawnTime for Player;
+			declare Vec3 LibPlayersTurrets_TurretDeployPos for Player;
+			declare Vec3 LibPlayersTurrets_TurretDeployDir for Player;
+			declare Ident LibPlayersTurrets_PlayerTurretId for Player;
+			declare Integer LibPlayersTurrets_TurretCooldownStart for Player;
+			declare Integer LibPlayersTurrets_TurretCooldownDuration for Player;
+		
+			LibPlayersTurrets_TurretDeployTime = -1;
+			LibPlayersTurrets_TurretSpawnTime = -1;
+			LibPlayersTurrets_TurretDeployPos = Vec3;
+			LibPlayersTurrets_TurretDeployDir = Vec3;
+			LibPlayersTurrets_PlayerTurretId = NullId;
+
+			if (_Cooldown > 0) {
+				LibPlayersTurrets_TurretCooldownStart = Now;
+				LibPlayersTurrets_TurretCooldownDuration = _Cooldown;
+			}
+			Private_UpdatePlayerTurretInfo(Player);
+		}
+	}
+
+	declare Boolean Removed;
+	Removed = G_LibPlayersTurrets_CreatedTurrets.remove(_TurretId);
+	Removed = G_LibPlayersTurrets_TurretPlayerId.removekey(_TurretId);
+	Removed = G_LibPlayersTurrets_TurretClan.removekey(_TurretId);
+	Removed = G_LibPlayersTurrets_PrevTurretArmor.removekey(_TurretId);
+	return True;
+}
+
+Boolean DestroyTurret(Ident _TurretId) {
+	return DestroyTurret(_TurretId, 0);
+}
+
+// ---------------------------------- //
+/** Destroy the turret of a player.
+ *
+ *	@param	_Player		The player to destroy their turret.
+ *	@param	_Cooldown	Time before the player can deploy a new turret.
+ *
+ *	@return		True, if the turret has been destroyed.
+ */
+Boolean DestroyTurret(CSmPlayer _Player, Integer _Cooldown) {
+	if (_Player == Null || !HasTurretDeployed(_Player)) return False;
+
+	declare Integer LibPlayersTurrets_TurretDeployTime for _Player;
+	declare Integer LibPlayersTurrets_TurretSpawnTime for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployPos for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployDir for _Player;
+	declare Ident LibPlayersTurrets_PlayerTurretId for _Player;
+
+	LibPlayersTurrets_TurretDeployTime = -1;
+	LibPlayersTurrets_TurretSpawnTime = -1;
+	LibPlayersTurrets_TurretDeployPos = Vec3;
+	LibPlayersTurrets_TurretDeployDir = Vec3;
+
+	Private_UpdatePlayerTurretInfo(_Player);
+	return DestroyTurret(LibPlayersTurrets_PlayerTurretId, _Cooldown);
+}
+
+Boolean DestroyTurret(CSmPlayer _Player) {
+	return DestroyTurret(_Player, 0);
+}
+
+// ---------------------------------- //
+/// Destroy all turrets creaded by the library.
+Void DestroyAllTurrets() {
+	while (G_LibPlayersTurrets_CreatedTurrets.count > 0) {
+		declare Destroyed = DestroyTurret(G_LibPlayersTurrets_CreatedTurrets[0]);
+	}
+}
+
+// ---------------------------------- //
+/** Create a turret after being deployed by a player.
+ *
+ *	@param	_Player		The player to create their turret.
+ *
+ *	@return		Created turret.
+ */
+CModeTurret CreateTurret(CSmPlayer _Player) {
+	if (_Player == Null || !HasTurretDeployed(_Player) || HasTurretSpawned(_Player)) return Null;
+
+	declare Integer LibPlayersTurrets_TurretSpawnTime for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployPos for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployDir for _Player;
+	declare Ident LibPlayersTurrets_PlayerTurretId for _Player;
+
+	declare Turret <=> TurretsManager.Turret_Create(
+		G_LibPlayersTurrets_TurretModelId, LibPlayersTurrets_TurretDeployPos,
+		LibPlayersTurrets_TurretDeployDir, _Player.CurrentClan, _Player 
+	);
+	if (Turret == Null) return Null;
+
+	G_LibPlayersTurrets_CreatedTurrets.add(Turret.Id);
+	G_LibPlayersTurrets_TurretPlayerId[Turret.Id] = _Player.Id;
+	G_LibPlayersTurrets_TurretClan[Turret.Id] = _Player.CurrentClan;
+	G_LibPlayersTurrets_TurretPosition[Turret.Id] = LibPlayersTurrets_TurretDeployPos;
+
+	LibPlayersTurrets_PlayerTurretId = Turret.Id;
+	LibPlayersTurrets_TurretSpawnTime = Now;
+
+	Private_UpdatePlayerTurretInfo(_Player);
+	return Turret;
+}
+
+// ---------------------------------- //
+/** Start deploying the turret of a player.
+ *
+ *	@param	_Player			The player who is deploying their turret.
+ *	@param	_DeployDelay	Time the player needs to stand in one place to deploy the turret.
+ *
+ *	@return		True, if the turret started being deployed.
+ */
+Boolean DeployTurret(CSmPlayer _Player, Integer _DeployDelay) {
+	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || HasTurretSpawned(_Player)) return False;
+	if (!Inventory::ItemExists(_Player, C_LibPlayersTurrets_InventoryItemId)) return False;
+	if (!Inventory::CooldownIsReady(_Player, C_LibPlayersTurrets_InventoryItemId)) return False;
+
+	declare Integer LibPlayersTurrets_TurretDeployTime for _Player;
+	declare Integer LibPlayersTurrets_TurretSpawnTime for _Player;
+	declare Vec3 LibPlayersTurrets_LatestGroundPosition for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployPos for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployDir for _Player;
+	declare Ident LibPlayersTurrets_PlayerTurretId for _Player;
+
+	LibPlayersTurrets_TurretDeployTime = Now;
+	LibPlayersTurrets_TurretSpawnTime = LibPlayersTurrets_TurretDeployTime + ML::Max(_DeployDelay, 0);
+	LibPlayersTurrets_TurretDeployPos = LibPlayersTurrets_LatestGroundPosition; // _Player.Position;
+	LibPlayersTurrets_TurretDeployDir = <_Player.AimDirection.X, 0., _Player.AimDirection.Z>;
+	LibPlayersTurrets_PlayerTurretId = NullId;
+
+	if (_DeployDelay <= 0) {
+		declare Turret <=> CreateTurret(_Player);
+	}
+
+	Private_UpdatePlayerTurretInfo(_Player);
+	return True;
+}
+
+Boolean DeployTurret(CSmPlayer _Player) {
+	return DeployTurret(_Player, -1);
+}
+
+// ---------------------------------- //
+/** Add the turret to a player's inventory.
+ *
+ *	@param	_Player			The player to add turret to their inventory.
+ *	@param	_ActionInput	The button player will have to press to use their turret.
+ */
+Void AddToInventory(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
+	if (_Player == Null || Inventory::ItemExists(_Player, C_LibPlayersTurrets_InventoryItemId)) return;
+
+	declare ActionInput = C_LibPlayersTurrets_DefaultActionInput;
+	if (_ActionInput != CSmModeEvent::EActionInput::None) ActionInput = _ActionInput;
+
+	Inventory::CreateItemSlot(_Player, C_LibPlayersTurrets_InventoryItemId, ActionInput, -1, "Turret2.png");
+	Private_UpdatePlayerTurretInfo(_Player);
+}
+
+Void AddToInventory(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	AddToInventory(_Player, C_LibPlayersTurrets_DefaultActionInput);
+}
+
+// ---------------------------------- //
+/** Remove the turret from a player's inventory.
+ *
+ *	@param	_Player		The player to remove turret from inventory.
+ */
+Void RemoveFromInventory(CSmPlayer _Player) {
+	if (_Player == Null || !Inventory::ItemExists(_Player, C_LibPlayersTurrets_InventoryItemId)) return;
+	Inventory::DestroyItemSlot(_Player, C_LibPlayersTurrets_InventoryItemId);
+	declare Destroyed = DestroyTurret(_Player);
+}
+
+// ---------------------------------- //
+/** Use the turret in a player's inventory.
+ *
+ *	@param	_Player			The player who is using an inventory item.
+ *	@param	_ActionInput	The key that has been pressed by the player.
+ *
+ *	@return		True, if the action has been processed by the library.
+ */
+Boolean UseActionButton(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
+	if (_Player == Null || _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) return False;
+	if (!Inventory::ItemExists(_Player, C_LibPlayersTurrets_InventoryItemId)) return False;
+
+	declare TurretHotkey = Inventory::GetSlotHotkey(_Player, C_LibPlayersTurrets_InventoryItemId);
+	if (_ActionInput != TurretHotkey) return False;
+
+	if (HasTurretDeployed(_Player)) {
+		declare Destroyed = DestroyTurret(_Player, G_LibPlayersTurrets_TurretCooldown);
+	} else {
+		declare Deployed = DeployTurret(_Player, G_LibPlayersTurrets_DeployTime);
+	}
+	return True;
+}
+
+// ---------------------------------- //
+/** Completely reset a player.
+ *
+ *	@param	_Player		The player to reset.
+ */
+Void ResetPlayer(CSmPlayer _Player) {
+	if (_Player == Null) return;
+	declare Destroyed = DestroyTurret(_Player);
+	RemoveFromInventory(_Player);
+
+	declare Integer LibPlayersTurrets_TurretDeployTime for _Player;
+	declare Integer LibPlayersTurrets_TurretSpawnTime for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployPos for _Player;
+	declare Vec3 LibPlayersTurrets_TurretDeployDir for _Player;
+	declare Ident LibPlayersTurrets_PlayerTurretId for _Player;
+	declare Integer LibPlayersTurrets_TurretCooldownStart for _Player;
+	declare Integer LibPlayersTurrets_TurretCooldownDuration for _Player;
+
+	LibPlayersTurrets_TurretDeployTime = -1;
+	LibPlayersTurrets_TurretSpawnTime = -1;
+	LibPlayersTurrets_TurretDeployPos = Vec3;
+	LibPlayersTurrets_TurretDeployDir = Vec3;
+	LibPlayersTurrets_PlayerTurretId = NullId;
+	LibPlayersTurrets_TurretCooldownStart = -1;
+	LibPlayersTurrets_TurretCooldownDuration = -1;
+
+	Private_UpdatePlayerTurretInfo(_Player);
+}
+
+// ---------------------------------- //
+/// Reset all players.
+Void ResetAllPlayers() {
+	foreach (Player in AllPlayers) ResetPlayer(Player);
+}
+
+// ---------------------------------- //
+/** Set the turret deploy time.
+ *
+ *	@param	_DeployTime		The new deploy time.
+ */
+Void SetDeployTime(Integer _DeployTime) {
+	declare DeployTime = _DeployTime;
+	if (DeployTime < 0) DeployTime = C_LibPlayersTurrets_DefaultDeployTime; 
+	G_LibPlayersTurrets_DeployTime = ML::Max(DeployTime, 0);
+}
+
+// ---------------------------------- //
+/** Set the turret cooldown.
+ *
+ *	@param	_Cooldown	The new cooldown.
+ */
+Void SetCooldown(Integer _Cooldown) {
+	declare Cooldown = _Cooldown;
+	if (Cooldown < 0) Cooldown = C_LibPlayersTurrets_DefaultCooldown; 
+	G_LibPlayersTurrets_TurretCooldown = ML::Max(Cooldown, 0);
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	DestroyAllTurrets();
+	ResetAllPlayers();
+
+	Layers::Detach(C_LibPlayersTurrets_GUILayerId);
+	Layers::Destroy(C_LibPlayersTurrets_GUILayerId);
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+
+	G_LibPlayersTurrets_TurretModelId = ItemList_Add(C_LibPlayersTurrets_TurretModelPath);
+	SetDeployTime(-1);
+	SetCooldown(-1);
+
+	Layers::Create(C_LibPlayersTurrets_GUILayerId, Private_CreateManialinkTurretsUI());
+	Layers::Attach(C_LibPlayersTurrets_GUILayerId);
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	// ---------------------------------- //
+	// Manage players
+	foreach (Player in AllPlayers) {
+		declare Vec3 LibPlayersTurrets_LatestGroundPosition for Player;
+		if (Player.IsTouchingGround) LibPlayersTurrets_LatestGroundPosition = Player.Position;
+
+		if (!HasTurretSpawned(Player)) {
+			// ---------------------------------- //
+			// Abort deploying if the player has moved
+			declare Vec3 LibPlayersTurrets_TurretDeployPos for Player;
+			if (HasTurretDeployed(Player) && (
+				ML::Distance(Player.Position, LibPlayersTurrets_TurretDeployPos) > C_LibPlayersTurrets_DeployCancelDist ||
+				!Player.IsTouchingGround
+			)) {
+				declare Destroyed = DestroyTurret(Player);
+			}
+
+			// ---------------------------------- //
+			// Spawn deployed turrets
+			if (Now >= GetTurretSpawnTime(Player)) {
+				declare Turret <=> CreateTurret(Player);
+			}
+		}
+
+		// ---------------------------------- //
+		// Destroy turret if the player has changed their clan
+		declare PlayerTurret <=> GetPlayerTurret(Player);
+		if (PlayerTurret != Null) {
+			declare TurretClan = GetTurretClan(PlayerTurret);
+			if (TurretClan != Player.CurrentClan) DestroyTurret(PlayerTurret.Id);
+		}
+	}
+
+	declare Ident[] TurretsToDestroy;
+
+	// ---------------------------------- //
+	// Manage turrets
+	foreach (TurretId in G_LibPlayersTurrets_CreatedTurrets) {
+		if (!TurretsManager.Turrets.existskey(TurretId)) continue;
+		declare Turret <=> TurretsManager.Turrets[TurretId];
+
+		// ---------------------------------- //
+		// On turret armor change
+		if (
+			!G_LibPlayersTurrets_PrevTurretArmor.existskey(TurretId) ||
+			G_LibPlayersTurrets_PrevTurretArmor[TurretId] != Turret.Armor
+		) {
+			G_LibPlayersTurrets_PrevTurretArmor[TurretId] = Turret.Armor;
+			Private_UpdateTurretArmorInfo(TurretId);
+			if (Turret.Armor <= 0) TurretsToDestroy.add(TurretId);
+		}
+
+		// ---------------------------------- //
+		// Destroy turrets without owners
+		declare TurretOwner = GetTurretOwner(Turret);
+		if (TurretOwner == Null || !Players.exists(TurretOwner)) TurretsToDestroy.add(TurretId);
+	}
+
+	// Destroy unnecessary turrets
+	while (TurretsToDestroy.count > 0) {
+		declare Boolean Removed;
+		Removed = DestroyTurret(TurretsToDestroy[0], G_LibPlayersTurrets_TurretCooldown);
+		Removed = TurretsToDestroy.removekey(0);
+	}
+}

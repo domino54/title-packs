@@ -1,0 +1,86 @@
+// ----------------------------------------------- //
+//  SHOOTMANIA GALAXY MENU CONTROLLER by domino54  //
+//  script version: 2017-07-11                     //
+// ----------------------------------------------- //
+
+#RequireContext CManiaAppTitle
+
+/**
+ *	Exclusive for GalaxyTitles.
+ *
+ *	The main controller for ShootMania Galaxy title pack menu.
+ */
+
+#Const Version		"2017-07-11"
+#Const ScriptName	"ManiaApps/domino54/GalaxyTitles/MenuController.Script.txt"
+
+#Include "Libs/Nadeo/Env.Script.txt" as Env
+#Include "Libs/Nadeo/Log.Script.txt" as Log
+#Include "Libs/domino54/ManialinkEffects.Script.txt" as Effects
+#Include "Libs/domino54/GalaxyTitles/MenuTabsMgr.Script.txt" as Tabs
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_MenuController_ContextDefault		0
+#Const C_MenuController_ContextChangelog	1
+#Const C_MenuController_ContextLegalInfo	2
+#Const C_MenuController_ContextJoinWindow	3
+#Const C_MenuController_ContextConfirm		4
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	Env::Set(Env::Env_Development());
+
+	// ---------------------------------- //
+	// Variables
+	declare ActiveMenuContext = C_MenuController_ContextDefault;
+
+	/// Update
+	declare PrevMenuContext = -1;
+
+	// ---------------------------------- //
+	// Log libraries used by the controller
+	Log::Load();
+	Log::RegisterScript(ScriptName, Version);
+	Log::RegisterScript(Log::GetScriptName(), Log::GetScriptVersion());
+	Log::RegisterScript(Effects::GetScriptName(), Effects::GetScriptVersion());
+	Log::RegisterScript(Tabs::GetScriptName(), Tabs::GetScriptVersion());
+	Log::DisplayScripts();
+
+	// ---------------------------------- //
+	// Build the menus
+	Tabs::Load();
+	Tabs::AddTab("Home");
+	Tabs::AddTab("Multiplayer");
+	Tabs::AddTab("Statistics");
+	Tabs::AddTab("Editors");
+	Tabs::AddTab("Settings");
+	Tabs::Build();
+
+	Effects::SetColor(<1., .75, 0.>);
+
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+
+		// ---------------------------------- //
+		// Active context change
+		if (PrevMenuContext != ActiveMenuContext) {
+			PrevMenuContext = ActiveMenuContext;
+
+			Tabs::SetVisibility(ActiveMenuContext == C_MenuController_ContextDefault);
+		}
+
+		// ---------------------------------- //
+		// User requests leaving the title
+		if (Tabs::RequestsQuitTitle()) {
+			Menu_Quit();
+			break;
+		}
+	}
+}

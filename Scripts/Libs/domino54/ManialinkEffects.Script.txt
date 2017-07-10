@@ -1,0 +1,424 @@
+// --------------------------------------- //
+//  LIBRARY MANIALINK EFFECTS by domino54  //
+//  script version: 2017-07-11             //
+// --------------------------------------- //
+
+/**
+ *	This library is used to give some additional functionalities to the
+ *	manialinks. List of them and implementation can be found below.
+ *
+ *	FULL IMPLEMENTATION
+ *	To fully install these functions in the manialink, use 
+ *	{{{InsertFunctions()}}} before main() in your script, and then
+ *	call Effects_Loop() to automatically manage everything.
+ *
+ *	Note:
+ *	Color, hover and ripple effects can be all combined in one quad,
+ *	by adding all three classes to the manialink element tag.
+ *
+ *	COLOR
+ *	This functions allow layers in plugins and ManiaApps to share one
+ *	color for various elements on the page. To achieve this, add
+ *	class "Color" to your manialink elements and then call "SetColor()"
+ *	inside your main script to adject color of these elements.
+ *
+ *	HOVER
+ *	This one adds simple hover effect to the quads, changing opacity
+ *	of the quad from 0% to 20%, as well as changing color of other
+ *	quads and labels from the same frame as hovered element. To use
+ *	this effect, add "Hover" class to your element. If you don't want
+ *	other elements in the frame to be highlighted, give them "NoHover"
+ *	class.
+ *
+ *	RIPPLE
+ *	This option adds a fancy water drop effect to the clicked element.
+ *	To add this function to your quads, use {{{InsertRipple()}}} before
+ *	defining quad in your manialink (still in the same frame) and add
+ *	"Ripple" class to your quad button. Ripple is automatically taking
+ *	color from the Color function of this library.
+ *
+ *	GAMEPAD BUTTONS
+ *	This function will automatically set textures of currently used
+ *	gamepad contols to your quads. Available textures include: Xbox
+ *	One, PlayStation 4. Other controllers (such as keyboard or mouse
+ *	movement) hide the quads. To add this functionality, add
+ *	"PadButton" class to your quad, as well as a class representing
+ *	the button quad should use the texture from. Available textures
+ *	are listed in direct documentations of technical functions below.
+ */
+
+#Const Version		"2017-07-11"
+#Const ScriptName	"Libs/domino54/ManialinkEffects.Script.txt"
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare CUILayer[] G_LibManialinkEffects_ColorLayers;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Insert the ripple frame into a manialink.
+ *
+ *	@return		Ripple effect frame.
+ */
+Text InsertRipple() {
+	return """<frame id="Frame_RippleEffect" size="0"><quad class="Color" scale="0" colorize="FFF" id="Quad_RippleEffect" /></frame>""";
+}
+
+// ---------------------------------- //
+/** Insert the library functions into a manialink.
+ *
+ *	@return		Functions of the library.
+ */
+Text InsertFunctions() {
+	return """
+// ---------------------------------- //
+/** Update color of the colorizable elements.
+ *
+ *	@param	_Color		The color to set.
+ */
+Void Color_SetColor(Vec3 _Color) {
+	declare Color = <1., 1., 1.>;
+	if (_Color != <0., 0., 0.>) Color = _Color; 
+
+	Page.GetClassChildren("Color", Page.MainFrame, True);
+	foreach (Control in Page.GetClassChildren_Result) {
+		switchtype (Control) {
+			case CMlQuad : {
+				declare Quad = (Control as CMlQuad);
+				Quad.BgColor = Color;
+				Quad.Colorize = Color;
+			}
+			case CMlGauge : {
+				declare Gauge = (Control as CMlGauge);
+				Gauge.Color = Color;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Manage the color effect.
+Void Color_Loop() {
+	declare Vec3 LibMenuColor_PrevColor for This;
+	declare Vec3 LibMenuColor_MenuColor for Page;
+
+	if (LibMenuColor_PrevColor == LibMenuColor_MenuColor) return;
+	LibMenuColor_PrevColor = LibMenuColor_MenuColor;
+	Color_SetColor(LibMenuColor_MenuColor);
+}
+
+// ---------------------------------- //
+/** Create the hover effect on an elements group.
+ *
+ *	@param	_Control	The control to create the effect.
+ */
+Void Hover_HoverElement(CMlControl _Control) {
+	if (_Control == Null || !_Control.HasClass("Hover")) return;
+	AnimMgr.Add(_Control, "<quad opacity='.2' />", 125, CAnimManager::EAnimManagerEasing::SineOut);
+	if (_Control.Parent == Null) return;
+
+	foreach (Control in _Control.Parent.Controls) {
+		if (Control == _Control || Control.DataAttributeGet("NoHover") == "True") continue;
+
+		switchtype (Control) {
+			case CMlLabel : AnimMgr.Add(Control, "<label textcolor='FFF' />", 125, CAnimManager::EAnimManagerEasing::SineOut);
+			case CMlQuad : AnimMgr.Add(Control, "<quad colorize='FFF' />", 125, CAnimManager::EAnimManagerEasing::SineOut);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Remove the hover effect from an elements group.
+ *
+ *	@param	_Control	The control to remove the effect.
+ */
+Void Hover_RestoreElement(CMlControl _Control) {
+	if (_Control == Null || !_Control.HasClass("Hover")) return;
+	AnimMgr.Add(_Control, "<quad opacity='0' />", 125, CAnimManager::EAnimManagerEasing::SineIn);
+	if (_Control.Parent == Null) return;
+
+	foreach (Control in _Control.Parent.Controls) {
+		if (Control == _Control || Control.DataAttributeGet("NoHover") == "True") continue;
+
+		switchtype (Control) {
+			case CMlLabel : AnimMgr.Add(Control, "<label textcolor='AAA' />", 125, CAnimManager::EAnimManagerEasing::SineIn);
+			case CMlQuad : AnimMgr.Add(Control, "<quad colorize='AAA' />", 125, CAnimManager::EAnimManagerEasing::SineIn);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Manage the hover effect.
+Void Hover_Loop() {
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CMlEvent::Type::MouseOver) {
+			if (!Event.Control.HasClass("Hover")) continue;
+			Hover_HoverElement(Event.Control);
+		}
+		else if (Event.Type == CMlEvent::Type::MouseOut) {
+			if (!Event.Control.HasClass("Hover")) continue;
+			Hover_RestoreElement(Event.Control);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Play ripple effect on a control which supports it.
+ *
+ *	@param	_Control	The control to play the effect on.
+ */
+Void Ripple_Play(CMlControl _Control) {
+	if (_Control == Null || !_Control.HasClass("Ripple") || _Control.Parent == Null) return;
+
+	// ---------------------------------- //
+	// Get the ripple effect frame.
+	declare CMlFrame Frame_RippleEffect;
+	foreach (Control in _Control.Parent.Controls) {
+		if (Control.ControlId != "Frame_RippleEffect" || !(Control is CMlFrame)) continue;
+		Frame_RippleEffect <=> (Control as CMlFrame);
+		break;
+	}
+	if (Frame_RippleEffect == Null) return;
+	declare Quad_RippleEffect <=> (Frame_RippleEffect.GetFirstChild("Quad_RippleEffect") as CMlQuad);
+	if (Quad_RippleEffect == Null) return;
+
+	// ---------------------------------- //
+	// Configure the effect
+	Frame_RippleEffect.Size = _Control.Size;
+	Frame_RippleEffect.RelativePosition_V3 = _Control.RelativePosition_V3;
+	Frame_RippleEffect.HorizontalAlign = _Control.HorizontalAlign;
+	Frame_RippleEffect.VerticalAlign = _Control.VerticalAlign;
+
+	declare Size = ML::Max(_Control.Size.X, _Control.Size.Y);
+	Quad_RippleEffect.ImageUrl = "file://Media/Manialinks/Common/disc.dds";
+	Quad_RippleEffect.RelativeScale = 0.;
+	Quad_RippleEffect.Opacity = 1.;
+	Quad_RippleEffect.HorizontalAlign = CMlControl::AlignHorizontal::HCenter;
+	Quad_RippleEffect.VerticalAlign = CMlControl::AlignVertical::VCenter;
+	Quad_RippleEffect.Size = <Size, Size>;
+
+	for (I, 0, 1) Quad_RippleEffect.RelativePosition_V3[I] = Input.MousePos[I] - Frame_RippleEffect.AbsolutePosition_V3[I];
+	
+	// Play the animation
+	AnimMgr.Add(Quad_RippleEffect, "<quad scale='1.5' opacity='0' />", 750, CAnimManager::EAnimManagerEasing::CircOut);
+}
+
+// ---------------------------------- //
+/// Manage the ripple effect.
+Void Ripple_Loop() {
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CMlEvent::Type::MouseClick) {
+			if (!Event.Control.HasClass("Ripple")) continue;
+			Ripple_Play(Event.Control);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Get the type of a button for a quad.
+ *
+ *	@param	_Quad	The quad to get button type.
+ *
+ *	@return		Type of the button.
+ */
+Text Private_Gamepad_GetQuadButtonType(CMlQuad _Quad) {
+	if (_Quad == Null) return "";
+	declare AvailableClasses = [
+		"A", "B", "X", "Y", "View", "Menu", "LB", "RB", "LT", "RT",
+		"DPad", "DPad_Up", "DPad_Down", "DPad_Left", "DPad_Right", "DPad_LR", "DPad_UD",
+		"LS", "LS_Click", "LS_Up", "LS_Down", "LS_Left", "LS_Right",
+		"LS", "RS_Click", "RS_Up", "RS_Down", "RS_Left", "RS_Right"
+	];
+	foreach (Class in AvailableClasses) if (_Quad.HasClass(Class)) return Class;
+	return "";
+}
+
+// ---------------------------------- //
+/** Update labels of the gamepad buttons.
+ *
+ *	@param	_GamepadType	Type of currently used input method.
+ */
+Void Gamepad_UpdateLabels(CInputPad::EPadType _GamepadType) {
+	declare ImgBase = "file://Media/Manialinks/Common/PadButtons/";
+
+	// ---------------------------------- //
+	// Get the directory of the current input device icons
+	switch (_GamepadType) {
+		case CInputPad::EPadType::XBox : ImgBase ^= "XB1/";
+		case CInputPad::EPadType::PlayStation : ImgBase ^= "PS4/";
+	}
+
+	// ---------------------------------- //
+	// Get the quads to update icons
+	declare CMlQuad[] Quads;
+	Page.GetClassChildren("PadButton", Page.MainFrame, True);
+	foreach (Control in Page.GetClassChildren_Result) {
+		if (!(Control is CMlQuad)) continue;
+		Quads.add((Control as CMlQuad));
+	}
+
+	// ---------------------------------- //
+	// Update quads images
+	foreach (Quad in Quads) {
+		declare ButtonType = Private_Gamepad_GetQuadButtonType(Quad);
+		declare ButtonImage = "";
+
+		// ---------------------------------- //
+		// Hide button if used pad is PC
+		Quad.Visible = ButtonType != "" &&
+			(_GamepadType == CInputPad::EPadType::XBox ||
+			_GamepadType == CInputPad::EPadType::PlayStation);
+		if (!Quad.Visible) continue;
+
+		// ---------------------------------- //
+		// Xbox One labels
+		if (_GamepadType == CInputPad::EPadType::XBox) switch (ButtonType) {
+			case "A" : ButtonImage = "A.dds";
+			case "B" : ButtonImage = "B.dds";
+			case "X" : ButtonImage = "X.dds";
+			case "Y" : ButtonImage = "Y.dds";
+			case "LB" : ButtonImage = "LB.dds";
+			case "RB" : ButtonImage = "RB.dds";
+			case "LT" : ButtonImage = "LT.dds";
+			case "RT" : ButtonImage = "RT.dds";
+			case "View" : ButtonImage = "View.dds";
+			case "Menu" : ButtonImage = "Menu.dds";
+			case "LS"		: ButtonImage = "LStick.dds";
+			case "LS_Click"	: ButtonImage = "LStickClick.dds";
+			case "LS_Left"	: ButtonImage = "LStickLeft.dds";
+			case "LS_Right"	: ButtonImage = "LStickRight.dds";
+			case "LS_Up"	: ButtonImage = "LStickUp.dds";
+			case "LS_Down"	: ButtonImage = "LStickDown.dds";
+			case "RS"		: ButtonImage = "RStick.dds";
+			case "RS_Click"	: ButtonImage = "RStickClick.dds";
+			case "RS_Left"	: ButtonImage = "RStickLeft.dds";
+			case "RS_Right"	: ButtonImage = "RStickRight.dds";
+			case "RS_Up"	: ButtonImage = "RStickUp.dds";
+			case "RS_Down"	: ButtonImage = "RStickDown.dds";
+			case "DPad"			: ButtonImage = "DPad.dds";
+			case "DPad_Left"	: ButtonImage = "DPadLeft.dds";
+			case "DPad_Right"	: ButtonImage = "DPadRight.dds";
+			case "DPad_LR"		: ButtonImage = "DPadLeftRight.dds";
+			case "DPad_Up"		: ButtonImage = "DPadUp.dds";
+			case "DPad_Down"	: ButtonImage = "DPadDown.dds";
+			case "DPad_UD"		: ButtonImage = "DPadUpDown.dds";
+		}
+		// ---------------------------------- //
+		// PlayStation 4 labels
+		else if (_GamepadType == CInputPad::EPadType::PlayStation) switch (ButtonType) {
+			case "A" : ButtonImage = "Cross.dds";
+			case "B" : ButtonImage = "Circle.dds";
+			case "X" : ButtonImage = "Square.dds";
+			case "Y" : ButtonImage = "Triangle.dds";
+			case "LB" : ButtonImage = "L1.dds";
+			case "RB" : ButtonImage = "R1.dds";
+			case "LT" : ButtonImage = "L2.dds";
+			case "RT" : ButtonImage = "R2.dds";
+			case "View" : ButtonImage = "Share.dds";
+			case "Menu" : ButtonImage = "Options.dds";
+			case "LS"		: ButtonImage = "LStick.dds";
+			case "LS_Click"	: ButtonImage = "LStickClick.dds";
+			case "LS_Left"	: ButtonImage = "LStickLeft.dds";
+			case "LS_Right"	: ButtonImage = "LStickRight.dds";
+			case "LS_Up"	: ButtonImage = "LStickUp.dds";
+			case "LS_Down"	: ButtonImage = "LStickDown.dds";
+			case "RS"		: ButtonImage = "RStick.dds";
+			case "RS_Click"	: ButtonImage = "RStickClick.dds";
+			case "RS_Left"	: ButtonImage = "RStickLeft.dds";
+			case "RS_Right"	: ButtonImage = "RStickRight.dds";
+			case "RS_Up"	: ButtonImage = "RStickUp.dds";
+			case "RS_Down"	: ButtonImage = "RStickDown.dds";
+			case "DPad"			: ButtonImage = "DPad.dds";
+			case "DPad_Left"	: ButtonImage = "DPadLeft.dds";
+			case "DPad_Right"	: ButtonImage = "DPadRight.dds";
+			case "DPad_LR"		: ButtonImage = "DPadLeftRight.dds";
+			case "DPad_Up"		: ButtonImage = "DPadUp.dds";
+			case "DPad_Down"	: ButtonImage = "DPadDown.dds";
+			case "DPad_UD"		: ButtonImage = "DPadUpDown.dds";
+		}
+
+		Quad.ImageUrl = ImgBase^ButtonImage;
+	}
+}
+
+// ---------------------------------- //
+/// Manage the gamepad buttons.
+Void Gamepad_Loop() {
+	declare LibGamepadButtons_CurPadType	for This = CInputPad::EPadType::Keyboard;
+	declare LibGamepadButtons_PrevPadType	for This = CInputPad::EPadType::Generic;
+	declare LibGamepadButtons_PrevMousePos	for This = <-1000., -1000.>;
+
+	// ---------------------------------- //
+	// Set pad type to keyboard when using mouse.
+	if (LibGamepadButtons_PrevMousePos != Input.MousePos) {
+		LibGamepadButtons_PrevMousePos = Input.MousePos;
+		LibGamepadButtons_CurPadType = CInputPad::EPadType::Keyboard;
+	}
+
+	// ---------------------------------- //
+	// Set pad type according to last pressed button.
+	foreach (Event in Input.PendingEvents) {
+		if (Event.Type == CInputEvent::EType::PadButtonPress) {
+			LibGamepadButtons_CurPadType = Event.Pad.Type;
+		}
+	}
+
+	// ---------------------------------- //
+	// Update labels automatically
+	if (LibGamepadButtons_PrevPadType == LibGamepadButtons_CurPadType) return;
+	LibGamepadButtons_PrevPadType = LibGamepadButtons_CurPadType;
+	Gamepad_UpdateLabels(LibGamepadButtons_CurPadType);
+}
+
+// ---------------------------------- //
+/// Manage everything.
+Void Effects_Loop() {
+	Color_Loop();
+	Hover_Loop();
+	Ripple_Loop();
+	Gamepad_Loop();
+}
+	""";
+}
+
+// ---------------------------------- //
+/** Add a local layer to the color effect group.
+ *
+ *	@param	_Layer		The layer to add color effect.
+ */
+Void AddColorLayer(CUILayer _Layer) {
+	if (_Layer == Null || G_LibManialinkEffects_ColorLayers.exists(_Layer)) return;
+	G_LibManialinkEffects_ColorLayers.add(_Layer);
+}
+
+// ---------------------------------- //
+/** Set the unified color in available layers.
+ *
+ *	@param	_Color		The color to apply on all layers.
+ */
+Void SetColor(Vec3 _Color) {
+	foreach (Layer in G_LibManialinkEffects_ColorLayers) {
+		if (Layer == Null) continue;
+
+		declare Vec3 LibMenuColor_MenuColor for Layer.LocalPage;
+		LibMenuColor_MenuColor = _Color;
+	}
+}

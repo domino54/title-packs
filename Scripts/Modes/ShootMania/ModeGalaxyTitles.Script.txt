@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-12            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-06-28"
+#Const GTVersion	"2017-07-12"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -18,12 +18,15 @@
 #Include "Libs/Nadeo/ShootMania/WarmUp3.Script.txt" as WarmUp
 // Custom libraries
 #Include "Libs/domino54/Blacklist.Script.txt" as Blacklist
+#Include "Libs/domino54/Characters.Script.txt" as Characters
 #Include "Libs/domino54/CupAdmin.Script.txt" as CupAdmin
 #Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
+#Include "Libs/domino54/GTST.Script.txt" as GTST
 #Include "Libs/domino54/Killfeed.Script.txt" as Killfeed
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/MapSelection.Script.txt" as MapSelection
+#Include "Libs/domino54/MarkersPro.Script.txt" as Markers
 #Include "Libs/domino54/Models.Script.txt" as Models
 #Include "Libs/domino54/Statistics.Script.txt" as Statistics
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
@@ -46,7 +49,7 @@
 #Setting S_UseComboWeapons		True	as _("Use Weapons pick-ups (if available on map)")
 #Setting S_PlayerArmorPoints	3		as _("Amount of players Armor points (1 min, 10 max)")
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
-#Setting S_UseAutoBalance		True	as _("Balance teams on round start")
+#Setting S_UseAutoBalance		False	as _("Balance teams on round start")
 #Setting S_MaximumNbWeapons		1		as _("Max. slots amount of every Weapon")
 #Setting S_MaximumNbReplies		3		as _("Max. amount of Replies held")
 #Setting S_ObjectsRespawnTime	15		as _("Items respawn time (0 = don't spawn)")
@@ -65,7 +68,7 @@
 #Setting S_PodiumTrackDuration	8000	as "<hidden>" ///< Duration of the podium sequence (10 max)
 #Setting S_WebhookURL			""		as "<hidden>" ///< URL of the webhook to send notifications
 
-#Setting S_ScriptEnvironment "production" // "development"
+#Setting S_ScriptEnvironment /* "production" */ "development"
 
 /// Competition settings
 #Setting S_AdminEnableCupMode		False	as "<hidden>"
@@ -131,6 +134,7 @@ Log::RegisterScript(Inventory::GetScriptName(), Inventory::GetScriptVersion());
 Log::RegisterScript(Killfeed::GetScriptName(), Killfeed::GetScriptVersion());
 Log::RegisterScript(ManialinkTools::GetScriptName(), ManialinkTools::GetScriptVersion());
 Log::RegisterScript(MapSelection::GetScriptName(), MapSelection::GetScriptVersion());
+Log::RegisterScript(Markers::GetScriptName(), Markers::GetScriptVersion());
 Log::RegisterScript(MiniMap::GetScriptName(), MiniMap::GetScriptVersion());
 Log::RegisterScript(Models::GetScriptName(), Models::GetScriptVersion());
 Log::RegisterScript(PauseMenu::GetScriptName(), PauseMenu::GetScriptVersion());
@@ -178,10 +182,11 @@ if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
 ***
 // ---------------------------------- //
 // Global settings
-ST2::SetSize(<164.5, 10.5>, <161., 60.5>, <160., 15.>);
+ST2::SetSize(<164.5, 11.>, <161., 59.5>, <160., 15.5>);
 ST2::SetFormat(2, 8);
 ST2::SetTextScale(.875);
 ST2::SetBackgroundProperties(<0., 5.>, <200., 100.>);
+ST2::SetTeamsScoresVisibility(False);
 
 // ---------------------------------- //
 // Columns
@@ -245,8 +250,11 @@ UseAutoSpawnBots = False; ///< Disable bots items placed on map by user
 // Update mode settings
 +++GalaxyTitles_Settings+++
 
-// Load models
+// Load Turrets
 Turrets::Load();
+Turrets::SetAutoDestroyTurrets(False);
+
+// Load models
 Models::Load();
 
 // Load Toads
@@ -274,6 +282,7 @@ Interfancy::Load(["Gauges", "Countdown", "SpecInfo", "Crosshair", "ScoreSummary"
 PauseMenu::Load();
 SM::SetupDefaultVisibility();
 MapSelection::Load("Eurostile", "Eurostile_Bold");
+Markers::Load();
 
 UIManager.UIAll.OverlayHide321Go = True;
 UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
@@ -403,6 +412,10 @@ foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 // ---------------------------------- //
 ***Match_StartPlayLoop***
 ***
+Turrets::ResetAllPlayers();
+Toads::ResetAllPlayers();
+Markers::Reset();
+
 UIManager.UIAll.BigMessage = "";
 UIManager.UIAll.StatusMessage = "";
 MiniMap::Show();
@@ -509,6 +522,7 @@ if (Event.Shooter != Null) {
 	}
 	
 	declare Boolean GT_JustHitByToad for Event.Victim;
+	declare Boolean GT_JustHitByTurret for Event.Victim;
 	GT_VictimLastShooter = NullId;
 	GT_VictimShootHistory.clear();
 	GT_LastFakeHitTime = Now;
@@ -519,6 +533,13 @@ if (Event.Shooter != Null) {
 	// ---------------------------------- //
 	// Player Toad elimination
 	if (Event.Victim.IsBot) { }
+
+	// ---------------------------------- //
+	// Eliminated by player's Turret
+	else if (GT_JustHitByTurret) Killfeed::SendNotice(
+		Event.Victim.Login, Event.Shooter.Login,
+		C_ImgBase^"Icons/Turret.png", AssistantLogin
+	);
 
 	// ---------------------------------- //
 	// Eliminated by player's Toad
@@ -535,6 +556,7 @@ if (Event.Shooter != Null) {
 	else Killfeed::OnArmorEmpty(Event, EventAssistant);
 	Streaks::OnArmorEmpty(Event);
 	GT_JustHitByToad = False;
+	GT_JustHitByTurret = False;
 	
 	// Statistics tracking
 	Statistics::OnArmorEmpty(Event);
@@ -639,8 +661,25 @@ foreach (Event in PendingEvents) {
 				// ---------------------------------- //
 				// Turret hit
 				else if (Event.VictimTurret != Null) {
+					// ---------------------------------- //
+					// Custom Turret
+					if (Turrets::BelongsToLib(Event.ShooterTurret)) {
+						declare Shooter = Turrets::GetTurretOwner(Event.ShooterTurret);
+						if (
+							(Turrets::GetTurretClan(Event.VictimTurret) != 0 && Turrets::GetTurretClan(Event.VictimTurret) == Turrets::GetTurretClan(Event.ShooterTurret)) ||
+							Shooter == Null || Shooter == Turrets::GetTurretOwner(Event.VictimTurret)
+						) {
+							Discard(Event);
+							continue;
+						}
+						
+						declare Points = Event.Damage / 100;
+						Scores::AddPlayerRoundPoints(Shooter.Score, Points);
+						TopScores::AddPoints(Shooter.Score, "Hit", Points);
+						PassOn(Event);
+					}
+					else PassOn(Event);
 					+++OnTurretHitByTurret+++
-					PassOn(Event);
 				}
 				// ---------------------------------- //
 				// Object hit
@@ -651,8 +690,30 @@ foreach (Event in PendingEvents) {
 				// ---------------------------------- //
 				// Player hit
 				else if (Event.Victim != Null) {
+					// ---------------------------------- //
+					// Create fake hit performed by Turret's owner
+					if (Turrets::BelongsToLib(Event.ShooterTurret)) {
+						Discard(Event);
+						if (Event.Victim.CurrentClan != 0 && Event.Victim.CurrentClan == Turrets::GetTurretClan(Event.VictimTurret)) continue;
+						declare Shooter = Turrets::GetTurretOwner(Event.ShooterTurret);
+						if (Shooter == Null || Shooter == Event.Victim) continue;
+						
+						declare Points = Event.Damage / 100;
+						Scores::AddPlayerRoundPoints(Shooter.Score, Points);
+						TopScores::AddPoints(Shooter.Score, "Hit", Points);
+						RemovePlayerArmor(Event.Victim, Event.Damage, Shooter, Points);
+
+						// Elimination assists
+						declare Ident[] GT_VictimShootHistory for Event.Victim;
+						GT_VictimShootHistory.add(Shooter.Id);
+
+						if (Event.Victim.Armor <= 0 || Event.Victim.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) {
+							declare Boolean GT_JustHitByTurret for Event.Victim;
+							GT_JustHitByTurret = True;
+						}
+					}
+					else PassOn(Event);
 					+++OnHitByTurret+++
-					PassOn(Event);
 				}
 			}
 			// ---------------------------------- //
@@ -661,8 +722,25 @@ foreach (Event in PendingEvents) {
 				// ---------------------------------- //
 				// Turret hit
 				if (Event.VictimTurret != Null) {
+					if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Turrets::GetTurretClan(Event.VictimTurret)) {
+						Discard(Event);
+						continue;
+					}
+					// ---------------------------------- //
+					// Manage custom turret hit
+					else if (Turrets::BelongsToLib(Event.VictimTurret)) {
+						declare Shooter = Event.Shooter;
+						if (Shooter.IsBot) Shooter = Event.Shooter.Driver.Owner;
+
+						if (Shooter == Null/* || Shooter == Turrets::GetTurretOwner(Event.VictimTurret)*/) {
+							Discard(Event);
+							continue;
+						}
+						
+						PassOn(Event);
+					}
+					else PassOn(Event);
 					+++OnTurretHit+++
-					PassOn(Event);
 				}
 				// ---------------------------------- //
 				// Object hit
@@ -686,18 +764,16 @@ foreach (Event in PendingEvents) {
 					if (Toads::BelongsToLib(Event.Shooter)) {
 						Discard(Event);
 						declare Shooter = Event.Shooter.Driver.Owner;
-						if (Shooter == Null) continue;
+						if (Shooter == Null || Shooter == Event.Victim) continue;
 						
-						declare Damage = 100;
-						declare Points = Damage / 100;
+						declare Points = Event.Damage / 100;
+						Scores::AddPlayerRoundPoints(Shooter.Score, Points);
+						TopScores::AddPoints(Shooter.Score, "Hit", Points);
+						RemovePlayerArmor(Event.Victim, Event.Damage, Shooter, Points);
 
 						// Elimination assists
 						declare Ident[] GT_VictimShootHistory for Event.Victim;
 						GT_VictimShootHistory.add(Shooter.Id);
-						
-						Scores::AddPlayerRoundPoints(Shooter.Score, Points);
-						TopScores::AddPoints(Shooter.Score, "Hit", Points);
-						RemovePlayerArmor(Event.Victim, 100, Shooter, Points);
 
 						if (Event.Victim.Armor <= 0 || Event.Victim.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) {
 							declare Boolean GT_JustHitByToad for Event.Victim;
@@ -744,6 +820,43 @@ foreach (Event in PendingEvents) {
 			// ---------------------------------- //
 			// Invalid event
 			else Discard(Event);
+
+			// ---------------------------------- //
+			// Destroy player's Turret (Turret has no OnArmorEmpty for some reasons)
+			if (Event.VictimTurret != Null && Event.VictimTurret.Armor <= 0 && Turrets::BelongsToLib(Event.VictimTurret)) {
+				// ---------------------------------- //
+				// Get the elimination icon
+				declare EventIcon = "";
+				switch (Event.WeaponNum) {
+					case 1 : EventIcon = "Laser.png";
+					case 2 : EventIcon = "Rocket.png";
+					case 3 : EventIcon = "Nucleus.png";
+					case 5 : EventIcon = "Arrow.png";
+					case 6 : EventIcon = "Missile.png";
+					default : EventIcon = "Shield.png";
+				}
+
+				// ---------------------------------- //
+				// Get the shooter's login
+				declare ShooterLogin = "";
+				if (Event.Shooter != Null) {
+					if (Event.Shooter.IsBot) EventIcon = "Toad.png";
+					else ShooterLogin = Event.Shooter.User.Login;
+				}
+				declare ShooterTurretOwner <=> Turrets::GetTurretOwner(Event.ShooterTurret);
+				declare VictimTurretOwner <=> Turrets::GetTurretOwner(Event.VictimTurret);
+				if (ShooterTurretOwner != Null) {
+					ShooterLogin = ShooterTurretOwner.User.Login;
+					EventIcon = "Turret.png";
+				}
+
+				// Send notice and destroy the Turret
+				if (Players.exists(VictimTurretOwner)) Killfeed::SendNotice(
+					"Turret - "^VictimTurretOwner.User.Name,
+					ShooterLogin, C_ImgBase^"Icons/"^EventIcon, ""
+				);
+				declare Destroyed = Turrets::DestroyTurret(Event.VictimTurret.Id, Turrets::GetCooldown());
+			}
 		}
 		// ---------------------------------- //
 		// Manual event management
@@ -863,8 +976,11 @@ if (PrevMaximumNbReplies != S_MaximumNbReplies) {
 // ---------------------------------- //
 ***Match_EndPlayLoop***
 ***
+Turrets::ResetAllPlayers();
+Toads::ResetAllPlayers();
 GalaxyTitles::ResetAll();
 MiniMap::Hide();
+Markers::Reset();
 ***
 
 // ---------------------------------- //
@@ -972,6 +1088,8 @@ Killfeed::SetMapSwitching(True);
 GalaxyTitles::Unload();
 Interfancy::Unload();
 Killfeed::Unload();
+MapSelection::Unload();
+Markers::Unload();
 MiniMap::Unload();
 Models::Unload();
 PauseMenu::Unload();
@@ -1081,17 +1199,59 @@ Void GT_InitPlayer(CSmPlayer _Player) {
 	GalaxyTitles::InitPlayer(_Player);
 	SetPlayerReloadAllWeapons(_Player, True);
 	
-	// Turrets::AddToInventory(_Player);
-	// Toads::AddToInventory(_Player);
-
 	// ---------------------------------- //
 	// Force player's favorite color
 	if (_Player.CurrentClan != 0) _Player.ForceColor = <-1., -1., -1.>;
 	else _Player.ForceColor = _Player.User.Color;
 	
-	_Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
+	_Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints, 1, 10) * 100;
 	_Player.StaminaMax = C_PlayerStaminaMax;
 	_Player.AmmoGain = 1.;
+	_Player.ForceModelId = Models::ArenaPlayer();
+
+	// ---------------------------------- //
+	// Configure the player's character
+	declare PlayerCharacterId = 0;
+	//if (S_EnableCharSelection)
+	//	PlayerCharacterId = Characters::GetPlayerCharacter(_Player);
+
+	switch (PlayerCharacterId) {
+		// ---------------------------------- //
+		// Scout
+		case 1 : {
+			GalaxyTitles::SetPlayerCanPickUpWeapons(_Player, False);
+			Inventory::SetAvailableWeapons(_Player, [CSmMode::EWeapon::Missile, CSmMode::EWeapon::Rocket]);
+			Inventory::ChangeWeaponHotkey(_Player, CSmMode::EWeapon::Missile, CSmModeEvent::EActionInput::Activable1);
+			Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Missile, 1);
+			Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Rocket, 4);
+
+			_Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
+		}
+		// ---------------------------------- //
+		// Summoner
+		case 2 : {
+			Toads::AddToInventory(_Player);
+		}
+		// ---------------------------------- //
+		// Constructor
+		case 3 : {
+			Turrets::AddToInventory(_Player);
+		}
+		// ---------------------------------- //
+		// Healer
+		case 4 : {
+			GalaxyTitles::LoadInfiniteSupplies(_Player, 5000);
+			GalaxyTitles::SetPlayerCanPickUpSupplies(_Player, False);
+		}
+		// ---------------------------------- //
+		// Toad
+		case 5 : {
+			_Player.ForceModelId = Models::Minion();
+		}
+	}
+
+	// Initialize weapon
+	Inventory::SetFirstWeapon(_Player);
 }
 
 // ---------------------------------- //

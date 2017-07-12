@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PLAYERS TURRETS by domino54   //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-12            //
 // -------------------------------------- //
 
 /**
@@ -11,21 +11,24 @@
  *	has been already placed.
  */
 
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-12"
 #Const ScriptName	"Libs/domino54/ShootMania/PlayersTurrets.Script.txt"
 
 #Include "MathLib" as ML
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/MarkersPro.Script.txt" as Markers
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 #Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
+#Include "Libs/domino54/ShootMania/Minimap.Script.txt" as Minimap
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/ShootMania/GalaxyTitles/"
 #Const C_LibPlayersTurrets_TurretModelPath		"SMCommon\\Turrets\\Turret1.Item.Gbx"
-#Const C_LibPlayersTurrets_GUILayerId			"LibPlayersTurrets:Status"
+#Const C_LibPlayersTurrets_GUILayerIdStatus		"LibPlayersTurrets:Status"
+#Const C_LibPlayersTurrets_GUILayerIdMarker		"LibPlayersTurrets:Marker"
 #Const C_LibPlayersTurrets_InventoryItemId		"LibPlayersTurrets_Turret"
 #Const C_LibPlayersTurrets_DefaultActionInput	CSmModeEvent::EActionInput::Consumable2
 #Const C_LibPlayersTurrets_DefaultDeployTime	1500	///< Default turret deploy time.
@@ -34,15 +37,18 @@
 #Const C_LibPlayersTurrets_NbGaugesInModel		10		///< Amount of gauges in a single gauge widget.
 #Const C_LibPlayersTurrets_GaugeTotalLength		36.		///< Length of a widget's gauge bar.
 #Const C_LibPlayersTurrets_GaugeSpacingWidth	.5		///< Spaceing between smaller gauges in the widget.
-#Const C_LibPlayersTurrets_TurretInfoPos		<155., -48.>
+#Const C_LibPlayersTurrets_TurretInfoPos		<155., -58.>
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Ident G_LibPlayersTurrets_TurretModelId;	///< ID of the turret item model.
-declare Ident[] G_LibPlayersTurrets_CreatedTurrets;	///< IDs of the turrets created by the library.
-declare Integer G_LibPlayersTurrets_DeployTime;		///< Cooldown before new turret can be placed after destruction.
-declare Integer G_LibPlayersTurrets_TurretCooldown;	///< Cooldown before new turret can be placed after destruction.
+declare Ident G_LibPlayersTurrets_TurretModelId;		///< ID of the turret item model.
+declare Ident[] G_LibPlayersTurrets_CreatedTurrets;		///< IDs of the turrets created by the library.
+declare Integer G_LibPlayersTurrets_DeployTime;			///< Time player has to stand still to deploy a turret.
+declare Integer G_LibPlayersTurrets_TurretCooldown;		///< Cooldown before new turret can be placed after destruction.
+declare Boolean G_LibPlayersTurrets_AutoDestroyTurrets;	///< Automatically destroy turrets.
+declare Text[] G_LibPlayersTurrets_CreatedMarkersMM;	///< Minimap markers created by the library.
+declare Text[] G_LibPlayersTurrets_CreatedMarkersWorld;	///< Physical markers created by the library.
 
 /// Turrets information
 declare Ident[Ident] G_LibPlayersTurrets_TurretPlayerId;	///< ID of the turret's owner.
@@ -71,7 +77,7 @@ Text Private_CreateManialinkTurretsUI() {
 		Gauges ^= "<gauge size='0 7.5' valign='center' drawbg='0' drawblockbg='0' id='Gauge_Step#"^I^"' hidden='1' />";
 
 	return """
-<manialink version="3" name="{{{C_LibPlayersTurrets_GUILayerId}}}">
+<manialink version="3" name="{{{C_LibPlayersTurrets_GUILayerIdStatus}}}">
 <stylesheet>
 	<style class="count" valign="center2" textsize="2.25" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
 	<style class="desc" valign="center2" textsize=".875" textemboss="1" textfont="Eurostile_Bold" />
@@ -79,7 +85,7 @@ Text Private_CreateManialinkTurretsUI() {
 <frame halign="center" valign="center" size="320 180">
 
 <frame id="Frame_TurretInfo" pos="{{{C_LibPlayersTurrets_TurretInfoPos.X + C_LibPlayersTurrets_GaugeTotalLength + 10^" "^C_LibPlayersTurrets_TurretInfoPos.Y}}}" rot="0">
-	<quad size="7 7" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/Turret2.png" />
+	<quad size="7 7" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/Turret.png" />
 	
 	<label pos="-4 2.5" halign="right" class="count" id="Label_TurretInfoCounter" />
 	<frame id="Frame_GaugeAmmo" pos="-4 -.35" rot="-180">{{{Gauges}}}</frame>
@@ -93,7 +99,7 @@ Text Private_CreateManialinkTurretsUI() {
 </frame>
 <script><!--
 /**
- *	{{{C_LibPlayersTurrets_GUILayerId}}}
+ *	{{{C_LibPlayersTurrets_GUILayerIdStatus}}}
  */
 
 #Include "MathLib" as ML
@@ -139,9 +145,7 @@ declare PrevDescriptionText = "!";
 ***Yield***
 ***
 if (!PageIsVisible) continue;
-
 Frame_TurretInfo.Visible = !IsInGameMenuDisplayed;
-if (!Frame_TurretInfo.Visible) continue;
 
 // ---------------------------------- //
 // Update turret information visibility
@@ -326,6 +330,48 @@ main() {
 }
 
 // ---------------------------------- //
+/** Create manialink for the marker module.
+ *
+ *	@return		The marker manialink.
+ */
+Text Private_CreateManialinkTurretMarker() {
+	declare R = 9/16.;
+	return """
+<manialink version="3" name="{{{C_LibPlayersTurrets_GUILayerIdMarker}}}">
+<frame id="Frame_PlayerTurretMarker">
+	<quad size="{{{8*R}}} 8" halign="center" valign="center" autoscale="0" image="{{{C_ImgBase}}}Minimap/Turret.png" id="Quad_PlayerTurretMarker" hidden="1" />
+</frame>
+<script><!--
+
+#Include "MathLib" as ML
+
+{{{ManialinkTools::Functions(["HsvToRgb"])}}}
+
+main() {
+	declare Quad_PlayerTurretMarker <=> (Page.GetFirstChild("Quad_PlayerTurretMarker") as CMlQuad);
+	declare PrevGUIPlayerColor = -1.;
+
+	while (True) {
+		yield;
+
+		Quad_PlayerTurretMarker.Visible = GUIPlayer != Null && GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned;
+		if (Quad_PlayerTurretMarker.Visible) {
+			declare netread Integer Net_LibPlayersTurrets_TurretSpawnTime for GUIPlayer;
+			Quad_PlayerTurretMarker.Visible = Net_LibPlayersTurrets_TurretSpawnTime > 0 && GameTime >= Net_LibPlayersTurrets_TurretSpawnTime;
+		}
+
+		if (GUIPlayer != Null && PrevGUIPlayerColor != GUIPlayer.GetLinearHue) {
+			PrevGUIPlayerColor = GUIPlayer.GetLinearHue;
+			Quad_PlayerTurretMarker.Colorize = HsvToRgb(<PrevGUIPlayerColor, 1., 1.>);
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
 /** Update player information about their turret.
  *
  *	@param	_Player		The player to update turret information.
@@ -447,6 +493,17 @@ CModeTurret[] GetTurrets() {
 }
 
 // ---------------------------------- //
+/** Check if the Turret belongs to the library.
+ *
+ *	@param	_Turret	The Turret to ckeck.
+ *
+ *	@return		True, if the Turret belongs to the library.
+ */
+Boolean BelongsToLib(CModeTurret _Turret) {
+	return _Turret != Null && G_LibPlayersTurrets_CreatedTurrets.exists(_Turret.Id);
+}
+
+// ---------------------------------- //
 /** Get the turret of a player.
  *
  *	@param	_Player		The player to get their turret.
@@ -544,6 +601,14 @@ Boolean DestroyTurret(Ident _TurretId, Integer _Cooldown) {
 				LibPlayersTurrets_TurretCooldownDuration = _Cooldown;
 			}
 			Private_UpdatePlayerTurretInfo(Player);
+
+			// Remove the minimap marker
+			declare TurretMarkerId = "LibPlayersTurrets_"^Player.User.Login;
+			declare Boolean Removed;
+			Removed = G_LibPlayersTurrets_CreatedMarkersMM.remove(TurretMarkerId);
+			Removed = G_LibPlayersTurrets_CreatedMarkersWorld.remove(TurretMarkerId);
+			Minimap::DestroyMarker(TurretMarkerId);
+			Markers::RemoveMarker(TurretMarkerId, Player);
 		}
 	}
 
@@ -582,6 +647,15 @@ Boolean DestroyTurret(CSmPlayer _Player, Integer _Cooldown) {
 	LibPlayersTurrets_TurretDeployDir = Vec3;
 
 	Private_UpdatePlayerTurretInfo(_Player);
+
+	// Remove the minimap marker
+	declare TurretMarkerId = "LibPlayersTurrets_"^_Player.User.Login;
+	declare Boolean Removed;
+	Removed = G_LibPlayersTurrets_CreatedMarkersMM.remove(TurretMarkerId);
+	Removed = G_LibPlayersTurrets_CreatedMarkersWorld.remove(TurretMarkerId);
+	Minimap::DestroyMarker(TurretMarkerId);
+	Markers::RemoveMarker(TurretMarkerId, _Player);
+
 	return DestroyTurret(LibPlayersTurrets_PlayerTurretId, _Cooldown);
 }
 
@@ -594,6 +668,18 @@ Boolean DestroyTurret(CSmPlayer _Player) {
 Void DestroyAllTurrets() {
 	while (G_LibPlayersTurrets_CreatedTurrets.count > 0) {
 		declare Destroyed = DestroyTurret(G_LibPlayersTurrets_CreatedTurrets[0]);
+	}
+
+	// Remove all markers
+	while (G_LibPlayersTurrets_CreatedMarkersMM.count > 0) {
+		declare TurretMarkerId = G_LibPlayersTurrets_CreatedMarkersMM[0];
+		declare Removed = G_LibPlayersTurrets_CreatedMarkersMM.remove(TurretMarkerId);
+		Minimap::DestroyMarker(TurretMarkerId);
+	}
+	while (G_LibPlayersTurrets_CreatedMarkersWorld.count > 0) {
+		declare TurretMarkerId = G_LibPlayersTurrets_CreatedMarkersWorld[0];
+		declare Removed = G_LibPlayersTurrets_CreatedMarkersWorld.remove(TurretMarkerId);
+		Markers::RemoveMarker(TurretMarkerId);
 	}
 }
 
@@ -627,6 +713,20 @@ CModeTurret CreateTurret(CSmPlayer _Player) {
 	LibPlayersTurrets_TurretSpawnTime = Now;
 
 	Private_UpdatePlayerTurretInfo(_Player);
+
+	// ---------------------------------- //
+	// Create marker
+	declare TurretMarkerId = "LibPlayersTurrets_"^_Player.User.Login;
+	Minimap::SetMarker(TurretMarkerId, "Turret.png", Vec3, LibPlayersTurrets_TurretDeployPos, _Player);
+	G_LibPlayersTurrets_CreatedMarkersMM.add(TurretMarkerId);
+
+	declare Pos = LibPlayersTurrets_TurretDeployPos;
+	G_LibPlayersTurrets_CreatedMarkersWorld.add(TurretMarkerId);
+	Markers::AddMarker(TurretMarkerId, """<marker
+		pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" box="0 1.5 0" visibility="WhenInFrustum"
+		minimapvisibility="Never" manialinkframeid="Frame_PlayerTurretMarker"
+	/> """, _Player);
+
 	return Turret;
 }
 
@@ -680,7 +780,7 @@ Void AddToInventory(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) 
 	declare ActionInput = C_LibPlayersTurrets_DefaultActionInput;
 	if (_ActionInput != CSmModeEvent::EActionInput::None) ActionInput = _ActionInput;
 
-	Inventory::CreateItemSlot(_Player, C_LibPlayersTurrets_InventoryItemId, ActionInput, -1, "Turret2.png");
+	Inventory::CreateItemSlot(_Player, C_LibPlayersTurrets_InventoryItemId, ActionInput, -1, "Turret.png");
 	Private_UpdatePlayerTurretInfo(_Player);
 }
 
@@ -756,6 +856,7 @@ Void ResetPlayer(CSmPlayer _Player) {
 /// Reset all players.
 Void ResetAllPlayers() {
 	foreach (Player in AllPlayers) ResetPlayer(Player);
+	DestroyAllTurrets();
 }
 
 // ---------------------------------- //
@@ -781,13 +882,34 @@ Void SetCooldown(Integer _Cooldown) {
 }
 
 // ---------------------------------- //
+/** Get the Turret cooldown.
+ *
+ *	@return		Current cooldown value.
+ */
+Integer GetCooldown() {
+	return G_LibPlayersTurrets_TurretCooldown;
+}
+
+// ---------------------------------- //
+/** Set if the library will automatically destroy Turrets.
+ *
+ *	@param	_AutoDestroyTurrets	Updated setting.
+ */
+Void SetAutoDestroyTurrets(Boolean _AutoDestroyTurrets) {
+	G_LibPlayersTurrets_AutoDestroyTurrets = _AutoDestroyTurrets;
+}
+
+// ---------------------------------- //
 /// Unload the library.
 Void Unload() {
 	DestroyAllTurrets();
 	ResetAllPlayers();
 
-	Layers::Detach(C_LibPlayersTurrets_GUILayerId);
-	Layers::Destroy(C_LibPlayersTurrets_GUILayerId);
+	Layers::Detach(C_LibPlayersTurrets_GUILayerIdStatus);
+	Layers::Destroy(C_LibPlayersTurrets_GUILayerIdStatus);
+
+	Layers::Detach(C_LibPlayersTurrets_GUILayerIdMarker);
+	Layers::Destroy(C_LibPlayersTurrets_GUILayerIdMarker);
 }
 
 // ---------------------------------- //
@@ -798,9 +920,14 @@ Void Load() {
 	G_LibPlayersTurrets_TurretModelId = ItemList_Add(C_LibPlayersTurrets_TurretModelPath);
 	SetDeployTime(-1);
 	SetCooldown(-1);
+	SetAutoDestroyTurrets(True);
 
-	Layers::Create(C_LibPlayersTurrets_GUILayerId, Private_CreateManialinkTurretsUI());
-	Layers::Attach(C_LibPlayersTurrets_GUILayerId);
+	Layers::Create(C_LibPlayersTurrets_GUILayerIdStatus, Private_CreateManialinkTurretsUI());
+	Layers::Attach(C_LibPlayersTurrets_GUILayerIdStatus);
+
+	Layers::Create(C_LibPlayersTurrets_GUILayerIdMarker, Private_CreateManialinkTurretMarker());
+	Layers::SetType(C_LibPlayersTurrets_GUILayerIdMarker, CUILayer::EUILayerType::Markers);
+	Layers::Attach(C_LibPlayersTurrets_GUILayerIdMarker);
 }
 
 // ---------------------------------- //
@@ -855,7 +982,7 @@ Void Loop() {
 		) {
 			G_LibPlayersTurrets_PrevTurretArmor[TurretId] = Turret.Armor;
 			Private_UpdateTurretArmorInfo(TurretId);
-			if (Turret.Armor <= 0) TurretsToDestroy.add(TurretId);
+			if (G_LibPlayersTurrets_AutoDestroyTurrets && Turret.Armor <= 0) TurretsToDestroy.add(TurretId);
 		}
 
 		// ---------------------------------- //

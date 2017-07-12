@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-12            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-12"
 #Const ScriptName	"Libs/domino54/ShootMania/GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -68,6 +68,7 @@
 /// Other
 #Const C_LibGalaxyTitles_ReplieActionSlot	CSmMode::EActionSlot::Slot_H
 #Const C_LibGalaxyTitles_ReplieItemId		"LibGT_Replie"
+#Const C_LibGalaxyTitles_FuelItemId			"LibGT_Fuel"
 
 /// Colors of the weapons items shown in the Minimap library
 #Const C_LibGalaxyTitles_MinimapColors [
@@ -415,8 +416,6 @@ Void AddReloadBoost(CSmPlayer _Player) {
 
 // ---------------------------------- //
 /** Show healing particle effect
- *	Since MP4 uses ArmorReplenishGain as a flag to trigger
- *	particle effect in the ReplieParticles action.
  *
  *	@param	_Player		The player to show particles on
  */
@@ -447,7 +446,7 @@ Void GivePlayerArmor(CSmPlayer _Player, Integer _Amount) {
  *	@param	_Player		The player to load particles.
  */
 Void LoadReplieParticles(CSmPlayer _Player) {
-	if (_Player == Null) return;
+	if (_Player == Null || _Player.IsBot) return;
 	ActionLoad(_Player, C_LibGalaxyTitles_ReplieActionSlot, G_LibGalaxyTitles_Actions["Replie"]);
 	ActionBind(_Player, C_LibGalaxyTitles_ReplieActionSlot, CSmMode::EActionInput::None);
 }
@@ -1010,6 +1009,8 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 
 	// ---------------------------------- //
 	// Pick conditions
+	declare Boolean LibGalaxyTitles_DisablePickUpWeapons for Player;
+	declare Boolean LibGalaxyTitles_DisablePickUpSupplies for Player;
 	declare CanPickUpObject = True;
 	
 	switch (LibGalaxyTitles_ObjectTag) {
@@ -1021,7 +1022,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 		// Replie conditions
 		case "Replie" : {
 			// Player can't hold any Replies
-			if (G_LibGalaxyTitles_InventoryMaxReplies == 0) CanPickUpObject = False;
+			if (G_LibGalaxyTitles_InventoryMaxReplies == 0 || LibGalaxyTitles_DisablePickUpSupplies) CanPickUpObject = False;
 			
 			// Limited Replies amount
 			else if (G_LibGalaxyTitles_InventoryMaxReplies > 0) {
@@ -1030,10 +1031,14 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 			}
 		}
 		// ---------------------------------- //
+		// Fuel conditions
+		case "Fuel" : CanPickUpObject = !LibGalaxyTitles_DisablePickUpSupplies;
+
+		// ---------------------------------- //
 		// Weapons conditions
 		default : if (C_LibGalaxyTitles_WeaponItemsTags.exists(LibGalaxyTitles_ObjectTag)) {
 			// Player can't hold any additional weapons
-			if (G_LibGalaxyTitles_InventoryMaxWeapons == 0) CanPickUpObject = False;
+			if (G_LibGalaxyTitles_InventoryMaxWeapons == 0 || LibGalaxyTitles_DisablePickUpWeapons) CanPickUpObject = False;
 			
 			// Limited weapons amount
 			else if (G_LibGalaxyTitles_InventoryMaxWeapons > 0) {
@@ -1430,6 +1435,52 @@ Void Loop() {
 }
 
 // ---------------------------------- //
+/** Set if the player is able to pick up weapons.
+ *
+ *	@param	_Player		Player to update setting.
+ *	@param	_CanPickUp	If True, player will be able to pick up weapons.
+ */
+Void SetPlayerCanPickUpWeapons(CSmPlayer _Player, Boolean _CanPickUp) {
+	if (_Player == Null || !G_LibGalaxyTitles_LibraryLoaded) return;
+	declare Boolean LibGalaxyTitles_DisablePickUpWeapons for _Player;
+	LibGalaxyTitles_DisablePickUpWeapons = !_CanPickUp;
+}
+
+// ---------------------------------- //
+/** Set if the player is able to pick up supplies.
+ *
+ *	@param	_Player		Player to update setting.
+ *	@param	_CanPickUp	If True, player will be able to pick up supplies.
+ */
+Void SetPlayerCanPickUpSupplies(CSmPlayer _Player, Boolean _CanPickUp) {
+	if (_Player == Null || !G_LibGalaxyTitles_LibraryLoaded) return;
+	declare Boolean LibGalaxyTitles_DisablePickUpSupplies for _Player;
+	LibGalaxyTitles_DisablePickUpSupplies = !_CanPickUp;
+}
+
+// ---------------------------------- //
+/** Load infinite supplies for a player.
+ *
+ *	@param	_Player		Player to load supplies.
+ *	@param	_Cooldown	Time after which a supply can be used again.
+ */
+Void LoadInfiniteSupplies(CSmPlayer _Player, Integer _Cooldown) {
+	if (_Player == Null || !G_LibGalaxyTitles_LibraryLoaded) return;
+
+	// Destroy existing slots
+	Inventory::DestroyItemSlot(_Player, C_LibGalaxyTitles_ReplieItemId);
+	Inventory::DestroyItemSlot(_Player, C_LibGalaxyTitles_FuelItemId);
+
+	// Creates inventory slots for infinite Replies and Fuels
+	Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_ReplieItemId, CSmModeEvent::EActionInput::Consumable1, -1, "Replie.png");
+	Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_FuelItemId, CSmModeEvent::EActionInput::Consumable2, -1, "Fuel.png");
+
+	// Set the cooldown
+	declare Integer LibGalaxyTitles_SuppliesCooldown for _Player;
+	LibGalaxyTitles_SuppliesCooldown = ML::Max(0, _Cooldown);
+}
+
+// ---------------------------------- //
 /** Reset and load player weapons after player is respawned
  *	/!\ Must be called after player is spawned in the world /!\
  *
@@ -1441,6 +1492,14 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	
 	// Load action used to show particle effect on the player
 	LoadReplieParticles(_Player);
+
+	// Item picking settings
+	SetPlayerCanPickUpWeapons(_Player, True);
+	SetPlayerCanPickUpSupplies(_Player, True);
+
+	// Reset cooldown
+	declare Integer LibGalaxyTitles_SuppliesCooldown for _Player;
+	LibGalaxyTitles_SuppliesCooldown = -1;
 	
 	// Reset weapons to drop
 	declare Ident[] PlayerWeaponsToDrop for _Player;
@@ -1471,10 +1530,8 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 		
 		Inventory::SetAvailableWeapons(_Player, PlayerWeapons);
 		
-		// ---------------------------------- //
 		// Init weapons
 		foreach (Weapon => Amount in C_LibGalaxyTitles_InitialWeaponsAmmoMax) Inventory::SetWeaponSlots(_Player, Weapon, Amount);
-		Inventory::SetFirstWeapon(_Player);
 	}
 }
 
@@ -1496,28 +1553,44 @@ Void InitPlayer(CSmPlayer _Player) {
  */
 Void UseConsumableItems(CSmModeEvent _Event) {
 	if (_Event == Null || _Event.Type != CSmModeEvent::EType::OnActionEvent || _Event.Player == Null) return;
+
+	declare NbAffected_Total = 0;
 	
 	// Get the target item's id through the ugly way
 	declare CSmModeEvent::EActionInput[Text] LibInventory_PlayerItemHotkey for _Event.Player;
 	if (!LibInventory_PlayerItemHotkey.exists(_Event.ActionInput)) return;
 	declare ItemName = LibInventory_PlayerItemHotkey.keyof(_Event.ActionInput);
-	
-	// ---------------------------------- //
-	// Use a Replie
-	if (ItemName == C_LibGalaxyTitles_ReplieItemId) {
-		if (!Private_CanUseHealing(_Event.Player)) return;
-		
-		// Use Replie
-		if (!Inventory::UseItem(_Event.Player, ItemName, C_LibGalaxyTitles_ReplieUseCooldown, False)) return;
-		Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
-		declare NbAffected_Total = UseHealing(_Event.Player);
 
+	// Check if the player has infinite supplies
+	declare Integer LibGalaxyTitles_SuppliesCooldown for _Event.Player;
+
+	switch (ItemName) {
 		// ---------------------------------- //
-		// Send notice and give points if player has affected somebody
-		if (NbAffected_Total > 0) {
-			Score::AddPoints(_Event.Player, NbAffected_Total * G_LibGalaxyTitles_PointsForPick);
-			TopScores::AddPoints(_Event.Player.Score, "Support", NbAffected_Total * G_LibGalaxyTitles_PointsForPick);
+		// Use a Replie
+		case C_LibGalaxyTitles_ReplieItemId : {
+			if (!Private_CanUseHealing(_Event.Player)) return;
+
+			declare ItemCooldown = C_LibGalaxyTitles_ReplieUseCooldown;
+			if (LibGalaxyTitles_SuppliesCooldown > 0) ItemCooldown = LibGalaxyTitles_SuppliesCooldown;
+			
+			// Use Replie
+			if (!Inventory::UseItem(_Event.Player, ItemName, ItemCooldown, False)) return;
+			Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
+			NbAffected_Total = UseHealing(_Event.Player);
+			
 		}
+		// ---------------------------------- //
+		// Use a Fuel
+		case C_LibGalaxyTitles_FuelItemId : {
+			if (!Inventory::UseItem(_Event.Player, ItemName, LibGalaxyTitles_SuppliesCooldown, False)) return;
+			NbAffected_Total = UseBoost(_Event.Player);
+		}
+	}
+
+	// Give support points for affecting somebody
+	if (NbAffected_Total > 0) {
+		Score::AddPoints(_Event.Player, NbAffected_Total * G_LibGalaxyTitles_PointsForPick);
+		TopScores::AddPoints(_Event.Player.Score, "Support", NbAffected_Total * G_LibGalaxyTitles_PointsForPick);
 	}
 }
 

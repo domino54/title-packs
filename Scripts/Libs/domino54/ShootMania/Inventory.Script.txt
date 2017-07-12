@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-12            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-12"
 #Const ScriptName	"Libs/domino54/ShootMania/Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -63,6 +63,15 @@
 	CSmMode::EWeapon::Arrow		=> 3,
 	CSmMode::EWeapon::Rocket	=> 4,
 	CSmMode::EWeapon::Missile	=> 4
+]
+
+/// Get weapon from its number
+#Const C_LibInventory_GetWeaponsFromNum [
+	1 => CSmMode::EWeapon::Laser,
+	2 => CSmMode::EWeapon::Rocket,
+	3 => CSmMode::EWeapon::Nucleus,
+	5 => CSmMode::EWeapon::Arrow,
+	6 => CSmMode::EWeapon::Missile
 ]
 
 /// Names of the items representing players weapons
@@ -1006,7 +1015,7 @@ Void AddItems(CSmPlayer _Player, Text _ItemName, Integer _Amount) {
 	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "" || _Amount == 0) return;
 	if (!ItemExists(_Player, _ItemName)) return;
 	
-	if (GetItemAmount(_Player, _ItemName) < 0) SetItemAmount(_Player, _ItemName, 0);
+	if (GetItemAmount(_Player, _ItemName) < 0) return;
 	
 	// Set the item amount
 	declare ItemAmount = GetItemAmount(_Player, _ItemName);
@@ -1127,7 +1136,7 @@ Boolean CooldownIsReady(CSmPlayer _Player, Text _ItemName) {
  */
 Boolean UseItem(CSmPlayer _Player, Text _ItemName, Integer _Cooldown, Boolean _DestroyIfEmpty) {
 	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _ItemName == "") return False;
-	if (!ItemExists(_Player, _ItemName) || GetItemAmount(_Player, _ItemName) < 1 || !CooldownIsReady(_Player, _ItemName)) return False;
+	if (!ItemExists(_Player, _ItemName) || GetItemAmount(_Player, _ItemName) == 0 || !CooldownIsReady(_Player, _ItemName)) return False;
 	
 	RemoveItems(_Player, _ItemName, 1);
 	if (_Cooldown > 0) SetItemCooldown(_Player, _ItemName, Now, _Cooldown);
@@ -1146,7 +1155,15 @@ Boolean UseItem(CSmPlayer _Player, Text _ItemName, Integer _Cooldown, Boolean _D
  *	@param	_Weapons	List of weapons that will be loaded as item for the player.
  */
 Void SetAvailableWeapons(CSmPlayer _Player, CSmMode::EWeapon[] _Weapons) {
-	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot || _Weapons.count <= 0) return;
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+
+	// ---------------------------------- //
+	// Remove previously added weapons
+	foreach (Weapon in C_LibInventory_Weapons) {
+		if (!C_LibInventory_WeaponsPredefinedNames.existskey(Weapon) || _Weapons.exists(Weapon)) continue;
+		declare WeaponItemName = C_LibInventory_WeaponsPredefinedNames[Weapon];
+		if (ItemExists(_Player, WeaponItemName)) DestroyItemSlot(_Player, WeaponItemName);
+	}
 	
 	// ---------------------------------- //
 	// Load weapons as items
@@ -1281,11 +1298,22 @@ Void ChangeWeaponHotkey(CSmPlayer _Player, CSmMode::EWeapon _Weapon, CSmModeEven
  */
 Void SetFirstWeapon(CSmPlayer _Player) {
 	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+
+	// Get previous weapon
+	declare PrevWeapon = CSmMode::EWeapon::Rocket;
+	if (C_LibInventory_GetWeaponsFromNum.existskey(_Player.CurWeapon))
+		PrevWeapon = C_LibInventory_GetWeaponsFromNum[_Player.CurWeapon];
+	
+	// Previous weapon has ammo
+	if (GetWeaponSlots(_Player, PrevWeapon) > 0) {
+		SetPlayerWeapon(_Player, PrevWeapon, False);
+		return;
+	}
 	
 	// Get all weapons with at least one slot
 	declare CSmMode::EWeapon[] PlayerWeapons;
 	foreach (Weapon in C_LibInventory_Weapons) if (GetWeaponSlots(_Player, Weapon) > 0) PlayerWeapons.add(Weapon);
-	
+
 	// Select last weapon or set rocket
 	declare WeaponToSet = CSmMode::EWeapon::Rocket;
 	if (PlayerWeapons.count > 0) WeaponToSet = PlayerWeapons[PlayerWeapons.count - 1];

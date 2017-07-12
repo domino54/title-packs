@@ -1,0 +1,281 @@
+// -------------------------------------- //
+//  LIBRARY MARKERS PRO by domino54        //
+//  script version: 2017-07-12            //
+// -------------------------------------- //
+
+/**
+ *	This library allows you to create UI markers for
+ *	both everyone and a specific player, without the
+ *	problem of player's markers overriding global ones.
+ */
+
+#Const Version		"2017-07-12"
+#Const ScriptName	"Libs/domino54/MarkersPro.Script.txt"
+
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibProMarkers_ControllerLayerId	"LibProMarkers:Controller"
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[Text] G_LibProMarkers_GlobalMarkers;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the markers controller module.
+ *
+ *	@return		The markers controller manialink.
+ */
+Text Private_CreateManialinkController() {
+	return """
+<manialink version="3" name="{{{C_LibProMarkers_ControllerLayerId}}}">
+<script><!--
+main() {
+	// ---------------------------------- //
+	// Netcode
+	declare netread Integer Net_LibProMarkers_GlobalMarkersUpdate for Teams[0];
+	declare netread Text Net_LibProMarkers_GlobalMarkersXML for Teams[0];
+
+	// ---------------------------------- //
+	// Variables
+	declare UpdateMarkersXML = True;
+
+	declare PrevMarkersUpdateGlobal = -1;
+	declare PrevMarkersUpdatePlayer = -1;
+	declare PrevGUIPlayerId = NullId;
+	declare PrevSpawnStatus = CSmPlayer::ESpawnStatus::NotSpawned;
+
+	// Init UI
+	ClientUI.MarkersXML = "";
+
+	while (True) {
+		yield;
+
+		// ---------------------------------- //
+		// Global markers update
+		if (PrevMarkersUpdateGlobal != Net_LibProMarkers_GlobalMarkersUpdate) {
+			PrevMarkersUpdateGlobal = Net_LibProMarkers_GlobalMarkersUpdate;
+			UpdateMarkersXML = True;
+		}
+
+		// ---------------------------------- //
+		// Player change
+		if (GUIPlayer != Null) {
+			if (PrevGUIPlayerId != GUIPlayer.Id) {
+				PrevGUIPlayerId = GUIPlayer.Id;
+				UpdateMarkersXML = True;
+			}
+		}
+		else if (PrevGUIPlayerId != NullId) {
+			PrevGUIPlayerId != NullId;
+			UpdateMarkersXML = True;
+		}
+
+		// ---------------------------------- //
+		// Player markers update
+		if (GUIPlayer != Null) {
+			declare netread Integer Net_LibProMarkers_PlayerMarkersUpdate for GUIPlayer;
+			if (PrevMarkersUpdatePlayer != Net_LibProMarkers_PlayerMarkersUpdate) {
+				PrevMarkersUpdatePlayer = Net_LibProMarkers_PlayerMarkersUpdate;
+				UpdateMarkersXML = True;
+			}
+			if (PrevSpawnStatus != GUIPlayer.SpawnStatus) {
+				PrevSpawnStatus = GUIPlayer.SpawnStatus;
+				UpdateMarkersXML = True;
+			}
+		}
+
+		// ---------------------------------- //
+		// Update the markers XML
+		if (UpdateMarkersXML) {
+			UpdateMarkersXML = False;
+
+			ClientUI.MarkersXML = Net_LibProMarkers_GlobalMarkersXML;
+
+			if (GUIPlayer != Null) {
+				declare netread Text Net_LibProMarkers_PlayerMarkersXML for GUIPlayer;
+				ClientUI.MarkersXML ^= Net_LibProMarkers_PlayerMarkersXML;
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Check if the marker's tag is correctly formatted.
+ *
+ *	@param	_MarkerTag	The marker tag to check.
+ *
+ *	@return		True, if the marker tag is correct.
+ */
+Boolean Private_CheckMarkerIntegrity(Text _MarkerTag) {
+	if (_MarkerTag == "") return False;
+
+	declare Document <=> Xml.Create(_MarkerTag);
+	if (Document == Null) return False;
+
+	declare IsValid = Document.Root != Null && Document.Root.Name == "marker";
+	Xml.Destroy(Document);
+	return IsValid;
+}
+
+// ---------------------------------- //
+/// Update the global set of markers.
+Void Private_UpdateGlobal() {
+	declare netwrite Integer Net_LibProMarkers_GlobalMarkersUpdate for Teams[0];
+	declare netwrite Text Net_LibProMarkers_GlobalMarkersXML for Teams[0];
+
+	Net_LibProMarkers_GlobalMarkersUpdate = Now;
+	Net_LibProMarkers_GlobalMarkersXML = "";
+	foreach (MarkerId => MarkerTag in G_LibProMarkers_GlobalMarkers)
+		Net_LibProMarkers_GlobalMarkersXML ^= MarkerTag;
+}
+
+// ---------------------------------- //
+/** Update a player's set of markers.
+ *
+ *	@param	_Player		The player to update.
+ */
+Void Private_UpdatePlayer(CPlayer _Player) {
+	if (_Player == Null) return;
+
+	declare netwrite Integer Net_LibProMarkers_PlayerMarkersUpdate for _Player;
+	declare netwrite Text Net_LibProMarkers_PlayerMarkersXML for _Player;
+	declare Text[Text] LibProMarkers_PlayerMarkers for _Player;
+
+	Net_LibProMarkers_PlayerMarkersUpdate = Now;
+	Net_LibProMarkers_PlayerMarkersXML = "";
+	foreach (MarkerId => MarkerTag in LibProMarkers_PlayerMarkers)
+		Net_LibProMarkers_PlayerMarkersXML ^= MarkerTag;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Add a new global marker.
+ *
+ *	@param	_MarkerId	Id of the new marker to add.
+ *	@param	_MarkerTag	The marker tag itself.
+ */
+Void AddMarker(Text _MarkerId, Text _MarkerTag) {
+	if (_MarkerId == "" || !Private_CheckMarkerIntegrity(_MarkerTag)) return;
+	G_LibProMarkers_GlobalMarkers[_MarkerId] = _MarkerTag;
+	Private_UpdateGlobal();
+}
+
+// ---------------------------------- //
+/** Add a marker for a player.
+ *
+ *	@param	_MarkerId	Id of the new marker to add.
+ *	@param	_MarkerTag	The marker tag itself.
+ *	@param	_Player		The player to add a new marker.
+ */
+Void AddMarker(Text _MarkerId, Text _MarkerTag, CPlayer _Player) {
+	if (_MarkerId == "" || !Private_CheckMarkerIntegrity(_MarkerTag) || _Player == Null) return;
+	declare Text[Text] LibProMarkers_PlayerMarkers for _Player;
+	LibProMarkers_PlayerMarkers[_MarkerId] = _MarkerTag;
+	Private_UpdatePlayer(_Player);
+}
+
+// ---------------------------------- //
+/** Remove a global marker.
+ *
+ *	@param	_MarkerId	Id of the marker to remove.
+ */
+Void RemoveMarker(Text _MarkerId) {
+	if (!G_LibProMarkers_GlobalMarkers.existskey(_MarkerId)) return;
+	declare Removed = G_LibProMarkers_GlobalMarkers.removekey(_MarkerId);
+	Private_UpdateGlobal();
+}
+
+// ---------------------------------- //
+/** Remove player's marker.
+ *
+ *	@param	_MarkerId	Id of the marker to remove.
+ *	@param	_Player		The player to remove their marker.
+ */
+Void RemoveMarker(Text _MarkerId, CPlayer _Player) {
+	if (_Player == Null) return;
+	declare Text[Text] LibProMarkers_PlayerMarkers for _Player;
+	if (!LibProMarkers_PlayerMarkers.existskey(_MarkerId)) return;
+	declare Removed = LibProMarkers_PlayerMarkers.removekey(_MarkerId);
+	Private_UpdatePlayer(_Player);
+}
+
+// ---------------------------------- //
+/// Reset global markers.
+Void ResetGlobal() {
+	G_LibProMarkers_GlobalMarkers.clear();
+	Private_UpdateGlobal();
+}
+
+// ---------------------------------- //
+/* Reset markers of a player.
+ *
+ *	@param	_Player		The player to reset their markers.
+ */
+Void ResetPlayer(CPlayer _Player) {
+	if (_Player == Null) return;
+	declare Text[Text] LibProMarkers_PlayerMarkers for _Player;
+	LibProMarkers_PlayerMarkers.clear();
+	Private_UpdatePlayer(_Player);
+}
+
+// ---------------------------------- //
+/// Reset all players' markers.
+Void ResetAllPlayers() {
+	foreach (Player in AllPlayers) ResetPlayer(Player);
+}
+
+// ---------------------------------- //
+/// Reset the library.
+Void Reset() {
+	ResetGlobal();
+	ResetAllPlayers();
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	Reset();
+	Layers::Detach(C_LibProMarkers_ControllerLayerId);
+	Layers::Destroy(C_LibProMarkers_ControllerLayerId);
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+	Layers::Create(C_LibProMarkers_ControllerLayerId, Private_CreateManialinkController());
+	Layers::Attach(C_LibProMarkers_ControllerLayerId);
+}

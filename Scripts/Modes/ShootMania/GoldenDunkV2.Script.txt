@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-12            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-12"
 #Const ScriptName	"Modes/ShootMania/GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -48,7 +48,8 @@ declare Vec3[Integer] G_MapHoopAreasPositions;	///< Positions of the hoop areas 
 
 declare Integer G_NbBallsTotal;		///< Total amounts of dropped and carried balls
 declare Integer G_NbBallsMax;		///< Maximum amount of balls on the map
-declare Text[] G_CreatedUIMarkers;	///< List of custom minimap markers
+declare Text[] G_CreatedMarkersMinimap;	///< List of custom minimap markers
+declare Text[] G_CreatedMarkersWorld;	///< List of custom world markers
 declare Ident[] G_BallCarriersIds;	///< Ids of players carrying balls
 declare CSmObject[Integer] G_DroppedBalls;	///< Dropped balls objects
 
@@ -585,7 +586,7 @@ if (!G_IsOvertime && CurrentTimeLimit != S_TimeLimit) {
 if (GT_TimeReachedLimit()) {
 	if (ClanScores[1] != ClanScores[2]) MB_StopRound();
 	else {
-		GT_DisableTimeLimit();
+		GT_SetTimeLimit(-1, False, False);
 		G_IsOvertime = True;
 		Net_GoldenDunk_IsOvertime = True;
 	}
@@ -626,9 +627,10 @@ Message::CleanBigMessages();
 StartTime = -1;
 
 // Destroy markers
-foreach (Marker in G_CreatedUIMarkers) MiniMap::DestroyMarker(Marker);
-UIManager.UIAll.MarkersXML = "";
-G_CreatedUIMarkers.clear();
+foreach (Marker in G_CreatedMarkersMinimap) MiniMap::DestroyMarker(Marker);
+G_CreatedMarkersMinimap.clear();
+foreach (Marker in G_CreatedMarkersWorld) Markers::RemoveMarker(Marker);
+G_CreatedMarkersWorld.clear();
 
 // ---------------------------------- //
 // Show the winner
@@ -708,9 +710,10 @@ Void UI_SetBlueTeamLandmarksOrder(Integer _Order) {
 Void UpdateMarkers() {
 	// ---------------------------------- //
 	// Destroy all existing markers
-	foreach (Marker in G_CreatedUIMarkers) MiniMap::DestroyMarker(Marker);
-	G_CreatedUIMarkers.clear();
-	UIManager.UIAll.MarkersXML = "";
+	foreach (Marker in G_CreatedMarkersMinimap) MiniMap::DestroyMarker(Marker);
+	foreach (Marker in G_CreatedMarkersWorld) Markers::RemoveMarker(Marker);
+	G_CreatedMarkersMinimap.clear();
+	G_CreatedMarkersWorld.clear();
 	
 	G_NbBallsTotal = G_BallCarriersIds.count + G_DroppedBalls.count;
 	
@@ -737,23 +740,25 @@ Void UpdateMarkers() {
 	// ---------------------------------- //
 	// Create marker for central checkpoint
 	if (G_CentralCheckpointLandmark != Null) {
+		declare MarkerId = "CenterCheckpoint";
+
 		// ---------------------------------- //
 		// Minimap marker
 		if (G_NbBallsTotal < G_NbBallsMax) {
-			declare MarkerId = "CenterCheckpoint";
-			G_CreatedUIMarkers.add(MarkerId);
+			G_CreatedMarkersMinimap.add(MarkerId);
 			MiniMap::SetMarker(MarkerId, "Ball.png", <1., 1., 1.>, G_CentralCheckpointLandmark.Position);
 		}
 		
 		// ---------------------------------- //
 		// World marker
 		declare Pos = G_CentralCheckpointLandmark.Position;
-		UIManager.UIAll.MarkersXML ^= """
+		Markers::AddMarker(MarkerId, """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerCheckpoint#1"
 				visibility="WhenInFrustum" minimapvisibility="Never" box="1 1 1"
 			 />
-		""";
+		""");
+		G_CreatedMarkersWorld.add(MarkerId);
 	}
 	
 	// ---------------------------------- //
@@ -762,18 +767,19 @@ Void UpdateMarkers() {
 		// ---------------------------------- //
 		// Minimap marker
 		declare MarkerId = "HoopArea#"^Clan;
-		G_CreatedUIMarkers.add(MarkerId);
+		G_CreatedMarkersMinimap.add(MarkerId);
 		MiniMap::SetMarker(MarkerId, "Drop.png", Teams[Clan - 1].ColorPrimary, Position);
 		
 		// ---------------------------------- //
 		// World marker
 		declare Pos = Position + <0., 25., 0.>;
-		UIManager.UIAll.MarkersXML ^= """
+		Markers::AddMarker(MarkerId, """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerHoop#{{{Clan}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never"
 			 />
-		""";
+		""");
+		G_CreatedMarkersWorld.add(MarkerId);
 	}
 	
 	// ---------------------------------- //
@@ -782,18 +788,19 @@ Void UpdateMarkers() {
 		// ---------------------------------- //
 		// Minimap marker
 		declare MarkerId = "GoalPost#"^Clan;
-		G_CreatedUIMarkers.add(MarkerId);
+		G_CreatedMarkersMinimap.add(MarkerId);
 		MiniMap::SetMarker(MarkerId, "Goal.png", Teams[Clan - 1].ColorPrimary, MapLandmark.Position);
 		
 		// ---------------------------------- //
 		// World marker
 		declare Pos = MapLandmark.Position + <0., 25., 0.>;
-		UIManager.UIAll.MarkersXML ^= """
+		Markers::AddMarker(MarkerId, """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_MarkerGoal#{{{Clan}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never"
 			 />
-		""";
+		""");
+		G_CreatedMarkersWorld.add(MarkerId);
 	}
 	
 	// ---------------------------------- //
@@ -808,17 +815,18 @@ Void UpdateMarkers() {
 		// ---------------------------------- //
 		// Minimap marker
 		declare MarkerId = "Ball:"^Player.User.Login;
-		G_CreatedUIMarkers.add(MarkerId);
+		G_CreatedMarkersMinimap.add(MarkerId);
 		MiniMap::SetMarker(MarkerId, "Ball.png", Color::HsvToRgb(<Player.GetLinearHue, 1., 1.>), Player.User.Login);
 		
 		// ---------------------------------- //
 		// World marker
-		UIManager.UIAll.MarkersXML ^= """
+		Markers::AddMarker(MarkerId, """
 			<marker
-				playerid="{{{PlayerId}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
+				playerlogin="{{{Player.User.Login}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never" box="1 2 1"
 			 />
-		""";
+		""");
+		G_CreatedMarkersWorld.add(MarkerId);
 	}
 	
 	// ---------------------------------- //
@@ -831,18 +839,19 @@ Void UpdateMarkers() {
 		// ---------------------------------- //
 		// Minimap marker
 		declare MarkerId = "Ball:"^Object.Position;
-		G_CreatedUIMarkers.add(MarkerId);
+		G_CreatedMarkersMinimap.add(MarkerId);
 		MiniMap::SetMarker(MarkerId, "Ball.png", <1., 1., 1.>, Object.Position);
 		
 		// ---------------------------------- //
 		// World marker
 		declare Pos = Object.Position;
-		UIManager.UIAll.MarkersXML ^= """
+		Markers::AddMarker(MarkerId, """
 			<marker
 				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never" box="0 .75 0"
 			 />
-		""";
+		""");
+		G_CreatedMarkersWorld.add(MarkerId);
 	}
 }
 

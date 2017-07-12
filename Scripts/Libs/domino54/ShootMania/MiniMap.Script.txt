@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2017-05-12            //
+//  script version: 2017-07-12            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2017-05-12"
+#Const Version		"2017-07-12"
 #Const ScriptName	"MiniMap.Script.txt"
 
 #Include "MathLib" as ML
@@ -768,6 +768,7 @@ if (PrevMarkersUpdate != Net_LibMinimap_MarkersUpdate) {
 	declare netread Text[Text] Net_LibMinimap_MarkersImages for Teams[0];
 	declare netread Vec3[Text] Net_LibMinimap_MarkersColors for Teams[0];
 	declare netread Text[Text] Net_LibMinimap_MarkersPlayer for Teams[0];
+	declare netread Text[Text] Net_LibMinimap_MarkersOwner for Teams[0];
 
 	// Reset the custom markers
 	foreach (I => Quad in Quad_CustomMarkers) {
@@ -781,6 +782,15 @@ if (PrevMarkersUpdate != Net_LibMinimap_MarkersUpdate) {
 	// Configure the custom markers
 	foreach (MarkerId => Position in Net_LibMinimap_CustomMarkers) {
 		if (NbCustomDisplayed >= Quad_CustomMarkers.count) break;
+
+		// ---------------------------------- //
+		// Ignore the marker if owner is different than the current player
+		if (Net_LibMinimap_MarkersOwner.existskey(MarkerId) &&
+			(GUIPlayer == Null || Net_LibMinimap_MarkersOwner[MarkerId] != GUIPlayer.User.Login)
+		) {
+			continue;
+		}
+
 		declare Quad = Quad_CustomMarkers[NbCustomDisplayed];
 
 		// Save position in the quad
@@ -796,7 +806,8 @@ if (PrevMarkersUpdate != Net_LibMinimap_MarkersUpdate) {
 		// ---------------------------------- //
 		// Set the marker color
 		declare MarkerColor = <1., 1., 1.>;
-		if (Net_LibMinimap_MarkersColors.existskey(MarkerId)) MarkerColor = Net_LibMinimap_MarkersColors[MarkerId]; 
+		if (Net_LibMinimap_MarkersOwner.existskey(MarkerId)) MarkerColor = HsvToRgb(<GUIPlayer.GetLinearHue, 1., 1.>);
+		else if (Net_LibMinimap_MarkersColors.existskey(MarkerId)) MarkerColor = Net_LibMinimap_MarkersColors[MarkerId];
 		Quad.Colorize = MarkerColor;
 
 		// ---------------------------------- //
@@ -1054,31 +1065,42 @@ Void SetIconsBasePath(Text _ImgBase) {
  *	@param	_Colorize			Color of the marker.
  *	@param	_MarkerPosition		Position of the marker.
  *	@param	_PlayerLogin		Player to which the marker will be attached.
+ *	@param	_Owner				Display the marker only for this player.
  */
-Void SetMarker(Text _MarkerId, Text _MarkerIcon, Vec3 _Colorize, Vec3 _MarkerPosition, Text _PlayerLogin) {
+Void SetMarker(Text _MarkerId, Text _MarkerIcon, Vec3 _Colorize, Vec3 _MarkerPosition, Text _PlayerLogin, CSmPlayer _Owner) {
 	if (_MarkerId == "" || _MarkerIcon == "") return;
 	
 	declare netwrite Vec3[Text] Net_LibMinimap_CustomMarkers for Teams[0];
 	declare netwrite Text[Text] Net_LibMinimap_MarkersImages for Teams[0];
 	declare netwrite Vec3[Text] Net_LibMinimap_MarkersColors for Teams[0];
 	declare netwrite Text[Text] Net_LibMinimap_MarkersPlayer for Teams[0];
+	declare netwrite Text[Text] Net_LibMinimap_MarkersOwner for Teams[0];
 	
 	Net_LibMinimap_CustomMarkers[_MarkerId] = _MarkerPosition;
 	Net_LibMinimap_MarkersImages[_MarkerId] = _MarkerIcon;
 	if (_Colorize != <0., 0., 0.>) Net_LibMinimap_MarkersColors[_MarkerId] = _Colorize;
 	if (_PlayerLogin != "") Net_LibMinimap_MarkersPlayer[_MarkerId] = _PlayerLogin;
+	if (_Owner != Null) Net_LibMinimap_MarkersOwner[_MarkerId] = _Owner.User.Login;
 
 	// Trigger client-side manialink update
 	declare netwrite Integer Net_LibMinimap_MarkersUpdate for Teams[0];
 	Net_LibMinimap_MarkersUpdate = Now;
 }
 
+Void SetMarker(Text _MarkerId, Text _MarkerIcon, Vec3 _Colorize, Vec3 _MarkerPosition, CSmPlayer _Owner) {
+	SetMarker(_MarkerId, _MarkerIcon, _Colorize, _MarkerPosition, "", _Owner);
+}
+
 Void SetMarker(Text _MarkerId, Text _MarkerIcon, Vec3 _Colorize, Vec3 _MarkerPosition) {
-	SetMarker(_MarkerId, _MarkerIcon, _Colorize, _MarkerPosition, "");
+	SetMarker(_MarkerId, _MarkerIcon, _Colorize, _MarkerPosition, "", Null);
+}
+
+Void SetMarker(Text _MarkerId, Text _MarkerIcon, Vec3 _Colorize, Text _PlayerLogin, CSmPlayer _Owner) {
+	SetMarker(_MarkerId, _MarkerIcon, _Colorize, Vec3, _PlayerLogin, _Owner);
 }
 
 Void SetMarker(Text _MarkerId, Text _MarkerIcon, Vec3 _Colorize, Text _PlayerLogin) {
-	SetMarker(_MarkerId, _MarkerIcon, _Colorize, Vec3, _PlayerLogin);
+	SetMarker(_MarkerId, _MarkerIcon, _Colorize, Vec3, _PlayerLogin, Null);
 }
 
 // ---------------------------------- //
@@ -1093,12 +1115,14 @@ Void DestroyMarker(Text _MarkerId) {
 	declare netwrite Text[Text] Net_LibMinimap_MarkersImages for Teams[0];
 	declare netwrite Vec3[Text] Net_LibMinimap_MarkersColors for Teams[0];
 	declare netwrite Text[Text] Net_LibMinimap_MarkersPlayer for Teams[0];
+	declare netwrite Text[Text] Net_LibMinimap_MarkersOwner for Teams[0];
 	
 	declare Boolean Removed;
 	Removed = Net_LibMinimap_CustomMarkers.removekey(_MarkerId);
 	Removed = Net_LibMinimap_MarkersImages.removekey(_MarkerId);
 	Removed = Net_LibMinimap_MarkersColors.removekey(_MarkerId);
 	Removed = Net_LibMinimap_MarkersPlayer.removekey(_MarkerId);
+	Removed = Net_LibMinimap_MarkersOwner.removekey(_MarkerId);
 
 	// Trigger client-side manialink update
 	declare netwrite Integer Net_LibMinimap_MarkersUpdate for Teams[0];
@@ -1112,11 +1136,13 @@ Void DestroyMarkers() {
 	declare netwrite Text[Text] Net_LibMinimap_MarkersImages for Teams[0];
 	declare netwrite Vec3[Text] Net_LibMinimap_MarkersColors for Teams[0];
 	declare netwrite Text[Text] Net_LibMinimap_MarkersPlayer for Teams[0];
+	declare netwrite Text[Text] Net_LibMinimap_MarkersOwner for Teams[0];
 	
 	Net_LibMinimap_CustomMarkers.clear();
 	Net_LibMinimap_MarkersImages.clear();
 	Net_LibMinimap_MarkersColors.clear();
 	Net_LibMinimap_MarkersPlayer.clear();
+	Net_LibMinimap_MarkersOwner.clear();
 	
 	// Trigger client-side manialink update
 	declare netwrite Integer Net_LibMinimap_MarkersUpdate for Teams[0];

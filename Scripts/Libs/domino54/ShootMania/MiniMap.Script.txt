@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MINIMAP by domino54           //
-//  script version: 2017-07-12            //
+//  script version: 2017-07-19            //
 // -------------------------------------- //
 
 /**
@@ -11,14 +11,13 @@
  *	markers of all nearby players and custom made markers.
  */
 
-#Const Version		"2017-07-12"
-#Const ScriptName	"MiniMap.Script.txt"
+#Const Version		"2017-07-19"
+#Const ScriptName	"Libs/domino54/ShootMania/MiniMap.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
-#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
 
 // ---------------------------------- //
 // Constants
@@ -102,10 +101,10 @@ Text Private_CreateManialinkMinimapWindow() {
 
 	<quad size="7 7" halign="center" valign="center" image="{{{C_ImgBase}}}GUIPlayer.png" id="Quad_MarkerGUIPlayer" hidden="1" />
 	<frame id="Frame_MarkersClip" size="{{{MapSize.X^" "^MapSize.Y}}}" halign="center" valign="center">
-		<frame id="Frame_MarkersRotation"><frame id="Frame_MarkersPosition">
+		<frame id="Frame_MarkersOffset"><frame id="Frame_MarkersRotation"><frame id="Frame_MarkersPosition">
 			{{{PlayerMarkers}}}
 			{{{CustomMarkers}}}
-		</frame></frame>
+		</frame></frame></frame>
 	</frame>
 
 	<minimap size="{{{MapSize.X^" "^MapSize.Y}}}" halign="center" valign="center" id="Minimap_Main" />
@@ -116,6 +115,7 @@ Text Private_CreateManialinkMinimapWindow() {
 </frame>
 
 <label id="Label_Debug" scale="5" />
+<label id="Label_Debug2" scale=".5" />
 
 <script><!--
 /**
@@ -165,7 +165,9 @@ declare Frame_MinimapWindow <=> (Page.GetFirstChild("Frame_MinimapWindow") as CM
 declare Minimap_Main <=> (Page.GetFirstChild("Minimap_Main") as CMlMinimap);
 declare Quad_MarkerGUIPlayer <=> (Page.GetFirstChild("Quad_MarkerGUIPlayer") as CMlQuad);
 declare Frame_MarkersRotation <=> (Page.GetFirstChild("Frame_MarkersRotation") as CMlFrame);
+declare Frame_MarkersOffset <=> (Page.GetFirstChild("Frame_MarkersOffset") as CMlFrame);
 declare Label_Debug <=> (Page.GetFirstChild("Label_Debug") as CMlLabel);
+declare Label_Debug2 <=> (Page.GetFirstChild("Label_Debug2") as CMlLabel);
 
 declare Frame_MarkersPosition <=> (Page.GetFirstChild("Frame_MarkersPosition") as CMlFrame);
 
@@ -227,6 +229,7 @@ declare PrevMinimapVisible = False;
 declare PrevMinimapPosition = Vec3;
 declare PrevMinimapYaw = -1.;
 declare PrevMinimapZoom = -1.;
+declare PrevMinimapMapPos = Vec2;
 
 declare PrevZoomState = 0;
 declare PrevIsOverviewMode = False;
@@ -358,6 +361,7 @@ if (IsPlayerSpawned) {
 		if (PrevZoomState != 3) {
 			PrevZoomState = 3;
 			AnimMgr.Add(Label_Debug, "<label scale='"^C_MapZoomInVehicles^"' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
+			AnimMgr.Add(Label_Debug2, "<label scale='.5' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
 		}
 	}
 	// ---------------------------------- //
@@ -366,6 +370,7 @@ if (IsPlayerSpawned) {
 		if (PrevZoomState != 2) {
 			PrevZoomState = 2;
 			AnimMgr.Add(Label_Debug, "<label scale='"^C_MapZoomWhenSpawned / 2^"' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
+			AnimMgr.Add(Label_Debug2, "<label scale='.2' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
 		}
 	}
 	// ---------------------------------- //
@@ -373,10 +378,12 @@ if (IsPlayerSpawned) {
 	else if (PrevZoomState != 1) {
 		PrevZoomState = 1;
 		AnimMgr.Add(Label_Debug, "<label scale='"^C_MapZoomWhenSpawned^"' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
+			AnimMgr.Add(Label_Debug2, "<label scale='.5' />", 250, CAnimManager::EAnimManagerEasing::SineInOut);
 	}
-	
+
 	// Apply the animated zoom change
 	if (Minimap_Main.ZoomFactor != Label_Debug.RelativeScale) Minimap_Main.ZoomFactor = Label_Debug.RelativeScale;
+	Minimap_Main.MapPosition.Y = Label_Debug2.RelativeScale;
 }
 // ---------------------------------- //
 // Compute weighted minimap position
@@ -422,6 +429,7 @@ else {
 	// Set the weighted properties
 	MinimapPosition = PlayersWeightedCenter;
 	Minimap_Main.ZoomFactor = PlayersWeightedZoom;
+	Minimap_Main.MapPosition.Y = .5;
 	Minimap_Main.MapYaw = 0.;
 }
 
@@ -442,6 +450,16 @@ if (PrevMinimapZoom != Minimap_Main.ZoomFactor) {
 		Minimap_Main.Size.X / (G_EnvironmentSize / Minimap_Main.ZoomFactor),
 		Minimap_Main.Size.Y / (G_EnvironmentSize / Minimap_Main.ZoomFactor)
 	>;
+}
+
+// ---------------------------------- //
+// Adjust position on changed map offset
+if (PrevMinimapMapPos != Minimap_Main.MapPosition) {
+	PrevMinimapMapPos = Minimap_Main.MapPosition;
+
+	declare ElementOffset = (PrevMinimapMapPos.Y - .5) * Minimap_Main.Size.Y;
+	Quad_MarkerGUIPlayer.RelativePosition_V3.Y = ElementOffset;
+	Frame_MarkersOffset.RelativePosition_V3.Y = ElementOffset;
 }
 
 // Reset the trigger

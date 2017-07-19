@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2017-07-12            //
+//  script version: 2017-07-19            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2017-07-12"
+#Const Version		"2017-07-19"
 #Const ScriptName	"Modes/ShootMania/GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -246,13 +246,8 @@ foreach (Player in Players) {
 	PrevPlayerShieldPercLoaded = 0.;
 }
 
-UpdateMarkers();
-
 // Wait for enough players to start the game
 GT_WaitForPlayers(S_NbPlayersPerTeamMin);
-
-Layers::Attach("GoldenDunk:Interface");
-Layers::Attach("GoldenDunk:Markers");
 
 // ---------------------------------- //
 // New map sound
@@ -262,6 +257,16 @@ StartTime = Now + S_RespawnTime;
 if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
 else GT_DisableTimeLimit();
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+***
+
+// ---------------------------------- //
+// Start play loop
+// ---------------------------------- //
+***Match_StartPlayLoop***
+***
+Layers::Attach("GoldenDunk:Interface");
+Layers::Attach("GoldenDunk:Markers");
+UpdateMarkers();
 ***
 
 // ---------------------------------- //
@@ -595,6 +600,15 @@ if (G_IsOvertime && ClanScores[1] != ClanScores[2]) MB_StopRound();
 ***
 
 // ---------------------------------- //
+// End play loop
+// ---------------------------------- //
+***Match_EndPlayLoop***
+***
+Layers::Detach("GoldenDunk:Interface");
+Layers::Detach("GoldenDunk:Markers");
+***
+
+// ---------------------------------- //
 // Round end
 // ---------------------------------- //
 ***Match_EndRound***
@@ -621,8 +635,6 @@ foreach (Clan => Points in ClanScores)
 
 MB_Sleep(3000);
 
-Layers::Detach("GoldenDunk:Interface");
-Layers::Detach("GoldenDunk:Markers");
 Message::CleanBigMessages();
 StartTime = -1;
 

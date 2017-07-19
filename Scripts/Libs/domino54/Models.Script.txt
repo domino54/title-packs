@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MODELS by domino54            //
-//  script version: 2017-06-03            //
+//  script version: 2017-07-19            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
  *	load them for a player.
  */
 
-#Const Version		"2017-06-03"
+#Const Version		"2017-07-19"
 #Const ScriptName	"Libs/domino54/Models.Script.txt"
 
 // ---------------------------------- //
@@ -31,6 +31,7 @@ declare Ident[Text] G_LibModels_ValleyCar;
 declare Ident[Text] G_LibModels_LagoonCar;
 declare Ident[Text] G_LibModels_ArenaPlayer;
 declare Ident[Text] G_LibModels_Minion;
+declare Ident[Text] G_LibModels_Custom;
 
 // ---------------------------------- //
 // Functions
@@ -170,6 +171,26 @@ Void LoadArenaPlayer(Text _SkinName) {
 Void LoadMinion(Text _SkinName) {
 	if (_SkinName == "") return;
 	G_LibModels_Minion[_SkinName] = ItemList_AddWithSkin(C_LibModels_ArchetypeMinion, "Skins\\Models\\Minion\\"^_SkinName);
+}
+
+// ---------------------------------- //
+/** Load a skin for custom model.
+ *
+ *	@param	_SkinName	Name of the skin to load.
+ *	@param	_ItemName	Name of the item file to load.
+ *	@param	_SkinPath	Path to the skin file to load.
+ */
+Void LoadCustom(Text _SkinName, Text _ItemName, Text _SkinPath) {
+	if (_SkinName == "") return;
+
+	if (_SkinPath != "")
+		G_LibModels_Custom[_SkinName] = ItemList_AddWithSkin(_ItemName, _SkinPath);
+	else
+		G_LibModels_Custom[_SkinName] = ItemList_Add(_ItemName);
+}
+
+Void LoadCustom(Text _SkinName, Text _ItemName) {
+	LoadCustom(_SkinName, _ItemName, "");
 }
 
 // ---------------------------------- //
@@ -399,6 +420,37 @@ Void SetMinion(CPlayer _Player, Text _SkinName) {
  *	@param	_Player		The player to set Minion character.
  */
 Void SetMinion(CPlayer _Player) { SetMinion(_Player, ""); }
+
+// ---------------------------------- //
+/** Get ID of the custom model with given skin.
+ *
+ *	@param	_SkinName	Name of the skin file to get.
+ *
+ *	@return		ID of the custom model with a skin.
+ */
+Ident Custom(Text _SkinName) {
+	if (G_LibModels_Custom.existskey(_SkinName)) return G_LibModels_Custom[_SkinName];
+	if (G_LibModels_Custom.existskey("")) return G_LibModels_Custom[""];
+	return NullId;
+}
+
+// ---------------------------------- //
+/** Set custom model with a skin for a player.
+ *
+ *	@param	_Player		The player to set custom model.
+ *	@param	_SkinName	Name of the skin file to set.
+ */
+Void SetCustom(CPlayer _Player, Text _SkinName) {
+	if (_Player == Null) return;
+	Private_SetPlayerModel(_Player, Custom(_SkinName));
+}
+
+// ---------------------------------- //
+/** Set default custom model for a player.
+ *
+ *	@param	_Player		The player to set custom model.
+ */
+Void SetCustom(CPlayer _Player) { SetCustom(_Player, ""); }
 
 // ---------------------------------- //
 /** Revert the default gameplay model for a player.

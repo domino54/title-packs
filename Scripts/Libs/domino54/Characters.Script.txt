@@ -1,0 +1,1533 @@
+// -------------------------------------- //
+//  LIBRARY CHARACTERS by domino54        //
+//  script version: 2017-07-19            //
+// -------------------------------------- //
+
+#Const Version		"2017-07-19"
+#Const ScriptName	"Libs/domino54/Characters.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibCharacters_LayerId	"LibCharacters:Selection"
+#Const C_LibCharacters_RequestTimeOut	5000
+
+#Const C_LibCharacters_DisplayModeHidden	0
+#Const C_LibCharacters_DisplayModeVisible	1
+#Const C_LibCharacters_DisplayModeManual	2
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare CHttpRequest G_LibCharacters_DocumentRequest;
+declare Integer G_LibCharacters_RequestStartTime;
+declare Integer[Ident] G_LibCharacters_CharChangeRequests;
+
+/// Stats data
+declare Integer[] G_LibCharacters_Stats;
+declare Text[Integer] G_LibCharacters_StatsNames;
+declare Text[Integer] G_LibCharacters_StatsTypes;
+
+/// Weapons data
+declare Integer[] G_LibCharacters_Weapons;
+declare Text[Integer] G_LibCharacters_WeaponsNames;
+declare Text[Integer] G_LibCharacters_WeaponsIcons;
+
+/// Characters data
+declare Text G_LibCharacters_CharSheetKey;
+declare Integer[] G_LibCharacters_Characters;
+declare Text[Integer] G_LibCharacters_CharactersNames;
+declare Text[Integer] G_LibCharacters_CharactersIcons1;
+declare Text[Integer] G_LibCharacters_CharactersIcons2;
+declare Text[Integer] G_LibCharacters_CharactersImages;
+declare Text[Integer] G_LibCharacters_CharactersDesc;
+declare Vec3[Integer] G_LibCharacters_CharactersColor;
+declare Text[Integer] G_LibCharacters_AbilityName;
+declare Text[Integer] G_LibCharacters_AbilityDesc;
+declare Text[Integer] G_LibCharacters_AbilityIcon;
+declare Text[][Integer] G_LibCharacters_CharactersPros;
+declare Text[][Integer] G_LibCharacters_CharactersCons;
+declare Real[Integer][Integer] G_LibCharacters_CharStats;
+declare Integer[Integer][Integer] G_LibCharacters_CharWeapons;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the selection window.
+ *
+ *	@return		The selection manialink.
+ */
+Text Private_CreateManialinkSelection() {
+	declare _FontMedium = "Eurostile";
+	declare _FontBold = "Eurostile_Bold";
+
+	// ---------------------------------- //
+	// Statistics data
+	declare Inject_Stats = dump(G_LibCharacters_Stats);
+	declare Inject_StatsNames = dump(G_LibCharacters_StatsNames);
+	declare Inject_StatsTypes = dump(G_LibCharacters_StatsTypes);
+
+	if (Inject_Stats == "[]") Inject_Stats = "Integer[]";
+	if (Inject_StatsNames == "[]") Inject_StatsNames = "Text[Integer]";
+	if (Inject_StatsTypes == "[]") Inject_StatsTypes = "Text[Integer]";
+
+	// ---------------------------------- //
+	// Weapons data
+	declare Inject_Weapons = dump(G_LibCharacters_Weapons);
+	declare Inject_WeaponsNames = dump(G_LibCharacters_WeaponsNames);
+	declare Inject_WeaponsIcons = dump(G_LibCharacters_WeaponsIcons);
+
+	if (Inject_Weapons == "[]") Inject_Weapons = "Integer[]";
+	if (Inject_WeaponsNames == "[]") Inject_WeaponsNames = "Text[Integer]";
+	if (Inject_WeaponsIcons == "[]") Inject_WeaponsIcons = "Text[Integer]";
+
+	// ---------------------------------- //
+	// Characters data
+	declare Inject_Characters = dump(G_LibCharacters_Characters);
+	declare Inject_CharactersNames = dump(G_LibCharacters_CharactersNames);
+	declare Inject_CharactersIcons1 = dump(G_LibCharacters_CharactersIcons1);
+	declare Inject_CharactersIcons2 = dump(G_LibCharacters_CharactersIcons2);
+	declare Inject_CharactersImages = dump(G_LibCharacters_CharactersImages);
+	declare Inject_CharactersDesc = dump(G_LibCharacters_CharactersDesc);
+	declare Inject_CharactersColor = dump(G_LibCharacters_CharactersColor);
+	declare Inject_AbilityName = dump(G_LibCharacters_AbilityName);
+	declare Inject_AbilityDesc = dump(G_LibCharacters_AbilityDesc);
+	declare Inject_AbilityIcon = dump(G_LibCharacters_AbilityIcon);
+
+	if (Inject_Characters == "[]") Inject_Characters = "Integer[]";
+	if (Inject_CharactersNames == "[]") Inject_CharactersNames = "Text[Integer]";
+	if (Inject_CharactersIcons1 == "[]") Inject_CharactersIcons1 = "Text[Integer]";
+	if (Inject_CharactersIcons2 == "[]") Inject_CharactersIcons2 = "Text[Integer]";
+	if (Inject_CharactersImages == "[]") Inject_CharactersImages = "Text[Integer]";
+	if (Inject_CharactersDesc == "[]") Inject_CharactersDesc = "Text[Integer]";
+	if (Inject_CharactersColor == "[]") Inject_CharactersColor = "Vec3[Integer]";
+	if (Inject_AbilityName == "[]") Inject_AbilityName = "Text[Integer]";
+	if (Inject_AbilityDesc == "[]") Inject_AbilityDesc = "Text[Integer]";
+	if (Inject_AbilityIcon == "[]") Inject_AbilityIcon = "Text[Integer]";
+
+	// ---------------------------------- //
+	// Characters pros
+	declare Inject_CharactersPros = "Text[][Integer]";
+	if (G_LibCharacters_CharactersPros.count > 0) {
+		Inject_CharactersPros = "[";
+		declare I = 0;
+		foreach (CharId => CharPros in G_LibCharacters_CharactersPros) {
+			I += 1;
+			declare Pros = CharId^" => Text[]";
+			if (CharPros.count > 0) Pros = CharId^" => "^dump(CharPros);
+			if (I < G_LibCharacters_CharactersPros.count) Pros ^= ", ";
+			Inject_CharactersPros ^= Pros;
+		}
+		Inject_CharactersPros ^= "]";
+	}
+
+	// ---------------------------------- //
+	// Characters cons
+	declare Inject_CharactersCons = "Text[][Integer]";
+	if (G_LibCharacters_CharactersCons.count > 0) {
+		Inject_CharactersCons = "[";
+		declare I = 0;
+		foreach (CharId => CharCons in G_LibCharacters_CharactersCons) {
+			I += 1;
+			declare Cons = CharId^" => Text[]";
+			if (CharCons.count > 0) Cons = CharId^" => "^dump(CharCons);
+			if (I < G_LibCharacters_CharactersCons.count) Cons ^= ", ";
+			Inject_CharactersCons ^= Cons;
+		}
+		Inject_CharactersCons ^= "]";
+	}
+
+
+	// ---------------------------------- //
+	// Characters stats
+	declare Inject_CharStats = "Real[Integer][Integer]";
+	if (G_LibCharacters_CharStats.count > 0) {
+		Inject_CharStats = "[";
+		declare I = 0;
+		foreach (CharId => CharStats in G_LibCharacters_CharStats) {
+			I += 1;
+			declare Stats = CharId^" => Text[]";
+			if (CharStats.count > 0) Stats = CharId^" => "^dump(CharStats);
+			if (I < G_LibCharacters_CharStats.count) Stats ^= ", ";
+			Inject_CharStats ^= Stats;
+		}
+		Inject_CharStats ^= "]";
+	}
+
+	// ---------------------------------- //
+	// Characters weapons
+	declare Inject_CharWeapons = "Integer[Integer][Integer]";
+	if (G_LibCharacters_CharWeapons.count > 0) {
+		Inject_CharWeapons = "[";
+		declare I = 0;
+		foreach (CharId => CharWeapons in G_LibCharacters_CharWeapons) {
+			I += 1;
+			declare Weapons = CharId^" => Integer[]";
+			if (CharWeapons.count > 0) Weapons = CharId^" => "^dump(CharWeapons);
+			if (I < G_LibCharacters_CharWeapons.count) Weapons ^= ", ";
+			Inject_CharWeapons ^= Weapons;
+		}
+		Inject_CharWeapons ^= "]";
+	}
+
+	// ---------------------------------- //
+	// Gather translations to load
+	declare Text[] RequiredTranslations;
+	foreach (Phrase in G_LibCharacters_StatsNames) RequiredTranslations.add(Phrase);
+	foreach (Phrase in G_LibCharacters_WeaponsNames) RequiredTranslations.add(Phrase);
+	foreach (Phrase in G_LibCharacters_CharactersNames) RequiredTranslations.add(Phrase);
+	foreach (Phrase in G_LibCharacters_CharactersDesc) RequiredTranslations.add(Phrase);
+	foreach (Phrase in G_LibCharacters_AbilityName) RequiredTranslations.add(Phrase);
+	foreach (Phrase in G_LibCharacters_AbilityDesc) RequiredTranslations.add(Phrase);
+	foreach (Pros in G_LibCharacters_CharactersPros) foreach (Phrase in Pros) RequiredTranslations.add(Phrase);
+	foreach (Cons in G_LibCharacters_CharactersCons) foreach (Phrase in Cons) RequiredTranslations.add(Phrase);
+
+	return """
+<manialink version="3" name="{{{C_LibCharacters_LayerId}}}">
+<stylesheet>
+	<style class="FontM" valign="center2" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(_FontMedium)}}}" />
+	<style class="FontB" valign="center2" style="TextValueSmallSm" textcolor="FFF" textfont="{{{TL::MLEncode(_FontBold)}}}" />
+	<style class="Pro" size="3.6 3.5" halign="left" valign="center" />
+</stylesheet>
+
+<!-- Map selection window -->
+<frame id="Frame_MapSelectionWindow" z-index="10" pos="-91 58" hidden="1">
+	<!-- Window header -->
+	<frame id="Frame_MapSelectionHeader" pos="0 -2">
+		<label pos="2" class="FontM" id="Label_MapSelectionTitle" textsize="4" textprefix="$t" text="Choose your character" translate="1" />
+		
+		<!-- Selection end countdown timer -->
+		<frame id="Frame_SelectionEndTime" pos="174" hidden="1">
+			<label pos="-2.75" halign="right" class="FontB" textsize="4" textcolor="FB0" id="Label_SelectionEndTime" text="0:00" />
+			<label pos="0 .125" class="FontM" halign="center" valign="center" textcolor="FB0" text="⏰" id="Label_SelectionClockIcon" />
+		</frame>
+
+		<!-- Close window button -->
+		<quad pos="174.5" size="7 7" halign="center" valign="center" style="Icons64x64_1" substyle="QuitRace" id="Quad_CharSelectionClose" hidden="1" ScriptEvents="1" />
+	</frame>
+
+	<!-- Separator -->
+	<quad pos="0 -6" size="178 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Character information left column -->
+	<frame id="Frame_LeftColumn" pos="2 -8">
+		<label pos="30 -4" size="56" class="FontB" halign="center" textsize="2" textemboss="1" textprefix="$t" id="Label_CurCharacterName" />
+		<quad pos="2 -8" size="56 .25" valign="center" bgcolor="FFF" opacity=".5" />
+		<quad size="60 90" class="Color" id="Quad_CurCharacterImage" />
+		<quad size="60 90" bgcolor="FFF" opacity=".125" />
+	</frame>
+
+	<!-- Character information middle column -->
+	<frame id="Frame_MiddleColumn" pos="63 -8">
+		<!-- Description box -->
+		<frame id="Frame_CurCharacterDesc" hidden="1">
+			<label pos="2 -3.5" size="52" class="FontB Color" textsize="1.5" textprefix="$t$s" textcolor="AAA" text="Description" translate="1" />
+			<label pos="2 -6" size="52" class="FontM" valign="top" textsize="1.25" autonewline="1" id="Label_CurCharacterDesc" />
+			<quad size="56 0" bgcolor="FFF" opacity=".125" id="Quad_CurCharacterDesc" />
+		</frame>
+
+		<!-- Special ability box -->
+		<frame id="Frame_SpecialAbilityBox" hidden="1">
+			<quad pos="1.5 -1.5" size="8 8" id="Quad_SpecialAbilityIcon" />
+			<label pos="11 -3.75" size="42" class="FontB Color" textsize="1.5" textprefix="$t$s" textcolor="AAA" id="Label_SpecialAbilityHeader" />
+			<label pos="11 -7.25" size="42" class="FontB" textsize="2" textprefix="$t$s" id="Label_SpecialAbilityName" />
+			<label pos="2 -11" size="52" class="FontM" valign="top" textsize="1.25" autonewline="1" id="Label_SpecialAbilityDesc" />
+			<quad size="56 0" bgcolor="FFF" opacity=".125" id="Quad_SpecialAbilityBox" />
+		</frame>
+
+		<!-- Pros and cons box -->
+		<frame id="Frame_ProsAndConsBox" hidden="1">
+			<label pos="2 -3.5" size="52" class="FontB Color" textsize="1.5" textprefix="$t$s" textcolor="AAA" id="Label_CurCharProsAndCons" />
+			<framemodel id="FrameModel_Attribute">
+				<quad pos="1.5 -1.25" class="Pro" id="Quad_AttributePro" image="file://Media/Manialinks/Common/Chat/buddy-buddy-accept.dds" hidden="1" />
+				<quad pos="1.5 -1.25" class="Pro" id="Quad_AttributeCon" image="file://Media/Manialinks/Common/Chat/buddy-buddy-deny.dds" hidden="1" />
+				<label pos="6" size="48" class="FontM" valign="top" textsize="1.25" autonewline="1" id="Label_CurCharacterDesc" />
+			</framemodel>
+			<frameinstance modelid="FrameModel_Attribute" id="Frame_CurCharAttribute#0" hidden="1" />
+			<frameinstance modelid="FrameModel_Attribute" id="Frame_CurCharAttribute#1" hidden="1" />
+			<frameinstance modelid="FrameModel_Attribute" id="Frame_CurCharAttribute#2" hidden="1" />
+			<frameinstance modelid="FrameModel_Attribute" id="Frame_CurCharAttribute#3" hidden="1" />
+			<frameinstance modelid="FrameModel_Attribute" id="Frame_CurCharAttribute#4" hidden="1" />
+			<frameinstance modelid="FrameModel_Attribute" id="Frame_CurCharAttribute#5" hidden="1" />
+			<quad size="56 0" bgcolor="FFF" opacity=".125" id="Quad_ProsAndConsBox" />
+		</frame>
+	</frame>
+
+	<!-- Character information right column -->
+	<frame id="Frame_RightColumn" pos="120 -8">
+		<!-- Statistics box -->
+		<frame id="Frame_CharStatisticsBox" hidden="1">
+			<label pos="2 -3.5" size="52" class="FontB Color" textsize="1.5" textprefix="$t$s" textcolor="AAA" text="Statistics" translate="1" />
+			<framemodel id="FrameModel_Statistic">
+				<gauge pos="-.25 -1" size="56.5 7" class="Color" valign="center" drawbg="0" id="Gauge_CharStatisticValue" />
+				<label pos="2 -3.5" size="40" class="FontB" textsize="1.25" textprefix="$t$s" id="Label_CharStatisticName" />
+				<label pos="54 -3.5" size="12" class="FontB" halign="right" textsize="1.5" id="Label_CharStatisticValue" />
+			</framemodel>
+			<frameinstance modelid="FrameModel_Statistic" id="Frame_CurCharStatistic#0" hidden="1" />
+			<frameinstance modelid="FrameModel_Statistic" id="Frame_CurCharStatistic#1" hidden="1" />
+			<frameinstance modelid="FrameModel_Statistic" id="Frame_CurCharStatistic#2" hidden="1" />
+			<frameinstance modelid="FrameModel_Statistic" id="Frame_CurCharStatistic#3" hidden="1" />
+			<frameinstance modelid="FrameModel_Statistic" id="Frame_CurCharStatistic#4" hidden="1" />
+			<frameinstance modelid="FrameModel_Statistic" id="Frame_CurCharStatistic#5" hidden="1" />
+			<quad size="56 0" bgcolor="FFF" opacity=".125" id="Quad_CharStatisticsBox"/>
+		</frame>
+
+		<!-- Weapons box -->
+		<frame id="Frame_CharWeaponsBox" hidden="1">
+			<label pos="2 -3.5" size="52" class="FontB Color" textsize="1.5" textprefix="$t$s" textcolor="AAA" id="Label_CurCharWeapons" />
+			<framemodel id="FrameModel_Weapon">
+				<label pos="4 -2.5" class="FontB" halign="right" textsize="2" id="Label_CharWeaponAmmo" />
+				<quad size="7 7" halign="center" valign="center" id="Quad_CharWeaponIcon" />
+				<label pos="0 -5.5" size="11" halign="center" class="FontB" textsize=".875" textprefix="$t$s" id="Label_CharWeaponName" />
+			</framemodel>
+			<frame pos="27 -9.5">
+				<frameinstance modelid="FrameModel_Weapon" id="Frame_CurCharWeapon#0" hidden="1" />
+				<frameinstance modelid="FrameModel_Weapon" id="Frame_CurCharWeapon#1" hidden="1" />
+				<frameinstance modelid="FrameModel_Weapon" id="Frame_CurCharWeapon#2" hidden="1" />
+				<frameinstance modelid="FrameModel_Weapon" id="Frame_CurCharWeapon#3" hidden="1" />
+			</frame>
+			<quad size="56 18" bgcolor="FFF" opacity=".125" id="Quad_CharWeaponBox"/>
+		</frame>
+	</frame>
+
+	<!-- Separator -->
+	<quad pos="0 -100" size="178 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Window footer -->
+	<frame id="Frame_CharSelectionFooter" pos="0 -102">
+		<framemodel id="Frame_CharacterButton">
+			<quad pos="-.5 .5" size="25 15" style="Bgs1" substyle="BgColorContour" id="Quad_CharIsSelected" hidden="1" />
+			<label pos=".75 -2.25" class="FontB" textcolor="AAA" textsize="1.5" id="Label_CharSelectionHotkey" />
+			<quad pos="12 -7" size="12 12" halign="center" valign="center" style="Icons128x128_1" substyle="Padlock" id="Quad_CharButtonLock" hidden="1" />
+
+			<!-- Amount of players who have casted a vote -->
+			<frame id="Frame_CharNbPlayersUsing" pos="23.5 -11.75" hidden="1">
+				<label pos="-3.75" halign="right" class="FontB" textsize="1.5" id="Label_CharNbPlayersUsing" />
+				<label pos="-2 .125" class="FontM" halign="center" valign="center" textsize="1" text="👥" />
+				<quad size="0 3.5" class="FontM" halign="right" valign="center" bgcolor="000" opacity=".75" id="Quad_CharNbPlayersUsing" />
+			</frame>
+
+			<quad size="24 14" keepratio="Clip" id="Quad_CharButtonIcon2" />
+			<quad size="24 14" keepratio="Clip" class="Color" id="Quad_CharButtonIcon" />
+			<quad size="24 14" bgcolorfocus="FFF2" class="hover" id="Quad_CharButtonCard" ScriptEvents="1" />
+			<quad size="24 14" bgcolor="FFF" opacity=".125" id="Quad_CharButtonBg" />
+		</framemodel>
+
+		<!-- Character selection buttons -->
+		<frame id="Frame_CharButtonsOffset">
+			<frameinstance modelid="Frame_CharacterButton" id="Frame_CharacterButton#0" hidden="1" pos="2" />
+			<frameinstance modelid="Frame_CharacterButton" id="Frame_CharacterButton#1" hidden="1" pos="27" />
+			<frameinstance modelid="Frame_CharacterButton" id="Frame_CharacterButton#2" hidden="1" pos="52" />
+			<frameinstance modelid="Frame_CharacterButton" id="Frame_CharacterButton#3" hidden="1" pos="77" />
+			<frameinstance modelid="Frame_CharacterButton" id="Frame_CharacterButton#4" hidden="1" pos="102" />
+			<frameinstance modelid="Frame_CharacterButton" id="Frame_CharacterButton#5" hidden="1" pos="127" />
+			<frameinstance modelid="Frame_CharacterButton" id="Frame_CharacterButton#6" hidden="1" pos="152" />
+		</frame>
+
+		<!-- Footer page change buttons -->
+		<frame id="Frame_CharButtonsPageSwitch" hidden="1">
+			<frame pos="2">
+				<quad pos="5.75 -7" size="7 7" halign="center" valign="center" style="UIConstruction_Buttons" substyle="Left" id="Quad_PageButtonPrevIcon" />
+				<quad size="11.5 14" bgcolorfocus="FFF2" class="hover" id="Quad_PageButtonPrevCard" ScriptEvents="1" />
+				<quad size="11.5 14" bgcolor="FFF" opacity=".125" id="Quad_PageButtonPrevBg" />
+			</frame>
+			<frame pos="164.5">
+				<quad pos="5.75 -7" size="7 7" halign="center" valign="center" style="UIConstruction_Buttons" substyle="Right" id="Quad_PageButtonNextIcon" />
+				<quad size="11.5 14" bgcolorfocus="FFF2" class="hover" id="Quad_PageButtonNextCard" ScriptEvents="1" />
+				<quad size="11.5 14" bgcolor="FFF" opacity=".125" id="Quad_PageButtonNextBg" />
+			</frame>
+		</frame>
+	</frame>
+</frame>
+
+<!-- Background blur -->
+<frame id="Frame_BackgroundBlur" z-index="9" hidden="1">
+	<quad size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+	<quad size="320 180" halign="center" valign="center" bgcolor="000" opacity=".5" />
+	<quad size="320 180" halign="center" valign="center" image="file://Media/Images/Effects/Vignette.dds" />
+</frame>
+
+<script><!--
+/**
+ *	Character selection
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_ButtonColorEnabled		<1., 1., 1.>
+#Const C_ButtonColorDisabled	<.5, .5, .5>
+
+// ---------------------------------- //
+// Imported variables
+// ---------------------------------- //
+***ImportedVariables***
+***
+/// Statistics data
+declare G_LibCharacters_Stats = {{{Inject_Stats}}};
+declare G_LibCharacters_StatsNames = {{{Inject_StatsNames}}};
+declare G_LibCharacters_StatsTypes = {{{Inject_StatsTypes}}};
+declare G_LibCharacters_StatsMax = Real[Integer];
+
+/// Weapons data
+declare G_LibCharacters_Weapons = {{{Inject_Weapons}}};
+declare G_LibCharacters_WeaponsNames = {{{Inject_WeaponsNames}}};
+declare G_LibCharacters_WeaponsIcons = {{{Inject_WeaponsIcons}}};
+
+/// Characters data
+declare G_LibCharacters_CharSheetKey = {{{dump(G_LibCharacters_CharSheetKey)}}};
+declare G_LibCharacters_Characters = {{{Inject_Characters}}};
+declare G_LibCharacters_CharactersNames = {{{Inject_CharactersNames}}};
+declare G_LibCharacters_CharactersIcons1 = {{{Inject_CharactersIcons1}}};
+declare G_LibCharacters_CharactersIcons2 = {{{Inject_CharactersIcons2}}};
+declare G_LibCharacters_CharactersImages = {{{Inject_CharactersImages}}};
+declare G_LibCharacters_CharactersDesc = {{{Inject_CharactersDesc}}};
+declare G_LibCharacters_CharactersColor = {{{Inject_CharactersColor}}};
+declare G_LibCharacters_AbilityName = {{{Inject_AbilityName}}};
+declare G_LibCharacters_AbilityDesc = {{{Inject_AbilityDesc}}};
+declare G_LibCharacters_AbilityIcon = {{{Inject_AbilityIcon}}};
+declare G_LibCharacters_CharactersPros = {{{Inject_CharactersPros}}};
+declare G_LibCharacters_CharactersCons = {{{Inject_CharactersCons}}};
+declare G_LibCharacters_CharStats = {{{Inject_CharStats}}};
+declare G_LibCharacters_CharWeapons = {{{Inject_CharWeapons}}};
+***
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load manialink elements
+declare Frame_MapSelectionWindow	<=> (Page.GetFirstChild("Frame_MapSelectionWindow") as CMlFrame);
+declare Frame_BackgroundBlur		<=> (Page.GetFirstChild("Frame_BackgroundBlur") as CMlFrame);
+declare Quad_CharSelectionClose		<=> (Page.GetFirstChild("Quad_CharSelectionClose") as CMlQuad);
+
+declare Frame_CharButtonsOffset		<=> (Page.GetFirstChild("Frame_CharButtonsOffset") as CMlFrame);
+declare Frame_CharButtonsPageSwitch	<=> (Page.GetFirstChild("Frame_CharButtonsPageSwitch") as CMlFrame);
+declare Quad_PageButtonPrevIcon		<=> (Page.GetFirstChild("Quad_PageButtonPrevIcon") as CMlQuad);
+declare Quad_PageButtonPrevCard		<=> (Page.GetFirstChild("Quad_PageButtonPrevCard") as CMlQuad);
+declare Quad_PageButtonPrevBg		<=> (Page.GetFirstChild("Quad_PageButtonPrevBg") as CMlQuad);
+declare Quad_PageButtonNextIcon		<=> (Page.GetFirstChild("Quad_PageButtonNextIcon") as CMlQuad);
+declare Quad_PageButtonNextCard		<=> (Page.GetFirstChild("Quad_PageButtonNextCard") as CMlQuad);
+declare Quad_PageButtonNextBg		<=> (Page.GetFirstChild("Quad_PageButtonNextBg") as CMlQuad);
+
+declare Label_CurCharacterName		<=> (Page.GetFirstChild("Label_CurCharacterName") as CMlLabel);
+declare Quad_CurCharacterImage		<=> (Page.GetFirstChild("Quad_CurCharacterImage") as CMlQuad);
+declare Frame_CurCharacterDesc		<=> (Page.GetFirstChild("Frame_CurCharacterDesc") as CMlFrame);
+declare Label_CurCharacterDesc		<=> (Page.GetFirstChild("Label_CurCharacterDesc") as CMlLabel);
+declare Quad_CurCharacterDesc		<=> (Page.GetFirstChild("Quad_CurCharacterDesc") as CMlQuad);
+
+declare Frame_SpecialAbilityBox		<=> (Page.GetFirstChild("Frame_SpecialAbilityBox") as CMlFrame);
+declare Label_SpecialAbilityName	<=> (Page.GetFirstChild("Label_SpecialAbilityName") as CMlLabel);
+declare Label_SpecialAbilityDesc	<=> (Page.GetFirstChild("Label_SpecialAbilityDesc") as CMlLabel);
+declare Quad_SpecialAbilityIcon		<=> (Page.GetFirstChild("Quad_SpecialAbilityIcon") as CMlQuad);
+declare Quad_SpecialAbilityBox		<=> (Page.GetFirstChild("Quad_SpecialAbilityBox") as CMlQuad);
+
+declare Frame_ProsAndConsBox	<=> (Page.GetFirstChild("Frame_ProsAndConsBox") as CMlFrame);
+declare Quad_ProsAndConsBox		<=> (Page.GetFirstChild("Quad_ProsAndConsBox") as CMlQuad);
+declare Frame_CharStatisticsBox	<=> (Page.GetFirstChild("Frame_CharStatisticsBox") as CMlFrame);
+declare Quad_CharStatisticsBox	<=> (Page.GetFirstChild("Quad_CharStatisticsBox") as CMlQuad);
+declare Frame_CharWeaponsBox	<=> (Page.GetFirstChild("Frame_CharWeaponsBox") as CMlFrame);
+
+declare CMlFrame[] Frame_CharacterButtons;
+for (I, 0, 6) Frame_CharacterButtons.add((Page.GetFirstChild("Frame_CharacterButton#"^I) as CMlFrame));
+
+declare CMlFrame[] Frame_CurCharAttributes;
+for (I, 0, 5) Frame_CurCharAttributes.add((Page.GetFirstChild("Frame_CurCharAttribute#"^I) as CMlFrame));
+
+declare CMlFrame[] Frame_CurCharStatistics;
+for (I, 0, 5) Frame_CurCharStatistics.add((Page.GetFirstChild("Frame_CurCharStatistic#"^I) as CMlFrame));
+
+declare CMlFrame[] Frame_CurCharWeapons;
+for (I, 0, 3) Frame_CurCharWeapons.add((Page.GetFirstChild("Frame_CurCharWeapon#"^I) as CMlFrame));
+
+---ImportedVariables---
+
+// ---------------------------------- //
+// Persistent settings
+declare persistent Persistant_LibCharacters_SavedChar for LocalUser = Integer[Text];
+
+// ---------------------------------- //
+// Netcode
+declare netwrite Integer Net_LibCharacters_PlayerCharacter for UI = 0;
+declare netread Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
+declare netread Integer Net_LibCharacters_DisplayMode for Teams[0];
+declare netread Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
+declare netread Integer Net_LibCharacters_CharacterBaseArmor for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare WindowVisible = False;
+declare UserSettingWindowVisible = False;
+declare UpdateCharactersList = True;
+declare UpdateCharacterPreview = True;
+declare InterfaceColor = <1., 0., 0.>;
+declare CurSelectedCharacter = G_LibCharacters_Characters[0];
+declare CurHoveredCharacter = -1;
+declare CurClickedCharacter = -1;
+declare CharactersPageCurrent = 1;
+declare CharactersPageTotal = 1 + (G_LibCharacters_Characters.count - 1) / Frame_CharacterButtons.count;
+
+/// Update
+declare PrevWindowVisible = False;
+declare PrevSelectedCharacter = -1;
+declare PrevHoveredCharacter = -1;
+declare PrevPlayerCharChange = -1;
+declare PrevDisplayMode = -1;
+declare PrevGUIPlayerLinearHue = -1.;
+declare PrevCharacterBaseArmor = -1;
+declare PrevIsSpectator = False;
+declare PrevNbPlayers = -1;
+
+/// Reset UI
+ClientUI.ScoreTableVisibility = CUIConfig::EVisibility::None;
+ClientUI.AltMenuNoCustomScores = False;
+ClientUI.UISequence = CUIConfig::EUISequence::None;
+
+/// Translations
+Translate("Label_SpecialAbilityHeader", "Special ability");
+Translate("Label_CurCharProsAndCons", "Pros & Cons");
+Translate("Label_CurCharWeapons", "Weapons");
+
+/// Maximum stats
+foreach (CharId => CharStats in G_LibCharacters_CharStats) foreach (StatId => StatValue in CharStats) {
+	if (!G_LibCharacters_StatsMax.existskey(StatId) || StatValue > G_LibCharacters_StatsMax[StatId])
+		G_LibCharacters_StatsMax[StatId] = StatValue;
+}
+
+/// Restore saved character
+if (Persistant_LibCharacters_SavedChar.existskey(G_LibCharacters_CharSheetKey))
+	CurClickedCharacter = Persistant_LibCharacters_SavedChar[G_LibCharacters_CharSheetKey];
+
+Frame_CharButtonsPageSwitch.Visible = CharactersPageTotal > 1;
+if (Frame_CharButtonsPageSwitch.Visible)
+	Frame_CharButtonsOffset.RelativePosition_V3.X = 12.5;
+else
+	Frame_CharButtonsOffset.RelativePosition_V3.X = 0.;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// Previous characters page
+		if (Event.Control == Quad_PageButtonPrevCard) {
+			if (CharactersPageCurrent <= 1) continue;
+			CharactersPageCurrent -= 1;
+			UpdateCharactersList = True;
+		}
+		// ---------------------------------- //
+		// Next characters page
+		else if (Event.Control == Quad_PageButtonNextCard) {
+			if (CharactersPageCurrent >= CharactersPageTotal) continue;
+			CharactersPageCurrent += 1;
+			UpdateCharactersList = True;
+		}
+		// ---------------------------------- //
+		// Characters list button
+		else if (Event.ControlId == "Quad_CharButtonCard") {
+			declare Order = Frame_CharacterButtons.keyof(Event.Control.Parent);
+			if (CharactersPageCurrent > 1) Order += (CharactersPageCurrent - 1) * (Frame_CharacterButtons.count - 1);
+			CurClickedCharacter = Order;
+		}
+		// ---------------------------------- //
+		// Characters list button
+		else if (Event.ControlId == "Quad_CharSelectionClose") {
+			UserSettingWindowVisible = False;
+		}
+	}
+	// ---------------------------------- //
+	// On key press
+	else if (Event.Type == CMlEvent::Type::KeyPress) {
+		// ---------------------------------- //
+		// Toggle window visibility
+		if (Event.KeyName == "M") {
+			if (Net_LibCharacters_DisplayMode != {{{C_LibCharacters_DisplayModeManual}}}) continue;
+			UserSettingWindowVisible = !UserSettingWindowVisible;
+		}
+		// ---------------------------------- //
+		// Switch character
+		else {
+			if (!WindowVisible) continue;
+			declare Order = TL::ToInteger(Event.KeyName);
+			if (Order < 0) continue;
+			if (Order == 0) Order = 10;
+			CurClickedCharacter = Order - 1;
+		}
+	}
+	// ---------------------------------- //
+	// On mouse over
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		// ---------------------------------- //
+		// Display information about hovered character
+		if (Event.ControlId == "Quad_CharButtonCard") {
+			declare Order = Frame_CharacterButtons.keyof(Event.Control.Parent);
+			if (CharactersPageCurrent > 1) Order += (CharactersPageCurrent - 1) * (Frame_CharacterButtons.count - 1);
+			CurHoveredCharacter = Order;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Switch to the selected character
+if (CurClickedCharacter >= 0) {
+	declare Order = CurClickedCharacter;
+	CurClickedCharacter = -1;
+	CurHoveredCharacter = -1;
+
+	if (!G_LibCharacters_Characters.existskey(Order)) continue;
+	declare DesiredCharacter = G_LibCharacters_Characters[Order];
+	if (Net_LibCharacters_DisabledCharacters.exists(DesiredCharacter)) continue;
+
+	CurSelectedCharacter = DesiredCharacter;
+	Net_LibCharacters_PlayerCharacter = CurSelectedCharacter;
+	UserSettingWindowVisible = False;
+	Persistant_LibCharacters_SavedChar[G_LibCharacters_CharSheetKey] = CurSelectedCharacter;
+	UpdateCharactersList = True;
+}
+
+// ---------------------------------- //
+// Update window visiblity
+WindowVisible = !IsInGameMenuDisplayed &&
+	(Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeVisible}}} ||
+	(Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeManual}}} && UserSettingWindowVisible));
+
+if (PrevWindowVisible != WindowVisible) {
+	PrevWindowVisible = WindowVisible;
+
+	Frame_MapSelectionWindow.Visible = WindowVisible;
+	Frame_BackgroundBlur.Visible = WindowVisible;
+
+	// Reset hovered character
+	if (!WindowVisible) {
+		CurHoveredCharacter = -1;
+		UpdateCharactersList = True;
+		UpdateCharacterPreview = True;
+	}
+
+	// Hide scores table while selecting character
+	if (WindowVisible) ClientUI.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
+	else ClientUI.ScoreTableVisibility = CUIConfig::EVisibility::None;
+	ClientUI.AltMenuNoCustomScores = WindowVisible;
+
+	// Change sequence to free the cursor
+	if (WindowVisible) ClientUI.UISequence = CUIConfig::EUISequence::UIInteraction;
+	else ClientUI.UISequence = CUIConfig::EUISequence::None;
+
+	// Play sound
+	declare Sound = CAudioManager::ELibSound::HideDialog;
+	if (WindowVisible) Sound = CAudioManager::ELibSound::ShowDialog;
+	Audio.PlaySoundEvent(Sound, 0, 0.);
+
+	// ---------------------------------- //
+	// Switch to selected char page
+	if (!IsSpectator && WindowVisible && CharactersPageTotal > 1) {
+		declare DesiredPage = 1 + (G_LibCharacters_Characters.keyof(CurSelectedCharacter)) / (Frame_CharacterButtons.count - 1);
+		if (CharactersPageCurrent != DesiredPage) {
+			CharactersPageCurrent = DesiredPage;
+			UpdateCharactersList = True;
+		}
+	}
+}
+
+if (!WindowVisible) continue;
+
+// ---------------------------------- //
+// Get interface color
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerLinearHue != GUIPlayer.GetLinearHue) {
+		PrevGUIPlayerLinearHue = GUIPlayer.GetLinearHue;
+		InterfaceColor = HsvToRgb(<PrevGUIPlayerLinearHue, 1., 1.>);
+		UpdateCharacterPreview = True;
+	}
+} else if (InputPlayer != Null) {
+	if (PrevGUIPlayerLinearHue != InputPlayer.GetLinearHue) {
+		PrevGUIPlayerLinearHue = InputPlayer.GetLinearHue;
+		InterfaceColor = HsvToRgb(<PrevGUIPlayerLinearHue, 1., 1.>);
+		UpdateCharacterPreview = True;
+	}
+}
+
+// ---------------------------------- //
+// On display mode change
+if (PrevDisplayMode != Net_LibCharacters_DisplayMode) {
+	PrevDisplayMode = Net_LibCharacters_DisplayMode;
+	Quad_CharSelectionClose.Visible = Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeManual}}};
+}
+
+// ---------------------------------- //
+// Trigger list update on any player character change
+if (PrevPlayerCharChange != Net_LibCharacters_LastPlayerCharChange) {
+	PrevPlayerCharChange = Net_LibCharacters_LastPlayerCharChange;
+	UpdateCharactersList = True;
+}
+
+// ---------------------------------- //
+// Update list on spectator mode change
+if (PrevIsSpectator != IsSpectator) {
+	PrevIsSpectator = IsSpectator;
+	UpdateCharactersList = True;
+}
+
+// ---------------------------------- //
+// Update list on players amount change
+if (PrevNbPlayers != Players.count) {
+	PrevNbPlayers = Players.count;
+	UpdateCharactersList = True;
+}
+
+// ---------------------------------- //
+// Update the characters list
+if (UpdateCharactersList) {
+	UpdateCharactersList = False;
+
+	// ---------------------------------- //
+	// Update page switch
+	if (Frame_CharButtonsPageSwitch.Visible) {
+		Quad_PageButtonPrevCard.Visible = CharactersPageCurrent > 1;
+		Quad_PageButtonNextCard.Visible = CharactersPageCurrent < CharactersPageTotal;
+
+		declare ColorTextPrev = C_ButtonColorDisabled;
+		if (Quad_PageButtonPrevCard.Visible) ColorTextPrev = C_ButtonColorEnabled;
+		Quad_PageButtonPrevIcon.Colorize = ColorTextPrev;
+
+		declare ColorCardPrev = C_ButtonColorDisabled;
+		if (Quad_PageButtonPrevCard.Visible) ColorCardPrev = C_ButtonColorEnabled;
+		Quad_PageButtonPrevBg.BgColor = ColorCardPrev;
+
+		declare ColorTextNext = C_ButtonColorDisabled;
+		if (Quad_PageButtonNextCard.Visible) ColorTextNext = C_ButtonColorEnabled;
+		Quad_PageButtonNextIcon.Colorize = ColorTextNext;
+
+		declare ColorCardNext = C_ButtonColorDisabled;
+		if (Quad_PageButtonNextCard.Visible) ColorCardNext = C_ButtonColorEnabled;
+		Quad_PageButtonNextBg.BgColor = ColorCardNext;
+	}
+
+	// ---------------------------------- //
+	// Update all buttons
+	foreach (I => Frame in Frame_CharacterButtons) {
+		declare Key = I + (CharactersPageCurrent - 1) * (Frame_CharacterButtons.count - 1);
+		Frame.Visible = Key < G_LibCharacters_Characters.count && (I != Frame_CharacterButtons.count - 1 || G_LibCharacters_Characters.count == Frame_CharacterButtons.count);
+		if (!Frame.Visible) continue;
+		declare CharacterId = G_LibCharacters_Characters[Key];
+
+		// ---------------------------------- //
+		// Frame elements
+		declare Label_CharSelectionHotkey <=> (Frame.GetFirstChild("Label_CharSelectionHotkey") as CMlLabel);
+		declare Frame_CharNbPlayersUsing <=> (Frame.GetFirstChild("Frame_CharNbPlayersUsing") as CMlFrame);
+		declare Label_CharNbPlayersUsing <=> (Frame.GetFirstChild("Label_CharNbPlayersUsing") as CMlLabel);
+		declare Quad_CharNbPlayersUsing <=> (Frame.GetFirstChild("Quad_CharNbPlayersUsing") as CMlQuad);
+		declare Quad_CharIsSelected <=> (Frame.GetFirstChild("Quad_CharIsSelected") as CMlQuad);
+		declare Quad_CharButtonIcon <=> (Frame.GetFirstChild("Quad_CharButtonIcon") as CMlQuad);
+		declare Quad_CharButtonIcon2 <=> (Frame.GetFirstChild("Quad_CharButtonIcon2") as CMlQuad);
+		declare Quad_CharButtonCard <=> (Frame.GetFirstChild("Quad_CharButtonCard") as CMlQuad);
+		declare Quad_CharButtonLock <=> (Frame.GetFirstChild("Quad_CharButtonLock") as CMlQuad);
+		declare Quad_CharButtonBg <=> (Frame.GetFirstChild("Quad_CharButtonBg") as CMlQuad);
+
+		// Configure the frame
+		Label_CharSelectionHotkey.Value = TL::ToText(Key + 1);
+		Quad_CharIsSelected.Visible = !IsSpectator && CurSelectedCharacter == CharacterId;
+		Quad_CharButtonLock.Visible = Net_LibCharacters_DisabledCharacters.exists(CharacterId);
+
+		// ---------------------------------- //
+		// Set the background color
+		declare BgColor = C_ButtonColorEnabled;
+		Quad_CharButtonCard.Visible = !Quad_CharButtonLock.Visible;
+		if (!Quad_CharButtonCard.Visible) BgColor = C_ButtonColorDisabled;
+		Quad_CharButtonBg.BgColor = BgColor;
+
+		declare Opacity = 1.;
+		if (!Quad_CharButtonCard.Visible) Opacity = .25;
+		Quad_CharButtonIcon.Opacity = Opacity;
+		Quad_CharButtonIcon2.Opacity = Opacity;
+
+		// ---------------------------------- //
+		// Amount of players using the character
+		declare NbPlayersUsing = 0;
+		foreach (Player in Players) {
+			if (Player.IsBot || Player.RequestsSpectate) continue;
+			if (!IsSpectator && InputPlayer.CurrentClan > 0 && Player.CurrentClan != InputPlayer.CurrentClan) continue;
+			declare netread Integer Net_LibCharacters_ServerCharacter for Player;
+			if (Net_LibCharacters_ServerCharacter != CharacterId) continue;
+			NbPlayersUsing += 1;
+		}
+		Frame_CharNbPlayersUsing.Visible = NbPlayersUsing > 0;
+		if (NbPlayersUsing > 0) {
+			Label_CharNbPlayersUsing.Value = TL::ToText(NbPlayersUsing);
+			Quad_CharNbPlayersUsing.Size.X = -Label_CharNbPlayersUsing.RelativePosition_V3.X + ComputeWidth(Label_CharNbPlayersUsing) + .75;
+		}
+
+		// ---------------------------------- //
+		// Set the icon
+		declare IconUrl1 = "";
+		if (G_LibCharacters_CharactersIcons1.existskey(CharacterId)) IconUrl1 = G_LibCharacters_CharactersIcons1[CharacterId];
+		Quad_CharButtonIcon.ImageUrl = IconUrl1;
+
+		declare IconUrl2 = "";
+		if (G_LibCharacters_CharactersIcons2.existskey(CharacterId)) IconUrl2 = G_LibCharacters_CharactersIcons2[CharacterId];
+		Quad_CharButtonIcon2.ImageUrl = IconUrl2;
+	}
+}
+
+// ---------------------------------- //
+// Update preview on selected character change
+if (PrevSelectedCharacter != CurSelectedCharacter) {
+	PrevSelectedCharacter = CurSelectedCharacter;
+	UpdateCharacterPreview = True;
+}
+
+// ---------------------------------- //
+// Update preview on hovered character change
+if (PrevHoveredCharacter != CurHoveredCharacter) {
+	PrevHoveredCharacter = CurHoveredCharacter;
+	UpdateCharacterPreview = True;
+}
+
+// ---------------------------------- //
+// Update preview on Armor base change
+if (PrevCharacterBaseArmor != Net_LibCharacters_CharacterBaseArmor) {
+	PrevCharacterBaseArmor = Net_LibCharacters_CharacterBaseArmor;
+	UpdateCharacterPreview = True;
+
+	// Maximum Armor
+	foreach (CharId => CharStats in G_LibCharacters_CharStats) foreach (StatId => StatValue in CharStats) {
+		if (StatId != 0) continue;
+		if (!G_LibCharacters_StatsMax.existskey(StatId) || StatValue > G_LibCharacters_StatsMax[StatId])
+			G_LibCharacters_StatsMax[StatId] = StatValue;
+	}
+}
+
+// ---------------------------------- //
+// Update current character preview
+if (UpdateCharacterPreview) {
+	UpdateCharacterPreview = False;
+
+	declare CharId = CurSelectedCharacter;
+	if (CurHoveredCharacter >= 0) CharId = CurHoveredCharacter;
+
+	declare ColHeightMiddle = 0.;
+	declare ColHeightRight = 0.;
+
+	// Character name
+	declare CurCharacterName = "Unknown character";
+	if (G_LibCharacters_CharactersNames.existskey(CharId)) CurCharacterName = G_LibCharacters_CharactersNames[CharId];
+	Label_CurCharacterName.Value = Translate(CurCharacterName);
+
+	// Character image
+	declare CurCharacterImage = "";
+	if (G_LibCharacters_CharactersImages.existskey(CharId)) CurCharacterImage = G_LibCharacters_CharactersImages[CharId];
+	Quad_CurCharacterImage.ImageUrl = CurCharacterImage;
+
+	// ---------------------------------- //
+	// Character description
+	declare CurCharacterDesc = "";
+	if (G_LibCharacters_CharactersDesc.existskey(CharId)) CurCharacterDesc = G_LibCharacters_CharactersDesc[CharId];
+	Frame_CurCharacterDesc.Visible = CurCharacterDesc != "";
+
+	if (Frame_CurCharacterDesc.Visible) {
+		Label_CurCharacterDesc.Value = CurCharacterDesc;
+		Quad_CurCharacterDesc.Size.Y = -Label_CurCharacterDesc.RelativePosition_V3.Y + Label_CurCharacterDesc.ComputeHeight(Label_CurCharacterDesc.Value) + 1.5;
+		ColHeightMiddle += Quad_CurCharacterDesc.Size.Y + 1.;
+	}
+
+	// ---------------------------------- //
+	// Character special ability
+	Frame_SpecialAbilityBox.Visible = G_LibCharacters_AbilityName.existskey(CharId);
+	if (Frame_SpecialAbilityBox.Visible) {
+		Frame_SpecialAbilityBox.RelativePosition_V3.Y = -ColHeightMiddle;
+		Label_SpecialAbilityName.Value = G_LibCharacters_AbilityName[CharId];
+
+		// Ability icon
+		declare AbilityIcon = "";
+		if (G_LibCharacters_AbilityIcon.existskey(CharId)) AbilityIcon = G_LibCharacters_AbilityIcon[CharId];
+		Quad_SpecialAbilityIcon.ImageUrl = AbilityIcon;
+
+		// Ability description
+		declare AbilityDesc = "";
+		if (G_LibCharacters_AbilityDesc.existskey(CharId)) AbilityDesc = G_LibCharacters_AbilityDesc[CharId];
+		Label_SpecialAbilityDesc.Value = AbilityDesc;
+
+		Quad_SpecialAbilityBox.Size.Y = -Label_SpecialAbilityDesc.RelativePosition_V3.Y + Label_SpecialAbilityDesc.ComputeHeight(Label_SpecialAbilityDesc.Value) + 1.5;
+		ColHeightMiddle += Quad_SpecialAbilityBox.Size.Y + 1.;
+	}
+
+	// ---------------------------------- //
+	// Character pros and cons
+	declare Text[] CurCharPros;
+	declare Text[] CurCharCons;
+	declare Text[] CurCharProsAndCons;
+	if (G_LibCharacters_CharactersPros.existskey(CharId)) CurCharPros = G_LibCharacters_CharactersPros[CharId];
+	if (G_LibCharacters_CharactersCons.existskey(CharId)) CurCharCons = G_LibCharacters_CharactersCons[CharId];
+	foreach (Pro in CurCharPros) CurCharProsAndCons.add(Pro);
+	foreach (Con in CurCharCons) CurCharProsAndCons.add(Con);
+	Frame_ProsAndConsBox.Visible = CurCharProsAndCons.count > 0;
+
+	if (Frame_ProsAndConsBox.Visible) {
+		Frame_ProsAndConsBox.RelativePosition_V3.Y = -ColHeightMiddle;
+		declare NextAttributePos = 6.5;
+
+		// ---------------------------------- //
+		// Configure pros and cons frames
+		foreach (I => Frame in Frame_CurCharAttributes) {
+			Frame.Visible = CurCharProsAndCons.existskey(I);
+			if (!Frame.Visible) continue;
+
+			declare AttributeText = CurCharProsAndCons[I];
+			Frame.RelativePosition_V3.Y = -NextAttributePos;
+
+			declare Quad_AttributePro <=> (Frame.GetFirstChild("Quad_AttributePro") as CMlQuad);
+			declare Quad_AttributeCon <=> (Frame.GetFirstChild("Quad_AttributeCon") as CMlQuad);
+			declare Label_CurCharacterDesc <=> (Frame.GetFirstChild("Label_CurCharacterDesc") as CMlLabel);
+
+			Label_CurCharacterDesc.Value = Translate(AttributeText);
+			Quad_AttributePro.Visible = CurCharPros.exists(AttributeText);
+			Quad_AttributeCon.Visible = CurCharCons.exists(AttributeText);
+
+			NextAttributePos += Label_CurCharacterDesc.ComputeHeight(Label_CurCharacterDesc.Value) + 1.;
+		}
+
+		Quad_ProsAndConsBox.Size.Y = NextAttributePos + .5;
+		ColHeightMiddle += Quad_ProsAndConsBox.Size.Y + 1.;
+	}
+
+	// ---------------------------------- //
+	// Character statistics
+	declare Real[Integer] CurCharacterStats;
+	if (G_LibCharacters_CharStats.existskey(CharId)) CurCharacterStats = G_LibCharacters_CharStats[CharId];
+	Frame_CharStatisticsBox.Visible = CurCharacterStats.count > 0;
+
+	if (Frame_CharStatisticsBox.Visible) {
+		declare NextStatisticPos = 6.;
+
+		declare Integer[] StatsIds;
+		foreach (StatId => StatValue in CurCharacterStats) StatsIds.add(StatId);
+
+		// ---------------------------------- //
+		// Configure statictics frames
+		foreach (I => Frame in Frame_CurCharStatistics) {
+			Frame.Visible = StatsIds.existskey(I);
+			if (!Frame.Visible) continue;
+			declare StatId = StatsIds[I];
+
+			Frame.RelativePosition_V3.Y = -NextStatisticPos;
+			NextStatisticPos += 6.;
+
+			declare Label_CharStatisticName <=> (Frame.GetFirstChild("Label_CharStatisticName") as CMlLabel);
+			declare Label_CharStatisticValue <=> (Frame.GetFirstChild("Label_CharStatisticValue") as CMlLabel);
+			declare Gauge_CharStatisticValue <=> (Frame.GetFirstChild("Gauge_CharStatisticValue") as CMlGauge);
+
+			// ---------------------------------- //
+			// Statictic name
+			declare CurStatName = "Unknown attibute";
+			if (G_LibCharacters_StatsNames.existskey(StatId)) CurStatName = G_LibCharacters_StatsNames[StatId];
+			Label_CharStatisticName.Value = CurStatName;
+
+			// ---------------------------------- //
+			// Statictic value gauge
+			declare Ratio = CurCharacterStats[StatId];
+			declare RatioMax = G_LibCharacters_StatsMax[StatId];
+
+			// Special Armor treatment
+			if (StatId == 0) {
+				Ratio = ML::Clamp(Ratio + Net_LibCharacters_CharacterBaseArmor, 1., 10.);
+				RatioMax = ML::Clamp(RatioMax + Net_LibCharacters_CharacterBaseArmor, 1., 10.);
+			}
+
+			// Set gauge ratio
+			declare GaugeRatio = 1.;
+			if (RatioMax != 0) GaugeRatio = Ratio / RatioMax;
+			SetGaugeRatio(Gauge_CharStatisticValue, GaugeRatio);
+
+			// ---------------------------------- //
+			// Statictic value text
+			declare CurStatType = "count";
+			if (G_LibCharacters_StatsTypes.existskey(StatId)) CurStatType = G_LibCharacters_StatsTypes[StatId];
+
+			switch (CurStatType) {
+				case "percentage"	: Label_CharStatisticValue.Value = TL::FormatReal(Ratio * 100., 3, True, True)^"%";
+				default /* count */	: Label_CharStatisticValue.Value = TL::FormatReal(Ratio, 3, True, True);
+			}
+		}
+
+		Quad_CharStatisticsBox.Size.Y = NextStatisticPos + .5;
+		ColHeightRight += Quad_CharStatisticsBox.Size.Y + 1.;
+	}
+
+	// ---------------------------------- //
+	// Character weapons
+	declare Integer[Integer] CurCharacterWeapons;
+	if (G_LibCharacters_CharWeapons.existskey(CharId)) CurCharacterWeapons = G_LibCharacters_CharWeapons[CharId];
+	Frame_CharWeaponsBox.Visible = CurCharacterWeapons.count > 0;
+
+	if (Frame_CharWeaponsBox.Visible) {
+		Frame_CharWeaponsBox.RelativePosition_V3.Y = -ColHeightRight;
+
+		declare Integer[] WeaponsIds;
+		foreach (WeaponId => Ammo in CurCharacterWeapons) WeaponsIds.add(WeaponId);
+		declare InitialPositionX = ((WeaponsIds.count - 1) * 12.) / -2;
+
+		// ---------------------------------- //
+		// Configure weapons frames
+		foreach (I => Frame in Frame_CurCharWeapons) {
+			Frame.Visible = WeaponsIds.existskey(I);
+			if (!Frame.Visible) continue;
+			declare WeaponId = WeaponsIds[I];
+			Frame.RelativePosition_V3.X = InitialPositionX + I * 12.;
+
+			declare Quad_CharWeaponIcon <=> (Frame.GetFirstChild("Quad_CharWeaponIcon") as CMlQuad);
+			declare Label_CharWeaponName <=> (Frame.GetFirstChild("Label_CharWeaponName") as CMlLabel);
+			declare Label_CharWeaponAmmo <=> (Frame.GetFirstChild("Label_CharWeaponAmmo") as CMlLabel);
+
+			// ---------------------------------- //
+			// Set weapon icon
+			declare CurWeaponIcon = "";
+			if (G_LibCharacters_WeaponsIcons.existskey(WeaponId)) CurWeaponIcon = G_LibCharacters_WeaponsIcons[WeaponId];
+			Quad_CharWeaponIcon.ImageUrl = CurWeaponIcon;
+
+			// ---------------------------------- //
+			// Set weapon name
+			declare CurWeaponName = "";
+			if (G_LibCharacters_WeaponsNames.existskey(WeaponId)) CurWeaponName = G_LibCharacters_WeaponsNames[WeaponId];
+			Label_CharWeaponName.Value = Translate(CurWeaponName);
+
+			// ---------------------------------- //
+			// Set weapon ammo
+			declare CurWeaponAmmo = 0;
+			if (CurCharacterWeapons.existskey(WeaponId)) CurWeaponAmmo = CurCharacterWeapons[WeaponId];
+			Label_CharWeaponAmmo.Value = TL::ToText(CurWeaponAmmo);
+
+			declare Color = C_ButtonColorDisabled;
+			if (CurWeaponAmmo > 0) Color = C_ButtonColorEnabled;
+			Quad_CharWeaponIcon.ModulateColor = Color;
+			Label_CharWeaponAmmo.TextColor = Color;
+			Label_CharWeaponName.TextColor = Color;
+		}
+
+		ColHeightRight += 18.;
+	}
+
+	// ---------------------------------- //
+	// Update the character color
+	declare CurCharacterColor = InterfaceColor;
+	if (G_LibCharacters_CharactersColor.existskey(CharId)) CurCharacterColor = G_LibCharacters_CharactersColor[CharId];
+	SetInterfaceColor(CurCharacterColor);
+}
+***
+
+{{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness", "HsvToRgb", "ComputeWidth"])}}}
+{{{Translations::InjectInManialink(RequiredTranslations)}}}
+
+Void SetInterfaceColor(Vec3 _Color) {
+	Page.GetClassChildren("Color", Page.MainFrame, True);
+	foreach (Control in Page.GetClassChildren_Result) {
+		switchtype (Control) {
+			case CMlQuad : {
+				declare Quad = (Control as CMlQuad);
+				Quad.Colorize = _Color;
+			}
+			case CMlGauge : {
+				declare Gauge = (Control as CMlGauge);
+				Gauge.Color = _Color;
+			}
+			case CMlLabel : {
+				declare Label = (Control as CMlLabel);
+				Label.TextColor = Brightness(_Color, 2.5);
+			}
+		}
+	}
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/// Completely wipe characters data.
+Void Private_ResetCharactersData() {
+	// Reset stats data
+	G_LibCharacters_Stats.clear();
+	G_LibCharacters_StatsNames.clear();
+	G_LibCharacters_StatsTypes.clear();
+
+	// Reset weapons data
+	G_LibCharacters_Weapons.clear();
+	G_LibCharacters_WeaponsNames.clear();
+	G_LibCharacters_WeaponsIcons.clear();
+
+	// Reset characters data
+	G_LibCharacters_CharSheetKey = "";
+	G_LibCharacters_Characters.clear();
+	G_LibCharacters_CharactersNames.clear();
+	G_LibCharacters_CharactersIcons1.clear();
+	G_LibCharacters_CharactersIcons2.clear();
+	G_LibCharacters_CharactersImages.clear();
+	G_LibCharacters_CharactersDesc.clear();
+	G_LibCharacters_CharactersColor.clear();
+	G_LibCharacters_AbilityName.clear();
+	G_LibCharacters_AbilityDesc.clear();
+	G_LibCharacters_AbilityIcon.clear();
+	G_LibCharacters_CharactersPros.clear();
+	G_LibCharacters_CharactersCons.clear();
+	G_LibCharacters_CharStats.clear();
+	G_LibCharacters_CharWeapons.clear();
+}
+
+// ---------------------------------- //
+/** Load characters data from an XML document.
+ *
+ *	@param	_Document	The document to load.
+ */
+Void Private_LoadFromXMLDocument(CXmlDocument _Document) {
+	if (_Document == Null || _Document.Root == Null || _Document.Root.Name != "charinfo") return;
+
+	// Reset characters data
+	Private_ResetCharactersData();
+
+	// Get characters sheet key
+	G_LibCharacters_CharSheetKey = _Document.Root.GetAttributeText("key", "");
+
+	// ---------------------------------- //
+	// Fetch the document
+	foreach (Node in _Document.Root.Children) switch (Node.Name) {
+		// ---------------------------------- //
+		// Load available statistics
+		case "stats" : foreach (Stat in Node.Children) {
+			if (Stat.Name != "stat") continue;
+			declare StatId = Stat.GetAttributeInteger("id", -1);
+
+			if (StatId < 0 || G_LibCharacters_Stats.exists(StatId)) continue;
+			G_LibCharacters_Stats.add(StatId);
+
+			G_LibCharacters_StatsNames[StatId] = Stat.GetAttributeText("name", "");
+			G_LibCharacters_StatsTypes[StatId] = Stat.GetAttributeText("type", "");
+		}
+		// ---------------------------------- //
+		// Load available weapons
+		case "weapons" : foreach (Weapon in Node.Children) {
+			if (Weapon.Name != "weapon") continue;
+			declare WeaponId = Weapon.GetAttributeInteger("id", -1);
+
+			if (WeaponId < 0 || G_LibCharacters_Weapons.exists(WeaponId)) continue;
+			G_LibCharacters_Weapons.add(WeaponId);
+
+			G_LibCharacters_WeaponsNames[WeaponId] = Weapon.GetAttributeText("name", "");
+			G_LibCharacters_WeaponsIcons[WeaponId] = Weapon.GetAttributeText("icon", "");
+		}
+		// ---------------------------------- //
+		// Load available characters
+		case "characters" : foreach (Character in Node.Children) {
+			if (Character.Name != "character") continue;
+			declare CharacterId = Character.GetAttributeInteger("id", -1);
+
+			if (CharacterId < 0 || G_LibCharacters_Characters.exists(CharacterId)) continue;
+			G_LibCharacters_Characters.add(CharacterId);
+
+			declare Text[] CharacterPros;
+			declare Text[] CharacterCons;
+
+			foreach (Attribute in Character.Children) switch (Attribute.Name) {
+				case "name"			: G_LibCharacters_CharactersNames	[CharacterId] = Attribute.TextContents;
+				case "icon"			: G_LibCharacters_CharactersIcons1	[CharacterId] = Attribute.TextContents;
+				case "icon2"		: G_LibCharacters_CharactersIcons2	[CharacterId] = Attribute.TextContents;
+				case "image"		: G_LibCharacters_CharactersImages	[CharacterId] = Attribute.TextContents;
+				case "description"	: G_LibCharacters_CharactersDesc	[CharacterId] = Attribute.TextContents;
+				case "color"		: G_LibCharacters_CharactersColor	[CharacterId] = TL::ToColor(Attribute.TextContents);
+
+				// ---------------------------------- //
+				// Character's special ability
+				case "ability" : foreach (AbilityAttrib in Attribute.Children) switch (AbilityAttrib.Name) {
+					case "name"			: G_LibCharacters_AbilityName[CharacterId] = AbilityAttrib.TextContents;
+					case "icon"			: G_LibCharacters_AbilityIcon[CharacterId] = AbilityAttrib.TextContents;
+					case "description"	: G_LibCharacters_AbilityDesc[CharacterId] = AbilityAttrib.TextContents;
+				}
+				// ---------------------------------- //
+				// Gather character stats
+				case "stats" : {
+					declare Real[Integer] CharacterStats;
+					foreach (Stat in Attribute.Children) {
+						if (Stat.Name != "stat") continue;
+
+						declare StatId = Stat.GetAttributeInteger("id", -1);
+						declare StatValue = Stat.GetAttributeReal("value", 0.);
+
+						if (StatId < 0) continue;
+						CharacterStats[StatId] = StatValue;
+					}
+					G_LibCharacters_CharStats[CharacterId] = CharacterStats;
+				}
+				// ---------------------------------- //
+				// Gather character weapons
+				case "weapons" : {
+					declare Integer[Integer] CharacterWeapons;
+					foreach (Weapon in Attribute.Children) {
+						if (Weapon.Name != "weapon") continue;
+
+						declare WeaponId = Weapon.GetAttributeInteger("id", -1);
+						declare WeaponAmmo = Weapon.GetAttributeInteger("ammo", -1);
+
+						if (WeaponId < 0 || WeaponAmmo < 0) continue;
+						CharacterWeapons[WeaponId] = WeaponAmmo;
+					}
+					G_LibCharacters_CharWeapons[CharacterId] = CharacterWeapons;
+				}
+				// ---------------------------------- //
+				// Character pros and cons
+				case "pros" : foreach (Pro in Attribute.Children) if (Pro.Name == "pro") CharacterPros.add(Pro.TextContents);
+				case "cons" : foreach (Con in Attribute.Children) if (Con.Name == "con") CharacterCons.add(Con.TextContents);
+			}
+
+			G_LibCharacters_CharactersPros[CharacterId] = CharacterPros;
+			G_LibCharacters_CharactersCons[CharacterId] = CharacterCons;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Import a file containing characters data.
+ *
+ *	@param	_CharsInfoUrl	URL of the file to load.
+ */
+Void ImportFile(Text _CharsInfoUrl) {
+	if (_CharsInfoUrl == "" || !Http.IsValidUrl(_CharsInfoUrl)) return;
+
+	// Destroy ongoing request
+	if (G_LibCharacters_DocumentRequest != Null) {
+		Http.Destroy(G_LibCharacters_DocumentRequest);
+		G_LibCharacters_DocumentRequest = Null;
+	}
+
+	// Create a new request
+	G_LibCharacters_DocumentRequest <=> Http.CreateGet(_CharsInfoUrl, False);
+	G_LibCharacters_RequestStartTime = Now;
+}
+
+// ---------------------------------- //
+/** Check if the characters data file is being imported.
+ *
+ *	@return		True, if characters are still being imported.
+ */
+Boolean IsBeingImported() {
+	if (G_LibCharacters_RequestStartTime <= 0 || G_LibCharacters_DocumentRequest == Null) return False;
+
+	// ---------------------------------- //
+	// Load characters from the result
+	if (G_LibCharacters_DocumentRequest.IsCompleted) {
+		declare Document <=> Xml.Create(G_LibCharacters_DocumentRequest.Result);
+		Private_LoadFromXMLDocument(Document);
+		Xml.Destroy(Document);
+
+		Http.Destroy(G_LibCharacters_DocumentRequest);
+		G_LibCharacters_DocumentRequest = Null;
+		G_LibCharacters_RequestStartTime = -1;
+		return False;
+	}
+
+	// Wait for the request to complete
+	if (Now < G_LibCharacters_RequestStartTime + C_LibCharacters_RequestTimeOut) return True;
+
+	// Destoy timed out request
+	Http.Destroy(G_LibCharacters_DocumentRequest);
+	G_LibCharacters_DocumentRequest = Null;
+	G_LibCharacters_RequestStartTime = -1;
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if a character exists.
+ *
+ *	@param	_CharId		Id of the character to check if exists.
+ *
+ *	@return		True, if the given character exists.
+ */
+Boolean CharExists(Integer _CharId) {
+	return G_LibCharacters_Characters.exists(_CharId);
+}
+
+// ---------------------------------- //
+/** Set if the character is available to pick.
+ *
+ *	@param	_CharId		Id of the character to update.
+ *	@param	_Available	If True, the character will be avilable to pick.
+ */
+Void SetCharAvailable(Integer _CharId, Boolean _Available) {
+	if (!CharExists(_CharId)) return;
+
+	declare netwrite Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
+	declare netwrite Integer Net_LibCharacters_DisabledCharsUpdate for Teams[0];
+	Net_LibCharacters_DisabledCharsUpdate = Now;
+
+	if (_Available) {
+		if (Net_LibCharacters_DisabledCharacters.exists(_CharId)) {
+			Net_LibCharacters_DisabledCharacters.remove(_CharId);
+		}
+	}
+	else if (!Net_LibCharacters_DisabledCharacters.exists(_CharId)) {
+		Net_LibCharacters_DisabledCharacters.add(_CharId);
+	}
+}
+
+// ---------------------------------- //
+/** Check if a character is available to be picked.
+ *
+ *	@param	_CharId		Id of the character to check if is available.
+ *
+ *	@return		True, if the given character is available.
+ */
+Boolean IsCharAvailable(Integer _CharId) {
+	if (!CharExists(_CharId)) return False;
+
+	declare netwrite Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
+	return !Net_LibCharacters_DisabledCharacters.exists(_CharId);
+}
+
+// ---------------------------------- //
+/** Get the character of a player
+ *
+ *	@param	_Player		The player to get their character.
+ *
+ *	@return		Id of the player's selected character.
+ */
+Integer GetPlayerChar(CPlayer _Player) {
+	if (_Player == Null) return 0;
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return 0;
+
+	declare netread Integer Net_LibCharacters_PlayerCharacter for UI;
+	declare PlayerCharacter = ML::Max(Net_LibCharacters_PlayerCharacter, 0);
+
+	if (!IsCharAvailable(PlayerCharacter)) return 0;
+	return PlayerCharacter;
+}
+
+// ---------------------------------- //
+/** Get the name of a character.
+ *
+ *	@param	_CharId		Id of the character to get name.
+ *
+ *	@return		Name of the character.
+ */
+Text GetCharName(Integer _CharId) {
+	if (!G_LibCharacters_CharactersNames.existskey(_CharId)) return "";
+	return G_LibCharacters_CharactersNames[_CharId];
+}
+
+// ---------------------------------- //
+/** Get the name of a character.
+ *
+ *	@param	_Player		The player to get character name.
+ *
+ *	@return		Name of the character.
+ */
+Text GetCharName(CPlayer _Player) {
+	if (_Player == Null) return "";
+	return GetCharName(GetPlayerChar(_Player));
+}
+
+// ---------------------------------- //
+/** Get the icon of a character.
+ *
+ *	@param	_CharId		Id of the character to get icon.
+ *
+ *	@return		Icon of the character.
+ */
+Text GetCharIcon(Integer _CharId) {
+	if (!G_LibCharacters_CharactersIcons1.existskey(_CharId)) return "";
+	return G_LibCharacters_CharactersIcons1[_CharId];
+}
+
+// ---------------------------------- //
+/** Get the icon of a character.
+ *
+ *	@param	_Player		The player to get character icon.
+ *
+ *	@return		Icon of the character.
+ */
+Text GetCharIcon(CPlayer _Player) {
+	if (_Player == Null) return "";
+	return GetCharIcon(GetPlayerChar(_Player));
+}
+
+// ---------------------------------- //
+/** Get the icon of a character.
+ *
+ *	@param	_CharId		Id of the character to get icon.
+ *
+ *	@return		Icon of the character.
+ */
+Text GetCharIcon2(Integer _CharId) {
+	if (!G_LibCharacters_CharactersIcons2.existskey(_CharId)) return "";
+	return G_LibCharacters_CharactersIcons2[_CharId];
+}
+
+// ---------------------------------- //
+/** Get the icon of a character.
+ *
+ *	@param	_Player		The player to get character icon.
+ *
+ *	@return		Icon of the character.
+ */
+Text GetCharIcon2(CPlayer _Player) {
+	if (_Player == Null) return "";
+	return GetCharIcon2(GetPlayerChar(_Player));
+}
+
+// ---------------------------------- //
+/** Get all character change requests.
+ *
+ *	@return		Character change requests.
+ */
+Integer[Ident] CharChangeRequests() {
+	return G_LibCharacters_CharChangeRequests;
+}
+
+// ---------------------------------- //
+/** Set the library display mode.
+ *	
+ *	@param	_DisplayMode	The display mode of the library.
+ */
+Void SetDisplayMode(Integer _DisplayMode) {
+	declare netwrite Integer Net_LibCharacters_DisplayMode for Teams[0];
+	Net_LibCharacters_DisplayMode = ML::Clamp(_DisplayMode, 0, 2);
+}
+
+// ---------------------------------- //
+/// Hide the selection window.
+Void Hide() { SetDisplayMode(C_LibCharacters_DisplayModeHidden); }
+
+// ---------------------------------- //
+/// Show the selection window.
+Void Show() { SetDisplayMode(C_LibCharacters_DisplayModeVisible); }
+
+// ---------------------------------- //
+/// Set manual visibility for the selection window.
+Void Manual() { SetDisplayMode(C_LibCharacters_DisplayModeManual); }
+
+Void SetArmorBase(Integer _ArmorMax) {
+	declare netwrite Integer Net_LibCharacters_CharacterBaseArmor for Teams[0];
+	Net_LibCharacters_CharacterBaseArmor = ML::Clamp(_ArmorMax, 1, 10);
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	Private_ResetCharactersData();
+
+	Layers::Detach(C_LibCharacters_LayerId);
+	Layers::Destroy(C_LibCharacters_LayerId);
+
+	declare netwrite Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
+	declare netwrite Integer Net_LibCharacters_DisabledCharsUpdate for Teams[0];
+	Net_LibCharacters_DisabledCharacters.clear();
+	Net_LibCharacters_DisabledCharsUpdate = -1;
+
+	if (G_LibCharacters_DocumentRequest != Null) {
+		Http.Destroy(G_LibCharacters_DocumentRequest);
+		G_LibCharacters_DocumentRequest = Null;
+	}
+	G_LibCharacters_RequestStartTime = -1;
+
+	foreach (Player in AllPlayers) {
+		if (Player.IsBot) continue;
+		declare Integer PrevCharacterId for Player;
+		PrevCharacterId = -1;
+	}
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+	Hide();
+
+	Layers::Create(C_LibCharacters_LayerId);
+	Layers::Attach(C_LibCharacters_LayerId);
+}
+
+// ---------------------------------- //
+/** Load the library with characters document.
+ *
+ *	@param	_PreloadCharsUrl	URL of the document to load.
+ */
+Void Load(Text _PreloadCharsUrl) {
+	Load();
+	ImportFile(_PreloadCharsUrl);
+}
+
+// ---------------------------------- //
+/// Build the character selection window interface.
+Void Build() {
+	if (G_LibCharacters_Characters.count > 0)
+		Layers::Update(C_LibCharacters_LayerId, Private_CreateManialinkSelection());
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	G_LibCharacters_CharChangeRequests.clear();
+
+	foreach (Player in AllPlayers) {
+		if (Player.IsBot) continue;
+
+		declare PlayerCharacter = GetPlayerChar(Player);
+		declare PrevCharacterId for Player = -1;
+
+		if (PrevCharacterId == PlayerCharacter) continue;
+		PrevCharacterId = PlayerCharacter;
+		G_LibCharacters_CharChangeRequests[Player.Id] = PlayerCharacter;
+
+		// Update interfaces
+		declare netwrite Integer Net_LibCharacters_ServerCharacter for Player;
+		declare netwrite Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
+		Net_LibCharacters_ServerCharacter = PlayerCharacter;
+		Net_LibCharacters_LastPlayerCharChange = Now;
+	}
+}

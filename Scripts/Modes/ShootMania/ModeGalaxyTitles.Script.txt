@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-07-12            //
+//  script version: 2017-07-19            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-07-12"
+#Const GTVersion	"2017-07-19"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -48,6 +48,7 @@
 // ---------------------------------- //
 #Setting S_UseComboWeapons		True	as _("Use Weapons pick-ups (if available on map)")
 #Setting S_PlayerArmorPoints	3		as _("Amount of players Armor points (1 min, 10 max)")
+#Setting S_EnableCharSelection	True	as _("Allow players to choose their character")
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
 #Setting S_UseAutoBalance		False	as _("Balance teams on round start")
 #Setting S_MaximumNbWeapons		1		as _("Max. slots amount of every Weapon")
@@ -83,6 +84,7 @@
 #Const C_DefaultMusicPlaylist	"file://Media/Musics/Invasion/playlist.xml"
 #Const C_OfflineTranslationsURL	"file://Media/Translations/Default.xml"
 #Const C_OnlineTranslationsURL	"http://raw.githubusercontent.com/domino54/title-packs/master/Media/Translations/Default.xml"
+#Const C_DefaultCharactersURL	"file://Media/Characters/GalaxyDefault.xml"
 #Const C_ScriptTicksPerSecond	100		///< The amount of script ticks per second
 #Const C_NoCollisionsDuration	6000	///< No collision duration at the beginning of the round
 #Const C_EnviroKillTimeOut		7500	///< Time after which environmental elimination won't be performed
@@ -115,6 +117,7 @@ declare Boolean GT_AllowMatchmakingMode;	///< Defines if the mode can use matchm
 declare Boolean GT_DisableOffZoneDamage;	///< Disable OffZone eliminations (Tornado may stil leliminate players)
 declare Boolean GT_DisableTornadoDamage;	///< Disable Tornado eliminations (only if OffZone is disabled)
 declare Text[] GT_KillfeedTranslations;		///< Translations to be loaded with the Killfeed library
+declare Text GT_CharactersDataFileURL;		///< URL to the file containing data of characters to load.
 
 // ---------------------------------- //
 // Extend
@@ -125,6 +128,7 @@ Log::RegisterScript(GTScriptName, GTVersion);
 Log::RegisterScript(WarmUp::GetScriptName(), WarmUp::GetScriptVersion());
 Log::RegisterScript(Scores::GetScriptName(), Scores::GetScriptVersion());
 Log::RegisterScript(Blacklist::GetScriptName(), Blacklist::GetScriptVersion());
+Log::RegisterScript(Characters::GetScriptName(), Characters::GetScriptVersion());
 Log::RegisterScript(CupAdmin::GetScriptName(), CupAdmin::GetScriptVersion());
 Log::RegisterScript(FakeUsers::GetScriptName(), FakeUsers::GetScriptVersion());
 Log::RegisterScript(FancyMessages::GetScriptName(), FancyMessages::GetScriptVersion());
@@ -234,6 +238,7 @@ GT_AutoManageOnNearMiss = True;
 GT_AutoManageOnRespawn = True;
 GT_AutoManageOnObjectTouch = True;
 GT_AllowMatchmakingMode = True;
+GT_CharactersDataFileURL = C_DefaultCharactersURL;
 ***
 
 // ---------------------------------- //
@@ -250,21 +255,30 @@ UseAutoSpawnBots = False; ///< Disable bots items placed on map by user
 // Update mode settings
 +++GalaxyTitles_Settings+++
 
-// Load Turrets
-Turrets::Load();
-Turrets::SetAutoDestroyTurrets(False);
-
-// Load models
-Models::Load();
-
-// Load Toads
-Toads::Load();
-Toads::SetAutoDestroyToads(False);
-
 // ---------------------------------- //
 // Download translations
 Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
 while (!Translations::LoadingLoop()) MB_Yield();
+
+// ---------------------------------- //
+// Load Turrets, models and Toads
+Turrets::Load();
+Turrets::SetAutoDestroyTurrets(False);
+Models::Load();
+Toads::Load();
+Toads::SetAutoDestroyToads(False);
+
+// ---------------------------------- //
+// Load characters
+Characters::Load(GT_CharactersDataFileURL);
+while (Characters::IsBeingImported()) MB_Yield();
+Characters::Build();
+Characters::SetArmorBase(S_PlayerArmorPoints);
+
+Models::LoadCustom("Sintel", "Characters\\SintelSample.Item.Gbx");
+Models::LoadArenaPlayer("Susu.zip");
+Models::LoadArenaPlayer("TronMan.zip");
+Models::LoadArenaPlayer("StormWoman.Skin.Pack.Gbx");
 
 // ---------------------------------- //
 // Load warm-up
@@ -326,6 +340,8 @@ GalaxyTitles::Load();
 declare Integer GT_NoCollisionsEndTime;
 declare PrevMaximumNbWeapons = S_MaximumNbWeapons;
 declare PrevMaximumNbReplies = S_MaximumNbReplies;
+declare PrevEnableCharSelection = S_EnableCharSelection;
+declare PrevPlayerNbArmorMax = S_PlayerArmorPoints;
 
 Webhook::SetMapSwitching(True);
 Killfeed::SetMapSwitching(True);
@@ -337,6 +353,10 @@ Killfeed::SetMapSwitching(True);
 ***Match_StartServer***
 ***
 PauseMenu::SetModeRules(ModeInfo::GetName(), ModeInfo::GetRules(), "");
+
+// Disable Constructor in non-team modes
+if (GT_CharactersDataFileURL == C_DefaultCharactersURL)
+	Characters::SetCharAvailable(3, UseClans);
 
 // ---------------------------------- //
 // Create the scores table
@@ -420,6 +440,10 @@ UIManager.UIAll.BigMessage = "";
 UIManager.UIAll.StatusMessage = "";
 MiniMap::Show();
 
+// Character selection
+if (S_EnableCharSelection) Characters::Manual();
+else Characters::Hide();
+
 // ---------------------------------- //
 // Init GalaxyTitles functions
 declare ToadsSpawnRatio = 0.;
@@ -446,6 +470,7 @@ if (!UsePvPCollisions) GT_NoCollisionsEndTime = StartTime + C_NoCollisionsDurati
 ***MB_Private_Yield***
 ***
 Blacklist::Loop(S_CustomBlacklistURL);
+Characters::Loop();
 CupAdmin::Loop(S_AdminEnableCupMode, S_AdminPauseCompetition, S_AdminCupModeNbMaps, S_AdminCupName);
 FakeUsers::Loop(S_NbFakeUsers);
 FancyMessages::Loop();
@@ -950,6 +975,17 @@ GT_UnspawnPlayersChangingClan();
 GalaxyTitles::Loop(GT_UseAutospawnObjects && S_ObjectsRespawnTime > 0, S_ToadsRespawnTime * 1000);
 
 // ---------------------------------- //
+// Respawn players changing characters
+foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
+	if (!Players.existskey(PlayerId)) continue;
+	declare Player <=> Players[PlayerId];
+
+	UnspawnPlayer(Player);
+	Toads::DestroyToad(Player);
+	Turrets::DestroyTurret(Player);
+}
+
+// ---------------------------------- //
 // Stop the no-collisions phase
 if (GT_UseNoCollisionsStart && GT_NoCollisionsEndTime > 0 && GT_NoCollisionsEndTime <= Now) {
 	GT_NoCollisionsEndTime = -1;
@@ -969,6 +1005,22 @@ if (PrevMaximumNbReplies != S_MaximumNbReplies) {
 	PrevMaximumNbReplies = S_MaximumNbReplies;
 	GalaxyTitles::SetMaxReplies(S_MaximumNbReplies);
 }
+
+// ---------------------------------- //
+// Allow or deny character selection
+if (PrevEnableCharSelection != S_EnableCharSelection) {
+	PrevEnableCharSelection = S_EnableCharSelection;
+
+	if (S_EnableCharSelection) Characters::Manual();
+	else Characters::Hide();
+}
+
+// ---------------------------------- //
+// Update maximum Armor
+if (PrevPlayerNbArmorMax != S_PlayerArmorPoints) {
+	PrevPlayerNbArmorMax = S_PlayerArmorPoints;
+	Characters::SetArmorBase(S_PlayerArmorPoints);
+}
 ***
 
 // ---------------------------------- //
@@ -981,6 +1033,7 @@ Toads::ResetAllPlayers();
 GalaxyTitles::ResetAll();
 MiniMap::Hide();
 Markers::Reset();
+Characters::Hide();
 ***
 
 // ---------------------------------- //
@@ -1085,6 +1138,7 @@ Killfeed::SetMapSwitching(True);
 // ---------------------------------- //
 ***Match_EndServer***
 ***
+Characters::Unload();
 GalaxyTitles::Unload();
 Interfancy::Unload();
 Killfeed::Unload();
@@ -1099,6 +1153,71 @@ Streaks::Unload();
 FancyMessages::Unload();
 
 WarmUp::Unload();
+***
+
+// ---------------------------------- //
+// GalaxyTitles - configure player character
+// ---------------------------------- //
+***GalaxyTitles_ConfigCharacter***
+***
+declare PlayerCharacterId = 0;
+if (S_EnableCharSelection) PlayerCharacterId = Characters::GetPlayerChar(_Player);
+
+// ---------------------------------- //
+// Default Galaxy characters
+if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterId) {
+	// ---------------------------------- //
+	// Sintel
+	case 1 : {
+		Inventory::SetAvailableWeapons(_Player, [CSmMode::EWeapon::Missile, CSmMode::EWeapon::Rocket]);
+		Inventory::ChangeWeaponHotkey(_Player, CSmMode::EWeapon::Missile, CSmModeEvent::EActionInput::Activable1);
+		Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Missile, 1);
+		Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Rocket, 4);
+
+		_Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
+		Models::SetCustom(_Player, "Sintel");
+	}
+	// ---------------------------------- //
+	// Susu
+	case 2 : {
+		Toads::AddToInventory(_Player);
+		Models::SetArenaPlayer(_Player, "Susu.zip");
+	}
+	// ---------------------------------- //
+	// Constructor
+	case 3 : {
+		Turrets::AddToInventory(_Player);
+		Models::SetArenaPlayer(_Player, "TronMan.zip");
+	}
+	// ---------------------------------- //
+	// Medic
+	case 4 : {
+		GalaxyTitles::LoadInfiniteSupplies(_Player, 5000);
+		GalaxyTitles::SetPlayerCanPickUpSupplies(_Player, False);
+		Models::SetArenaPlayer(_Player, "StormWoman.Skin.Pack.Gbx");
+	}
+	// ---------------------------------- //
+	// Toad
+	case 5 : {
+		Models::SetMinion(_Player);
+	}
+}
+
+// ---------------------------------- //
+// Current character name
+declare PlayerCharacterName = "";
+if (PlayerCharacterId > 0) PlayerCharacterName = Characters::GetCharName(_Player);
+Interfancy::SetArmorText(_Player, PlayerCharacterName);
+
+// ---------------------------------- //
+// Current character icon
+declare PlayerCharacterIcon1 = "";
+declare PlayerCharacterIcon2 = "";
+if (PlayerCharacterId > 0) {
+	PlayerCharacterIcon1 = Characters::GetCharIcon(_Player);
+	PlayerCharacterIcon2 = Characters::GetCharIcon2(_Player);
+}
+Interfancy::SetCharacterIcon(_Player, PlayerCharacterIcon1, PlayerCharacterIcon2);
 ***
 
 // ---------------------------------- //
@@ -1207,48 +1326,10 @@ Void GT_InitPlayer(CSmPlayer _Player) {
 	_Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints, 1, 10) * 100;
 	_Player.StaminaMax = C_PlayerStaminaMax;
 	_Player.AmmoGain = 1.;
-	_Player.ForceModelId = Models::ArenaPlayer();
+	Models::SetDefault(_Player);
 
-	// ---------------------------------- //
 	// Configure the player's character
-	declare PlayerCharacterId = 0;
-	//if (S_EnableCharSelection)
-	//	PlayerCharacterId = Characters::GetPlayerCharacter(_Player);
-
-	switch (PlayerCharacterId) {
-		// ---------------------------------- //
-		// Scout
-		case 1 : {
-			GalaxyTitles::SetPlayerCanPickUpWeapons(_Player, False);
-			Inventory::SetAvailableWeapons(_Player, [CSmMode::EWeapon::Missile, CSmMode::EWeapon::Rocket]);
-			Inventory::ChangeWeaponHotkey(_Player, CSmMode::EWeapon::Missile, CSmModeEvent::EActionInput::Activable1);
-			Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Missile, 1);
-			Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Rocket, 4);
-
-			_Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
-		}
-		// ---------------------------------- //
-		// Summoner
-		case 2 : {
-			Toads::AddToInventory(_Player);
-		}
-		// ---------------------------------- //
-		// Constructor
-		case 3 : {
-			Turrets::AddToInventory(_Player);
-		}
-		// ---------------------------------- //
-		// Healer
-		case 4 : {
-			GalaxyTitles::LoadInfiniteSupplies(_Player, 5000);
-			GalaxyTitles::SetPlayerCanPickUpSupplies(_Player, False);
-		}
-		// ---------------------------------- //
-		// Toad
-		case 5 : {
-			_Player.ForceModelId = Models::Minion();
-		}
-	}
+	+++GalaxyTitles_ConfigCharacter+++
 
 	// Initialize weapon
 	Inventory::SetFirstWeapon(_Player);

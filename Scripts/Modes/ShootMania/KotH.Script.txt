@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-19            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-19"
 #Const ScriptName	"Modes/ShootMania/KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -86,6 +86,9 @@ ModeInfo::SetStatusMessage(Description);
 UseClans = S_UseDefaultTeams || MM_IsMatchServer();
 GT_UseAutoEndSequence = UseClans;
 GT_DisableTimeLimit();
+
+// Disable certain characters
+Characters::SetCharAvailable(1, UseClans);
 
 // ---------------------------------- //
 // Initialize teams
@@ -211,9 +214,18 @@ StartTime = Now + S_RespawnTime;
 if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
 else GT_DisableTimeLimit();
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+***
 
+// ---------------------------------- //
+// Start play loop
+// ---------------------------------- //
+***Match_StartPlayLoop***
+***
 Layers::Attach("KotH:Gauges");
 Layers::Attach("KotH:Markers");
+
+declare Pos = CentralGoal.Position.X^" "^CentralGoal.Position.Y + 25^" "^CentralGoal.Position.Z;
+Markers::AddMarker("Goal", "<marker manialinkframeid='Frame_GoalMarker' pos='"^Pos^"' visibility='WhenInFrustum' minimapvisibility='Never' />");
 ***
 
 // ---------------------------------- //
@@ -454,6 +466,17 @@ if (GT_TimeReachedLimit()) MB_StopRound();
 ***
 
 // ---------------------------------- //
+// Play loop end
+// ---------------------------------- //
+***Match_EndPlayLoop***
+***
+MiniMap::DestroyMarker("Goal");
+Markers::RemoveMarker("Goal");
+Layers::Detach("KotH:Gauges");
+Layers::Detach("KotH:Markers");
+***
+
+// ---------------------------------- //
 // Round end
 // ---------------------------------- //
 ***Match_EndRound***
@@ -468,11 +491,6 @@ UpdateScoresTableFooter();
 
 MB_Sleep(3000);
 StartTime = -1;
-
-// Hide the interface
-MiniMap::DestroyMarker("Goal");
-Layers::Detach("KotH:Gauges");
-Layers::Detach("KotH:Markers");
 
 // ---------------------------------- //
 // Display the round winner
@@ -1090,7 +1108,7 @@ Text CreateManialinkMarkers() {
 	<style class="text" halign="center" valign="center2" textsize=".125" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold"/>
 </stylesheet>
 
-<frame id="Frame_GoalMarker" hidden="1">
+<frame id="Frame_GoalMarker">
 	<label pos="0 2.5" class="text" id="Label_MarkerDistance" />
 	<label pos="0 .5" class="text" scale="1.5" id="Label_MarkerGoalName" />
 	<quad pos="0 3" size="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" colorize="FFF" />
@@ -1137,11 +1155,8 @@ main() {
 	}
 	
 	// Reset markers
-	Frame_GoalMarker.Show();
 	Label_MarkerGoalName.Value = TL::GetTranslatedText(TL::Compose("$n$t%1", _("Target")));
-	declare Pos = CentralGoal.Position.X^" "^CentralGoal.Position.Y + 25^" "^CentralGoal.Position.Z;
-	ClientUI.MarkersXML = "<marker manialinkframeid='Frame_GoalMarker' pos='"^Pos^"' visibility='WhenInFrustum' minimapvisibility='Never'/>";
-	
+
 	// ---------------------------------- //
 	// Yield
 	// ---------------------------------- //

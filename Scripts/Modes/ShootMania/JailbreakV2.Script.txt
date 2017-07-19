@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-19            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"JailbreakArena, JailbreakV2Arena"
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-19"
 #Const ScriptName	"Modes/ShootMania/JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -159,9 +159,6 @@ ClearGlobalVariables();
 ClearGlobalVariables();
 ResetPlayersColors();
 
-// Clear markers
-UIManager.UIAll.MarkersXML = "";
-
 // ---------------------------------- //
 // Bind landmarks to teams
 declare BlueTeamSideOrder = MB_GetRoundCount() % 2 + 1;
@@ -215,12 +212,6 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 	MapLandmark.Gauge.Clan = Clan;
 	MapLandmark.Gauge.ValueReal = 1.;
 	MapLandmark.Gauge.Captured = True;
-	
-	// Create marker
-	UIManager.UIAll.MarkersXML ^= """<marker
-		pos="{{{MapLandmark.Position.X^" "^MapLandmark.Position.Y + 25^" "^MapLandmark.Position.Z}}}"
-		manialinkframeid="Frame_MarkerGoal#{{{Clan}}}" visibility="WhenInFrustum"
-	 />""";
 }
 
 foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
@@ -243,14 +234,6 @@ ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
 // Wait for enough players to start the game
 GT_WaitForPlayers(S_NbPlayersPerTeamMin);
 
-// Attach interface
-Layers::Attach("JailbreakInterface");
-Layers::Attach("JailbreakMarkers");
-
-// ---------------------------------- //
-// Create goals markers
-for (Clan, 1, 2) MiniMap::SetMarker("Goal#"^Clan, "Goal.png", Teams[Clan - 1].ColorPrimary, G_ClanGoalLandmarks[Clan].Position);
-
 // ---------------------------------- //
 // New map sound
 UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
@@ -259,6 +242,22 @@ StartTime = Now + S_RespawnTime;
 if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
 else GT_DisableTimeLimit();
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+***
+
+// ---------------------------------- //
+// Start play loop
+// ---------------------------------- //
+***Match_StartPlayLoop***
+***
+Layers::Attach("JailbreakInterface");
+Layers::Attach("JailbreakMarkers");
+
+for (Clan, 1, 2) MiniMap::SetMarker("Goal#"^Clan, "Goal.png", Teams[Clan - 1].ColorPrimary, G_ClanGoalLandmarks[Clan].Position);
+
+foreach (Clan => MapLandmark in G_ClanGoalLandmarks) Markers::AddMarker("Goal#"^Clan, """<marker
+	pos="{{{MapLandmark.Position.X^" "^MapLandmark.Position.Y + 25^" "^MapLandmark.Position.Z}}}"
+	manialinkframeid="Frame_MarkerGoal#{{{Clan}}}" visibility="WhenInFrustum"
+/>""");
 ***
 
 // ---------------------------------- //
@@ -456,6 +455,20 @@ if (GT_TimeReachedLimit()) MB_StopRound();
 ***
 
 // ---------------------------------- //
+// Play loop end
+// ---------------------------------- //
+***Match_EndPlayLoop***
+***
+Layers::Detach("JailbreakInterface");
+Layers::Detach("JailbreakMarkers");
+
+for (Clan, 1, 2) {
+	MiniMap::DestroyMarker("Goal#"^Clan);
+	Markers::RemoveMarker("Goal#"^Clan);
+}
+***
+
+// ---------------------------------- //
 // Round end
 // ---------------------------------- //
 ***Match_EndRound***
@@ -486,12 +499,6 @@ if (
 	for (Clan, 1, 2) if (G_ClansFreePlayers[Clan].count > G_ClansFreePlayers[3 - Clan].count) RoundWinner = Clan;
 
 MB_Sleep(1000);
-
-Layers::Detach("JailbreakInterface");
-Layers::Detach("JailbreakMarkers");
-
-// Destroy goals markers
-for (Clan, 1, 2) MiniMap::DestroyMarker("Goal#"^Clan);
 
 // ---------------------------------- //
 // Show the winner
@@ -620,7 +627,7 @@ Void UpdateInterface() {
 	
 	foreach (Id in G_AllJailedPlayers) {
 		if (!AllPlayers.existskey(Id)) continue;
-		Net_Jailbreak_JailedPlayersLogins.add(AllPlayers[Id].Login);
+		Net_Jailbreak_JailedPlayersLogins.add(AllPlayers[Id].User.Login);
 	}
 	
 	// ---------------------------------- //
@@ -774,7 +781,7 @@ Void ReleasePlayer(CSmPlayer _Player) {
 			// List logins for the callback
 			if (!Player.IsBot && !Player.IsFakePlayer) {
 				if (ReleasersLogins != "") ReleasersLogins ^= ";";
-				ReleasersLogins ^= Player.Login;
+				ReleasersLogins ^= Player.User.Login;
 			}
 			
 			// Track statistics
@@ -855,9 +862,31 @@ Text CreateManialinkInterface() {
 <manialink version="3" name="Jailbreak:Interface">
 <stylesheet>
 	<style class="EscapeMessage" halign="center" valign="center2" textemboss="1" textfont="Eurostile_Bold" textcolor="FFF" />
+	<style class="CircGauge" size="16 16" halign="center" valign="center" colorize="FFF" />
 </stylesheet>
 
-<frame id="Frame_PlayersIcons" pos="0 {{{C_UIPlayersIconsPosition.Y^" "^C_UIPlayersIconsPosition.Z}}}">
+<framemodel id="FrameModel_PlayersGauge">
+	<label pos="0 -2.5" class="EscapeMessage" textsize="3" text="0" id="Label_Ratio" />
+	<quad pos="0 1.75" size="5 5" halign="center" valign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/DefendersLeft.dds" id="Quad_Emblem" />
+	<frame size="8 16" halign="left" valign="center">
+		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeL" hidden="1" />
+	</frame>
+	<frame size="8 16" halign="right" valign="center">
+		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeR" hidden="1" rot="180" />
+	</frame>
+	<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeBg.png" id="Quad_GaugeBg" />
+	<quad
+		size="14 14" halign="center" valign="center"
+		image="file://Media/Manialinks/Common/disc.dds" colorize="FFF" opacity="0" id="Quad_CaptureAlert"
+	 />
+</framemodel>
+
+<frame id="Frame_PlayersGaugesF" hidden="0">
+	<frameinstance modelid="FrameModel_PlayersGauge" id="Frame_PlayersGauge#1" scale=".875" hidden="0" pos="-40 82" />
+	<frameinstance modelid="FrameModel_PlayersGauge" id="Frame_PlayersGauge#2" scale=".875" hidden="0" pos="40 82" />
+</frame>
+
+<frame id="Frame_PlayersIcons" pos="0 {{{C_UIPlayersIconsPosition.Y^" "^C_UIPlayersIconsPosition.Z}}}" hidden="1">
 	<frame pos="{{{-ML::Abs(C_UIPlayersIconsPosition.X)}}}">{{{Icons[1]}}}</frame>
 	<frame pos="{{{ML::Abs(C_UIPlayersIconsPosition.X)}}}">{{{Icons[2]}}}</frame>
 </frame>
@@ -900,13 +929,24 @@ declare Label_EscapeStatusMessage		<=> (Page.GetFirstChild("Label_EscapeStatusMe
 declare Label_EscapeStatusMessageGhost	<=> (Page.GetFirstChild("Label_EscapeStatusMessageGhost") as CMlLabel);
 declare Label_YouCanEscapeLabel		<=> (Page.GetFirstChild("Label_YouCanEscapeLabel") as CMlLabel);
 declare Frame_GaugeMessageAnim		<=> (Page.GetFirstChild("Frame_GaugeMessageAnim") as CMlFrame);
+declare Frame_PlayersGaugesF		<=> (Page.GetFirstChild("Frame_PlayersGaugesF") as CMlFrame);
+declare Frame_PlayersIcons			<=> (Page.GetFirstChild("Frame_PlayersIcons") as CMlFrame);
 declare Qauge_CurLandmarkValue		<=> (Page.GetFirstChild("Qauge_CurLandmarkValue") as CMlGauge);
 declare Label_CurLandmarkMessage	<=> (Page.GetFirstChild("Label_CurLandmarkMessage") as CMlLabel);
 declare Quad_CurLandmarkIcon		<=> (Page.GetFirstChild("Quad_CurLandmarkIcon") as CMlQuad);
 
+declare Frame_PlayersGauges = [
+	1 => (Page.GetFirstChild("Frame_PlayersGauge#1") as CMlFrame),
+	2 => (Page.GetFirstChild("Frame_PlayersGauge#2") as CMlFrame)
+];
+
 declare Quad_PlayersIcons = [1 => CMlQuad[], 2 => CMlQuad[]];
 for (Clan, 1, 2) for (I, 0, {{{C_UIPlayersIconsAmount - 1}}})
 	Quad_PlayersIcons[Clan].add((Page.GetFirstChild("Quad_PlayerIcon"^Clan^"#"^I) as CMlQuad));
+
+// ---------------------------------- //
+// Persistent settings
+declare persistent Boolean Persistent_Jailbreak_UseOldIcons for LocalUser;
 
 // ---------------------------------- //
 // Netcode
@@ -934,6 +974,9 @@ declare PrevLandmarkSectorPlayers = 0;
 declare PrevGaugeMessageVisible = False;
 declare PrevGUIPlayerCanEscape = False;
 declare PrevSettingsUpdateTime = -1;
+declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
+declare PrevGaugesRatios = [1 => 1., 2 => 1.];
+declare PrevUseOldIcons = False;
 
 Label_YouCanEscapeLabel.SetText(Translations_Get("You can escape!"));
 ***
@@ -944,23 +987,49 @@ Label_YouCanEscapeLabel.SetText(Translations_Get("You can escape!"));
 ***Yield***
 ***
 // ---------------------------------- //
+// Update teams colors
+foreach (I => Team in Teams) {
+	if (PrevTeamsColors[I] != Team.ColorPrimary) {
+		PrevTeamsColors[I] = Team.ColorPrimary;
+		PrevSettingsUpdateTime = -1;
+		
+		declare Frame = Frame_PlayersGauges[I + 1];
+		declare Quads = [
+			(Frame.GetFirstChild("Quad_GaugeBg") as CMlQuad),
+			(Frame.GetFirstChild("Quad_GaugeL") as CMlQuad),
+			(Frame.GetFirstChild("Quad_GaugeR") as CMlQuad)
+		];
+		foreach (Quad in Quads) Quad.Colorize = Team.ColorPrimary;
+	}
+}
+
+// ---------------------------------- //
+// Update selected interface
+if (PrevUseOldIcons != Persistent_Jailbreak_UseOldIcons) {
+	PrevUseOldIcons = Persistent_Jailbreak_UseOldIcons;
+
+	Frame_PlayersGaugesF.Visible = !Persistent_Jailbreak_UseOldIcons;
+	Frame_PlayersIcons.Visible = !Frame_PlayersGaugesF.Visible;
+}
+
+// ---------------------------------- //
 // Update settings
 if (PrevSettingsUpdateTime != Net_Jailbreak_SettingsUpdateTime) {
 	PrevSettingsUpdateTime = Net_Jailbreak_SettingsUpdateTime;
 	
 	// ---------------------------------- //
 	// Get the amount of players
-	foreach (Clan => Quads in Quad_PlayersIcons) {
+	for (Clan, 1, 2) {
 		declare PlayersNbTotal = 0;
 		declare PlayersNbFree = 0;
 		if (Net_Jailbreak_ClansNbPlayersTotal.existskey(Clan))
 			PlayersNbTotal = Net_Jailbreak_ClansNbPlayersTotal[Clan];
 		if (Net_Jailbreak_ClansNbPlayersJail.existskey(Clan))
 			PlayersNbFree = PlayersNbTotal - Net_Jailbreak_ClansNbPlayersJail[Clan];
-		
+
 		// ---------------------------------- //
 		// Set Quads visibility
-		foreach (I => Quad in Quads) {
+		foreach (I => Quad in Quad_PlayersIcons[Clan]) {
 			if (Quad == Null) continue;
 			Quad.Visible = I < PlayersNbTotal;
 			if (!Quad.Visible) continue;
@@ -970,6 +1039,59 @@ if (PrevSettingsUpdateTime != Net_Jailbreak_SettingsUpdateTime) {
 			declare Color = Brightness(Teams[Clan - 1].ColorPrimary, 1.5);
 			if (I >= PlayersNbFree) Color = {{{C_UIPlayersJailedColor}}};
 			Quad.Colorize = Color;
+		}
+
+		// ---------------------------------- //
+		// Configure gauges
+		declare Frame <=> Frame_PlayersGauges[Clan];
+		declare Quad_GaugeL <=> (Frame.GetFirstChild("Quad_GaugeL") as CMlQuad);
+		declare Quad_GaugeR <=> (Frame.GetFirstChild("Quad_GaugeR") as CMlQuad);
+		declare Quad_Emblem <=> (Frame.GetFirstChild("Quad_Emblem") as CMlQuad);
+		declare Label_Ratio <=> (Frame.GetFirstChild("Label_Ratio") as CMlLabel);
+		declare Quad_CaptureAlert <=> (Frame.GetFirstChild("Quad_CaptureAlert") as CMlQuad);
+
+		declare Ratio = 0.;
+		if (PlayersNbTotal > 0) Ratio = ML::ToReal(PlayersNbFree) / PlayersNbTotal;
+
+		// ---------------------------------- //
+		// Set ratio
+		Quad_GaugeL.RelativeRotation = ML::Clamp(Ratio * 360., 0., 180.);
+		Quad_GaugeR.RelativeRotation = 180 + ML::Clamp((Ratio - .5) * 360., 0., 180.);
+		Quad_GaugeL.Visible = Quad_GaugeL.RelativeRotation > 1.5;
+		Quad_GaugeR.Visible = Quad_GaugeR.RelativeRotation > 180;
+
+		// Icon color
+		declare Color = Brightness(Teams[Clan - 1].ColorPrimary, 1.5);
+		declare Image = "CircGaugeProg.png";
+		if (PlayersNbFree <= 0) Color = {{{C_UIPlayersJailedColor}}};
+		if (PlayersNbFree >= PlayersNbTotal) Image = "CircGaugeFull.png";
+		Quad_Emblem.Colorize = Color;
+
+		Quad_GaugeL.ImageUrl = "{{{C_ImgBase}}}"^Image;
+		Quad_GaugeR.ImageUrl = Quad_GaugeL.ImageUrl;
+		Label_Ratio.Value = TL::ToText(PlayersNbFree);
+
+		// ---------------------------------- //
+		// Value change animation
+		if (PrevGaugesRatios[Clan] != Ratio) {
+			declare IsIncreased = PrevGaugesRatios[Clan] < Ratio;
+			PrevGaugesRatios[Clan] = Ratio;
+
+			declare Color = <1., 1., 1.>;
+			if (GUIPlayer != Null && GUIPlayer.CurrentClan != 0) {
+				if (
+					(!IsIncreased && Clan == GUIPlayer.CurrentClan) ||
+					(IsIncreased && Clan != GUIPlayer.CurrentClan)
+				)
+					Color = <1., 0., 0.>;
+			}
+			else if (!IsIncreased) Color = <1., 0., 0.>;
+
+			Quad_CaptureAlert.Colorize = Color;
+			Quad_CaptureAlert.RelativeScale = 1.;
+			Quad_CaptureAlert.Opacity = .75;
+			
+			AnimMgr.Add(Quad_CaptureAlert, "<quad scale='1.75' opacity='0' />", 1500, CAnimManager::EAnimManagerEasing::CircOut);
 		}
 	}
 	
@@ -1011,8 +1133,8 @@ for (Clan, 1, 2) {
 // ---------------------------------- //
 // Update message on GUIPlayer change
 if (GUIPlayer != Null) {
-	if (PrevGUIPlayerLogin != GUIPlayer.Login) {
-		PrevGUIPlayerLogin = GUIPlayer.Login;
+	if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
+		PrevGUIPlayerLogin = GUIPlayer.User.Login;
 		UpdateGoalsStatusMessage = True;
 	}
 } else if (PrevGUIPlayerLogin != "") {
@@ -1066,7 +1188,7 @@ if (UpdateGoalsStatusMessage) {
 			// Both teams can escape
 			else GoalsStatusMessage = Translations_GetComposed(["$<%1$> and $<%2$> can escape!", TextTeammates, TextOpponents]);
 			
-			GUIPlayerCanEscape = Net_Jailbreak_JailedPlayersLogins.exists(GUIPlayer.Login);
+			GUIPlayerCanEscape = Net_Jailbreak_JailedPlayersLogins.exists(GUIPlayer.User.Login);
 		}
 		
 		// Opponents can escape
@@ -1082,18 +1204,18 @@ if (UpdateGoalsStatusMessage) {
 	Label_EscapeStatusMessage.SetText(Translations_Get(GoalsStatusMessage));
 	
 	Label_EscapeStatusMessage.Opacity = 0.;
-	Label_EscapeStatusMessage.RelativePosition.Y = 2.;
+	Label_EscapeStatusMessage.RelativePosition_V3.Y = 2.;
 	Label_EscapeStatusMessageGhost.Opacity = 1.;
-	Label_EscapeStatusMessageGhost.RelativePosition.Y = 0.;
+	Label_EscapeStatusMessageGhost.RelativePosition_V3.Y = 0.;
 	
-	declare PosX = Label_EscapeStatusMessage.RelativePosition.X;
+	declare PosX = Label_EscapeStatusMessage.RelativePosition_V3.X;
 	AnimMgr.Add(Label_EscapeStatusMessage, "<label pos='"^PosX^" 0' opacity='1' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 	AnimMgr.Add(Label_EscapeStatusMessageGhost, "<label pos='"^PosX^" -2' opacity='0' />", 125, CAnimManager::EAnimManagerEasing::Linear);
 }
 
 // ---------------------------------- //
 // Set player jail state
-if (GUIPlayer != Null && Net_Jailbreak_JailedPlayersLogins.exists(GUIPlayer.Login)) GUIPlayerIsJailed = True;
+if (GUIPlayer != Null && Net_Jailbreak_JailedPlayersLogins.exists(GUIPlayer.User.Login)) GUIPlayerIsJailed = True;
 else GUIPlayerIsJailed = False;
 
 // ---------------------------------- //
@@ -1101,13 +1223,13 @@ else GUIPlayerIsJailed = False;
 if (PrevGUIPlayerCanEscape != (GUIPlayerCanEscape && GUIPlayerIsJailed)) {
 	PrevGUIPlayerCanEscape = GUIPlayerCanEscape && GUIPlayerIsJailed;
 	
-	declare PosX = Label_YouCanEscapeLabel.RelativePosition.X;
-	Label_YouCanEscapeLabel.RelativePosition.Y = 0.;
+	declare PosX = Label_YouCanEscapeLabel.RelativePosition_V3.X;
+	Label_YouCanEscapeLabel.RelativePosition_V3.Y = 0.;
 	declare PosY = -2.;
 	declare Opacity = 0.;
 	
 	if (PrevGUIPlayerCanEscape) {
-		Label_YouCanEscapeLabel.RelativePosition.Y = -PosY;
+		Label_YouCanEscapeLabel.RelativePosition_V3.Y = -PosY;
 		PosY = 0.;
 		Opacity = 1.;
 	}
@@ -1196,12 +1318,12 @@ if (PrevGaugeMessageVisible != GaugeMessageVisible) {
 	Qauge_CurLandmarkValue.Visible = GaugeMessageVisible;
 	
 	declare PositionY = -2.;
-	Frame_GaugeMessageAnim.RelativePosition.Y = 0.;
+	Frame_GaugeMessageAnim.RelativePosition_V3.Y = 0.;
 	declare Opacity = 0.;
 	Label_CurLandmarkMessage.Opacity = 1.;
 	
 	if (GaugeMessageVisible) {
-		Frame_GaugeMessageAnim.RelativePosition.Y = -PositionY;
+		Frame_GaugeMessageAnim.RelativePosition_V3.Y = -PositionY;
 		PositionY = 0.;
 		Label_CurLandmarkMessage.Opacity = 0.;
 		Opacity = 1.;
@@ -1305,8 +1427,8 @@ declare PrevGUIPlayerLogin = "";
 // ---------------------------------- //
 // Update markers on player change
 if (GUIPlayer != Null) {
-	if (PrevGUIPlayerLogin != GUIPlayer.Login) {
-		PrevGUIPlayerLogin = GUIPlayer.Login;
+	if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
+		PrevGUIPlayerLogin = GUIPlayer.User.Login;
 		UpdateMarkers = True;
 	}
 } else if (PrevGUIPlayerLogin != "") {

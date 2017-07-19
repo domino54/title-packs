@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PAYLOAD by domino54                   //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-19            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"PayloadArena"
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-19"
 #Const ScriptName	"Modes/ShootMania/Payload.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -128,9 +128,6 @@ G_PayloadTrackPointsDist.clear();
 G_CurMapTotalNbSectors = 0;
 G_SectorCheckpointsDist.clear();
 G_AttackingClan = 1;
-
-// Reset markers
-UIManager.UIAll.MarkersXML = "";
 
 // ---------------------------------- //
 // Check if the map is valid
@@ -302,7 +299,6 @@ PayloadStructureObjects.add(ObjectCreate(G_ObjectsIds["Payload"]).Id);
 // Reset the payload position
 G_PayloadPosition = GetPayloadPosition(G_PayloadTrackCurrentDist);
 SetObjectsPosition(PayloadStructureObjects, G_PayloadPosition);
-UpdateMarkers(PayloadStructureObjects[0]);
 
 // ---------------------------------- //
 // Decapture all used Gauges
@@ -370,10 +366,16 @@ Message::SendStatusMessage(TL::Compose(_("$<%1$> is attacking!"), Teams[G_Attack
 // Setup the time limit
 if (S_TimeLimit > 0) GT_SetTimeLimit(UIManager.UIAll.CountdownEndTime + S_TimeLimit * 1000);
 else GT_DisableTimeLimit();
+***
 
-// Apply custom interface
+// ---------------------------------- //
+// Play loop start
+// ---------------------------------- //
+***Match_StartPlayLoop***
+***
 Layers::Attach("Payload:Interface");
 Layers::Attach("Payload:Markers");
+UpdateMarkers(PayloadStructureObjects[0]);
 ***
 
 // ---------------------------------- //
@@ -480,7 +482,7 @@ else UISetNbPlayersPushingPayload(0);
 
 // ---------------------------------- //
 // Move Payload along its route
-if (G_CapturedSectors < G_CurMapTotalNbSectors && NbAttackersPushingPayload >= 1 && NbDefendersStoppingPayload <= 0) {
+if (G_CapturedSectors < G_CurMapTotalNbSectors && NbAttackersPushingPayload > NbDefendersStoppingPayload) {
 	declare PayloadSpeed = ML::Min(NbAttackersPushingPayload, C_PayloadMaxPlayersPushing) * C_PayloadSpeedPerPlayer;
 	
 	// Update last push time
@@ -522,6 +524,7 @@ if (S_AllowPayloadReversing && Now > LastPayloadInteractionTime + C_PayloadRever
 // Payload distance has changed
 if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 	UISetPayloadDistance(G_PayloadTrackCurrentDist);
+	UpdateMarkers(PayloadStructureObjects[0]);
 	
 	// Update the Payload position
 	G_PayloadPosition = GetPayloadPosition(G_PayloadTrackCurrentDist);
@@ -534,7 +537,6 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 	if (G_PayloadTrackCurrentDist >= NextCheckpointDistance) {
 		G_CapturedSectors += 1;
 		UpdateBasesColors();
-		UpdateMarkers(PayloadStructureObjects[0]);
 		GalaxyTitles::SetObjectsSpawnTier(G_CapturedSectors + 1);
 		
 		// Give point for the attacking team
@@ -635,13 +637,22 @@ if (GT_TimeReachedLimit()) {
 ***
 
 // ---------------------------------- //
+// Play loop end
+// ---------------------------------- //
+***Match_EndPlayLoop***
+***
+Layers::Detach("Payload:Markers");
+Layers::Detach("Payload:Interface");
+MiniMap::DestroyMarker("Payload");
+UISetIsOvertime(False);
+***
+
+// ---------------------------------- //
 // Round end
 // ---------------------------------- //
 ***Match_EndRound***
 ***
 SM::UnspawnAllPlayers();
-Layers::Detach("Payload:Markers");
-UISetIsOvertime(False);
 
 // ---------------------------------- //
 // Set the round winner
@@ -661,12 +672,7 @@ foreach (ObjectId in PayloadStructureObjects) {
 }
 PayloadStructureObjects.clear();
 
-Layers::Detach("Payload:Interface");
 Message::CleanBigMessages();
-
-// Destroy Payload marker
-MiniMap::DestroyMarker("Payload");
-UIManager.UIAll.MarkersXML = "";
 
 // ---------------------------------- //
 // Show the winner
@@ -847,14 +853,16 @@ Void UpdateMarkers(Ident _PayloadObjectId) {
 	if (S_EnableDebugMode) return;
 
 	// Payload object marker
-	UIManager.UIAll.MarkersXML ^= "<marker manialinkframeid='Frame_MarkerPayload' visibility='WhenInFrustum' objectid='"^_PayloadObjectId^"' box='0 2 0' />";
+	declare Payload <=> Objects[_PayloadObjectId];
+	declare PayloadPos = Payload.Position.X^" "^Payload.Position.Y^" "^Payload.Position.Z;
+	Markers::AddMarker("Payload", "<marker manialinkframeid='Frame_MarkerPayload' visibility='WhenInFrustum' pos='"^PayloadPos^"' box='0 2 0' />");
 
 	// Next checkpoint marker
 	declare CurSector = ML::Clamp(G_CapturedSectors + 1, 1, G_CurMapTotalNbSectors);
 	declare MapLandmark <=> Map::GetLandmarkGauge("Checkpoint", CurSector);
 	if (MapLandmark != Null) {
 		declare Pos = MapLandmark.Position.X^" "^MapLandmark.Position.Y + 2^" "^MapLandmark.Position.Z;
-		UIManager.UIAll.MarkersXML ^= "<marker manialinkframeid='Frame_MarkerCheckpoint' visibility='WhenInFrustum' pos='"^Pos^"' />";
+		Markers::AddMarker("Checkpoint", "<marker manialinkframeid='Frame_MarkerCheckpoint' visibility='WhenInFrustum' pos='"^Pos^"' />");
 	}
 }
 

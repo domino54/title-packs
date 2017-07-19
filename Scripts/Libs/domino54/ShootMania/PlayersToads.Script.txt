@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PLAYERS TOADS by domino54     //
-//  script version: 2017-07-12            //
+//  script version: 2017-07-19            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	they can summon it or destory it.
  */
 
-#Const Version		"2017-07-12"
+#Const Version		"2017-07-19"
 #Const ScriptName	"Libs/domino54/ShootMania/PlayersToads.Script.txt"
 
 #Include "MathLib" as ML
@@ -384,9 +384,9 @@ Text Private_CreateManialinkToadMarker() {
 	declare R = 9/16.;
 	return """
 <manialink version="3" name="{{{C_LibPlayersToads_GUILayerIdMarker}}}">
-<frame id="Frame_PlayerToadMarker">
-	<quad size="{{{8*R}}} 8" halign="center" valign="center" autoscale="0" image="{{{C_ImgBase}}}Minimap/Toad.png" id="Quad_PlayerToadMarker" hidden="1" />
-</frame>
+<frame id="Frame_PlayerToadMarkerContainer" hidden="1"><frame id="Frame_PlayerToadMarker">
+	<quad size="{{{8*R}}} 8" halign="center" valign="center" autoscale="0" image="{{{C_ImgBase}}}Minimap/Toad.png" id="Quad_PlayerToadMarker" />
+</frame></frame>
 <script><!--
 
 #Include "MathLib" as ML
@@ -412,14 +412,16 @@ CSmPlayer GetToad(CSmPlayer _Owner) {
 }
 
 main() {
+	declare Frame_PlayerToadMarkerContainer <=> (Page.GetFirstChild("Frame_PlayerToadMarkerContainer") as CMlFrame);
 	declare Quad_PlayerToadMarker <=> (Page.GetFirstChild("Quad_PlayerToadMarker") as CMlQuad);
 	declare PrevGUIPlayerColor = -1.;
 
 	while (True) {
 		yield;
+		// continue; ///< Marker disabled due some issues
 
 		declare Toad <=> GetToad(GUIPlayer);
-		Quad_PlayerToadMarker.Visible = Toad != Null && GameTime >= Toad.StartTime;
+		Frame_PlayerToadMarkerContainer.Visible = Toad != Null && GameTime >= Toad.StartTime;
 
 		if (GUIPlayer != Null && PrevGUIPlayerColor != GUIPlayer.GetLinearHue) {
 			PrevGUIPlayerColor = GUIPlayer.GetLinearHue;

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-07-19            //
+//  script version: 2017-07-22            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const Version		"2017-07-19"
+#Const Version		"2017-07-22"
 #Const ScriptName	"Libs/domino54/ShootMania/Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -338,6 +338,7 @@ declare persistent Persistent_LibInterfancy_UseLegacyGauges for LocalUser = Fals
 declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
 declare netread Int3[Text] Net_LibInterfancy_ReloadData for Teams[0];
+declare netread Text[Text] Net_LibInterfancy_CustomGaugesIcons for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -356,7 +357,6 @@ declare PrevInterfaceColor = -1.;
 declare PrevShowReloadBoost = False;
 
 // Init
-G_ModulesIcons = C_ModulesIcons;
 ClientUI.OverlayHideGauges = !Persistent_LibInterfancy_UseLegacyGauges;
 ClientUI.OverlayChatOffset = C_UIChatPosition[ClientUI.OverlayHideGauges];
 ClientUI.OverlayChatHideAvatar = ClientUI.OverlayHideGauges;
@@ -371,6 +371,9 @@ ClientUI.OverlayChatHideAvatar = ClientUI.OverlayHideGauges;
 // Update settings
 if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 	PrevSettingsUpdate = Net_LibInterfancy_SettingsUpdate;
+
+	G_ModulesIcons = C_ModulesIcons;
+	foreach (Icon => Image in Net_LibInterfancy_CustomGaugesIcons) G_ModulesIcons[Icon] = Image;
 	
 	foreach (SettingName => SettingValue in Net_LibInterfancy_Settings) {
 		switch (SettingName) {
@@ -1822,7 +1825,7 @@ if (GUIPlayer != Null && PrevGUIPlayerLogin != GUIPlayer.User.Login) {
 if (Frame_Crosshair.Visible) {
 	Quad_CrosshairDot.Visible = GUIPlayer.CurWeapon != 5;
 	
-	Quad_CrosshairLaser.Visible = GUIPlayer.CurWeapon == 1;
+	Quad_CrosshairLaser.Visible = GUIPlayer.CurWeapon == 1 || GUIPlayer.CurWeapon == 6;
 	Quad_CrosshairRocket.Visible = GUIPlayer.CurWeapon == 2;
 	Quad_CrosshairNucleus.Visible = GUIPlayer.CurWeapon == 3;
 	Quad_CrosshairArrow.Visible = GUIPlayer.CurWeapon == 5;
@@ -2038,7 +2041,10 @@ Boolean GetModuleVisibility(Text _ModuleName) {
  */
 Void SetGaugesIconsImages(Text[Text] _IconsImages) {
 	if (_IconsImages.count <= 0) return;
-	foreach (Icon => Image in _IconsImages) Private_SetModuleSetting("Gauges_Icon"^Icon, Image);
+	declare netwrite Text[Text] Net_LibInterfancy_CustomGaugesIcons for Teams[0];
+	declare netwrite Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
+	foreach (Icon => Image in _IconsImages) Net_LibInterfancy_CustomGaugesIcons[Icon] = Image;
+	Net_LibInterfancy_SettingsUpdate = Now;
 }
 
 // ---------------------------------- //

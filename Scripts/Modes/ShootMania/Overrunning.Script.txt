@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  OVERRUNNING by domino54               //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-22            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"OverrunningArena"
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-22"
 #Const ScriptName	"Modes/ShootMania/Overrunning.Script.txt"
 
 // ---------------------------------- //
@@ -19,7 +19,8 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_PlayerAmmoGain	[1 => .75, 2 => 2., 3 => .75]
+#Const C_PlayerAmmoGain			[1 => .75, 2 => 2., 3 => .75]
+#Const C_OverrunningVehiclesURL	"file://Media/Characters/Overrunning.xml"
 
 /// Available weapons for the players
 #Const C_PlayerAvailableWeapons [
@@ -84,6 +85,7 @@ GT_UseRandomToads = False;
 GT_AutoManageOnArmorEmpty = False;
 GT_AutoManageOnHit = False;
 GT_AutoManageOnRespawn = False;
+GT_CharactersDataFileURL = C_OverrunningVehiclesURL;
 ***
 
 // ---------------------------------- //
@@ -91,6 +93,7 @@ GT_AutoManageOnRespawn = False;
 // ---------------------------------- //
 ***Match_InitServer***
 ***
+Characters::SetWindowTitle("Choose your vehicle");
 //Interfancy::SetArmorVisibility(False);
 //Interfancy::SetStaminaVisibility(False);
 
@@ -125,9 +128,6 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 ***Match_StartMap***
 ***
-Interfancy::SetGaugesIconsImages([
-	"Canyon Car" => C_ImgBase^"Icons/CanyonCar.png"
-]);
 G_SpawnsList.clear();
 G_LatestSpawnId = NullId;
 
@@ -211,28 +211,6 @@ foreach (Event in PendingEvents) {
 		if (Event.Player.Score.Points < 0) Event.Player.Score.Points = 0;
 		PassOn(Event);
 	}
-	// ---------------------------------- //
-	// On action event
-	else if (Event.Type == CSmModeEvent::EType::OnActionEvent) {
-		if (Event.Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
-		declare TargetModelId = NullId;
-
-		// ---------------------------------- //
-		// Get the target vehicle
-		switch (Event.ActionInput) {
-			case CSmModeEvent::EActionInput::Activable1 : TargetModelId = Models::CanyonCar();
-			case CSmModeEvent::EActionInput::Activable2 : TargetModelId = Models::StadiumCar();
-			case CSmModeEvent::EActionInput::Activable3 : TargetModelId = Models::ValleyCar();
-			case CSmModeEvent::EActionInput::Activable4 : TargetModelId = Models::LagoonCar();
-		}
-
-		// No need to change model
-		if (TargetModelId == NullId || Event.Player.ForceModelId == TargetModelId) continue;
-
-		// Change the player model
-		UnspawnPlayer(Event.Player);
-		Event.Player.ForceModelId = TargetModelId;
-	}
 }
 
 // ---------------------------------- //
@@ -258,95 +236,12 @@ foreach (Player in Players) {
 	if (Player.RequestsSpectate || Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned || !GT_IsValidPlayer(Player)) continue;
 	GT_InitPlayer(Player);
 
-	// ---------------------------------- //
-	// Set the player vehicle
-	/*
-	declare PlayerCharacterId = 0; // Characters::GetPlayerChar(Player);
-	switch (PlayerCharacterId) {
-		// ---------------------------------- //
-		// Valley car
-		case 2 : {
-			Player.ForceModelId = G_Vehicles["ValleyCar"];
-			Interfancy::SetArmorText(Player, "Valley Car");
-		}
-		// ---------------------------------- //
-		// Stadium car
-		case 1 : {
-			Player.ForceModelId = G_Vehicles["StadiumCar"];
-			Interfancy::SetArmorText(Player, "Stadium Car");
-		}
-		// ---------------------------------- //
-		// Canyon car
-		default : {
-			Player.ForceModelId = G_Vehicles["CanyonCar"];
-			Interfancy::SetArmorText(Player, "Canyon Car");
-		}
-	}
-	*/
-	
-	// ---------------------------------- //
-	// Init player's inventory
-	Inventory::ResetInventory(Player);
-	Inventory::SetAvailableWeapons(Player, C_PlayerAvailableWeapons);
-	foreach (Weapon => Amount in C_PlayerWeaponsAmmoMax) Inventory::SetWeaponSlots(Player, Weapon, Amount);
-	Inventory::ChangeWeaponHotkey(Player, CSmMode::EWeapon::Laser, CSmModeEvent::EActionInput::Consumable1);
-	Inventory::ChangeWeaponHotkey(Player, CSmMode::EWeapon::Rocket, CSmModeEvent::EActionInput::Consumable2);
-	Inventory::SetFirstWeapon(Player);
-	SetPlayerReloadAllWeapons(Player, False);
-	
-	// Inventory vehicles
-	Inventory::CreateItemSlot(Player, "CanyonCar", CSmModeEvent::EActionInput::Activable1, -1, "CanyonCar.png");
-	Inventory::CreateItemSlot(Player, "StadiumCar", CSmModeEvent::EActionInput::Activable2, -1, "StadiumCar.png");
-	Inventory::CreateItemSlot(Player, "ValleyCar", CSmModeEvent::EActionInput::Activable3, -1, "ValleyCar.png");
-	Inventory::CreateItemSlot(Player, "LagoonCar", CSmModeEvent::EActionInput::Activable4, -1, "LagoonCar.png");
-	
-	// ---------------------------------- //
-	// Set player model
-	if (Player.ForceModelId == NullId) Models::SetCanyonCar(Player);
-	switch (Player.ForceModelId) {
-		// ---------------------------------- //
-		// Canyon car
-		case Models::CanyonCar() : {
-			Interfancy::SetArmorText(Player, "Canyon Car");
-			Inventory::SetActiveItem(Player, "CanyonCar");
-			MiniMap::SetVehicleType(Player, 0);
-		}
-		// ---------------------------------- //
-		// Stadium car
-		case Models::StadiumCar() : {
-			Interfancy::SetArmorText(Player, "Stadium Car");
-			Inventory::SetActiveItem(Player, "StadiumCar");
-			MiniMap::SetVehicleType(Player, 1);
-		}
-		// ---------------------------------- //
-		// Valley car
-		case Models::ValleyCar() : {
-			Interfancy::SetArmorText(Player, "Valley Car");
-			Inventory::SetActiveItem(Player, "ValleyCar");
-			MiniMap::SetVehicleType(Player, 2);
-		}
-		// ---------------------------------- //
-		// Lagoon car
-		case Models::LagoonCar() : {
-			Interfancy::SetArmorText(Player, "Lagoon Car");
-			Inventory::SetActiveItem(Player, "LagoonCar");
-			MiniMap::SetVehicleType(Player, 3);
-		}
-		// ---------------------------------- //
-		// Not in a car
-		default : {
-			Interfancy::SetArmorText(Player, "");
-			Inventory::SetActiveItem(Player, "LagoonCar");
-			MiniMap::SetVehicleType(Player, -1);
-		}
-	}
-
-	// Need to set weapon if player is spawned inside of a vehicle
-	SetPlayerWeapon(Player, CSmMode::EWeapon::Rocket, True);
-	PrevPlayerWeapon = -1;
-	
 	// Spawn the player
 	OVR_SpawnPlayer(Player);
+
+	// Need to set weapon if player is spawned inside of a vehicle
+	Inventory::SetFirstWeapon(Player);
+	PrevPlayerWeapon = -1;
 }
 
 // ---------------------------------- //
@@ -410,6 +305,27 @@ Interfancy::SetModuleVisibility("Countdown", False);
 MB_Sleep(1500);
 
 Message::CleanBigMessages();
+***
+
+// ---------------------------------- //
+// Configure player character
+// ---------------------------------- //
+***GalaxyTitles_ConfigCharacter***
+***
+switch (PlayerCharacterId) {
+	case 0 : Models::SetCanyonCar(Player);
+	case 1 : Models::SetStadiumCar(Player);
+	case 2 : Models::SetValleyCar(Player);
+	case 3 : Models::SetLagoonCar(Player);
+}
+
+// Minimap icon
+MiniMap::SetVehicleType(Player, PlayerCharacterId);
+
+// Init player weapons
+Inventory::SetAvailableWeapons(Player, C_PlayerAvailableWeapons);
+foreach (Weapon => Amount in C_PlayerWeaponsAmmoMax) Inventory::SetWeaponSlots(Player, Weapon, Amount);
+SetPlayerReloadAllWeapons(Player, False);
 ***
 
 // ---------------------------------- //

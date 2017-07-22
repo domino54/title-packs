@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2017-07-19            //
+//  script version: 2017-07-22            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2017-07-19"
+#Const Version		"2017-07-22"
 #Const ScriptName	"Libs/domino54/ShootMania/Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -114,11 +114,26 @@
 	CSmModeEvent::EActionInput::None => ""
 ]
 
+/// Custom weapons slots
+#Const C_LibInventory_ActionSlots [
+	CSmMode::EActionSlot::Slot_A,
+	CSmMode::EActionSlot::Slot_B,
+	CSmMode::EActionSlot::Slot_C,
+	CSmMode::EActionSlot::Slot_D
+]
+
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
 declare Boolean G_LibInventory_IsLoaded;	///< True, if the library has been loaded
 declare Text[CSmMode::EWeapon] G_LibInventory_WeaponsIcons;
+
+/// Custom weapons data
+declare Ident[Text] G_LibInventory_CustomWeapons;
+declare Integer[Text] G_LibInventory_WeaponsNbSlots;
+declare Text[Text] G_LibInventory_CustomIcons;
+declare Text[Text] G_LibInventory_CustomNames;
+declare CSmModeEvent::EActionInput[Text] G_LibInventory_WeaponsHotkeys;
 
 // ---------------------------------- //
 // Functions
@@ -708,6 +723,35 @@ Void Private_UpdatePlayerUI(CSmPlayer _Player) {
 }
 
 // ---------------------------------- //
+/** Highlight the active custom weapon 
+ *
+ *	@param	_Player		The player to check if has the weapon.
+ *	@param	_WeaponId	The weapon to check if exists.
+ */
+Void Private_SetActiveCustomWeapon(CSmPlayer _Player, Text _WeaponId) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+
+	declare Text[] LibInventory_PlayerActiveItems for _Player;
+	declare IsChanged = False;
+
+	// Remove highlight from 
+	foreach (WeaponId => ActionId in G_LibInventory_CustomWeapons) {
+		if (!LibInventory_PlayerActiveItems.exists(WeaponId)) continue;
+		declare Removed = LibInventory_PlayerActiveItems.remove(WeaponId);
+		IsChanged = True;
+	}
+
+	// Highlight selected weapon
+	if (_WeaponId != "" && !LibInventory_PlayerActiveItems.exists(_WeaponId)) {
+		LibInventory_PlayerActiveItems.add(_WeaponId);
+		IsChanged = True;
+	}
+
+	// Update interface
+	if (IsChanged) Private_UpdatePlayerUI(_Player);
+}
+
+// ---------------------------------- //
 // Public
 // ---------------------------------- //
 
@@ -724,6 +768,57 @@ Text GetScriptVersion() { return Version; }
  *	@return		The name of the script.
  */
 Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Load a custom weapon.
+ *
+ *	@param	_WeaponItemId		Id of the new weapon.
+ *	@param	_ActionFileName		Path to the weapon's action file.
+ *	@param	_WeaponName			Name of the weapon.
+ *	@param	_WeaponHotkey		Hothey to access the weapon.
+ *	@param	_WeaponSlots		Default slots amount of the weapon.
+ *	@param	_WeaponIcon			Icon image of the weapon.
+ */
+Void LoadCustomWeapon(Text _WeaponItemId, Text _ActionFileName, Text _WeaponName, CSmModeEvent::EActionInput _WeaponHotkey, Integer _WeaponSlots, Text _WeaponIcon) {
+	if (_WeaponItemId == "" || _ActionFileName == "") return;
+
+	G_LibInventory_CustomWeapons	[_WeaponItemId] = ActionList_Add(_ActionFileName);
+	G_LibInventory_WeaponsNbSlots	[_WeaponItemId] = ML::Max(0, _WeaponSlots);
+	G_LibInventory_CustomNames		[_WeaponItemId] = _WeaponName;
+	G_LibInventory_CustomIcons		[_WeaponItemId] = _WeaponIcon;
+	G_LibInventory_WeaponsHotkeys	[_WeaponItemId] = _WeaponHotkey;
+}
+
+Void LoadCustomWeapon(Text _WeaponItemId, Text _ActionFileName, Text _WeaponName, Integer _WeaponSlots, Text _WeaponIcon) {
+	LoadCustomWeapon(_WeaponItemId, _ActionFileName, _WeaponName, CSmModeEvent::EActionInput::None, _WeaponSlots, _WeaponIcon);
+}
+
+// ---------------------------------- //
+/** Get the available custom weapons
+ *
+ *	@return		Available custom weapons.
+ */
+Text[] GetCustomWeapons() {
+	declare Text[] Weapons;
+	if (!G_LibInventory_IsLoaded || G_LibInventory_CustomWeapons.count <= 0) return Weapons;
+	foreach (WeaponId => ActionId in G_LibInventory_CustomWeapons) Weapons.add(WeaponId);
+	return Weapons;
+}
+
+// ---------------------------------- //
+/** Get the name of a custom weapon.
+ *
+ *	@return		Available custom weapons.
+ */
+Text GetWeaponName(Text _WeaponId) {
+	if (!G_LibInventory_IsLoaded || !G_LibInventory_CustomNames.existskey(_WeaponId)) return "";
+	return G_LibInventory_CustomNames[_WeaponId];
+}
+
+Text GetWeaponIcon(Text _WeaponId) {
+	if (!G_LibInventory_IsLoaded || !G_LibInventory_CustomIcons.existskey(_WeaponId)) return "";
+	return G_LibInventory_CustomIcons[_WeaponId];
+}
 
 // ---------------------------------- //
 /** Reorganize player's inventory items according to provided order.
@@ -1149,65 +1244,6 @@ Boolean UseItem(CSmPlayer _Player, Text _ItemName, Integer _Cooldown, Boolean _D
 }
 
 // ---------------------------------- //
-/** Load weapons as items for a player.
- *
- *	@param	_Player		The player to load weapon items.
- *	@param	_Weapons	List of weapons that will be loaded as item for the player.
- */
-Void SetAvailableWeapons(CSmPlayer _Player, CSmMode::EWeapon[] _Weapons) {
-	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
-
-	// ---------------------------------- //
-	// Remove previously added weapons
-	foreach (Weapon in C_LibInventory_Weapons) {
-		if (!C_LibInventory_WeaponsPredefinedNames.existskey(Weapon) || _Weapons.exists(Weapon)) continue;
-		declare WeaponItemName = C_LibInventory_WeaponsPredefinedNames[Weapon];
-		if (ItemExists(_Player, WeaponItemName)) DestroyItemSlot(_Player, WeaponItemName);
-	}
-	
-	// ---------------------------------- //
-	// Load weapons as items
-	foreach (Weapon in _Weapons) {
-		if (!C_LibInventory_WeaponsPredefinedNames.existskey(Weapon)) continue;
-		
-		// Load default weapon icon
-		if (!G_LibInventory_WeaponsIcons.existskey(Weapon))
-			G_LibInventory_WeaponsIcons[Weapon] = C_LibInventory_GetWeaponIcon[Weapon];
-		
-		declare WeaponName = C_LibInventory_WeaponsPredefinedNames[Weapon];
-		declare WeaponHotkey = C_LibInventory_GetWeaponHotkey[Weapon];
-		declare WeaponIcon = G_LibInventory_WeaponsIcons[Weapon];
-		declare WeaponNum = GetWeaponNum(Weapon);
-		
-		CreateItemSlot(_Player, WeaponName, WeaponHotkey, 0, WeaponIcon, WeaponNum);
-		SetPlayerAmmoMax(_Player, Weapon, 0);
-	}
-}
-
-// ---------------------------------- //
-/** Load all weapons as items for a player.
- *
- *	@param	_Player		The player to load all weapons as items.
- */
-Void SetAllWeapons(CSmPlayer _Player) {
-	SetAvailableWeapons(_Player, C_LibInventory_Weapons);
-}
-
-// ---------------------------------- //
-/** Check if the player has certain weapon.
- *
- *	@param	_Player		The player to check if has the weapon.
- *	@param	_Weapon		The weapon to check if exists.
- *
- *	@return		True, if the player has certain weapon.
- */
-Boolean HasWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon) {
-	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return False;
-	if (!C_LibInventory_WeaponsPredefinedNames.existskey(_Weapon)) return False;
-	return ItemExists(_Player, C_LibInventory_WeaponsPredefinedNames[_Weapon]);
-}
-
-// ---------------------------------- //
 /** Set the amount of slots for specific weapon in player's inventory.
  *
  *	@param	_Player		The player to set weapon slots.
@@ -1304,6 +1340,247 @@ Void ChangeWeaponHotkey(CSmPlayer _Player, CSmMode::EWeapon _Weapon, CSmModeEven
 }
 
 // ---------------------------------- //
+/** Check if the player has certain weapon.
+ *
+ *	@param	_Player		The player to check if has the weapon.
+ *	@param	_Weapon		The weapon to check if exists.
+ *
+ *	@return		True, if the player has certain weapon.
+ */
+Boolean HasWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return False;
+	if (!C_LibInventory_WeaponsPredefinedNames.existskey(_Weapon)) return False;
+	return ItemExists(_Player, C_LibInventory_WeaponsPredefinedNames[_Weapon]);
+}
+
+// ---------------------------------- //
+/** Set the player weapon.
+ *
+ *	@param	_Player		The player to set weapon.
+ *	@param	_Weapon		The weapon to be set.
+ */
+Void SetWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon) {
+	if (!HasWeapon(_Player, _Weapon)) return;
+	SetPlayerWeapon(_Player, _Weapon, False);
+
+	// ---------------------------------- //
+	// Unbind custom weapon
+	declare Text LibInventory_ActiveWeaponId for _Player;
+	if (LibInventory_ActiveWeaponId != "") {
+		declare CSmMode::EActionSlot[Text] LibInventory_PlayerCustomWeapons for _Player;
+		if (LibInventory_PlayerCustomWeapons.existskey(LibInventory_ActiveWeaponId)) {
+			declare ActionSlot = LibInventory_PlayerCustomWeapons[LibInventory_ActiveWeaponId];
+			ActionBind(_Player, ActionSlot, CSmMode::EActionInput::None);
+		}
+
+		LibInventory_ActiveWeaponId = "";
+		Private_SetActiveCustomWeapon(_Player, "");
+	}
+}
+
+// ---------------------------------- //
+/** Give a weapon to a player.
+ *
+ *	@param	_Player		The player to give the weapon.
+ *	@param	_Weapon		The weapon to give to the player.
+ *	@param	_Hotkey		Override the default hotkey if set to other than None.
+ */
+Void AddWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon, CSmModeEvent::EActionInput _Hotkey) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	if (HasWeapon(_Player, _Weapon) || !C_LibInventory_WeaponsPredefinedNames.existskey(_Weapon)) return;
+
+	declare WeaponItemId = C_LibInventory_WeaponsPredefinedNames[_Weapon];
+	declare WeaponHotkey = C_LibInventory_GetWeaponHotkey[_Weapon];
+	declare WeaponIcon = G_LibInventory_WeaponsIcons[_Weapon];
+	declare WeaponNum = GetWeaponNum(_Weapon);
+
+	// Override hotkey
+	if (_Hotkey != CSmModeEvent::EActionInput::None) WeaponHotkey = _Hotkey;
+
+	// Create item slot
+	CreateItemSlot(_Player, WeaponItemId, WeaponHotkey, 0, WeaponIcon, WeaponNum);
+	SetPlayerAmmoMax(_Player, _Weapon, 0);
+}
+
+Void AddWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon) {
+	AddWeapon(_Player, _Weapon, CSmModeEvent::EActionInput::None);
+}
+
+// ---------------------------------- //
+/** Take away a weapon from a player.
+ *
+ *	@param	_Player		The player to remove the weapon.
+ *	@param	_Weapon		The weapon to remove from the player.
+ */
+Void RemoveWeapon(CSmPlayer _Player, CSmMode::EWeapon _Weapon) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	if (!HasWeapon(_Player, _Weapon) || !C_LibInventory_WeaponsPredefinedNames.existskey(_Weapon)) return;
+
+	// Destroy item slot
+	DestroyItemSlot(_Player, C_LibInventory_WeaponsPredefinedNames[_Weapon]);
+	SetPlayerAmmoMax(_Player, _Weapon, 0);
+
+	if (_Player.CurWeapon != GetWeaponNum(_Weapon)) return;
+	// Private_SetAnyWeapon(_Player);
+}
+
+// ---------------------------------- //
+/** Load weapons as items for a player.
+ *
+ *	@param	_Player		The player to load weapon items.
+ *	@param	_Weapons	List of weapons that will be loaded as item for the player.
+ */
+Void SetAvailableWeapons(CSmPlayer _Player, CSmMode::EWeapon[] _Weapons) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+
+	// Load weapons as items
+	foreach (Weapon in _Weapons) AddWeapon(_Player, Weapon);
+
+	// Remove no longer available weapons
+	foreach (Weapon in C_LibInventory_Weapons) {
+		if (_Weapons.exists(Weapon)) continue;
+		RemoveWeapon(_Player, Weapon);
+	}	
+}
+
+// ---------------------------------- //
+/** Load all weapons as items for a player.
+ *
+ *	@param	_Player		The player to load all weapons as items.
+ */
+Void SetAllWeapons(CSmPlayer _Player) {
+	SetAvailableWeapons(_Player, C_LibInventory_Weapons);
+}
+
+// ---------------------------------- //
+/** Get the active custom weapon of a player.
+ *
+ *	@param	_Player		The player to get the weapon.
+ *
+ *	@return		Id of the player's custom weapon.
+ */
+Text GetPlayerCustomWeapon(CSmPlayer _Player) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return "";
+	declare Text LibInventory_ActiveWeaponId for _Player;
+	return LibInventory_ActiveWeaponId;
+}
+
+// ---------------------------------- //
+/** Check if the player has custom weapon.
+ *
+ *	@param	_Player		The player to check if has the weapon.
+ *	@param	_WeaponId	The weapon to check if exists.
+ *
+ *	@return		True, if the player has custom weapon.
+ */
+Boolean HasWeapon(CSmPlayer _Player, Text _WeaponId) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return False;
+	if (!G_LibInventory_CustomWeapons.existskey(_WeaponId)) return False;
+	return ItemExists(_Player, _WeaponId);
+}
+
+// ---------------------------------- //
+/** Set the player custom weapon.
+ *
+ *	@param	_Player		The player to set weapon.
+ *	@param	_WeaponId	Id of a custom weapon to set.
+ */
+Void SetWeapon(CSmPlayer _Player, Text _WeaponId) {
+	if (!HasWeapon(_Player, _WeaponId)) return;
+
+	// Weapon is already active
+	declare Text LibInventory_ActiveWeaponId for _Player;
+	if (LibInventory_ActiveWeaponId == _WeaponId) return;
+
+	// Player doesn't have the weapon
+	declare CSmMode::EActionSlot[Text] LibInventory_PlayerCustomWeapons for _Player;
+	if (!LibInventory_PlayerCustomWeapons.existskey(_WeaponId)) return;
+
+	// Load custom weapon
+	declare ActionSlot = LibInventory_PlayerCustomWeapons[_WeaponId];
+
+	ActionBind(_Player, ActionSlot, CSmMode::EActionInput::Weapon);
+	SetPlayerWeapon(_Player, CSmMode::EWeapon::Missile, False);
+
+	LibInventory_ActiveWeaponId = _WeaponId;
+	Private_SetActiveCustomWeapon(_Player, _WeaponId);
+}
+
+// ---------------------------------- //
+/** Give a weapon to a player.
+ *
+ *	@param	_Player		The player to give the weapon.
+ *	@param	_WeaponId	The weapon to give to the player.
+ *	@param	_Hotkey		Override the default hotkey if set to other than None.
+ */
+Void AddWeapon(CSmPlayer _Player, Text _WeaponId, CSmModeEvent::EActionInput _Hotkey) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	if (HasWeapon(_Player, _WeaponId) || !G_LibInventory_CustomWeapons.existskey(_WeaponId)) return;
+
+	declare WeaponHotkey = G_LibInventory_WeaponsHotkeys[_WeaponId];
+	declare WeaponIcon = G_LibInventory_CustomIcons[_WeaponId];
+	declare WeaponSlots = G_LibInventory_WeaponsNbSlots[_WeaponId];
+
+	// Override hotkey
+	if (_Hotkey != CSmModeEvent::EActionInput::None) WeaponHotkey = _Hotkey;
+
+	// Create item slot
+	CreateItemSlot(_Player, _WeaponId, WeaponHotkey, WeaponSlots, WeaponIcon);
+
+	// ---------------------------------- //
+	// Load action
+	declare CSmMode::EActionSlot[Text] LibInventory_PlayerCustomWeapons for _Player;
+	foreach (ActionSlot in C_LibInventory_ActionSlots) {
+		if (LibInventory_PlayerCustomWeapons.exists(ActionSlot)) continue;
+
+		ActionLoad(_Player, ActionSlot, G_LibInventory_CustomWeapons[_WeaponId]);
+		LibInventory_PlayerCustomWeapons[_WeaponId] = ActionSlot;
+		break;
+	}
+}
+
+Void AddWeapon(CSmPlayer _Player, Text _WeaponId) {
+	AddWeapon(_Player, _WeaponId, CSmModeEvent::EActionInput::None);
+}
+
+// ---------------------------------- //
+/** Take away a custom weapon from a player.
+ *
+ *	@param	_Player		The player to remove the weapon.
+ *	@param	_WeaponId	The weapon to remove from the player.
+ */
+Void RemoveWeapon(CSmPlayer _Player,Text _WeaponId) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+	if (!HasWeapon(_Player, _WeaponId) || !G_LibInventory_CustomWeapons.existskey(_WeaponId)) return;
+
+	// Destroy item slot
+	DestroyItemSlot(_Player, _WeaponId);
+
+	declare Text LibInventory_ActiveWeaponId for _Player;
+	if (LibInventory_ActiveWeaponId != _WeaponId) return;
+	// Private_SetAnyWeapon(_Player);
+}
+
+// ---------------------------------- //
+/** Load custom weapons as items for a player.
+ *
+ *	@param	_Player			The player to load weapon items.
+ *	@param	_WeaponsIds		List of custom weapons that will be loaded as item for the player.
+ */
+Void SetAvailableWeapons(CSmPlayer _Player, Text[] _WeaponsIds) {
+	if (!G_LibInventory_IsLoaded || _Player == Null || _Player.IsBot) return;
+
+	// Load weapons as items
+	foreach (WeaponId in _WeaponsIds) AddWeapon(_Player, WeaponId);
+
+	// Remove no longer available weapons
+	foreach (WeaponId => ActionId in G_LibInventory_CustomWeapons) {
+		if (_WeaponsIds.exists(WeaponId)) continue;
+		RemoveWeapon(_Player, WeaponId);
+	}	
+}
+
+// ---------------------------------- //
 /** Select first weapon when spawning, depending on weapons slots amount.
  *	Will set Rocket, if player has no weapons or weapons list includes Rocket.
  *	Otherwise last weapon from the list is selected.
@@ -1350,20 +1627,30 @@ Boolean SwitchWeapon(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput)
 
 	// Get the weapon to set
 	declare HotkeyItemName = LibInventory_PlayerItemHotkey.keyof(_ActionInput);
-	declare CSmMode::EWeapon Weapon;
-	switch (HotkeyItemName) {
-		case "LInv_WpnLaser"	: Weapon = CSmMode::EWeapon::Laser;
-		case "LInv_WpnRocket"	: Weapon = CSmMode::EWeapon::Rocket;
-		case "LInv_WpnNucleus"	: Weapon = CSmMode::EWeapon::Nucleus;
-		case "LInv_WpnArrow"	: Weapon = CSmMode::EWeapon::Arrow;
-		case "LInv_WpnMissile"	: Weapon = CSmMode::EWeapon::Missile;
-		default : return False;
+
+	// ---------------------------------- //
+	// Default weapons
+	if (C_LibInventory_WeaponsPredefinedNames.exists(HotkeyItemName)) {
+		declare CSmMode::EWeapon Weapon;
+		switch (HotkeyItemName) {
+			case "LInv_WpnLaser"	: Weapon = CSmMode::EWeapon::Laser;
+			case "LInv_WpnRocket"	: Weapon = CSmMode::EWeapon::Rocket;
+			case "LInv_WpnNucleus"	: Weapon = CSmMode::EWeapon::Nucleus;
+			case "LInv_WpnArrow"	: Weapon = CSmMode::EWeapon::Arrow;
+			case "LInv_WpnMissile"	: Weapon = CSmMode::EWeapon::Missile;
+			default : return False;
+		}
+
+		// Set weapon only if it has at least one ammo slot
+		if (GetWeaponSlots(_Player, Weapon) <= 0) return False;
+		SetWeapon(_Player, Weapon);
+		return True;
 	}
 
-	// Set weapon only if it has at least one ammo slot
-	if (GetWeaponSlots(_Player, Weapon) <= 0) return False;
-	
-	SetPlayerWeapon(_Player, Weapon, False);
+	// ---------------------------------- //
+	// Custom weapons
+	if (!HasWeapon(_Player, HotkeyItemName)) return False;
+	SetWeapon(_Player, HotkeyItemName);
 	return True;
 }
 
@@ -1384,37 +1671,62 @@ Void ScrollWeapons(CSmPlayer _Player, Integer _ActionChange) {
 		6 => CSmMode::EWeapon::Missile
 	];
 	
+	// ---------------------------------- //
 	// Get player weapons
 	declare Text[] LibInventory_PlayerItems for _Player;
-	declare CSmMode::EWeapon[] PlayerWeapons;
+	declare Text[] PlayerWeaponsItems;
 
-	foreach (ItemName in LibInventory_PlayerItems) {
-		if (!C_LibInventory_WeaponsPredefinedNames.exists(ItemName)) continue;
-		declare CSmMode::EWeapon Weapon;
-		switch (ItemName) {
-			case "LInv_WpnLaser"	: Weapon = CSmMode::EWeapon::Laser;
-			case "LInv_WpnRocket"	: Weapon = CSmMode::EWeapon::Rocket;
-			case "LInv_WpnNucleus"	: Weapon = CSmMode::EWeapon::Nucleus;
-			case "LInv_WpnArrow"	: Weapon = CSmMode::EWeapon::Arrow;
-			case "LInv_WpnMissile"	: Weapon = CSmMode::EWeapon::Missile;
-			default : continue;
+	foreach (ItemId in LibInventory_PlayerItems) {
+		if (!C_LibInventory_WeaponsPredefinedNames.exists(ItemId) && !G_LibInventory_CustomWeapons.existskey(ItemId)) continue;
+
+		// Weapon ammo is null
+		if (C_LibInventory_WeaponsPredefinedNames.exists(ItemId)) {
+			if (GetWeaponSlots(_Player, C_LibInventory_WeaponsPredefinedNames.keyof(ItemId)) <= 0) continue;
 		}
-		if (GetWeaponSlots(_Player, Weapon) > 0) PlayerWeapons.add(Weapon);
+		else if (G_LibInventory_CustomWeapons.existskey(ItemId)) {
+			// if (GetWeaponSlots(_Player, ItemId) <= 0) continue;
+		}
+		PlayerWeaponsItems.add(ItemId);
 	}
-	if (PlayerWeapons.count <= 1) return;
-	
+
+	if (PlayerWeaponsItems.count <= 0) return;
+
+	// ---------------------------------- //
+	// Set the only weapon available
+	if (PlayerWeaponsItems.count == 1) {
+		declare ItemId = PlayerWeaponsItems[0];
+		if (C_LibInventory_WeaponsPredefinedNames.exists(ItemId))
+			SetWeapon(_Player, C_LibInventory_WeaponsPredefinedNames.keyof(ItemId));
+		else
+			SetWeapon(_Player, ItemId);
+		return;
+	}
+
+	// ---------------------------------- //
+	// Get the active weapon item name
+	declare Text LibInventory_ActiveWeaponId for _Player;
+	declare ActiveWeaponItemId = LibInventory_ActiveWeaponId;
+
+	if (ActiveWeaponItemId == "") {
+		declare CurrentWeapon = CSmMode::EWeapon::Rocket;
+		if (WeaponNumToWeapon.existskey(_Player.CurWeapon)) CurrentWeapon = WeaponNumToWeapon[_Player.CurWeapon];
+		ActiveWeaponItemId = C_LibInventory_WeaponsPredefinedNames[CurrentWeapon];
+	}
+
 	// ---------------------------------- //
 	// Select next weapon
-	declare CurrentWeapon = CSmMode::EWeapon::Rocket;
-	if (WeaponNumToWeapon.existskey(_Player.CurWeapon)) CurrentWeapon = WeaponNumToWeapon[_Player.CurWeapon];
-	declare Key = PlayerWeapons.keyof(CurrentWeapon);
+	declare Key = PlayerWeaponsItems.keyof(ActiveWeaponItemId);
 	Key += -_ActionChange;
-	if (Key < 0) Key = PlayerWeapons.count - 1;
-	if (Key > PlayerWeapons.count - 1) Key = 0;
-	CurrentWeapon = PlayerWeapons[Key];
-	
-	// Set new weapon
-	SetPlayerWeapon(_Player, CurrentWeapon, False);
+	if (Key < 0) Key = PlayerWeaponsItems.count - 1;
+	if (Key > PlayerWeaponsItems.count - 1) Key = 0;
+	declare NewWeaponItemId = PlayerWeaponsItems[Key];
+
+	// Set the new weapon
+	if (C_LibInventory_WeaponsPredefinedNames.exists(NewWeaponItemId))
+		SetWeapon(_Player, C_LibInventory_WeaponsPredefinedNames.keyof(NewWeaponItemId));
+	else
+		SetWeapon(_Player, NewWeaponItemId);
+	return;
 }
 
 // ---------------------------------- //
@@ -1433,6 +1745,11 @@ Void ResetInventory(CSmPlayer _Player) {
 	declare Integer[Text] LibInventory_PlayerItemCooldownStart for _Player;
 	declare Integer[Text] LibInventory_PlayerItemCooldownDuration for _Player;
 	declare Text[] LibInventory_PlayerActiveItems for _Player;
+	declare Text LibInventory_ActiveWeaponId for _Player;
+	declare CSmMode::EActionSlot[Text] LibInventory_PlayerCustomWeapons for _Player;
+
+	foreach (WeaponId => ActionSlot in LibInventory_PlayerCustomWeapons)
+		ActionBind(_Player, ActionSlot, CSmMode::EActionInput::None);
 	
 	LibInventory_PlayerItems.clear();
 	LibInventory_PlayerItemHotkey.clear();
@@ -1442,6 +1759,8 @@ Void ResetInventory(CSmPlayer _Player) {
 	LibInventory_PlayerItemCooldownStart.clear();
 	LibInventory_PlayerItemCooldownDuration.clear();
 	LibInventory_PlayerActiveItems.clear();
+	LibInventory_ActiveWeaponId = "";
+	LibInventory_PlayerCustomWeapons.clear();
 	
 	// Update interface
 	Private_UpdatePlayerUI(_Player);

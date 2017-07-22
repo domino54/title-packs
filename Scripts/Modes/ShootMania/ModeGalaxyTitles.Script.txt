@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-07-19            //
+//  script version: 2017-07-22            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-07-19"
+#Const GTVersion	"2017-07-22"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -94,6 +94,13 @@
 
 #Const C_EventMaxDamage		100		///< Maximum damage amount inflicted by weapons
 #Const C_PlayerStaminaMax	1.25	///< Amount of player stamina
+
+// Classes
+#Const C_ScoutStaminaMax		1.
+#Const C_SummonerAmmoGain		.875
+#Const C_SummonerRocketMax		3
+#Const C_HealerAmmoGain			.875
+#Const C_HealerSupplyCooldown	4000
 
 // ---------------------------------- //
 // Global variables
@@ -272,7 +279,7 @@ Toads::SetAutoDestroyToads(False);
 // Load characters
 Characters::Load(GT_CharactersDataFileURL);
 while (Characters::IsBeingImported()) MB_Yield();
-Characters::Build();
+Characters::Build("Eurostile", "Eurostile_Bold");
 Characters::SetArmorBase(S_PlayerArmorPoints);
 
 Models::LoadCustom("Sintel", "Characters\\SintelSample.Item.Gbx");
@@ -368,6 +375,13 @@ ST2::Build("SM");
 
 // Update scores summary visibility
 Interfancy::SetModuleVisibility("ScoreSummary", UseClans);
+
+// Obtain custom weapons icons
+foreach (WeaponId in Inventory::GetCustomWeapons()) {
+	declare WeaponName = Inventory::GetWeaponName(WeaponId);
+	declare WeaponIcon = Inventory::GetWeaponIcon(WeaponId);
+	Interfancy::SetGaugesIconsImages([WeaponName => C_ImgBase^"Icons/"^WeaponIcon]);
+}
 
 // ---------------------------------- //
 // Stop the script if server is in matchmaking mode and mode doesn't support it
@@ -669,12 +683,21 @@ foreach (Event in PendingEvents) {
 	}
 	// ---------------------------------- //
 	// On hit
-	else if (Event.Type == CSmModeEvent::EType::OnHit) {
+	else if (
+		Event.Type == CSmModeEvent::EType::OnHit ||
+		Event.Type == CSmModeEvent::EType::OnActionCustomEvent
+	) {
 		// ---------------------------------- //
 		// Automatic hit management
 		if (GT_AutoManageOnHit) {
-			// Reduce Laser damage
-			if (Event.Damage > C_EventMaxDamage) Event.Damage = C_EventMaxDamage;
+			if (!GT_IsHitEvent(Event)) {
+				Discard(Event);
+				continue;
+			}
+
+			// Get the event damage
+			declare EventDamage = GT_GetEventDamage(Event);
+			Event.Damage = EventDamage;
 
 			// ---------------------------------- //
 			// Turret shooter
@@ -698,19 +721,19 @@ foreach (Event in PendingEvents) {
 							continue;
 						}
 						
-						declare Points = Event.Damage / 100;
+						declare Points = EventDamage / 100;
 						Scores::AddPlayerRoundPoints(Shooter.Score, Points);
 						TopScores::AddPoints(Shooter.Score, "Hit", Points);
-						PassOn(Event);
+						GT_PassOnHit(Event);
 					}
-					else PassOn(Event);
+					else GT_PassOnHit(Event);
 					+++OnTurretHitByTurret+++
 				}
 				// ---------------------------------- //
 				// Object hit
 				else if (Event.VictimObject != Null) {
 					+++OnObjectHitByTurret+++
-					PassOn(Event);
+					GT_PassOnHit(Event);
 				}
 				// ---------------------------------- //
 				// Player hit
@@ -723,10 +746,10 @@ foreach (Event in PendingEvents) {
 						declare Shooter = Turrets::GetTurretOwner(Event.ShooterTurret);
 						if (Shooter == Null || Shooter == Event.Victim) continue;
 						
-						declare Points = Event.Damage / 100;
+						declare Points = EventDamage / 100;
 						Scores::AddPlayerRoundPoints(Shooter.Score, Points);
 						TopScores::AddPoints(Shooter.Score, "Hit", Points);
-						RemovePlayerArmor(Event.Victim, Event.Damage, Shooter, Points);
+						RemovePlayerArmor(Event.Victim, EventDamage, Shooter, Points);
 
 						// Elimination assists
 						declare Ident[] GT_VictimShootHistory for Event.Victim;
@@ -737,7 +760,7 @@ foreach (Event in PendingEvents) {
 							GT_JustHitByTurret = True;
 						}
 					}
-					else PassOn(Event);
+					else GT_PassOnHit(Event);
 					+++OnHitByTurret+++
 				}
 			}
@@ -757,21 +780,21 @@ foreach (Event in PendingEvents) {
 						declare Shooter = Event.Shooter;
 						if (Shooter.IsBot) Shooter = Event.Shooter.Driver.Owner;
 
-						if (Shooter == Null/* || Shooter == Turrets::GetTurretOwner(Event.VictimTurret)*/) {
+						if (Shooter == Null || Shooter == Turrets::GetTurretOwner(Event.VictimTurret)) {
 							Discard(Event);
 							continue;
 						}
 						
-						PassOn(Event);
+						GT_PassOnHit(Event);
 					}
-					else PassOn(Event);
+					else GT_PassOnHit(Event);
 					+++OnTurretHit+++
 				}
 				// ---------------------------------- //
 				// Object hit
 				else if (Event.VictimObject != Null) {
 					+++OnObjectHit+++
-					PassOn(Event);
+					GT_PassOnHit(Event);
 				}
 				// ---------------------------------- //
 				// Invalid events
@@ -779,8 +802,28 @@ foreach (Event in PendingEvents) {
 				
 				// ---------------------------------- //
 				// Teammate hit
-				else if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) Discard(Event);
-				
+				else if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) {
+					declare ShooterCustomWeapon = Inventory::GetPlayerCustomWeapon(Event.Shooter);
+
+					// ---------------------------------- //
+					// Heal teammates using MediShot
+					if (ShooterCustomWeapon == "MediShot") {
+						if (Event.Victim.Armor < Event.Victim.ArmorMax) {
+							declare HealedArmor = 100;
+							declare Points = HealedArmor / 100;
+
+							Scores::AddPlayerRoundPoints(Event.Shooter.Score, Points);
+							TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
+							GalaxyTitles::ShowHealingParticles(Event.Victim);
+							AddPlayerArmor(Event.Victim, HealedArmor, Event.Shooter, Points);
+							GT_PassOnHit(Event);
+
+							Interfancy::SendCrosshairNote(Event.Shooter, ["Healed $<%1$>", Event.Victim.User.Name], 2000);
+							Interfancy::SendCrosshairNote(Event.Victim, ["$<%1$> healed you!", Event.Shooter.User.Name], 2000);
+						}
+					}
+					else Discard(Event);
+				}
 				// ---------------------------------- //
 				// A bot has hit someone
 				else if (Event.Shooter.IsBot) {
@@ -791,10 +834,10 @@ foreach (Event in PendingEvents) {
 						declare Shooter = Event.Shooter.Driver.Owner;
 						if (Shooter == Null || Shooter == Event.Victim) continue;
 						
-						declare Points = Event.Damage / 100;
+						declare Points = EventDamage / 100;
 						Scores::AddPlayerRoundPoints(Shooter.Score, Points);
 						TopScores::AddPoints(Shooter.Score, "Hit", Points);
-						RemovePlayerArmor(Event.Victim, Event.Damage, Shooter, Points);
+						RemovePlayerArmor(Event.Victim, EventDamage, Shooter, Points);
 
 						// Elimination assists
 						declare Ident[] GT_VictimShootHistory for Event.Victim;
@@ -809,9 +852,9 @@ foreach (Event in PendingEvents) {
 					// Other Toads
 					else if (Event.Victim.IsBot) {
 						if (Event.Victim.CurrentClan != 0 && Event.Shooter.CurrentClan == Event.Victim.CurrentClan) Discard(Event);
-						else PassOn(Event);
+						else GT_PassOnHit(Event);
 					}
-					else PassOn(Event);
+					else GT_PassOnHit(Event);
 				}
 				
 				// ---------------------------------- //
@@ -819,7 +862,7 @@ foreach (Event in PendingEvents) {
 				else {
 					+++OnHitConditions+++
 					
-					declare Points = ML::Min(Event.Damage, Event.Victim.Armor) / 100;
+					declare Points = ML::Min(EventDamage, Event.Victim.Armor) / 100;
 					Scores::AddPlayerRoundPoints(Event.Shooter.Score, Points);
 					TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
 					Event.ShooterPoints = Points;
@@ -839,7 +882,7 @@ foreach (Event in PendingEvents) {
 					GT_VictimShootHistory.add(Event.Shooter.Id);
 					
 					Statistics::OnHit(Event);
-					PassOn(Event);
+					GT_PassOnHit(Event);
 				}
 			}
 			// ---------------------------------- //
@@ -973,6 +1016,19 @@ foreach (Event in PendingEvents) {
 // Galaxy Titles features
 GT_UnspawnPlayersChangingClan();
 GalaxyTitles::Loop(GT_UseAutospawnObjects && S_ObjectsRespawnTime > 0, S_ToadsRespawnTime * 1000);
+
+// ---------------------------------- //
+// Update the custom weapon name in gauges
+foreach (Player in Players) {
+	declare GT_PlayerCustomWeaponId = Inventory::GetPlayerCustomWeapon(Player);
+	declare Text GT_PrevCustomWeaponId for Player;
+
+	if (GT_PrevCustomWeaponId == GT_PlayerCustomWeaponId) continue;
+	GT_PrevCustomWeaponId = GT_PlayerCustomWeaponId;
+
+	declare WeaponName = Inventory::GetWeaponName(GT_PlayerCustomWeaponId);
+	Interfancy::SetPlayerCustomWeapon(Player, WeaponName);
+}
 
 // ---------------------------------- //
 // Respawn players changing characters
@@ -1158,10 +1214,10 @@ WarmUp::Unload();
 // ---------------------------------- //
 // GalaxyTitles - configure player character
 // ---------------------------------- //
-***GalaxyTitles_ConfigCharacter***
+***Private_GalaxyTitles_ConfigCharacter***
 ***
 declare PlayerCharacterId = 0;
-if (S_EnableCharSelection) PlayerCharacterId = Characters::GetPlayerChar(_Player);
+if (S_EnableCharSelection) PlayerCharacterId = Characters::GetPlayerChar(Player);
 
 // ---------------------------------- //
 // Default Galaxy characters
@@ -1169,55 +1225,80 @@ if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterI
 	// ---------------------------------- //
 	// Sintel
 	case 1 : {
-		Inventory::SetAvailableWeapons(_Player, [CSmMode::EWeapon::Missile, CSmMode::EWeapon::Rocket]);
-		Inventory::ChangeWeaponHotkey(_Player, CSmMode::EWeapon::Missile, CSmModeEvent::EActionInput::Activable1);
-		Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Missile, 1);
-		Inventory::SetWeaponSlots(_Player, CSmMode::EWeapon::Rocket, 4);
+		Models::SetCustom(Player, "Sintel");
 
-		_Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
-		Models::SetCustom(_Player, "Sintel");
+		Inventory::SetAvailableWeapons(Player, [CSmMode::EWeapon::Missile, CSmMode::EWeapon::Rocket]);
+		Inventory::ChangeWeaponHotkey(Player, CSmMode::EWeapon::Missile, CSmModeEvent::EActionInput::Activable1);
+		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Missile, 1);
+		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, 4);
+
+		Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
 	}
 	// ---------------------------------- //
 	// Susu
 	case 2 : {
-		Toads::AddToInventory(_Player);
-		Models::SetArenaPlayer(_Player, "Susu.zip");
+		Models::SetArenaPlayer(Player, "Susu.zip");
+		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, C_SummonerRocketMax);
+		Toads::AddToInventory(Player);
+
+		Player.AmmoGain = C_SummonerAmmoGain;
+		Player.StaminaMax = C_ScoutStaminaMax;
 	}
 	// ---------------------------------- //
 	// Constructor
 	case 3 : {
-		Turrets::AddToInventory(_Player);
-		Models::SetArenaPlayer(_Player, "TronMan.zip");
+		Models::SetArenaPlayer(Player, "TronMan.zip");
+		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, C_SummonerRocketMax);
+		Turrets::AddToInventory(Player);
+
+		Player.AmmoGain = C_SummonerAmmoGain;
+		Player.StaminaMax = C_ScoutStaminaMax;
 	}
 	// ---------------------------------- //
 	// Medic
 	case 4 : {
-		GalaxyTitles::LoadInfiniteSupplies(_Player, 5000);
-		GalaxyTitles::SetPlayerCanPickUpSupplies(_Player, False);
-		Models::SetArenaPlayer(_Player, "StormWoman.Skin.Pack.Gbx");
+		Models::SetArenaPlayer(Player, "StormWoman.Skin.Pack.Gbx");
+
+		GalaxyTitles::LoadInfiniteSupplies(Player, C_HealerSupplyCooldown);
+		GalaxyTitles::SetPlayerCanPickUpSupplies(Player, False);
+
+		/*
+		Inventory::RemoveWeapon(_Player, CSmMode::EWeapon::Laser);
+		Inventory::AddWeapon(_Player, CSmMode::EWeapon::Rocket);
+		Inventory::AddWeapon(_Player, "MediShot");
+		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, 4);
+		*/
+
+		Player.AmmoGain = C_HealerAmmoGain;
+		Player.StaminaMax = C_ScoutStaminaMax;
 	}
 	// ---------------------------------- //
 	// Toad
 	case 5 : {
-		Models::SetMinion(_Player);
+		Player.ForceModelId = GalaxyTitles::GetToadModel();
+
+		Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
+		Player.SpeedPower = .75;
 	}
 }
+
+---GalaxyTitles_ConfigCharacter---
 
 // ---------------------------------- //
 // Current character name
 declare PlayerCharacterName = "";
-if (PlayerCharacterId > 0) PlayerCharacterName = Characters::GetCharName(_Player);
-Interfancy::SetArmorText(_Player, PlayerCharacterName);
+if (PlayerCharacterId > 0) PlayerCharacterName = Characters::GetCharName(Player);
+Interfancy::SetArmorText(Player, PlayerCharacterName);
 
 // ---------------------------------- //
 // Current character icon
 declare PlayerCharacterIcon1 = "";
 declare PlayerCharacterIcon2 = "";
 if (PlayerCharacterId > 0) {
-	PlayerCharacterIcon1 = Characters::GetCharIcon(_Player);
-	PlayerCharacterIcon2 = Characters::GetCharIcon2(_Player);
+	PlayerCharacterIcon1 = Characters::GetCharIcon(Player);
+	PlayerCharacterIcon2 = Characters::GetCharIcon2(Player);
 }
-Interfancy::SetCharacterIcon(_Player, PlayerCharacterIcon1, PlayerCharacterIcon2);
+Interfancy::SetCharacterIcon(Player, PlayerCharacterIcon1, PlayerCharacterIcon2);
 ***
 
 // ---------------------------------- //
@@ -1326,13 +1407,62 @@ Void GT_InitPlayer(CSmPlayer _Player) {
 	_Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints, 1, 10) * 100;
 	_Player.StaminaMax = C_PlayerStaminaMax;
 	_Player.AmmoGain = 1.;
+	_Player.SpeedPower = 1.;
 	Models::SetDefault(_Player);
 
 	// Configure the player's character
-	+++GalaxyTitles_ConfigCharacter+++
+	declare Player <=> _Player;
+	---Private_GalaxyTitles_ConfigCharacter---
 
 	// Initialize weapon
 	Inventory::SetFirstWeapon(_Player);
+}
+
+// ---------------------------------- //
+/** Check if an event is hit.
+ *
+ *	@param	_Event	The event to check.
+ *
+ *	@return		True, if the event is a hit.
+ */
+Boolean GT_IsHitEvent(CSmModeEvent _Event) {
+	if (_Event == Null) return False;
+	if (_Event.Type == CSmModeEvent::EType::OnHit) return True;
+	if (_Event.Type != CSmModeEvent::EType::OnActionCustomEvent) return False;
+	return _Event.Param1 == "damage";
+}
+
+// ---------------------------------- //
+/** Get the damage of a hit event.
+ *
+ *	@param	_Event	The event to get damage.
+ *
+ *	@return		Damage of the hit.
+ */
+Integer GT_GetEventDamage(CSmModeEvent _Event) {
+	if (_Event == Null) return 0;
+	if (_Event.Type == CSmModeEvent::EType::OnHit) return ML::Min(_Event.Damage, C_EventMaxDamage);
+	if (_Event.Type != CSmModeEvent::EType::OnActionCustomEvent) return 0;
+
+	if (_Event.Param1 != "damage" || !_Event.Param2.existskey(0)) return 0;
+	return ML::Min(TL::ToInteger(_Event.Param2[0]), C_EventMaxDamage);
+}
+
+// ---------------------------------- //
+/** Pass a hit event.
+ *
+ *	@param	_Event	The event to pass.
+ */
+Void GT_PassOnHit(CSmModeEvent _Event) {
+	if (_Event == Null) return;
+	if (_Event.Type != CSmModeEvent::EType::OnHit && _Event.Type != CSmModeEvent::EType::OnActionCustomEvent) return;
+
+	PassOn(_Event);
+
+	if (_Event.Type == CSmModeEvent::EType::OnActionCustomEvent) {
+		declare EventDamage = GT_GetEventDamage(_Event);
+		if (_Event.Victim != Null) RemovePlayerArmor(_Event.Victim, EventDamage, _Event.Shooter, EventDamage / 100);
+	}
 }
 
 // ---------------------------------- //
@@ -1620,7 +1750,7 @@ Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
 		// Check if there are enough players
 		if (!UseClans || _AllTeamsTotal) GT_HasEnoughPlayers = PlayersNbTotal >= _MinimumNbPlayers;
 		else GT_HasEnoughPlayers = ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers;
-		
+
 		// Stop waiting
 		if (!CupAdmin::IsCupPaused() && GT_HasEnoughPlayers) GT_StopWaiting = True;
 		if (GT_StopWaiting) break;

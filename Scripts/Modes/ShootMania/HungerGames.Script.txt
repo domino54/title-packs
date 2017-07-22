@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  HUNGER GAMES 3.2.0 by domino54        //
-//  script version: 2017-06-28            //
+//  script version: 2017-07-22            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2017-06-28"
+#Const Version		"2017-07-22"
 #Const ScriptName	"Modes/ShootMania/HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -32,8 +32,6 @@
 #Setting S_ObjectsRespawnTime	300
 #Setting S_ToadsRespawnTime		240
 #Setting S_ToadsSpawnRatio		1.
-
-#Setting S_NeutralEmblemUrl "file://Media/Manialinks/ShootMania/GalaxyTitles/EmblemHungerGames.dds"
 
 // ---------------------------------- //
 // Constants
@@ -137,6 +135,7 @@ GT_AutoManageOnRespawn = False;
 GT_AutoManageOnObjectTouch = False;
 GT_AllowMatchmakingMode = False;
 GT_KillfeedTranslations = ["$<%1$> is now playing in Games", "$<%1$> tried to escape arena"];
+GT_CharactersDataFileURL = "";
 ***
 
 // ---------------------------------- //
@@ -518,6 +517,7 @@ foreach (Event in PendingEvents) {
 		// Register the Goal touch
 		if (G_LoginsTouchedGoal.exists(Event.Player.Login)) continue;
 		G_LoginsTouchedGoal.add(Event.Player.Login);
+		Event.Player.HasShield = True;
 		
 		// Set the player skills
 		foreach (SkillType => SkillPoints in C_SkillsPointsOnGoal)
@@ -1007,6 +1007,7 @@ Void HG_SpawnPlayer(CSmPlayer _Player) {
 	// Spawn the player
 	SM::Spawn(_Player, 0, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
 	G_SpawnedPlayers.add(_Player.Login);
+	_Player.HasShield = False;
 }
 
 // ---------------------------------- //
@@ -1606,7 +1607,7 @@ main() {
 Text CreateManialinkStatistics() {
 	declare WB = "file://Media/Manialinks/ShootMania/Window/";
 	return """
-<manialink version="2" name="HungerGames:Statistics">
+<manialink version="3" name="HungerGames:Statistics">
 <stylesheet>
 	<style class="font" valign="center2" textemboss="1" textcolor="FFF" textsize="1" textfont="Eurostile_Bold" />
 </stylesheet>
@@ -1619,14 +1620,14 @@ Text CreateManialinkStatistics() {
 	<label pos="0 -3" size="50 0" class="font" halign="center" textprefix="$t" id="Label_StatDescription" text="---" />
 </framemodel>
 
-<frame pos="-84 -44 10" clip="1" clippos="84 -10" clipsize="170 22">
+<frame pos="-84 -44.5" valign="center" size="170 28">
+	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#0" pos="31 -6" />
+	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#1" pos="84 -6" />
+	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#2" pos="137 -6" />
+
 	<quad pos="0 36" size="10 50" image="{{{WB}}}BottomLeft.png" colorize="000" />
 	<quad pos="10 36" size="148 50" image="{{{WB}}}Bottom.png" colorize="000" />
 	<quad pos="158 36" size="10 50" image="{{{WB}}}BottomRight.png" colorize="000" />
-	
-	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#0" pos="31 -6 1" />
-	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#1" pos="84 -6 1" />
-	<frameinstance modelid="FrameModel_StatGauge" id="Frame_StatGauge#2" pos="137 -6 1" />
 </frame>
 
 <script><!--

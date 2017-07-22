@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2017-07-19            //
+//  script version: 2017-07-22            //
 // -------------------------------------- //
 
-#Const Version		"2017-07-19"
+#Const Version		"2017-07-22"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
@@ -45,7 +45,8 @@ declare Integer[] G_LibCharacters_Characters;
 declare Text[Integer] G_LibCharacters_CharactersNames;
 declare Text[Integer] G_LibCharacters_CharactersIcons1;
 declare Text[Integer] G_LibCharacters_CharactersIcons2;
-declare Text[Integer] G_LibCharacters_CharactersImages;
+declare Text[Integer] G_LibCharacters_CharactersImage1;
+declare Text[Integer] G_LibCharacters_CharactersImage2;
 declare Text[Integer] G_LibCharacters_CharactersDesc;
 declare Vec3[Integer] G_LibCharacters_CharactersColor;
 declare Text[Integer] G_LibCharacters_AbilityName;
@@ -69,9 +70,8 @@ declare Integer[Integer][Integer] G_LibCharacters_CharWeapons;
  *
  *	@return		The selection manialink.
  */
-Text Private_CreateManialinkSelection() {
-	declare _FontMedium = "Eurostile";
-	declare _FontBold = "Eurostile_Bold";
+Text Private_CreateManialinkSelection(Text _FontMedium, Text _FontBold) {
+	declare netwrite Text Net_LibCharacters_WindowTitleText for Teams[0];
 
 	// ---------------------------------- //
 	// Statistics data
@@ -99,7 +99,8 @@ Text Private_CreateManialinkSelection() {
 	declare Inject_CharactersNames = dump(G_LibCharacters_CharactersNames);
 	declare Inject_CharactersIcons1 = dump(G_LibCharacters_CharactersIcons1);
 	declare Inject_CharactersIcons2 = dump(G_LibCharacters_CharactersIcons2);
-	declare Inject_CharactersImages = dump(G_LibCharacters_CharactersImages);
+	declare Inject_CharactersImage1 = dump(G_LibCharacters_CharactersImage1);
+	declare Inject_CharactersImage2 = dump(G_LibCharacters_CharactersImage2);
 	declare Inject_CharactersDesc = dump(G_LibCharacters_CharactersDesc);
 	declare Inject_CharactersColor = dump(G_LibCharacters_CharactersColor);
 	declare Inject_AbilityName = dump(G_LibCharacters_AbilityName);
@@ -110,7 +111,8 @@ Text Private_CreateManialinkSelection() {
 	if (Inject_CharactersNames == "[]") Inject_CharactersNames = "Text[Integer]";
 	if (Inject_CharactersIcons1 == "[]") Inject_CharactersIcons1 = "Text[Integer]";
 	if (Inject_CharactersIcons2 == "[]") Inject_CharactersIcons2 = "Text[Integer]";
-	if (Inject_CharactersImages == "[]") Inject_CharactersImages = "Text[Integer]";
+	if (Inject_CharactersImage1 == "[]") Inject_CharactersImage1 = "Text[Integer]";
+	if (Inject_CharactersImage2 == "[]") Inject_CharactersImage2 = "Text[Integer]";
 	if (Inject_CharactersDesc == "[]") Inject_CharactersDesc = "Text[Integer]";
 	if (Inject_CharactersColor == "[]") Inject_CharactersColor = "Vec3[Integer]";
 	if (Inject_AbilityName == "[]") Inject_AbilityName = "Text[Integer]";
@@ -183,6 +185,40 @@ Text Private_CreateManialinkSelection() {
 	}
 
 	// ---------------------------------- //
+	// Interface color selection code
+	declare ColorSelectionScript = "";
+	switchtype (This) {
+		// ---------------------------------- //
+		// ShootMania
+		case CSmMode : ColorSelectionScript = """
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerLinearHue != GUIPlayer.GetLinearHue) {
+		PrevGUIPlayerLinearHue = GUIPlayer.GetLinearHue;
+		InterfaceColor = HsvToRgb(<PrevGUIPlayerLinearHue, 1., 1.>);
+		UpdateCharacterPreview = True;
+	}
+} else if (InputPlayer != Null) {
+	if (PrevGUIPlayerLinearHue != InputPlayer.GetLinearHue) {
+		PrevGUIPlayerLinearHue = InputPlayer.GetLinearHue;
+		InterfaceColor = HsvToRgb(<PrevGUIPlayerLinearHue, 1., 1.>);
+		UpdateCharacterPreview = True;
+	}
+}
+		""";
+		// ---------------------------------- //
+		// Other
+		default : ColorSelectionScript = """
+if (GUIPlayer != Null) {
+	if (GUIPlayer.CurrentClan == 0) InterfaceColor = GUIPlayer.User.Color;
+	else InterfaceColor = Teams[GUIPlayer.CurrentClan - 1].ColorPrimary;
+} else if (InputPlayer != Null) {
+	if (InputPlayer.CurrentClan == 0) InterfaceColor = InputPlayer.User.Color;
+	else InterfaceColor = Teams[InputPlayer.CurrentClan - 1].ColorPrimary;
+}
+		""";
+	}
+
+	// ---------------------------------- //
 	// Gather translations to load
 	declare Text[] RequiredTranslations;
 	foreach (Phrase in G_LibCharacters_StatsNames) RequiredTranslations.add(Phrase);
@@ -193,6 +229,7 @@ Text Private_CreateManialinkSelection() {
 	foreach (Phrase in G_LibCharacters_AbilityDesc) RequiredTranslations.add(Phrase);
 	foreach (Pros in G_LibCharacters_CharactersPros) foreach (Phrase in Pros) RequiredTranslations.add(Phrase);
 	foreach (Cons in G_LibCharacters_CharactersCons) foreach (Phrase in Cons) RequiredTranslations.add(Phrase);
+	RequiredTranslations.add(Net_LibCharacters_WindowTitleText);
 
 	return """
 <manialink version="3" name="{{{C_LibCharacters_LayerId}}}">
@@ -206,7 +243,7 @@ Text Private_CreateManialinkSelection() {
 <frame id="Frame_MapSelectionWindow" z-index="10" pos="-91 58" hidden="1">
 	<!-- Window header -->
 	<frame id="Frame_MapSelectionHeader" pos="0 -2">
-		<label pos="2" class="FontM" id="Label_MapSelectionTitle" textsize="4" textprefix="$t" text="Choose your character" translate="1" />
+		<label pos="2" class="FontM" textsize="4" textprefix="$t" id="Label_WindowTitleText" />
 		
 		<!-- Selection end countdown timer -->
 		<frame id="Frame_SelectionEndTime" pos="174" hidden="1">
@@ -225,6 +262,7 @@ Text Private_CreateManialinkSelection() {
 	<frame id="Frame_LeftColumn" pos="2 -8">
 		<label pos="30 -4" size="56" class="FontB" halign="center" textsize="2" textemboss="1" textprefix="$t" id="Label_CurCharacterName" />
 		<quad pos="2 -8" size="56 .25" valign="center" bgcolor="FFF" opacity=".5" />
+		<quad size="60 90" id="Quad_CurCharacterImage2" />
 		<quad size="60 90" class="Color" id="Quad_CurCharacterImage" />
 		<quad size="60 90" bgcolor="FFF" opacity=".125" />
 	</frame>
@@ -392,7 +430,8 @@ declare G_LibCharacters_Characters = {{{Inject_Characters}}};
 declare G_LibCharacters_CharactersNames = {{{Inject_CharactersNames}}};
 declare G_LibCharacters_CharactersIcons1 = {{{Inject_CharactersIcons1}}};
 declare G_LibCharacters_CharactersIcons2 = {{{Inject_CharactersIcons2}}};
-declare G_LibCharacters_CharactersImages = {{{Inject_CharactersImages}}};
+declare G_LibCharacters_CharactersImage1 = {{{Inject_CharactersImage1}}};
+declare G_LibCharacters_CharactersImage2 = {{{Inject_CharactersImage2}}};
 declare G_LibCharacters_CharactersDesc = {{{Inject_CharactersDesc}}};
 declare G_LibCharacters_CharactersColor = {{{Inject_CharactersColor}}};
 declare G_LibCharacters_AbilityName = {{{Inject_AbilityName}}};
@@ -413,6 +452,7 @@ declare G_LibCharacters_CharWeapons = {{{Inject_CharWeapons}}};
 // Load manialink elements
 declare Frame_MapSelectionWindow	<=> (Page.GetFirstChild("Frame_MapSelectionWindow") as CMlFrame);
 declare Frame_BackgroundBlur		<=> (Page.GetFirstChild("Frame_BackgroundBlur") as CMlFrame);
+declare Label_WindowTitleText		<=> (Page.GetFirstChild("Label_WindowTitleText") as CMlLabel);
 declare Quad_CharSelectionClose		<=> (Page.GetFirstChild("Quad_CharSelectionClose") as CMlQuad);
 
 declare Frame_CharButtonsOffset		<=> (Page.GetFirstChild("Frame_CharButtonsOffset") as CMlFrame);
@@ -426,6 +466,7 @@ declare Quad_PageButtonNextBg		<=> (Page.GetFirstChild("Quad_PageButtonNextBg") 
 
 declare Label_CurCharacterName		<=> (Page.GetFirstChild("Label_CurCharacterName") as CMlLabel);
 declare Quad_CurCharacterImage		<=> (Page.GetFirstChild("Quad_CurCharacterImage") as CMlQuad);
+declare Quad_CurCharacterImage2		<=> (Page.GetFirstChild("Quad_CurCharacterImage2") as CMlQuad);
 declare Frame_CurCharacterDesc		<=> (Page.GetFirstChild("Frame_CurCharacterDesc") as CMlFrame);
 declare Label_CurCharacterDesc		<=> (Page.GetFirstChild("Label_CurCharacterDesc") as CMlLabel);
 declare Quad_CurCharacterDesc		<=> (Page.GetFirstChild("Quad_CurCharacterDesc") as CMlQuad);
@@ -467,6 +508,7 @@ declare netread Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
 declare netread Integer Net_LibCharacters_DisplayMode for Teams[0];
 declare netread Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
 declare netread Integer Net_LibCharacters_CharacterBaseArmor for Teams[0];
+declare netread Text Net_LibCharacters_WindowTitleText for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -491,6 +533,7 @@ declare PrevGUIPlayerLinearHue = -1.;
 declare PrevCharacterBaseArmor = -1;
 declare PrevIsSpectator = False;
 declare PrevNbPlayers = -1;
+declare PrevWindowTitleText = "";
 
 /// Reset UI
 ClientUI.ScoreTableVisibility = CUIConfig::EVisibility::None;
@@ -654,20 +697,15 @@ if (PrevWindowVisible != WindowVisible) {
 if (!WindowVisible) continue;
 
 // ---------------------------------- //
-// Get interface color
-if (GUIPlayer != Null) {
-	if (PrevGUIPlayerLinearHue != GUIPlayer.GetLinearHue) {
-		PrevGUIPlayerLinearHue = GUIPlayer.GetLinearHue;
-		InterfaceColor = HsvToRgb(<PrevGUIPlayerLinearHue, 1., 1.>);
-		UpdateCharacterPreview = True;
-	}
-} else if (InputPlayer != Null) {
-	if (PrevGUIPlayerLinearHue != InputPlayer.GetLinearHue) {
-		PrevGUIPlayerLinearHue = InputPlayer.GetLinearHue;
-		InterfaceColor = HsvToRgb(<PrevGUIPlayerLinearHue, 1., 1.>);
-		UpdateCharacterPreview = True;
-	}
+// Update window title text
+if (PrevWindowTitleText != Net_LibCharacters_WindowTitleText) {
+	PrevWindowTitleText = Net_LibCharacters_WindowTitleText;
+	Label_WindowTitleText.Value = Translate(PrevWindowTitleText);
 }
+
+// ---------------------------------- //
+// Get interface color
+{{{ColorSelectionScript}}}
 
 // ---------------------------------- //
 // On display mode change
@@ -835,10 +873,15 @@ if (UpdateCharacterPreview) {
 	if (G_LibCharacters_CharactersNames.existskey(CharId)) CurCharacterName = G_LibCharacters_CharactersNames[CharId];
 	Label_CurCharacterName.Value = Translate(CurCharacterName);
 
+	// ---------------------------------- //
 	// Character image
 	declare CurCharacterImage = "";
-	if (G_LibCharacters_CharactersImages.existskey(CharId)) CurCharacterImage = G_LibCharacters_CharactersImages[CharId];
+	if (G_LibCharacters_CharactersImage1.existskey(CharId)) CurCharacterImage = G_LibCharacters_CharactersImage1[CharId];
 	Quad_CurCharacterImage.ImageUrl = CurCharacterImage;
+
+	declare CurCharacterImage2 = "";
+	if (G_LibCharacters_CharactersImage2.existskey(CharId)) CurCharacterImage2 = G_LibCharacters_CharactersImage2[CharId];
+	Quad_CurCharacterImage2.ImageUrl = CurCharacterImage2;
 
 	// ---------------------------------- //
 	// Character description
@@ -1090,7 +1133,8 @@ Void Private_ResetCharactersData() {
 	G_LibCharacters_CharactersNames.clear();
 	G_LibCharacters_CharactersIcons1.clear();
 	G_LibCharacters_CharactersIcons2.clear();
-	G_LibCharacters_CharactersImages.clear();
+	G_LibCharacters_CharactersImage1.clear();
+	G_LibCharacters_CharactersImage2.clear();
 	G_LibCharacters_CharactersDesc.clear();
 	G_LibCharacters_CharactersColor.clear();
 	G_LibCharacters_AbilityName.clear();
@@ -1114,7 +1158,7 @@ Void Private_LoadFromXMLDocument(CXmlDocument _Document) {
 	Private_ResetCharactersData();
 
 	// Get characters sheet key
-	G_LibCharacters_CharSheetKey = _Document.Root.GetAttributeText("key", "");
+	G_LibCharacters_CharSheetKey = _Document.Root.GetAttributeText("name", "");
 
 	// ---------------------------------- //
 	// Fetch the document
@@ -1159,7 +1203,8 @@ Void Private_LoadFromXMLDocument(CXmlDocument _Document) {
 				case "name"			: G_LibCharacters_CharactersNames	[CharacterId] = Attribute.TextContents;
 				case "icon"			: G_LibCharacters_CharactersIcons1	[CharacterId] = Attribute.TextContents;
 				case "icon2"		: G_LibCharacters_CharactersIcons2	[CharacterId] = Attribute.TextContents;
-				case "image"		: G_LibCharacters_CharactersImages	[CharacterId] = Attribute.TextContents;
+				case "image"		: G_LibCharacters_CharactersImage1	[CharacterId] = Attribute.TextContents;
+				case "image2"		: G_LibCharacters_CharactersImage2	[CharacterId] = Attribute.TextContents;
 				case "description"	: G_LibCharacters_CharactersDesc	[CharacterId] = Attribute.TextContents;
 				case "color"		: G_LibCharacters_CharactersColor	[CharacterId] = TL::ToColor(Attribute.TextContents);
 
@@ -1451,9 +1496,24 @@ Void Show() { SetDisplayMode(C_LibCharacters_DisplayModeVisible); }
 /// Set manual visibility for the selection window.
 Void Manual() { SetDisplayMode(C_LibCharacters_DisplayModeManual); }
 
+// ---------------------------------- //
+/** Set the base Armor for all characters.
+ *
+ *	@param	_ArmorMax	Base Armor of all characters.
+ */
 Void SetArmorBase(Integer _ArmorMax) {
 	declare netwrite Integer Net_LibCharacters_CharacterBaseArmor for Teams[0];
 	Net_LibCharacters_CharacterBaseArmor = ML::Clamp(_ArmorMax, 1, 10);
+}
+
+// ---------------------------------- //
+/** Set the window title text.
+ *
+ *	@param	_TitleText		Window title.
+ */
+Void SetWindowTitle(Text _TitleText) {
+	declare netwrite Text Net_LibCharacters_WindowTitleText for Teams[0];
+	Net_LibCharacters_WindowTitleText = _TitleText;
 }
 
 // ---------------------------------- //
@@ -1488,6 +1548,11 @@ Void Load() {
 	Unload();
 	Hide();
 
+	switchtype (This) {
+		case CSmMode : SetWindowTitle("Choose your character");
+		case CTmMode : SetWindowTitle("Choose your vehicle");
+	}
+
 	Layers::Create(C_LibCharacters_LayerId);
 	Layers::Attach(C_LibCharacters_LayerId);
 }
@@ -1503,11 +1568,17 @@ Void Load(Text _PreloadCharsUrl) {
 }
 
 // ---------------------------------- //
-/// Build the character selection window interface.
-Void Build() {
+/** Build the character selection window interface.
+ *
+ *	@param	_FontMedium		Normal font of the interface.
+ *	@param	_FontBold		Bold font of the interface.
+ */
+Void Build(Text _FontMedium, Text _FontBold) {
 	if (G_LibCharacters_Characters.count > 0)
-		Layers::Update(C_LibCharacters_LayerId, Private_CreateManialinkSelection());
+		Layers::Update(C_LibCharacters_LayerId, Private_CreateManialinkSelection(_FontMedium, _FontBold));
 }
+
+Void Build() { Build("", ""); }
 
 // ---------------------------------- //
 /// Library loop.

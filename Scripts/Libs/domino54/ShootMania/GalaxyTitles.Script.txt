@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-07-22            //
+//  script version: 2017-07-29            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-07-22"
+#Const Version		"2017-07-29"
 #Const ScriptName	"Libs/domino54/ShootMania/GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -159,10 +159,12 @@ Boolean Private_CanUseHealing(CSmPlayer _Player) {
 	// Check if players nearby can be healed
 	foreach (Player in Players) {
 		if (Player == _Player || Player.Armor >= Player.ArmorMax) continue;
-		if (!G_LibGalaxyTitles_ObjectsAffectEveryone && _Player.CurrentClan > 0) {
-			if (Player.CurrentClan != _Player.CurrentClan && !Clans::AreTeammates(Player, _Player)) continue;
-		}
 		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
+
+		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			if (Clans::AreTeammates(_Player, Player)) return True;
+			if (_Player.CurrentClan == 0 || Player.CurrentClan != _Player.CurrentClan) continue;
+		}
 		return True;
 	}
 
@@ -215,10 +217,12 @@ Boolean Private_CanUseBoost(CSmPlayer _Player) {
 	// Check if players nearby can be boosted
 	foreach (Player in Players) {
 		if (Player == _Player) continue;
-		if (!G_LibGalaxyTitles_ObjectsAffectEveryone && _Player.CurrentClan > 0) {
-			if (Player.CurrentClan != _Player.CurrentClan && !Clans::AreTeammates(Player, _Player)) continue;
-		}
 		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
+
+		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
+			if (Clans::AreTeammates(_Player, Player)) return True;
+			if (_Player.CurrentClan == 0 || Player.CurrentClan != _Player.CurrentClan) continue;
+		}
 		return True;
 	}
 
@@ -510,9 +514,10 @@ Integer UseHealing(CSmPlayer _Player) {
 	// Heal player's teammates
 	foreach (Player in Players) {
 		if (Player == _Player || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || Player.Armor >= Player.ArmorMax) continue;
+
 		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
-			if (_Player.CurrentClan == 0) break;
-			if (Player.CurrentClan != _Player.CurrentClan && !Clans::AreTeammates(Player, _Player)) continue;
+			if (_Player.CurrentClan == 0 && !Clans::AreTeammates(Player, _Player)) continue;
+			if (Player.CurrentClan != _Player.CurrentClan) continue;
 		}
 		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
 
@@ -532,8 +537,8 @@ Integer UseHealing(CSmPlayer _Player) {
 	foreach (Toad in Toads::GetToads()) {
 		if (Toad.Armor >= Toad.ArmorMax) continue;
 		if (Toad.Driver.Owner != _Player && !G_LibGalaxyTitles_ObjectsAffectEveryone) {
-			if (_Player.CurrentClan == 0) continue;
-			if (!Clans::AreTeammates(_Player, Toad) || Toad.CurrentClan != _Player.CurrentClan) continue;
+			if (_Player.CurrentClan == 0 && !Clans::AreTeammates(Toad, _Player)) continue;
+			if (Toad.CurrentClan != _Player.CurrentClan) continue;
 		}
 		if (ML::Distance(_Player.Position, Toad.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
 		
@@ -633,8 +638,8 @@ Integer UseBoost(CSmPlayer _Player) {
 	foreach (Player in Players) {
 		if (Player == _Player || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
-			if (_Player.CurrentClan == 0) break;
-			if (Player.CurrentClan != _Player.CurrentClan && !Clans::AreTeammates(Player, _Player)) continue;
+			if (_Player.CurrentClan == 0 && !Clans::AreTeammates(Player, _Player)) continue;
+			if (Player.CurrentClan != _Player.CurrentClan) continue;
 		}
 		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
 
@@ -654,8 +659,8 @@ Integer UseBoost(CSmPlayer _Player) {
 	// Boost Toads nearby
 	foreach (Toad in Toads::GetToads()) {
 		if (Toad.Driver.Owner != _Player && !G_LibGalaxyTitles_ObjectsAffectEveryone) {
-			if (_Player.CurrentClan == 0) continue;
-			if (!Clans::AreTeammates(_Player, Toad) || Toad.CurrentClan != _Player.CurrentClan) continue;
+			if (_Player.CurrentClan == 0 && !Clans::AreTeammates(Toad, _Player)) continue;
+			if (Toad.CurrentClan != _Player.CurrentClan) continue;
 		}
 		if (ML::Distance(_Player.Position, Toad.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
 
@@ -1522,7 +1527,7 @@ Void LoadInfiniteSupplies(CSmPlayer _Player, Integer _Cooldown) {
 	Inventory::DestroyItemSlot(_Player, C_LibGalaxyTitles_FuelItemId);
 
 	// Creates inventory slots for infinite Replies and Fuels
-	Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_ReplieItemId, CSmModeEvent::EActionInput::Consumable1, -1, "Replie.png");
+	Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_ReplieItemId, CSmModeEvent::EActionInput::Consumable1, -1, "ArmorBoost.png");
 	Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_FuelItemId, CSmModeEvent::EActionInput::Consumable2, -1, "Fuel.png");
 
 	// Set the cooldown
@@ -1558,7 +1563,7 @@ Void InitPlayerInventory(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Load Replies in the Inventory
 	if (G_LibGalaxyTitles_RepliesAvailable) {
-		Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_ReplieItemId, CSmModeEvent::EActionInput::Consumable1, 0, "Replie.png");
+		Inventory::CreateItemSlot(_Player, C_LibGalaxyTitles_ReplieItemId, CSmModeEvent::EActionInput::Consumable1, 0, "ArmorBoost.png");
 	}
 
 	// ---------------------------------- //

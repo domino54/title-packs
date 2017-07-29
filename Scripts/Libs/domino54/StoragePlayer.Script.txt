@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY STORAGE PLAYER by domino54    //
-//  script version: 2017-04-18            //
+//  script version: 2017-07-29            //
 // -------------------------------------- //
 
-#Const Version		"2017-04-18"
+#Const Version		"2017-07-29"
 #Const ScriptName	"StoragePlayer.Script.txt"
 
 #Include "MathLib" as ML
@@ -58,7 +58,7 @@ Text Private_CreateManialinkMusicPlayer(Text _MediaBasePath, Text _ThinTextFont,
 	<style class="timeLabel" valign="center2" style="TextRaceChrono" textemboss="1" textsize="2.5" textfont="{{{TL::MLEncode(_ThickTextFont)}}}" />
 </stylesheet>
 
-<frame id="Frame_StorageInGameMenu" hidden="1">
+<frame id="Frame_StorageInGameMenu" z-index="10" hidden="1">
 
 <!-- Global music plugin window -->
 <frame id="Frame_StoragePlayerWindow" pos="-93 48">
@@ -162,8 +162,9 @@ Text Private_CreateManialinkMusicPlayer(Text _MediaBasePath, Text _ThinTextFont,
 </frame>
 
 <!-- Background blur -->
-<quad z-index="-50" size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
-<quad z-index="-50" size="320 180" halign="center" valign="center" bgcolor="000" opacity=".25" />
+<quad size="320 180" halign="center" valign="center" image="file://Media/Images/Effects/Vignette.dds" />
+<quad size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+<quad size="320 180" halign="center" valign="center" bgcolor="000" opacity=".5" />
 
 </frame>
 
@@ -262,6 +263,11 @@ declare persistent Persistent_Storage_PreviousPlayPoint for LocalUser = 0.;
 declare persistent Persistent_Storage_InGameWindowVisible for LocalUser = False;
 
 // ---------------------------------- //
+// Shared variables
+declare LibStoragePlayer_ToggleShowWindow for This = False;
+declare LibStoragePlayer_CurSongAlbumImage for This = "";
+
+// ---------------------------------- //
 // Variables
 declare JumpToLatestPlayPoint = True;		///< Forces script to skip newly loaded track to the latests listening point
 declare CurrentTrackIsDownloading = True;	///< Disallows script to skip just downloaded track
@@ -278,6 +284,7 @@ declare PlaylistNbPages = 1;
 // Update
 declare PrevInterfaceColor = Vec3;
 declare PrevCustomPlaylistURL = Persistent_Storage_CustomPlaylistURL;
+declare PrevIsPlaying = False;
 
 // ---------------------------------- //
 // Initialize music plugin
@@ -287,6 +294,8 @@ Translate("Label_CustomPlaylist", "Custom playlist URL:");
 Entry_CustomPlaylistURL.RelativePosition_V3.X = Label_CustomPlaylist.RelativePosition_V3.X + ComputeWidth(Label_CustomPlaylist) + 1.;
 Entry_CustomPlaylistURL.Value = Persistent_Storage_CustomPlaylistURL;
 
+EnableMenuNavigation(False, False, Null, 0);
+LibStoragePlayer_CurSongAlbumImage = "";
 JumpToLatestPlayPoint = True;
 StartNewRequest = True;
 G_ForceTrackChange = True;
@@ -406,6 +415,20 @@ foreach (Event in PendingEvents) {
 			case "L" : NextTrack();
 		}
 	}
+	// ---------------------------------- //
+	// On menu navigation
+	else if (Event.Type == CMlEvent::Type::MenuNavigation) {
+		if (Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel) {
+			Persistent_Storage_InGameWindowVisible = False;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Toggle show Storage Player
+if (LibStoragePlayer_ToggleShowWindow) {
+	LibStoragePlayer_ToggleShowWindow = False;
+	Persistent_Storage_InGameWindowVisible = True;
 }
 
 // ---------------------------------- //
@@ -414,11 +437,12 @@ DisplayStoragePlayer = Persistent_Storage_InGameWindowVisible && !IsInGameMenuDi
 
 if (Frame_StorageInGameMenu.Visible != DisplayStoragePlayer) {
 	Frame_StorageInGameMenu.Visible = DisplayStoragePlayer;
-	ClientUI.AltMenuNoCustomScores = Frame_StorageInGameMenu.Visible;
+	EnableMenuNavigation(DisplayStoragePlayer, False, Null, 0);
 	
 	// Hide scores table while using music plugin
 	if (Frame_StorageInGameMenu.Visible) ClientUI.ScoreTableVisibility = CUIConfig::EVisibility::ForcedHidden;
 	else ClientUI.ScoreTableVisibility = CUIConfig::EVisibility::None;
+	ClientUI.AltMenuNoCustomScores = Frame_StorageInGameMenu.Visible;
 	
 	// Play sound
 	declare Sound = CAudioManager::ELibSound::HideDialog;
@@ -630,6 +654,15 @@ if (G_CurrentTrack != Null) {
 	
 	// Force script to clear current track information when there is no track
 	if (ClearTrackInformation) ClearTrackInformation = True;
+}
+
+// ---------------------------------- //
+// Update current track cover image
+if (PrevIsPlaying != (G_CurrentTrack != Null && G_CurrentTrack.IsPlaying)) {
+	PrevIsPlaying = G_CurrentTrack != Null && G_CurrentTrack.IsPlaying;
+
+	if (PrevIsPlaying) LibStoragePlayer_CurSongAlbumImage = Quad_CurrentTrackCover.ImageUrl;
+	else LibStoragePlayer_CurSongAlbumImage = "";
 }
 
 if (!Frame_StorageInGameMenu.Visible) continue;

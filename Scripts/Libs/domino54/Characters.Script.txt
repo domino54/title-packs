@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2017-07-22            //
+//  script version: 2017-07-29            //
 // -------------------------------------- //
 
-#Const Version		"2017-07-22"
+#Const Version		"2017-07-29"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
@@ -220,7 +220,7 @@ if (GUIPlayer != Null) {
 
 	// ---------------------------------- //
 	// Gather translations to load
-	declare Text[] RequiredTranslations;
+	declare RequiredTranslations = ["Special ability", "Weapons", "Pros & Cons"];
 	foreach (Phrase in G_LibCharacters_StatsNames) RequiredTranslations.add(Phrase);
 	foreach (Phrase in G_LibCharacters_WeaponsNames) RequiredTranslations.add(Phrase);
 	foreach (Phrase in G_LibCharacters_CharactersNames) RequiredTranslations.add(Phrase);
@@ -511,11 +511,18 @@ declare netread Integer Net_LibCharacters_CharacterBaseArmor for Teams[0];
 declare netread Text Net_LibCharacters_WindowTitleText for Teams[0];
 
 // ---------------------------------- //
+// Shared variables
+declare LibCharacters_ToggleShowWindow for This = False;
+declare LibCharacters_CurCharacterIcon1 for This = "";
+declare LibCharacters_CurCharacterIcon2 for This = "";
+
+// ---------------------------------- //
 // Variables
 declare WindowVisible = False;
 declare UserSettingWindowVisible = False;
 declare UpdateCharactersList = True;
 declare UpdateCharacterPreview = True;
+declare UpdateCurCharIcon = True;
 declare InterfaceColor = <1., 0., 0.>;
 declare CurSelectedCharacter = G_LibCharacters_Characters[0];
 declare CurHoveredCharacter = -1;
@@ -534,8 +541,10 @@ declare PrevCharacterBaseArmor = -1;
 declare PrevIsSpectator = False;
 declare PrevNbPlayers = -1;
 declare PrevWindowTitleText = "";
+declare PrevGUIPlayerId = NullId;
 
 /// Reset UI
+EnableMenuNavigation(False, False, Null, 0);
 ClientUI.ScoreTableVisibility = CUIConfig::EVisibility::None;
 ClientUI.AltMenuNoCustomScores = False;
 ClientUI.UISequence = CUIConfig::EUISequence::None;
@@ -630,6 +639,13 @@ foreach (Event in PendingEvents) {
 			CurHoveredCharacter = Order;
 		}
 	}
+	// ---------------------------------- //
+	// On menu navigation
+	else if (Event.Type == CMlEvent::Type::MenuNavigation) {
+		if (Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel) {
+			UserSettingWindowVisible = False;
+		}
+	}
 }
 
 // ---------------------------------- //
@@ -651,6 +667,48 @@ if (CurClickedCharacter >= 0) {
 }
 
 // ---------------------------------- //
+// Toggle show selection window
+if (LibCharacters_ToggleShowWindow) {
+	LibCharacters_ToggleShowWindow = False;
+	UserSettingWindowVisible = True;
+}
+
+// ---------------------------------- //
+// Trigger list update on any player character change
+if (PrevPlayerCharChange != Net_LibCharacters_LastPlayerCharChange) {
+	PrevPlayerCharChange = Net_LibCharacters_LastPlayerCharChange;
+	UpdateCharactersList = True;
+	UpdateCurCharIcon = True;
+}
+
+// ---------------------------------- //
+// Update on GUIPlayer change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerId != GUIPlayer.Id) {
+		PrevGUIPlayerId = GUIPlayer.Id;
+		UpdateCurCharIcon = True;
+	}
+} else if (PrevGUIPlayerId != NullId) {
+	PrevGUIPlayerId = NullId;
+	UpdateCurCharIcon = True;
+}
+
+// ---------------------------------- //
+// Upcate current character icon
+if (UpdateCurCharIcon) {
+	UpdateCurCharIcon = False;
+
+	LibCharacters_CurCharacterIcon1 = "";
+	LibCharacters_CurCharacterIcon2 = "";
+
+	if (GUIPlayer != Null) {
+		declare netread Integer Net_LibCharacters_ServerCharacter as CharId for GUIPlayer;
+		if (G_LibCharacters_CharactersIcons1.existskey(CharId)) LibCharacters_CurCharacterIcon1 = G_LibCharacters_CharactersIcons1[CharId];
+		if (G_LibCharacters_CharactersIcons2.existskey(CharId)) LibCharacters_CurCharacterIcon2 = G_LibCharacters_CharactersIcons2[CharId];
+	}
+}
+
+// ---------------------------------- //
 // Update window visiblity
 WindowVisible = !IsInGameMenuDisplayed &&
 	(Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeVisible}}} ||
@@ -658,6 +716,7 @@ WindowVisible = !IsInGameMenuDisplayed &&
 
 if (PrevWindowVisible != WindowVisible) {
 	PrevWindowVisible = WindowVisible;
+	EnableMenuNavigation(WindowVisible, False, Null, 0);
 
 	Frame_MapSelectionWindow.Visible = WindowVisible;
 	Frame_BackgroundBlur.Visible = WindowVisible;
@@ -712,13 +771,6 @@ if (PrevWindowTitleText != Net_LibCharacters_WindowTitleText) {
 if (PrevDisplayMode != Net_LibCharacters_DisplayMode) {
 	PrevDisplayMode = Net_LibCharacters_DisplayMode;
 	Quad_CharSelectionClose.Visible = Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeManual}}};
-}
-
-// ---------------------------------- //
-// Trigger list update on any player character change
-if (PrevPlayerCharChange != Net_LibCharacters_LastPlayerCharChange) {
-	PrevPlayerCharChange = Net_LibCharacters_LastPlayerCharChange;
-	UpdateCharactersList = True;
 }
 
 // ---------------------------------- //
@@ -890,7 +942,7 @@ if (UpdateCharacterPreview) {
 	Frame_CurCharacterDesc.Visible = CurCharacterDesc != "";
 
 	if (Frame_CurCharacterDesc.Visible) {
-		Label_CurCharacterDesc.Value = CurCharacterDesc;
+		Label_CurCharacterDesc.Value = Translate(CurCharacterDesc);
 		Quad_CurCharacterDesc.Size.Y = -Label_CurCharacterDesc.RelativePosition_V3.Y + Label_CurCharacterDesc.ComputeHeight(Label_CurCharacterDesc.Value) + 1.5;
 		ColHeightMiddle += Quad_CurCharacterDesc.Size.Y + 1.;
 	}
@@ -900,7 +952,7 @@ if (UpdateCharacterPreview) {
 	Frame_SpecialAbilityBox.Visible = G_LibCharacters_AbilityName.existskey(CharId);
 	if (Frame_SpecialAbilityBox.Visible) {
 		Frame_SpecialAbilityBox.RelativePosition_V3.Y = -ColHeightMiddle;
-		Label_SpecialAbilityName.Value = G_LibCharacters_AbilityName[CharId];
+		Label_SpecialAbilityName.Value = Translate(G_LibCharacters_AbilityName[CharId]);
 
 		// Ability icon
 		declare AbilityIcon = "";
@@ -910,7 +962,7 @@ if (UpdateCharacterPreview) {
 		// Ability description
 		declare AbilityDesc = "";
 		if (G_LibCharacters_AbilityDesc.existskey(CharId)) AbilityDesc = G_LibCharacters_AbilityDesc[CharId];
-		Label_SpecialAbilityDesc.Value = AbilityDesc;
+		Label_SpecialAbilityDesc.Value = Translate(AbilityDesc);
 
 		Quad_SpecialAbilityBox.Size.Y = -Label_SpecialAbilityDesc.RelativePosition_V3.Y + Label_SpecialAbilityDesc.ComputeHeight(Label_SpecialAbilityDesc.Value) + 1.5;
 		ColHeightMiddle += Quad_SpecialAbilityBox.Size.Y + 1.;
@@ -985,7 +1037,7 @@ if (UpdateCharacterPreview) {
 			// Statictic name
 			declare CurStatName = "Unknown attibute";
 			if (G_LibCharacters_StatsNames.existskey(StatId)) CurStatName = G_LibCharacters_StatsNames[StatId];
-			Label_CharStatisticName.Value = CurStatName;
+			Label_CharStatisticName.Value = Translate(CurStatName);
 
 			// ---------------------------------- //
 			// Statictic value gauge

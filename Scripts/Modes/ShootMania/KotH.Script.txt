@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-07-19            //
+//  script version: 2017-07-29            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-07-19"
+#Const Version		"2017-07-29"
 #Const ScriptName	"Modes/ShootMania/KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -37,7 +37,7 @@
 ///< Amount of players per additional team
 #Const C_NbPlayersPerTeam [0, 0, 9, 12]
 
-#Const Description _("TYPE: 2 - -4 teams\nOBJECTIVE: Capture the central Goal with your teammates. The first team to capture the Goal by themselves or team with biggest progress when time runs out wins.")
+#Const Description _("TYPE: 2 - 4 teams\nOBJECTIVE: Capture the central Goal with your teammates. The first team to capture the Goal by themselves or team with biggest progress when time runs out wins.")
 
 // ---------------------------------- //
 // Global variables
@@ -62,7 +62,13 @@ Log::RegisterScript(Clans::GetScriptName(), Clans::GetScriptVersion());
 ***ScoresTable***
 ***
 TopScores::AddCategory("Capture", "Cap", 3., 75.);
-if (!UseClans) ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
+if (!UseClans) {
+	ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
+	ST2::SetColScript("LibST_SMPoints", """
+declare netread Integer Net_KotH_TotalPoints for _Score;
+Label_Col.Value = TL::ToText(Net_KotH_TotalPoints);
+	""");
+}
 ***
 
 // ---------------------------------- //
@@ -139,6 +145,13 @@ Interfancy::SetModuleVisibility("ScoreSummary", True);
 // ---------------------------------- //
 ***Match_InitMap***
 ***
+// ---------------------------------- //
+// Reset custom total points
+foreach (Score in Scores) {
+	declare netwrite Integer Net_KotH_TotalPoints for Score;
+	Net_KotH_TotalPoints = 0;
+}
+
 // ---------------------------------- //
 // Check if the map is valid
 declare MapValidated = True;
@@ -244,6 +257,8 @@ if (Clans::AreTeammates(Event.Shooter, Event.Victim)) {
 // ---------------------------------- //
 ***Match_PlayLoop***
 ***
+KotH_UpdateCustomTeams();
+
 // ---------------------------------- //
 // Manage players
 foreach (Player in Players) {
@@ -258,6 +273,7 @@ foreach (Player in Players) {
 			declare CurrentClan = KotH_GetPlayerClan(Player);
 			if (CurrentClan < 1 || CurrentClan > G_NbTeams) CurrentClan = GetNextPlayerClan();
 			KotH_SetPlayerClan(Player, CurrentClan);
+			SortScoresTable();
 		}
 
 		// Spawn player
@@ -267,13 +283,14 @@ foreach (Player in Players) {
 
 // ---------------------------------- //
 // Players requesting custom team change
-if (!UseClans) foreach (PlayerId => Clan in PauseMenu::CustomTeamsRequests()) {
+if (!UseClans) foreach (PlayerId => Clan in PauseMenu::CustomTeamChangeRequests()) {
 	if (!Players.existskey(PlayerId)) continue;
 	declare Player = Players[PlayerId];
 	if (KotH_GetPlayerClan(Player) == Clan) continue;
 
 	UnspawnPlayer(Player);
 	KotH_SetPlayerClan(Player, Clan);
+	SortScoresTable();
 	declare Destroyed = Toads::DestroyToad(Player);
 }
 
@@ -436,6 +453,8 @@ if (PrevTeamsSetting != S_NbTeams) {
 	if (!UseClans) foreach (Player in Players) {
 		if (KotH_GetPlayerClan(Player) > G_NbTeams) KotH_SetPlayerClan(Player, GetNextPlayerClan());
 	}
+
+	SortScoresTable();
 }
 
 // ---------------------------------- //
@@ -461,6 +480,16 @@ if (PrevRoundsToWin != S_RoundsToWin) {
 }
 
 // ---------------------------------- //
+// Update scores table
+foreach (Score in Scores) {
+	if (UseClans) break;
+	declare PrevScoreRoundPoints for Score = -1;
+	if (PrevScoreRoundPoints == Score.RoundPoints) continue;
+	PrevScoreRoundPoints = Score.RoundPoints;
+	SortScoresTable();
+}
+
+// ---------------------------------- //
 // Victory conditions
 if (GT_TimeReachedLimit()) MB_StopRound();
 ***
@@ -483,6 +512,14 @@ Layers::Detach("KotH:Markers");
 ***
 CentralGoal.Gauge.Speed = 0; ///< Spooky Goal
 SM::UnspawnAllPlayers();
+
+// ---------------------------------- //
+// Update players custom total points
+if (!UseClans) foreach (Score in Scores) {
+	declare netwrite Integer Net_KotH_TotalPoints for Score;
+	Net_KotH_TotalPoints += Score.RoundPoints;
+	Score.RoundPoints = 0;
+}
 
 // Give points for the winning team
 Clans::AddClanPoints(LeadingTeamNum, 1);
@@ -536,6 +573,13 @@ if (!GT_UseAutoEndSequence) {
 	declare Integer[Integer] TeamsScores;
 	declare MaxPoints = 0;
 	declare Integer[] TeamsWithMaxPoints;
+
+	// ---------------------------------- //
+	// Restore points
+	foreach (Score in Scores) {
+		declare netwrite Integer Net_KotH_TotalPoints for Score;
+		Score.Points = Net_KotH_TotalPoints;
+	}
 
 	// ---------------------------------- //
 	// Custom teams
@@ -644,11 +688,10 @@ Integer KotH_GetPlayerClan(CSmPlayer _Player) {
  *	@param	_Clan		The clan to set the player to
  */
 Void KotH_SetPlayerClan(CSmPlayer _Player, Integer _Clan) {
-	if (_Player == Null) return;
+	if (_Player == Null || UseClans) return;
 	
 	// Set player clan
 	declare Clan = ML::Clamp(_Clan, 1, G_NbTeams);
-	SetPlayerClan(_Player, 0);
 	Clans::SetPlayerClan(_Player, Clan);
 	
 	// Set player color
@@ -712,6 +755,66 @@ Void KotH_AutoBalance() {
 }
 
 // ---------------------------------- //
+/// Update custom teams info
+Void KotH_UpdateCustomTeams() {
+	if (UseClans) return;
+	for (Clan, 1, 4) {
+		declare Text[Integer] PrevTeamsNames for This;
+		declare TeamName = Clans::GetClanName(Clan);
+		if (!PrevTeamsNames.existskey(Clan) || PrevTeamsNames[Clan] != TeamName) {
+			PrevTeamsNames[Clan] = TeamName;
+			PauseMenu::SetCustomTeamName(Clan, TeamName);
+		}
+
+		declare Integer[Integer] PrevTeamsNbPlayers for This;
+		declare TeamNbPlayers = Clans::GetClanNbPlayers(Clan);
+		if (!PrevTeamsNbPlayers.existskey(Clan) || PrevTeamsNbPlayers[Clan] != TeamNbPlayers) {
+			PrevTeamsNbPlayers[Clan] = TeamNbPlayers;
+			PauseMenu::SetCustomTeamNbPlayers(Clan, TeamNbPlayers);
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Sort scores table in custom teams mode
+Void SortScoresTable() {
+	if (UseClans) return;
+
+	declare TotalNbPlayers = 0;
+	declare Integer[Ident][Integer] ClansPlayers;
+
+	// Reset scores
+	foreach (Score in Scores) Score.Points = 0;
+
+	// ---------------------------------- //
+	// Get all teams players 
+	foreach (Score in Scores) {
+		declare Player <=> SM::GetPlayer(Score.User.Login);
+		declare PlayerClan = G_NbTeams + 1;
+		if (Player != Null && !Player.RequestsSpectate) PlayerClan = Clans::GetPlayerClan(Player);
+
+		declare netwrite Integer Net_KotH_TotalPoints for Score;
+		declare PlayerTotalPoints = Net_KotH_TotalPoints + Score.RoundPoints;
+
+		if (!ClansPlayers.existskey(PlayerClan)) ClansPlayers[PlayerClan] = Integer[Ident];
+		ClansPlayers[PlayerClan][Score.Id] = -PlayerTotalPoints;
+		TotalNbPlayers += 1;
+	}
+
+	// ---------------------------------- //
+	// Set position depending on player team and points
+	for (Clan, 1, G_NbTeams + 1) {
+		if (!ClansPlayers.existskey(Clan)) continue;
+		declare ClanPlayers = ClansPlayers[Clan].sort();
+
+		foreach (ScoreId => InvertedPoints in ClanPlayers) {
+			Scores[ScoreId].Points = TotalNbPlayers;
+			TotalNbPlayers -= 1;
+		}
+	}
+}
+
+// ---------------------------------- //
 /// Update scores table footer
 Void UpdateScoresTableFooter() {
 	ST2::SetFooterText(TL::Compose("%1 #"^MB_GetRoundCount()^"\t$<$777///$>\tFirst to reach "^S_RoundsToWin, _("Round")));
@@ -728,7 +831,7 @@ Void UISetNbTeams(Integer _NbTeams) {
 	
 	declare PauseNbTeams = -1;
 	if (!UseClans) PauseNbTeams = G_NbTeams;
-	PauseMenu::SetCustomTeamsCount(PauseNbTeams);
+	PauseMenu::SetNbCustomTeams(PauseNbTeams);
 	Interfancy::SetNbCustomTeams(G_NbTeams);
 }
 

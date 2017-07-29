@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2017-07-19            //
+//  script version: 2017-07-29            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"JailbreakArena, JailbreakV2Arena"
-#Const Version		"2017-07-19"
+#Const Version		"2017-07-29"
 #Const ScriptName	"Modes/ShootMania/JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -19,6 +19,7 @@
 #Setting S_RoundGapToWin	2		as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
 #Setting S_RoundsLimit		3		as _("Rounds limit")			///< Point limit on map
 #Setting S_TimeLimit		600 	as _("Time limit (seconds)")	///< Time limit (seconds)
+#Setting S_UseLaserInJail	True	as _("Force Laser in jail")		///< If True players in jail will have Laser
 
 // ---------------------------------- //
 // Constants
@@ -52,6 +53,7 @@ declare CSmMapLandmark[][Integer] G_ClanGateLandmarks;		///< Gates that are open
 
 declare Integer[Integer] G_EscapeEndTime;	///< Time after which team jail becomes closed
 declare Integer G_RoundDelayedEndTime;		///< Additional play time after end conditions pass
+declare Boolean G_UseLaserInJail;	///< Laser for players in jail
 
 // ---------------------------------- //
 // Extend
@@ -88,6 +90,7 @@ ModeInfo::SetStatusMessage(Description);
 ***GalaxyTitles_Settings***
 ***
 GT_AutoManageOnArmorEmpty = False;
+GT_AutoRespawnOnCharChange = False;
 GT_KillfeedTranslations = ["$<%1$> released $<%2$>"];
 ***
 
@@ -97,6 +100,9 @@ GT_KillfeedTranslations = ["$<%1$> released $<%2$>"];
 ***Match_InitServer***
 ***
 UseClans = True;
+
+// Disable certain characters
+Characters::SetCharAvailable(5, False);
 
 // ---------------------------------- //
 // Register callbacks
@@ -249,6 +255,7 @@ UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 // ---------------------------------- //
 ***Match_StartPlayLoop***
 ***
+G_UseLaserInJail = S_UseLaserInJail;
 Layers::Attach("JailbreakInterface");
 Layers::Attach("JailbreakMarkers");
 
@@ -370,8 +377,16 @@ foreach (Player in Players) {
 		// ---------------------------------- //
 		// Select player spawn
 		declare CSmMapPlayerSpawn PlayerSpawn;
-		if (IsInJail(Player))
+		if (IsInJail(Player)) {
 			PlayerSpawn <=> G_ClanJailSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
+
+			if (G_UseLaserInJail) {
+				Inventory::SetAvailableWeapons(Player, [CSmMode::EWeapon::Laser]);
+				Inventory::SetAvailableWeapons(Player, Text[]);
+				Inventory::AddWeaponSlots(Player, CSmMode::EWeapon::Laser, 1);
+				Inventory::SetWeapon(Player, CSmMode::EWeapon::Laser);
+			}
+		}
 		else
 			PlayerSpawn <=> G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
 		
@@ -761,6 +776,12 @@ Void ReleasePlayer(CSmPlayer _Player) {
 	declare Removed = G_AllJailedPlayers.remove(_Player.Id);
 	_Player.HasShield = True;
 	ST2::SetPlayerColor(_Player.Score, <-1., -1., -1.>);
+
+	// Revert the inventory
+	if (G_UseLaserInJail) {
+		GT_InitPlayer(_Player);
+		SetPlayerAmmo(_Player, CSmMode::EWeapon::Rocket, 4);
+	}
 	
 	// ---------------------------------- //
 	// Give points for releasing the player

@@ -1,0 +1,912 @@
+// -------------------------------------- //
+//  LIBRARY PAUSE MENU 2 by domino54      //
+//  script version: 2017-07-29            //
+// -------------------------------------- //
+
+/**
+ *	This library creates customized pause menu, available
+ *	for both ShootMania and TrackMania. Main window and team
+ *	selection are enhanced with new design. Menu can be
+ *	customized with additional buttons with various actions,
+ *	as well as display team selection screen in game modes
+ *	using multiple custom teams.
+ */
+
+#Const Version		"2017-07-29"
+#Const ScriptName	"Libs/domino54/PauseMenu2.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibPauseMenu_ManialinkLayerId	"PauseMenu:Manialink"
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[] G_LibPauseMenu_CreatedButtons;
+declare Real[Text] G_LibPauseMenu_ButtonsOffsets;
+declare Text[Text] G_LibPauseMenu_ButtonsLabels;
+declare Text[Text] G_LibPauseMenu_ButtonsIcons;
+declare Text[Text] G_LibPauseMenu_ButtonsScripts;
+
+/// Custom team change requests
+declare Integer[Ident] G_LibPauseMenu_CustomTeamChangeRequests;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the pause menu.
+ *
+ *	@param	_FontMedium		Font used in the manialink.
+ *
+ *	@return		The pause menu manialink.
+ */
+Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
+
+	// ---------------------------------- //
+	declare Text[] AvailableButtonsIds;
+	foreach (ButtonId => ButtonOffset in G_LibPauseMenu_ButtonsOffsets) AvailableButtonsIds.add(ButtonId);
+	declare Dump_AvailableButtonsIds = dump(AvailableButtonsIds);
+	if (Dump_AvailableButtonsIds == "[]") Dump_AvailableButtonsIds = "Text[]";
+
+	// ---------------------------------- //
+	declare Dump_ButtonsLabels = dump(G_LibPauseMenu_ButtonsLabels);
+	declare Dump_ButtonsIcons = dump(G_LibPauseMenu_ButtonsIcons);
+	if (Dump_ButtonsLabels == "[]") Dump_ButtonsLabels = "Text[Text]";
+	if (Dump_ButtonsIcons == "[]") Dump_ButtonsIcons = "Text[Text]";
+
+	// ---------------------------------- //
+	declare ButtonsFrames = "";
+	for (I, 0, AvailableButtonsIds.count - 1)
+		ButtonsFrames ^= "<frameinstance modelid='FrameModel_PauseMenuButton' id='Frame_PauseMenuButton#"^I^"' hidden='1' />";
+
+	// ---------------------------------- //
+	declare MenuButtonsScripts = "";
+	foreach (ButtonId => ButtonScript in G_LibPauseMenu_ButtonsScripts)
+		MenuButtonsScripts ^= "case \""^ButtonId^"\" : {\n"^ButtonScript^"\n}\n";
+
+	// ---------------------------------- //
+	declare TeamsButtons = "";
+	for (I, 0, 5)
+		TeamsButtons ^= "<frameinstance modelid='FrameModel_TeamSelectionCard' id='Frame_TeamSelectionCard#"^I^"' pos='"^I*55.5^"' hidden='1' />";
+
+	//
+	declare Text[] RequiredTranslations;
+	foreach (ButtonId => Label in G_LibPauseMenu_ButtonsLabels) RequiredTranslations.add(Label);
+	
+	return """
+<manialink version="3" name="{{{C_LibPauseMenu_ManialinkLayerId}}}">
+<stylesheet>
+	<style class="FontM" valign="center2" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(_FontMedium)}}}" />
+</stylesheet>
+<frame z-index="10">
+
+<frame id="Frame_PauseMainWindow" pos="-57">
+	<label pos="2 -2" class="FontM" id="Label_MapSelectionTitle" textsize="4" textprefix="$t" text="Pause" translate="1" />
+	<quad pos="0 -6" size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<frame pos="2 -8">
+		<framemodel id="FrameModel_PauseMenuButton">
+			<label pos="18 -14.5" size="35" class="FontM" halign="center" textsize="1.5" textprefix="$t" autonewline="1" linespacing=".875" id="Label_MenuButtonLabel" />
+			<quad pos="33 -3" size="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="Check" autoscale="0" id="Quad_IsSpectatorMode" hidden="1" />
+			<quad pos="18 -7" size="10 10" halign="center" valign="center" autoscale="0" id="Quad_MenuButtonIcon" />
+
+			<frame id="Frame_MenuButtonTeams" pos="18 -7" hidden="1">
+				<quad size="8 8" valign="center" halign="right" style="Emblems" substyle="#1" autoscale="0" />
+				<quad size="8 8" valign="center" halign="left" style="Emblems" substyle="#2" autoscale="0" />
+			</frame>
+
+			<quad size="36 18" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_MenuButtonCard" ScriptEvents="1" />
+			<quad size="36 18" bgcolor="FFF" opacity=".125" />
+		</framemodel>
+		{{{ButtonsFrames}}}
+	</frame>
+
+	<frame id="Frame_BottomButtonsRow" pos="0">
+		<quad size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+		<!-- Resume button -->
+		<frame id="Frame_ResumeButton" pos="2 -2">
+			<label pos="2 -4" class="FontM" text="►" />
+			<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Resume" translate="1" />
+
+			<quad size="54.5 8" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_ResumeButtonCard" ScriptEvents="1" />
+			<quad size="54.5 8" bgcolor="FFF" opacity=".125" />
+		</frame>
+
+		<!-- Quit button -->
+		<frame id="Frame_QuitButton" pos="57.5 -2">
+			<label pos="2 -4.5" class="FontM" text="" id="Label_QuitButtonIcon" />
+			<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Quit" translate="1" id="Label_QuitButtonText" />
+
+			<quad size="54.5 8" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_QuitButtonCard" ScriptEvents="1" />
+			<quad size="54.5 8" bgcolor="FFF" opacity=".125" id="Quad_QuitButtonBg" />
+		</frame>
+	</frame>
+</frame>
+
+<frame id="Frame_ChangeTeamWindow" pos="0 38" hidden="1">
+	<label pos="2 -2" class="FontM" id="Label_MapSelectionTitle" textsize="4" textprefix="$t" text="Change team" translate="1" />
+	<quad pos="0 -6" size="0 .5" valign="center" bgcolor="FFF" opacity=".5" id="Quad_TeamWinSeparator1" />
+
+	<frame id="Frame_TeamSelectionCards" pos="2 -8">
+		<framemodel id="FrameModel_TeamSelectionCard">
+			<frame pos="27.25">
+				<quad pos="0 -20" size="16 16" halign="center" valign="center" autoscale="0" id="Quad_TeamCardEmblem" />
+				<quad pos="0 -30" size="40 .25" halign="center" valign="center" bgcolor="FFF" opacity=".5" />
+				<label pos="0 -34" size="50" class="FontM" halign="center" textsize="3" id="Label_TeamCardName" />
+				<label pos="0 -40" size="50" class="FontM" halign="center" textsize="1.5" textprefix="$t" id="Label_TeamCardNbPlayers" />
+			</frame>
+
+			<quad size="54.5 56" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_TeamCardColorCard" ScriptEvents="1" />
+			<quad size="54.5 56" bgcolor="FFF" opacity=".25" id="Quad_TeamCardColorBg" />
+		</framemodel>
+		{{{TeamsButtons}}}
+	</frame>
+
+	<quad pos="0 -66" size="0 .5" valign="center" bgcolor="FFF" opacity=".5" id="Quad_TeamWinSeparator2" />
+
+	<!-- Return button -->
+	<frame id="Frame_ReturnButton" pos="2 -68">
+		<label pos="2.25 -4.125" class="FontM" text="" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Return" translate="1" />
+
+		<quad size="54.5 8" bgcolorfocus="FFF2" class="Click" id="Quad_TeamsReturnButton" ScriptEvents="1" />
+		<quad size="54.5 8" bgcolor="FFF" opacity=".125" />
+	</frame>
+</frame>
+
+<quad size="320 180" halign="center" valign="center" image="file://Media/Images/Effects/Vignette.dds" />
+<quad size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+<quad size="320 180" halign="center" valign="center" bgcolor="000" opacity=".5" />
+
+</frame>
+<script><!--
+/**
+ *	Pause menu manialink
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_LibPauseMenu_ContextDefault		0
+#Const C_LibPauseMenu_ContextConfirmQuit	1
+#Const C_LibPauseMenu_ContextSwitchTeam		2
+
+#Const C_QuitColorEnabled	<1., 1., 1.>
+#Const C_QuitColorDisabled	<0., 0., 0.>
+#Const C_QuitColorTextOff	<.5, .5, .5>
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+declare AvailableButtonsIds = {{{Dump_AvailableButtonsIds}}};
+declare ButtonsLabels = {{{Dump_ButtonsLabels}}};
+declare ButtonsIcons = {{{Dump_ButtonsIcons}}};
+
+// ---------------------------------- //
+// Load interface elements
+declare Frame_PauseMainWindow <=> (Page.GetFirstChild("Frame_PauseMainWindow") as CMlFrame);
+declare Quad_ResumeButtonCard <=> (Page.GetFirstChild("Quad_ResumeButtonCard") as CMlQuad);
+declare Frame_BottomButtonsRow <=> (Page.GetFirstChild("Frame_BottomButtonsRow") as CMlFrame);
+declare Frame_ChangeTeamWindow <=> (Page.GetFirstChild("Frame_ChangeTeamWindow") as CMlFrame);
+declare Quad_TeamWinSeparator1 <=> (Page.GetFirstChild("Quad_TeamWinSeparator1") as CMlQuad);
+declare Quad_TeamWinSeparator2 <=> (Page.GetFirstChild("Quad_TeamWinSeparator2") as CMlQuad);
+
+declare Label_QuitButtonIcon <=> (Page.GetFirstChild("Label_QuitButtonIcon") as CMlLabel);
+declare Label_QuitButtonText <=> (Page.GetFirstChild("Label_QuitButtonText") as CMlLabel);
+declare Quad_QuitButtonCard <=> (Page.GetFirstChild("Quad_QuitButtonCard") as CMlQuad);
+declare Quad_QuitButtonBg <=> (Page.GetFirstChild("Quad_QuitButtonBg") as CMlQuad);
+
+declare CMlFrame[] Frame_PauseMenuButtons;
+for (I, 0, AvailableButtonsIds.count - 1)
+	Frame_PauseMenuButtons.add((Page.GetFirstChild("Frame_PauseMenuButton#"^I) as CMlFrame));
+
+declare CMlFrame[] Frame_TeamSelectionCards;
+for (I, 0, 5) Frame_TeamSelectionCards.add((Page.GetFirstChild("Frame_TeamSelectionCard#"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Netcode
+declare netread Boolean Net_LibPauseMenu_DisableQuitButton for Teams[0];
+declare netread Text[] Net_LibPauseMenu_DisabledButtons for Teams[0];
+declare netread Integer Net_LibPauseMenu_LastButtonsUpdate for Teams[0];
+
+declare netread Integer Net_LibPauseMenu_CustomTeamsUpdate for Teams[0];
+declare netread Integer Net_LibPauseMenu_NbCustomTeams for Teams[0];
+declare netread Vec3[Integer] Net_LibPauseMenu_CustomTeamsColors for Teams[0];
+declare netread Text[Integer] Net_LibPauseMenu_CustomTeamsNames for Teams[0];
+declare netread Integer[Integer] Net_LibPauseMenu_CustomTeamsNbPlayers for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare PauseActiveContext = C_LibPauseMenu_ContextDefault;
+declare ActionToTrigger = "";
+declare UpdateWindowButtons = True;
+declare UpdateTeamSelection = True;
+
+// Update
+declare PrevPageIsVisible = False;
+declare PrevActiveContext = -1;
+declare PrevQuitDisabled = False;
+declare PrevButtonsUpdate = -1;
+declare PrevIsSpectator = False;
+declare PrevCustomTeamsUpdate = -1;
+declare PrevNbCustomTeams = -1;
+declare PrevTeamsNames = [0 => "", 1 => ""];
+declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
+
+// Init
+EnableMenuNavigation(False, False, Null, 0);
+ClientUI.AltMenuNoCustomScores = False;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Trigger page action in next tick after pause is hidden
+if (!PageIsVisible && ActionToTrigger != "") {
+	TriggerPageAction(ActionToTrigger);
+	ActionToTrigger = "";
+}
+
+// ---------------------------------- //
+// Update pause menu visibility
+if (PrevPageIsVisible != PageIsVisible) {
+	PrevPageIsVisible = PageIsVisible;
+
+	EnableMenuNavigation(PageIsVisible, False, Null, 1);
+	ClientUI.AltMenuNoCustomScores = PageIsVisible;
+	PrevActiveContext = -1;
+}
+
+if (!PageIsVisible) continue;
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// Resume game
+		if (Event.ControlId == "Quad_ResumeButtonCard")
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+
+		// ---------------------------------- //
+		// Quit server
+		else if (Event.ControlId == "Quad_QuitButtonCard") {
+			// PauseActiveContext = C_LibPauseMenu_ContextConfirmQuit;
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Quit);
+			// ActionToTrigger = "maniaplanet:quitserver";
+		}
+		// ---------------------------------- //
+		// Change current team
+		else if (Event.ControlId == "Quad_TeamCardColorCard") {
+			declare SelectedTeam = Frame_TeamSelectionCards.keyof(Event.Control.Parent) + 1;
+			if (SelectedTeam <= 0) continue;
+
+			// ---------------------------------- //
+			// Classic teams
+			if (Net_LibPauseMenu_NbCustomTeams <= 0) {
+				switch (SelectedTeam) {
+					case 1 : Playground.JoinTeam1();
+					case 2 : Playground.JoinTeam2();
+				}
+			}
+			// ---------------------------------- //
+			// Custom teams
+			else {
+				declare netwrite Integer Net_LibPauseMenu_LastTeamChangeTime for UI;
+				declare netwrite Integer Net_LibPauseMenu_RequestedCustomClan for UI;
+				Net_LibPauseMenu_LastTeamChangeTime = Now;
+				Net_LibPauseMenu_RequestedCustomClan = SelectedTeam;
+			}
+
+			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+			PauseActiveContext = C_LibPauseMenu_ContextDefault;
+		}
+		// ---------------------------------- //
+		// Return from the team selection
+		else if (Event.ControlId == "Quad_TeamsReturnButton")
+			PauseActiveContext = C_LibPauseMenu_ContextDefault;
+		
+		// ---------------------------------- //
+		// Pause menu tiles buttons
+		else if (Event.ControlId == "Quad_MenuButtonCard") {
+			declare Text QuadButtonId for Event.Control;
+			switch (QuadButtonId) {
+{{{MenuButtonsScripts}}}
+			}
+		}
+
+		// Play sounds
+		if (Event.Control.HasClass("Click"))
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Valid, 1, 1.);
+	}
+	// ---------------------------------- //
+	// On mouse over
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		if (Event.Control.HasClass("Click"))
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, 1, 1.);
+	}
+	// ---------------------------------- //
+	// On menu navigation
+	else if (Event.Type == CMlEvent::Type::MenuNavigation) {
+		// ---------------------------------- //
+		// Back
+		if (Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel) {
+			switch (PauseActiveContext) {
+				case C_LibPauseMenu_ContextDefault : CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+				default : PauseActiveContext = C_LibPauseMenu_ContextDefault;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update buttons on teams number change
+if (PrevNbCustomTeams != Net_LibPauseMenu_NbCustomTeams) {
+	PrevNbCustomTeams = Net_LibPauseMenu_NbCustomTeams;
+
+	UpdateWindowButtons = True;
+	UpdateTeamSelection = True;
+}
+
+// ---------------------------------- //
+// Pause menu context change
+if (PrevActiveContext != PauseActiveContext) {
+	PrevActiveContext = PauseActiveContext;
+	Audio.PlaySoundEvent(CAudioManager::ELibSound::ShowDialog, 0, 1.);
+
+	Frame_PauseMainWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextDefault;
+	Frame_ChangeTeamWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextSwitchTeam;
+}
+
+// ---------------------------------- //
+// Loop depending on active context
+switch (PauseActiveContext) {
+	// ---------------------------------- //
+	// Team selection context
+	case C_LibPauseMenu_ContextSwitchTeam : {
+		foreach (I => Team in Teams) {
+			// ---------------------------------- //
+			// Update on team name change
+			if (PrevTeamsNames[I] != Team.Name) {
+				PrevTeamsNames[I] = Team.Name;
+				UpdateTeamSelection = True;
+			}
+
+			// ---------------------------------- //
+			// Update on team color change
+			if (PrevTeamsColors[I] != Team.ColorPrimary) {
+				PrevTeamsColors[I] = Team.ColorPrimary;
+				UpdateTeamSelection = True;
+			}
+		}
+
+		// ---------------------------------- //
+		// Trigger update on custom teams change
+		if (PrevCustomTeamsUpdate != Net_LibPauseMenu_CustomTeamsUpdate) {
+			PrevCustomTeamsUpdate = Net_LibPauseMenu_CustomTeamsUpdate;
+			UpdateTeamSelection = True;
+		}
+
+		// ---------------------------------- //
+		// Update team selection buttons
+		if (UpdateTeamSelection) {
+			UpdateTeamSelection = False;
+
+			// ---------------------------------- //
+			// Get teams number
+			declare TotalNbTeams = Teams.count;
+			declare IsCustomTeams = !UseClans && Net_LibPauseMenu_NbCustomTeams > 0;
+			if (IsCustomTeams) TotalNbTeams = Net_LibPauseMenu_NbCustomTeams;
+			TotalNbTeams = ML::Min(TotalNbTeams, Frame_TeamSelectionCards.count);
+
+			// ---------------------------------- //
+			// Set window position
+			declare TotalWidth = TotalNbTeams * 55.5 + 3.;
+			Frame_ChangeTeamWindow.RelativePosition_V3.X = TotalWidth / -2.;
+			Quad_TeamWinSeparator1.Size.X = TotalWidth;
+			Quad_TeamWinSeparator2.Size.X = TotalWidth;
+
+			// ---------------------------------- //
+			// Format team selection cards
+			foreach (I => Frame in Frame_TeamSelectionCards) {
+				Frame.Visible = I < TotalNbTeams;
+				if (!Frame.Visible) continue;
+				declare Clan = I + 1;
+
+				// ---------------------------------- //
+				// Load frame elements
+				declare Label_TeamCardNbPlayers <=> (Frame.GetFirstChild("Label_TeamCardNbPlayers") as CMlLabel);
+				declare Quad_TeamCardColorCard <=> (Frame.GetFirstChild("Quad_TeamCardColorCard") as CMlQuad);
+				declare Quad_TeamCardColorBg <=> (Frame.GetFirstChild("Quad_TeamCardColorBg") as CMlQuad);
+				declare Quad_TeamCardEmblem <=> (Frame.GetFirstChild("Quad_TeamCardEmblem") as CMlQuad);
+				declare Label_TeamCardName <=> (Frame.GetFirstChild("Label_TeamCardName") as CMlLabel);
+
+				// ---------------------------------- //
+				// Set the team color
+				declare TeamColor = <1., 1., 1.>;
+				if (IsCustomTeams) {
+					if (Net_LibPauseMenu_CustomTeamsColors.existskey(Clan))
+						TeamColor = Net_LibPauseMenu_CustomTeamsColors[Clan];
+				}
+				else TeamColor = Teams[I].ColorPrimary;
+
+				Quad_TeamCardColorCard.BgColorFocus = TeamColor;
+				Quad_TeamCardColorBg.BgColor = TeamColor;
+
+				// ---------------------------------- //
+				// Set the team name
+				declare TeamName = "Team #"^Clan;
+				if (IsCustomTeams) {
+					if (Net_LibPauseMenu_CustomTeamsNames.existskey(Clan))
+						TeamName = Net_LibPauseMenu_CustomTeamsNames[Clan];
+				}
+				else TeamName = Teams[I].Name;
+				Label_TeamCardName.Value = TeamName;
+
+				// ---------------------------------- //
+				// Set the team emblem
+				declare TeamEmblemStyle = "Emblems|#"^Clan;
+				if (IsCustomTeams) TeamEmblemStyle = "Emblems|#0";
+				SetQuadStyle(Quad_TeamCardEmblem, TeamEmblemStyle);
+
+				// ---------------------------------- //
+				// Set the team players count
+				declare TeamNbPlayers = 0;
+				if (IsCustomTeams) {
+					if (Net_LibPauseMenu_CustomTeamsNbPlayers.existskey(Clan))
+					TeamNbPlayers = Net_LibPauseMenu_CustomTeamsNbPlayers[Clan];
+				}
+				else foreach (Player in Players) {
+					if (Player.CurrentClan != Clan) continue;
+					TeamNbPlayers += 1;
+				}
+				Label_TeamCardNbPlayers.Value = TL::Compose("%1: "^TeamNbPlayers, _("Players"));
+			}
+		}
+	}
+	// ---------------------------------- //
+	// Main context
+	default : {
+		// ---------------------------------- //
+		// Update quit button avaliability
+		if (PrevQuitDisabled != Net_LibPauseMenu_DisableQuitButton) {
+			PrevQuitDisabled = Net_LibPauseMenu_DisableQuitButton;
+			Quad_QuitButtonCard.Visible = !PrevQuitDisabled;
+
+			declare Color = C_QuitColorTextOff;
+			if (!PrevQuitDisabled) Color = C_QuitColorEnabled;
+			Label_QuitButtonIcon.TextColor = Color;
+			Label_QuitButtonText.TextColor = Color;
+
+			Quad_QuitButtonBg.BgColor = C_QuitColorDisabled;
+			if (!PrevQuitDisabled) Quad_QuitButtonBg.BgColor = C_QuitColorEnabled;
+		}
+
+		// ---------------------------------- //
+		// Available buttons update
+		if (PrevButtonsUpdate != Net_LibPauseMenu_LastButtonsUpdate) {
+			PrevButtonsUpdate = Net_LibPauseMenu_LastButtonsUpdate;
+			UpdateWindowButtons = True;
+		}
+
+		// ---------------------------------- //
+		// Update on spectator mode change
+		if (PrevIsSpectator != IsSpectator) {
+			PrevIsSpectator = IsSpectator;
+			UpdateWindowButtons = True;
+		}
+
+		// ---------------------------------- //
+		// Update the tiles
+		if (UpdateWindowButtons) {
+			UpdateWindowButtons = False;
+
+			// ---------------------------------- //
+			// Get buttons to display
+			declare Text[] ButtonsIds;
+			foreach (ButtonId in AvailableButtonsIds) {
+				if (Net_LibPauseMenu_DisabledButtons.exists(ButtonId)) continue;
+				switch (ButtonId) {
+					case "LibPM_ChangeTeam" : if (IsSpectator || (!UseClans && Net_LibPauseMenu_NbCustomTeams <= 0) || UseForcedClans) continue;
+				}
+				ButtonsIds.add(ButtonId);
+			}
+
+			// ---------------------------------- //
+			// Configure buttons
+			foreach (I => Frame in Frame_PauseMenuButtons) {
+				Frame.Visible = ButtonsIds.existskey(I);
+				if (!Frame.Visible) continue;
+				declare ButtonId = ButtonsIds[I];
+
+				// Set frame position
+				Frame.RelativePosition_V3.X = (I % 3) * 37.;
+				Frame.RelativePosition_V3.Y = (I / 3) * -19.;
+
+				// ---------------------------------- //
+				// Load frame elements
+				declare Label_MenuButtonLabel <=> (Frame.GetFirstChild("Label_MenuButtonLabel") as CMlLabel);
+				declare Quad_MenuButtonIcon <=> (Frame.GetFirstChild("Quad_MenuButtonIcon") as CMlQuad);
+				declare Quad_MenuButtonCard <=> (Frame.GetFirstChild("Quad_MenuButtonCard") as CMlQuad);
+				declare Frame_MenuButtonTeams <=> (Frame.GetFirstChild("Frame_MenuButtonTeams") as CMlFrame);
+				declare Quad_IsSpectatorMode <=> (Frame.GetFirstChild("Quad_IsSpectatorMode") as CMlQuad);
+
+				// ---------------------------------- //
+				// Set button label text
+				declare ButtonLabelText = "";
+				if (ButtonsLabels.existskey(ButtonId)) ButtonLabelText = ButtonsLabels[ButtonId];
+				Label_MenuButtonLabel.Value = Translate(ButtonLabelText);
+
+				// ---------------------------------- //
+				// Set button icon image
+				declare ButtonIconURL = "";
+				if (ButtonsIcons.existskey(ButtonId)) ButtonIconURL = ButtonsIcons[ButtonId];
+				// if (ButtonId == "GT_StoragePlayer" && PrevAlbumCover != "") ButtonIconURL = PrevAlbumCover;
+				SetQuadStyle(Quad_MenuButtonIcon, ButtonIconURL);
+
+				// Set teams emblems visibility
+				Frame_MenuButtonTeams.Visible = ButtonId == "LibPM_ChangeTeam" && UseClans;
+
+				// Spectator mode button check
+				Quad_IsSpectatorMode.Visible = ButtonId == "LibPM_Spectator";
+				if (Quad_IsSpectatorMode.Visible) Quad_IsSpectatorMode.StyleSelected = IsSpectator;
+
+				// Hide icon for team and character change buttons
+				Quad_MenuButtonIcon.Visible = !Frame_MenuButtonTeams.Visible;
+
+				declare Text QuadButtonId for Quad_MenuButtonCard;
+				QuadButtonId = ButtonId;
+			}
+
+			// ---------------------------------- //
+			// Adjust window position
+			declare TotalWidth = 9.;
+			Frame_BottomButtonsRow.RelativePosition_V3.Y = -TotalWidth + ((ButtonsIds.count - 1) / 3 + 1) * -19.;
+			TotalWidth = -Frame_BottomButtonsRow.RelativePosition_V3.Y;
+			Frame_PauseMainWindow.RelativePosition_V3.Y = (TotalWidth + 10.) / 2.;
+		}
+	}
+}
+***
+
+{{{Translations::InjectInManialink(RequiredTranslations)}}}
+
+// ---------------------------------- //
+/** Set the style of a quad.
+ *
+ *	@param	_Quad	The quad to set style.
+ *	@param	_Style	The style of the quad.
+ */
+Void SetQuadStyle(CMlQuad _Quad, Text _Style) {
+	if (_Quad == Null) return;
+	declare Explode = TL::Split("|", _Style);
+
+	if (Explode.count == 2) {
+		_Quad.Style = Explode[0];
+		_Quad.Substyle = Explode[1];
+		_Quad.ImageUrl = "";
+	}
+	else if (Http.IsValidUrl(_Style)) {
+		_Quad.ImageUrl = _Style;
+		_Quad.Style = "";
+		_Quad.Substyle = "";
+	}
+	else {
+		_Quad.Style = "";
+		_Quad.Substyle = "";
+		_Quad.ImageUrl = "";
+	}
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Trigger custom teams data update on client side.
+Void Private_TriggerTeamsUpdate() {
+	declare netwrite Integer Net_LibPauseMenu_CustomTeamsUpdate for Teams[0];
+	Net_LibPauseMenu_CustomTeamsUpdate = Now;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Set the label of a button.
+ *
+ *	@param	_ButtonId		Id of the buton to set label.
+ *	@param	_ButtonLabel	Text displayed on the button.
+ */
+Void SetButtonLabel(Text _ButtonId, Text _ButtonLabel) {
+	if (!G_LibPauseMenu_CreatedButtons.exists(_ButtonId)) return;
+	G_LibPauseMenu_ButtonsLabels[_ButtonId] = _ButtonLabel;
+}
+
+// ---------------------------------- //
+/** Set the icon of a button.
+ *
+ *	@param	_ButtonId		Id of the buton to set icon.
+ *	@param	_ButtonIcon		Icon displayed on the button.
+ */
+Void SetButtonIcon(Text _ButtonId, Text _ButtonIcon) {
+	if (!G_LibPauseMenu_CreatedButtons.exists(_ButtonId)) return;
+	G_LibPauseMenu_ButtonsIcons[_ButtonId] = _ButtonIcon;
+}
+
+// ---------------------------------- //
+/** Set the offset of a button.
+ *
+ *	@param	_ButtonId		Id of the buton to set offset.
+ *	@param	_ButtonOffset	Sorting order of the button in pause menu.
+ */
+Void SetButtonOffset(Text _ButtonId, Real _ButtonOffset) {
+	if (!G_LibPauseMenu_CreatedButtons.exists(_ButtonId)) return;
+	G_LibPauseMenu_ButtonsOffsets[_ButtonId] = _ButtonOffset;
+	G_LibPauseMenu_ButtonsOffsets = G_LibPauseMenu_ButtonsOffsets.sort();
+}
+
+// ---------------------------------- //
+/** Set the script of a button.
+ *
+ *	@param	_ButtonId		Id of the buton to set script.
+ *	@param	_ButtonScript	Script running when button is clicked.
+ */
+Void SetButtonScript(Text _ButtonId, Text _ButtonScript) {
+	if (!G_LibPauseMenu_CreatedButtons.exists(_ButtonId)) return;
+	G_LibPauseMenu_ButtonsScripts[_ButtonId] = _ButtonScript;
+}
+
+// ---------------------------------- //
+/** Set the button visibility.
+ *
+ *	@param	_ButtonId		Id of the buton to change its visibility.
+ *	@param	_ButtonVisible	If True the button will be wisible.
+ */
+Void SetButtonVisibility(Text _ButtonId, Boolean _ButtonVisible) {
+	if (!G_LibPauseMenu_CreatedButtons.exists(_ButtonId)) return;
+
+	declare netwrite Text[] Net_LibPauseMenu_DisabledButtons for Teams[0];
+	declare netwrite Integer Net_LibPauseMenu_LastButtonsUpdate for Teams[0];
+	Net_LibPauseMenu_LastButtonsUpdate = Now;
+
+	if (_ButtonVisible) {
+		declare Removed = Net_LibPauseMenu_DisabledButtons.remove(_ButtonId);
+	}
+	else if (!Net_LibPauseMenu_DisabledButtons.exists(_ButtonId)) {
+		Net_LibPauseMenu_DisabledButtons.add(_ButtonId);
+	}
+}
+
+// ---------------------------------- //
+/** Create a new button in the pause menu.
+ *
+ *	@param	_ButtonId		Id of the new button.
+ *	@param	_ButtonLabel	Text displayed on the button.
+ *	@param	_ButtonIcon		Icon displayed on the button.
+ *	@param	_ButtonOffset	Sorting offset of the button.
+ */
+Void CreateButton(Text _ButtonId, Text _ButtonLabel, Text _ButtonIcon, Real _ButtonOffset) {
+	if (G_LibPauseMenu_CreatedButtons.exists(_ButtonId)) return;
+	G_LibPauseMenu_CreatedButtons.add(_ButtonId);
+
+	SetButtonLabel(_ButtonId, _ButtonLabel);
+	SetButtonIcon(_ButtonId, _ButtonIcon);
+	SetButtonOffset(_ButtonId, _ButtonOffset);
+	SetButtonVisibility(_ButtonId, True);
+
+	declare ButtonScript = "";
+	switch (_ButtonId) {
+		case "LibPM_ModeHelp" : ButtonScript = "ShowModeHelp();";
+		case "LibPM_Spectator" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::Resume); ActionToTrigger = \"maniaplanet:togglespec\";";
+		case "LibPM_SaveReplay" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::Resume); ActionToTrigger = \"maniaplanet:savereplay\";";
+		case "LibPM_ChangeTeam" : ButtonScript = "PauseActiveContext = C_LibPauseMenu_ContextSwitchTeam;";
+		case "LibPM_ManageServer" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::ServerSettings);";
+		case "LibPM_Advanced" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::AdvancedMenu);";
+	}
+	SetButtonScript(_ButtonId, ButtonScript);
+}
+
+// ---------------------------------- //
+/** Destroy a button.
+ *
+ *	@param	_ButtonId	Id of the button to destroy.
+ */
+Void DestroyButton(Text _ButtonId) {
+	if (!G_LibPauseMenu_CreatedButtons.exists(_ButtonId)) return;
+
+	declare Boolean Removed;
+	G_LibPauseMenu_CreatedButtons	.remove(_ButtonId);
+	G_LibPauseMenu_ButtonsLabels	.removekey(_ButtonId);
+	G_LibPauseMenu_ButtonsIcons		.removekey(_ButtonId);
+	G_LibPauseMenu_ButtonsOffsets	.removekey(_ButtonId);
+	G_LibPauseMenu_ButtonsScripts	.removekey(_ButtonId);
+}
+
+// ---------------------------------- //
+/// Create default pause menu buttons.
+Void CreateStandardButtons() {
+	CreateButton("LibPM_ModeHelp", _("Help"), "UIConstruction_Buttons|Help", 0.);
+	CreateButton("LibPM_Spectator", _("Spectator"), "Icons64x64_1|CameraLocal", 1.);
+	CreateButton("LibPM_SaveReplay", _("Save replay"), "Icons64x64_1|MediaVideoDownloading", 2.);
+	CreateButton("LibPM_ChangeTeam", _("Change team"), "Icons128x32_1|RT_Team", 3.);
+	CreateButton("LibPM_ManageServer", _("Manage server"), "Icons64x64_1|IconServers", 4.);
+	CreateButton("LibPM_Advanced", _("Advanced options"), "Icons128x128_1|Options", 5.);
+}
+
+// ---------------------------------- //
+/// Hide buttons unwanted for a solo game.
+Void SetSoloMode() {
+	SetButtonVisibility("LibPM_Spectator", True);
+	SetButtonVisibility("LibPM_ChangeTeam", True);
+	SetButtonVisibility("LibPM_ManageServer", True);
+	SetButtonVisibility("LibPM_Advanced", True);
+}
+
+// ---------------------------------- //
+/** Set the number of custom teams.
+ *
+ *	@param	_NbCustomTeams		Custom teams number.
+ */
+Void SetNbCustomTeams(Integer _NbCustomTeams) {
+	Private_TriggerTeamsUpdate();
+
+	declare netwrite Integer Net_LibPauseMenu_NbCustomTeams for Teams[0];
+	Net_LibPauseMenu_NbCustomTeams = _NbCustomTeams;
+}
+
+// ---------------------------------- //
+/** Set the color of a custom team.
+ *
+ *	@param	_TeamId		Id of the custom team.
+ *	@param	_TeamColor	New color of the team.
+ */
+Void SetCustomTeamColor(Integer _TeamId, Vec3 _TeamColor) {
+	if (_TeamId <= 0) return;
+	Private_TriggerTeamsUpdate();
+
+	declare netwrite Vec3[Integer] Net_LibPauseMenu_CustomTeamsColors for Teams[0];
+	Net_LibPauseMenu_CustomTeamsColors[_TeamId] = _TeamColor;
+}
+
+// ---------------------------------- //
+/** Set the name of a custom team.
+ *
+ *	@param	_TeamId		Id of the custom team.
+ *	@param	_TeamName	New name of the team.
+ */
+Void SetCustomTeamName(Integer _TeamId, Text _TeamName) {
+	if (_TeamId <= 0) return;
+	Private_TriggerTeamsUpdate();
+
+	declare netwrite Text[Integer] Net_LibPauseMenu_CustomTeamsNames for Teams[0];
+	Net_LibPauseMenu_CustomTeamsNames[_TeamId] = _TeamName;
+}
+
+// ---------------------------------- //
+/** Set number of players in a custom team.
+ *
+ *	@param	_TeamId			Id of the custom team.
+ *	@param	_TeamNbPlayers	Amount of players in the team.
+ */
+Void SetCustomTeamNbPlayers(Integer _TeamId, Integer _TeamNbPlayers) {
+	if (_TeamId <= 0) return;
+	Private_TriggerTeamsUpdate();
+
+	declare netwrite Integer[Integer] Net_LibPauseMenu_CustomTeamsNbPlayers for Teams[0];
+	Net_LibPauseMenu_CustomTeamsNbPlayers[_TeamId] = _TeamNbPlayers;
+}
+
+// ---------------------------------- //
+/** Get the custom teams change requests.
+ *
+ *	@return		Requests of the players changing custom team.
+ */
+Integer[Ident] CustomTeamChangeRequests() {
+	if (G_LibPauseMenu_CustomTeamChangeRequests.count > 0)
+		G_LibPauseMenu_CustomTeamChangeRequests.clear();
+	
+	// ---------------------------------- //
+	// Get the new requests
+	foreach (Player in AllPlayers) {
+		if (Player.IsBot || Player.IsFakePlayer) continue;
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == Null) continue;
+
+		declare netread Integer Net_LibPauseMenu_LastTeamChangeTime for UI;
+		declare Integer PrevTeamChangeTime for Player;
+		if (PrevTeamChangeTime == Net_LibPauseMenu_LastTeamChangeTime) continue;
+		PrevTeamChangeTime = Net_LibPauseMenu_LastTeamChangeTime;
+		
+		declare netread Integer Net_LibPauseMenu_RequestedCustomClan for UI;
+		G_LibPauseMenu_CustomTeamChangeRequests[Player.Id] = Net_LibPauseMenu_RequestedCustomClan;
+	}
+	
+	return G_LibPauseMenu_CustomTeamChangeRequests;
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	Layers::Detach(C_LibPauseMenu_ManialinkLayerId);
+	Layers::Destroy(C_LibPauseMenu_ManialinkLayerId);
+
+	G_LibPauseMenu_CreatedButtons	.clear();
+	G_LibPauseMenu_ButtonsOffsets	.clear();
+	G_LibPauseMenu_ButtonsLabels	.clear();
+	G_LibPauseMenu_ButtonsIcons		.clear();
+	G_LibPauseMenu_ButtonsScripts	.clear();
+
+	G_LibPauseMenu_CustomTeamChangeRequests.clear();
+
+	declare netwrite Text[] Net_LibPauseMenu_DisabledButtons for Teams[0];
+	declare netwrite Integer Net_LibPauseMenu_LastButtonsUpdate for Teams[0];
+	Net_LibPauseMenu_DisabledButtons.clear();
+	Net_LibPauseMenu_LastButtonsUpdate = -1;
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+	CreateStandardButtons();
+
+	Layers::Create(C_LibPauseMenu_ManialinkLayerId);
+	Layers::SetType(C_LibPauseMenu_ManialinkLayerId, CUILayer::EUILayerType::InGameMenu);
+}
+
+// ---------------------------------- //
+/** Build the pause menu.
+ *
+ *	@param	_FontMedium		The fon used in the pause menu.
+ */
+Void Build(Text _FontMedium) {
+	Layers::Update(C_LibPauseMenu_ManialinkLayerId, Private_CreateManialinkPauseMenu(_FontMedium));
+	Layers::Attach(C_LibPauseMenu_ManialinkLayerId);
+}
+
+// ---------------------------------- //
+/// Build the pause menu with default font.
+Void Build() { Build(""); }

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-07-22            //
+//  script version: 2017-07-29            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-07-22"
+#Const GTVersion	"2017-07-29"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -28,6 +28,7 @@
 #Include "Libs/domino54/MapSelection.Script.txt" as MapSelection
 #Include "Libs/domino54/MarkersPro.Script.txt" as Markers
 #Include "Libs/domino54/Models.Script.txt" as Models
+#Include "Libs/domino54/PauseMenu2.Script.txt" as PauseMenu
 #Include "Libs/domino54/Statistics.Script.txt" as Statistics
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
@@ -38,7 +39,6 @@
 #Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
 #Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
 #Include "Libs/domino54/ShootMania/MiniMap.Script.txt" as MiniMap
-#Include "Libs/domino54/ShootMania/PauseMenu.Script.txt" as PauseMenu
 #Include "Libs/domino54/ShootMania/PlayersToads.Script.txt" as Toads
 #Include "Libs/domino54/ShootMania/PlayersTurrets.Script.txt" as Turrets
 #Include "Libs/domino54/ShootMania/Streaks.Script.txt" as Streaks
@@ -120,6 +120,7 @@ declare Boolean GT_AutoManageOnArmorEmpty;	///< Automatically manage OnArmorEmpt
 declare Boolean GT_AutoManageOnNearMiss;	///< Automatically manage OnNearMiss events
 declare Boolean GT_AutoManageOnRespawn;		///< Automatically manage OnPlayerRequestRespawn event
 declare Boolean GT_AutoManageOnObjectTouch;	///< Automatically manage OnPlayerTouchesObject events
+declare Boolean GT_AutoRespawnOnCharChange;	///< Automatically respawn players changing their character
 declare Boolean GT_AllowMatchmakingMode;	///< Defines if the mode can use matchmaking feature
 declare Boolean GT_DisableOffZoneDamage;	///< Disable OffZone eliminations (Tornado may stil leliminate players)
 declare Boolean GT_DisableTornadoDamage;	///< Disable Tornado eliminations (only if OffZone is disabled)
@@ -244,8 +245,40 @@ GT_AutoManageOnArmorEmpty = True;
 GT_AutoManageOnNearMiss = True;
 GT_AutoManageOnRespawn = True;
 GT_AutoManageOnObjectTouch = True;
+GT_AutoRespawnOnCharChange = True;
 GT_AllowMatchmakingMode = True;
 GT_CharactersDataFileURL = C_DefaultCharactersURL;
+***
+
+// ---------------------------------- //
+// Set up the pause menu
+// ---------------------------------- //
+***GalaxyTitles_PauseMenu***
+***
+PauseMenu::SetButtonIcon("LibPM_ModeHelp", C_ImgBase^"Icons/Help.png");
+PauseMenu::SetButtonIcon("LibPM_Spectator", C_ImgBase^"Icons/Spectator.png");
+PauseMenu::SetButtonIcon("LibPM_SaveReplay", C_ImgBase^"Icons/Recording.png");
+PauseMenu::SetButtonIcon("LibPM_ChangeTeam", C_ImgBase^"Icons/Versus.png");
+PauseMenu::SetButtonIcon("LibPM_ManageServer", C_ImgBase^"Icons/Server.png");
+PauseMenu::SetButtonIcon("LibPM_Advanced", C_ImgBase^"Icons/AdvancedSettings.png");
+
+// Create buttons for Storage Player and Characters
+PauseMenu::CreateButton("GT_StoragePlayer", "Storage Player", C_ImgBase^"Icons/Headphones.png", 6.);
+PauseMenu::CreateButton("GT_CharSelection", "Change character", C_ImgBase^"Icons/Run.png", 7.);
+
+PauseMenu::SetButtonScript("GT_StoragePlayer", """
+CloseInGameMenu(::EInGameMenuResult::Resume);
+declare Boolean LibStoragePlayer_ToggleShowWindow for This;
+LibStoragePlayer_ToggleShowWindow = True;
+""");
+
+PauseMenu::SetButtonScript("GT_CharSelection", """
+CloseInGameMenu(::EInGameMenuResult::Resume);
+declare Boolean LibCharacters_ToggleShowWindow for This;
+LibCharacters_ToggleShowWindow = True;
+""");
+
+PauseMenu::SetButtonVisibility("GT_CharSelection", False);
 ***
 
 // ---------------------------------- //
@@ -300,10 +333,15 @@ if (UseClans) {
 // ---------------------------------- //
 // Create custom interface
 Interfancy::Load(["Gauges", "Countdown", "SpecInfo", "Crosshair", "ScoreSummary"]);
-PauseMenu::Load();
 SM::SetupDefaultVisibility();
 MapSelection::Load("Eurostile", "Eurostile_Bold");
 Markers::Load();
+
+// ---------------------------------- //
+// Pause menu
+PauseMenu::Load();
++++GalaxyTitles_PauseMenu+++
+PauseMenu::Build("Eurostile");
 
 UIManager.UIAll.OverlayHide321Go = True;
 UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
@@ -315,10 +353,6 @@ UIManager.UIAll.NoticesFilter_LevelToShowAsBigMessage = CUIConfig::ENoticeLevel:
 StoragePlayer::Load(C_ImgBase, "Eurostile", "Eurostile_Bold");
 StoragePlayer::SetDefaultPlaylistURL(C_DefaultMusicPlaylist);
 
-// Load Statistics and Streaks
-Statistics::Load();
-Streaks::Load();
-
 // Load Killfeed library
 Killfeed::Load();
 Killfeed::SetPosition(C_DefaultKillfeedPosn + <0., S_KillfeedOffsetY>);
@@ -328,7 +362,10 @@ Killfeed::SetWeaponsIcons([
 	0 => C_ImgBase^"Icons/Shield.png", 1 => C_ImgBase^"Icons/Laser.png", 2 => C_ImgBase^"Icons/Rocket.png",
 	3 => C_ImgBase^"Icons/Nucleus.png", 5 => C_ImgBase^"Icons/Arrow.png", 6 => C_ImgBase^"Icons/Missile.png"
 ]);
-Killfeed::Build();
+
+// Load Statistics and Streaks
+Statistics::Load();
+Streaks::Load();
 
 // Load minimap
 MiniMap::Load();
@@ -352,6 +389,7 @@ declare PrevPlayerNbArmorMax = S_PlayerArmorPoints;
 
 Webhook::SetMapSwitching(True);
 Killfeed::SetMapSwitching(True);
+Killfeed::Build();
 ***
 
 // ---------------------------------- //
@@ -359,7 +397,7 @@ Killfeed::SetMapSwitching(True);
 // ---------------------------------- //
 ***Match_StartServer***
 ***
-PauseMenu::SetModeRules(ModeInfo::GetName(), ModeInfo::GetRules(), "");
+//PauseMenu::SetModeRules(ModeInfo::GetName(), ModeInfo::GetRules(), "");
 
 // Disable Constructor in non-team modes
 if (GT_CharactersDataFileURL == C_DefaultCharactersURL)
@@ -382,6 +420,13 @@ foreach (WeaponId in Inventory::GetCustomWeapons()) {
 	declare WeaponIcon = Inventory::GetWeaponIcon(WeaponId);
 	Interfancy::SetGaugesIconsImages([WeaponName => C_ImgBase^"Icons/"^WeaponIcon]);
 }
+
+// ---------------------------------- //
+// Character selection
+declare GT_CharactersAvailable = S_EnableCharSelection && Http.IsValidUrl(GT_CharactersDataFileURL);
+PauseMenu::SetButtonVisibility("GT_CharSelection", GT_CharactersAvailable);
+if (GT_CharactersAvailable) Characters::Manual();
+else Characters::Hide();
 
 // ---------------------------------- //
 // Stop the script if server is in matchmaking mode and mode doesn't support it
@@ -453,10 +498,6 @@ Markers::Reset();
 UIManager.UIAll.BigMessage = "";
 UIManager.UIAll.StatusMessage = "";
 MiniMap::Show();
-
-// Character selection
-if (S_EnableCharSelection) Characters::Manual();
-else Characters::Hide();
 
 // ---------------------------------- //
 // Init GalaxyTitles functions
@@ -577,7 +618,7 @@ if (Event.Shooter != Null) {
 	// Eliminated by player's Turret
 	else if (GT_JustHitByTurret) Killfeed::SendNotice(
 		Event.Victim.Login, Event.Shooter.Login,
-		C_ImgBase^"Icons/Turret.png", AssistantLogin
+		C_ImgBase^"Icons/TurretKill.png", AssistantLogin
 	);
 
 	// ---------------------------------- //
@@ -1032,7 +1073,7 @@ foreach (Player in Players) {
 
 // ---------------------------------- //
 // Respawn players changing characters
-foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
+if (GT_AutoRespawnOnCharChange) foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
 	if (!Players.existskey(PlayerId)) continue;
 	declare Player <=> Players[PlayerId];
 
@@ -1067,7 +1108,9 @@ if (PrevMaximumNbReplies != S_MaximumNbReplies) {
 if (PrevEnableCharSelection != S_EnableCharSelection) {
 	PrevEnableCharSelection = S_EnableCharSelection;
 
-	if (S_EnableCharSelection) Characters::Manual();
+	declare GT_CharactersAvailable = S_EnableCharSelection && Http.IsValidUrl(GT_CharactersDataFileURL);
+	PauseMenu::SetButtonVisibility("GT_CharSelection", GT_CharactersAvailable);
+	if (GT_CharactersAvailable) Characters::Manual();
 	else Characters::Hide();
 }
 
@@ -1089,7 +1132,6 @@ Toads::ResetAllPlayers();
 GalaxyTitles::ResetAll();
 MiniMap::Hide();
 Markers::Reset();
-Characters::Hide();
 ***
 
 // ---------------------------------- //
@@ -1395,7 +1437,9 @@ Boolean GT_IsValidPlayer(CSmPlayer _Player) {
 Void GT_InitPlayer(CSmPlayer _Player) {
 	if (_Player == Null) return;
 	
-	if (UseClans) SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
+	if (UseClans && _Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned)
+		SetPlayerClan(_Player, GT_GetRequestedClan(_Player));
+
 	GalaxyTitles::InitPlayer(_Player);
 	SetPlayerReloadAllWeapons(_Player, True);
 	

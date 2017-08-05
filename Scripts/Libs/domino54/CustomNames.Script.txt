@@ -1,0 +1,224 @@
+// -------------------------------------- //
+//  LIBRARY CUSTOM NAMES by domino54      //
+//  script version: 2017-08-05            //
+// -------------------------------------- //
+
+/**
+ *	Change name of any player you want to anything.
+ */
+
+#Const Version		"2017-08-05"
+#Const ScriptName	"Libs/domino54/CustomNames.Script.txt"
+
+#Include "Libs/Nadeo/ScoresTable2.Script.txt" as ST2
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Get the score of a player.
+ *
+ *	@param	_Player		The player to get score.
+ *
+ *	@return		Score of the player.
+ */
+CScore GetScore(CPlayer _Player) {
+	if (_Player == Null) return Null;
+	switchtype (_Player) {
+		case CTmPlayer : {
+			declare Player = cast(CTmPlayer, _Player);
+			return Player.Score;
+		}
+		case CSmPlayer : {
+			declare Player = cast(CSmPlayer, _Player);
+			return Player.Score;
+		}
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get the score of a user.
+ *
+ *	@param	_User	The user to get score.
+ *
+ *	@return		Score of the user.
+ */
+CScore GetScore(CUser _User) {
+	if (_User == Null) return Null;
+	foreach (Score in Scores) if (Score.User == _User) return Score;
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get the score by the login.
+ *
+ *	@param	_Login	Login of the score to get.
+ *
+ *	@return		Score matching the login.
+ */
+CScore GetScore(Text _Login) {
+	if (_Login == "") return Null;
+	foreach (Score in Scores) if (Score.User.Login == _Login) return Score;
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get the name of a player.
+ *
+ *	@param	_Score	Score of the player to get their name.
+ *
+ *	@return		Name of the player.
+ */
+Text Get(CScore _Score) {
+	if (_Score == Null) return "";
+	declare netwrite Text LibCustomNames_UserName for _Score;
+	if (LibCustomNames_UserName == "") return _Score.User.Name;
+	return LibCustomNames_UserName;
+}
+
+// ---------------------------------- //
+/** Get the name of a player.
+ *
+ *	@param	_Player		The player to get their name.
+ *
+ *	@return		Name of the player.
+ */
+Text Get(CPlayer _Player) {
+	if (_Player == Null) return "";
+	return Get(GetScore(_Player));
+}
+
+// ---------------------------------- //
+/** Get the name of a player.
+ *
+ *	@param	_User	The user to get their name.
+ *
+ *	@return		Name of the player.
+ */
+Text Get(CUser _User) {
+	if (_User == Null) return "";
+	return Get(GetScore(_User));
+}
+
+// ---------------------------------- //
+/** Get the name of a player.
+ *
+ *	@param	_Login	Login of the player to get name.
+ *
+ *	@return		Name of the player.
+ */
+Text Get(Text _Login) {
+	if (_Login == "") return "";
+	return Get(GetScore(_Login));
+}
+
+// ---------------------------------- //
+/** Set the name of a player.
+ *
+ *	@param	_Score	The score to set new name.
+ *	@param	_Name	New name to set.
+ */
+Void Set(CScore _Score, Text _Name) {
+	if (_Score == Null) return;
+	declare netwrite Text LibCustomNames_UserName for _Score;
+	LibCustomNames_UserName = _Name;
+}
+
+// ---------------------------------- //
+/** Set the name of a player.
+ *
+ *	@param	_Player		The player to set new name.
+ *	@param	_Name		New name to set.
+ */
+Void Set(CPlayer _Player, Text _Name) {
+	if (_Player == Null) return;
+	Set(GetScore(_Player), _Name);
+}
+
+// ---------------------------------- //
+/** Set the name of a player.
+ *
+ *	@param	_User	The user to set new name.
+ *	@param	_Name	New name to set.
+ */
+Void Set(CUser _User, Text _Name) {
+	if (_User == Null) return;
+	Set(GetScore(_User), _Name);
+}
+
+// ---------------------------------- //
+/** Set the name of a player.
+ *
+ *	@param	_Login	Login of the player to set new name.
+ *	@param	_Name	New name to set.
+ */
+Void Set(Text _Login, Text _Name) {
+	if (_Login == "") return;
+	Set(GetScore(_Login), _Name);
+}
+
+// ---------------------------------- //
+/** Reset name of a player.
+ *
+ *	@param	_Score	The score to reset name.
+ */
+Void Reset(CScore _Score) {
+	Set(_Score, "");
+}
+
+// ---------------------------------- //
+/** Reset name of a player.
+ *
+ *	@param	_Player		The player to reset name.
+ */
+Void Reset(CPlayer _Player) {
+	Set(_Player, "");
+}
+
+// ---------------------------------- //
+/** Reset name of a player.
+ *
+ *	@param	_User	The user to reset name.
+ */
+Void Reset(CUser _User) {
+	Set(_User, "");
+}
+
+// ---------------------------------- //
+/** Reset name of a player.
+ *
+ *	@param	_Login	Login of the player to reset name.
+ */
+Void Reset(Text _Login) {
+	Set(_Login, "");
+}
+
+// ---------------------------------- //
+/// Initialize name column in ScoresTable2.
+Void InitST2() {
+	ST2::SetColScript("LibST_Name", """
+declare netread Text LibCustomNames_UserName for _Score;
+if (LibCustomNames_UserName != "") Label_Col.Value = LibCustomNames_UserName;
+else Label_Col.Value = _Score.User.Name;
+	""");
+}

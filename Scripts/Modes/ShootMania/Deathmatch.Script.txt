@@ -1,0 +1,475 @@
+// -------------------------------------- //
+//  DEATHMATCH by domino54                //
+//  script version: 2017-08-05            //
+// -------------------------------------- //
+
+#Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
+
+#Const Version		"2017-08-05"
+#Const ScriptName	"Modes/ShootMania/Deathmatch.Script.txt"
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit			600		as _("Time limit") ///< Time limit on a map
+#Setting S_PointsLimit			25		as _("Points limit") ///< Points limit on a map
+#Setting S_UseInstaGibMode		False	as _("Use InstaGib mode (requires restart)")
+#Setting S_AmmoReloadCoef		1.		as _("Weapon reload multipler")
+#Setting S_MatchmakingFormat	6		as _("Number of players in matchmaking mode")
+
+#Const Description _("Hit your opponents to score points. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.")
+
+// ---------------------------------- //
+// Gloabal variables
+// ---------------------------------- //
+declare Ident[] G_SpawnsList;	///< Id of all the landmarks with a player spawn of the map
+declare Ident G_LatestSpawnId;	///< Id of the last landmark used
+
+// ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+declare Integer[] MatchmakingFormats;
+for (I, 1, S_MatchmakingFormat) MatchmakingFormats.add(1);
+MM_SetFormat(MatchmakingFormats);
+***
+
+// ---------------------------------- //
+// Format the scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+ST2::DestroyCol("LibST_SMRoundPoints");
+ST2::DestroyCol("Support");
+ST2::DestroyCol("Hit");
+
+ST2::CreateCol("InstaGib_Accuracy", "Acc.", "", 5., 70.);
+ST2::CreateCol("InstaGib_KillDeath", "K/D", "", 5., 80.);
+ST2::CreateCol("InstaGib_KDRatio", "KDR", "", 5., 90.);
+ST2::SetColWidth("LibST_SMPoints", 5.);
+***
+
+// ---------------------------------- //
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
+GT_UseAutospawnObjects = !S_UseInstaGibMode;
+GT_UseComboWeapons = !S_UseInstaGibMode;
+GT_UseRepliePickups = !S_UseInstaGibMode;
+GT_UseRandomToads = !S_UseInstaGibMode;
+if (S_UseInstaGibMode) GT_CharactersDataFileURL = "";
+***
+
+// ---------------------------------- //
+// Set the match rules
+// ---------------------------------- //
+***Match_Rules***
+***
+ModeInfo::SetName("Deathmatch");
+ModeInfo::SetType(ModeInfo::Type_FreeForAll());
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage(_("Hit a maximum of players to win the game."));
+***
+
+// ---------------------------------- //
+// Init server
+// ---------------------------------- //
+***Match_InitServer***
+***
+Layers::Create("Deathmatch:Interface", CreateDeathmatchInterface());
+
+declare PrevTimeLimit = S_TimeLimit;
+declare PrevPointsLimit = S_PointsLimit;
+declare CurrentPlayerArmor = S_PlayerArmorPoints;
+declare UseInstaGibMode = S_UseInstaGibMode;
+declare LeaderId = NullId;
+***
+
+// ---------------------------------- //
+// Init map
+// ---------------------------------- //
+***Match_StartMap***
+***
+Interfancy::SetArmorVisibility(!(S_PlayerArmorPoints <= 1 || !GT_UseComboWeapons));
+ST2::SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+
+G_SpawnsList.clear();
+G_LatestSpawnId = NullId;
+LeaderId = NullId;
+
+// ---------------------------------- //
+// Reset all scores
+foreach (Score in Scores) {
+	declare netwrite Integer Score_TotalHits for Score;
+	declare netwrite Integer Score_TotalShots for Score;
+	declare netwrite Integer Score_TotalKills for Score;
+	declare netwrite Integer Score_TotalDeaths for Score;
+
+	Score_TotalHits = 0;
+	Score_TotalShots = 0;
+	Score_TotalKills = 0;
+	Score_TotalDeaths = 0;
+
+	UpdatePlayerStats(Score);
+}
+
+// Wait for enough players to start game
+while (!ServerShutdownRequested && !MatchEndRequested && Players.count <= 0) MB_Yield();
+
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
+
+// ---------------------------------- //
+// Start match
+StartTime = Now + S_RespawnTime;
+if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+else GT_DisableTimeLimit();
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+
+Interfancy::SetModuleVisibility("Countdown", True);
+Layers::Attach("Deathmatch:Interface");
+***
+
+// ---------------------------------- //
+// On new player
+// ---------------------------------- //
+***OnNewPlayer***
+***
+UpdatePlayerStats(Player.Score);
+***
+
+// ---------------------------------- //
+// On armor empty
+// ---------------------------------- //
+***OnArmorEmpty***
+***
+// ---------------------------------- //
+// Increase shooter kills
+if (Event.Shooter != Null && Event.Shooter.Score != Null) {
+	declare netwrite Integer Score_TotalKills for Event.Shooter.Score;
+	Score_TotalKills += 1;
+
+	UpdatePlayerStats(Event.Shooter.Score);
+}
+
+// ---------------------------------- //
+// Increase victim deaths
+if (Event.Victim != Null && Event.Victim.Score != Null) {
+	declare netwrite Integer Score_TotalDeaths for Event.Victim.Score;
+	Score_TotalDeaths += 1;
+
+	UpdatePlayerStats(Event.Victim.Score);
+}
+
+if (Event.Shooter == Null) Scores::RemovePlayerMapPoints(Event.Victim.Score, 1);
+***
+
+// ---------------------------------- //
+// On hit
+// ---------------------------------- //
+***OnHit***
+***
+if (Event.Shooter != Null && Event.Shooter.Score != Null) {
+	declare netwrite Integer Score_TotalHits for Event.Shooter.Score;
+	Score_TotalHits += 1;
+
+	Scores::AddPlayerMapPoints(Event.Shooter.Score, 1);
+	UpdatePlayerStats(Event.Shooter.Score);
+	PlayAnnouncer(Event.Shooter, S_PointsLimit);
+}
+***
+
+// ---------------------------------- //
+// On shoot
+// ---------------------------------- //
+***OnShoot***
+***
+if (Event.Shooter != Null && Event.Shooter.Score != Null) {
+	declare netwrite Integer Score_TotalShots for Event.Shooter.Score;
+	Score_TotalShots += 1;
+
+	UpdatePlayerStats(Event.Shooter.Score);
+}
+***
+
+// ---------------------------------- //
+// On player request respawn
+// ---------------------------------- //
+***OnPlayerRequestRespawn***
+***
+Scores::RemovePlayerMapPoints(Event.Player.Score, 1);
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) {
+	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && GT_IsValidPlayer(Player)) {
+		GT_InitPlayer(Player);
+		Player.AmmoGain = ML::Clamp(S_AmmoReloadCoef, 0., 10.);
+
+		if (UseInstaGibMode) {
+			SetPlayerWeapon(Player, CSmMode::EWeapon::Laser, False);
+			Player.ArmorMax = 100;
+		}
+
+		InstaGib_SpawnPlayer(Player);
+	}
+}
+
+// ---------------------------------- //
+// Play sound and notice if someone is taking the lead
+declare BestPlayerScore <=> Scores::GetBestPlayerMapPoints(Scores::C_Order_Descending);
+if (
+	BestPlayerScore != Null &&
+	BestPlayerScore.Id != LeaderId &&
+	Scores::GetPlayerMapPoints(BestPlayerScore) > 0
+) {
+	Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Names::Get(BestPlayerScore)), 3000, 1, CUIConfig::EUISound::PhaseChange, 1);
+	LeaderId = BestPlayerScore.Id;
+}
+
+// ---------------------------------- //
+// Update time limit
+if (PrevTimeLimit != S_TimeLimit) {
+	PrevTimeLimit = S_TimeLimit;
+	if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else GT_DisableTimeLimit();
+}
+
+// ---------------------------------- //
+// Update points limit
+if (PrevPointsLimit != S_PointsLimit) {
+	PrevPointsLimit = S_PointsLimit;
+	ST2::SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+}
+
+// ---------------------------------- //
+// Update players armor max
+if (CurrentPlayerArmor != S_PlayerArmorPoints) {
+	CurrentPlayerArmor = S_PlayerArmorPoints;
+
+	declare NewArmorMax = 100;
+	if (!UseInstaGibMode) NewArmorMax = ML::Clamp(S_PlayerArmorPoints, 1, 10) * 100;
+	Interfancy::SetArmorVisibility(!(S_PlayerArmorPoints <= 1 || !GT_UseComboWeapons));
+
+	foreach (Player in Players) {
+		declare DeltaArmor = NewArmorMax - Player.ArmorMax;
+		Player.ArmorMax = NewArmorMax;
+		if (DeltaArmor > 0) GalaxyTitles::GivePlayerArmor(Player, DeltaArmor); 
+	}
+}
+
+// ---------------------------------- //
+// Victory conditions
+if (GT_TimeReachedLimit()) MB_StopMatch();
+else if (S_PointsLimit > 0 && BestPlayerScore != Null) {
+	if (Scores::GetPlayerRoundPoints(BestPlayerScore) >= S_PointsLimit) MB_StopMatch();
+}
+***
+
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+***Match_EndPlayLoop***
+***
+Layers::Detach("Deathmatch:Interface");
+***
+
+***Match_EndMap***
+***
+declare WinnerScoreId = GT_GetWinnerScoreId();
+foreach (Player in Players) if (Player.Score.Id != WinnerScoreId) UnspawnPlayer(Player);
+
+// Disallow the winner to move after match end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;
+MB_Sleep(1500);
+
+// Cinematic round end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+Interfancy::SetModuleVisibility("Countdown", False);
+MB_Sleep(1500);
+***
+
+***Match_EndServer***
+***
+Layers::Destroy("Deathmatch:Interface");
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Spawn player.
+ *
+ *	@param	_Player		The player to spawn.
+ */
+Void InstaGib_SpawnPlayer(CSmPlayer _Player) {
+	if (G_SpawnsList.count == 0) foreach (MapLandmark in MapLandmarks_PlayerSpawn) G_SpawnsList.add(MapLandmark.Id);
+
+	declare SpawnId = NullId;
+	while (True) {
+		SpawnId = G_SpawnsList[ML::Rand(0, G_SpawnsList.count - 1)];
+		if (SpawnId != G_LatestSpawnId) break;
+		if (G_SpawnsList.count == 1) break;
+	}
+	G_LatestSpawnId = SpawnId;
+	
+	SM::Spawn(_Player, _Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+	declare Removed = G_SpawnsList.remove(SpawnId);
+}
+
+// ---------------------------------- //
+/** Play a sound and notice if someone is close to win.
+ *
+ *	@param	_Player			The player who scored a point.
+ *	@param	_PointsLimit	The points limit to reach to win.
+ */
+Void PlayAnnouncer(CSmPlayer _Player, Integer _PointsLimit) {
+	if (_Player == Null || _PointsLimit <= 0) return;
+	
+	declare MapPoints = Scores::GetPlayerMapPoints(_Player.Score);
+	declare RemainingPoints = _PointsLimit - MapPoints;
+	declare LastPoint for _Player.Score = 0;
+
+	if (RemainingPoints > 0 && RemainingPoints <= 3) {
+		declare Message = "";
+		if (RemainingPoints > 1) {
+			Message = TL::Compose(_("$<%1$> is %2 points from victory!"), Names::Get(_Player), TL::ToText(RemainingPoints));
+		} else {
+			Message = TL::Compose(_("$<%1$> is 1 point from victory!"), Names::Get(_Player));
+		}
+		Message::SendBigMessage(Message, 3000, 2, CUIConfig::EUISound::TieBreakPoint, 3 - RemainingPoints);
+	}
+	else if (RemainingPoints <= 0) {
+		Message::SendBigMessage(
+			TL::Compose(_("$<%1$> gets the final hit!"), Names::Get(_Player)),
+			3000, 3, CUIConfig::EUISound::VictoryPoint, 0
+		);
+	} else {
+		declare SoundGap = ML::Max(_PointsLimit / 5, 5);
+		if (MapPoints / SoundGap > LastPoint) {
+			LastPoint = MapPoints / SoundGap;
+			declare Msg = TL::Compose("$666%1: $fff%2 / %3", _("Score"), TL::ToText(MapPoints), TL::ToText(_PointsLimit));
+			declare Variant = ((MapPoints / SoundGap) - 1);
+			Message::SendBigMessage(_Player, Msg, 3000, 0, CUIConfig::EUISound::ScoreProgress, Variant);
+		}
+	}
+}
+
+// ---------------------------------- //
+/** Update the player's statistics.
+ *
+ *	@param	_Score	Score of the player to update.
+ */
+Void UpdatePlayerStats(CSmScore _Score) {
+	if (_Score == Null) return;
+
+	declare netwrite Integer Score_TotalHits for _Score;
+	declare netwrite Integer Score_TotalShots for _Score;
+	declare netwrite Integer Score_TotalKills for _Score;
+	declare netwrite Integer Score_TotalDeaths for _Score;
+	declare netwrite Integer LastScoreUpdate for _Score;
+	LastScoreUpdate = Now;
+
+	declare PlayerAccuracy = "-";
+	if (Score_TotalShots > 0) PlayerAccuracy = TL::FormatReal(Score_TotalHits * 100. / Score_TotalShots, 1, True, True)^"%";
+
+	declare PlayerKDRatio = ML::ToReal(Score_TotalKills);
+	if (Score_TotalDeaths > 0) PlayerKDRatio = ML::ToReal(Score_TotalKills) / Score_TotalDeaths;
+
+	ST2::SetColValue("InstaGib_Accuracy", _Score, PlayerAccuracy);
+	ST2::SetColValue("InstaGib_KillDeath", _Score, Score_TotalKills^"/"^Score_TotalDeaths);
+	ST2::SetColValue("InstaGib_KDRatio", _Score, TL::FormatReal(PlayerKDRatio, 2, False, False));
+}
+
+Text CreateDeathmatchInterface() {
+	return """
+<manialink version="3" name="Deathmatch:Interface">
+<stylesheet>
+	<style class="Font" valign="center" textemboss="1" textsize="1" textcolor="FFF" textfont="Eurostile_Bold" />
+</stylesheet>
+
+<frame id="Frame_PlayerStats" pos="-154 -83.5" rot="-2" hidden="1">
+	<quad sizen="10 10" halign="center" valign="center" autoscale="0" image="{{{C_ImgBase}}}Icons/Heating.png" />
+	<frame id="Frame_PlayerAccuracy" pos="5 2.5">
+		<label class="Font" textsize="3" text="0%" id="Label_PlayerAccuracy" />
+		<label class="Font" pos="0 -.125" textprefix="$t" id="Label_AccuracyLabel" />
+	</frame>
+	<frame id="Frame_PlayerKDRatio" pos="5 -2.5">
+		<label class="Font" textsize="3" text="0.00" id="Label_PlayerKDRatio" />
+		<label class="Font" pos="0 -.125" textprefix="$t" id="Label_KDRatioLabel" />
+	</frame>
+</frame>
+
+<script><!--
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+{{{Translations::InjectInManialink(["Accuracy", "K/D ratio"])}}}
+{{{ManialinkTools::Functions(["Brightness", "ComputeWidth", "HsvToRgb"])}}}
+
+main() {
+	declare Frame_PlayerStats <=> (Page.GetFirstChild("Frame_PlayerStats") as CMlFrame);
+	declare Label_PlayerAccuracy <=> (Page.GetFirstChild("Label_PlayerAccuracy") as CMlLabel);
+	declare Label_AccuracyLabel <=> (Page.GetFirstChild("Label_AccuracyLabel") as CMlLabel);
+	declare Label_PlayerKDRatio <=> (Page.GetFirstChild("Label_PlayerKDRatio") as CMlLabel);
+	declare Label_KDRatioLabel <=> (Page.GetFirstChild("Label_KDRatioLabel") as CMlLabel);
+
+	Label_AccuracyLabel.Value = Translate("Accuracy");
+	Label_KDRatioLabel.Value = Translate("K/D ratio");
+
+	declare PrevInterfaceColor = -1.;
+	declare PrevScoreUpdate = -1;
+
+	while (True) {
+		yield;
+
+		Frame_PlayerStats.Visible = GUIPlayer != Null && GUIPlayer.ArmorMax <= 100;
+		if (!Frame_PlayerStats.Visible) continue;
+
+		if (PrevInterfaceColor != GUIPlayer.GetLinearHue) {
+			PrevInterfaceColor = GUIPlayer.GetLinearHue;
+
+			declare Color = Brightness(HsvToRgb(<PrevInterfaceColor, 1., 1.>), 3.);
+			Label_AccuracyLabel.TextColor = Color;
+			Label_KDRatioLabel.TextColor = Color;
+		}
+
+		declare netread Integer LastScoreUpdate for GUIPlayer.Score;
+
+		if (PrevScoreUpdate != LastScoreUpdate) {
+			PrevScoreUpdate = LastScoreUpdate;
+
+			declare netread Integer Score_TotalHits for GUIPlayer.Score;
+			declare netread Integer Score_TotalShots for GUIPlayer.Score;
+			declare netread Integer Score_TotalKills for GUIPlayer.Score;
+			declare netread Integer Score_TotalDeaths for GUIPlayer.Score;
+
+			declare PlayerAccuracy = "???";
+			if (Score_TotalShots > 0) PlayerAccuracy = TL::FormatReal(Score_TotalHits * 100. / Score_TotalShots, 1, True, True)^"%";
+			Label_PlayerAccuracy.Value = PlayerAccuracy;
+			Label_AccuracyLabel.RelativePosition_V3.X = Label_PlayerAccuracy.RelativePosition_V3.X + ComputeWidth(Label_PlayerAccuracy) + 1.;
+
+			declare PlayerKDRatio = ML::ToReal(Score_TotalKills);
+			if (Score_TotalDeaths > 0) PlayerKDRatio = ML::ToReal(Score_TotalKills) / Score_TotalDeaths;
+			Label_PlayerKDRatio.Value = TL::FormatReal(PlayerKDRatio, 2, False, False);
+			Label_KDRatioLabel.RelativePosition_V3.X = Label_PlayerKDRatio.RelativePosition_V3.X + ComputeWidth(Label_PlayerKDRatio) + 1.;
+		}
+	}
+}
+
+--></script>
+</manialink>
+	""";
+}

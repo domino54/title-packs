@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  HUNGER GAMES 3.2.0 by domino54        //
-//  script version: 2017-07-22            //
+//  script version: 2017-08-05            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2017-07-22"
+#Const Version		"2017-08-05"
 #Const ScriptName	"Modes/ShootMania/HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -23,6 +23,8 @@
 #Setting S_ArmorRespawnTime			180		as _("Armor and Replie respawn duration (0 = don't respawn)")
 #Setting S_ToadsFirstSpawnDelay		30		as _("Delay before Toads are spawned")
 #Setting S_AllowPlayersRespawn		True	as _("Allow players to respawn on Checkpoints")
+#Setting S_MatchmakingFormat		6		as _("Number of players in matchmaking mode")
+#Setting S_MatchmakingEnablePenalty False	///< Disable penalties for leaving the game
 
 /// Overwrite existing settings
 #Setting S_AutoManageAFK		False
@@ -100,13 +102,23 @@ Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+declare Integer[] MatchmakingFormats;
+for (I, 1, S_MatchmakingFormat) MatchmakingFormats.add(1);
+MM_SetFormat(MatchmakingFormats);
+***
+
+// ---------------------------------- //
 // Scores table
 // ---------------------------------- //
 ***ScoresTable***
 ***
 TopScores::RemoveCategory("Support");
-TopScores::AddCategory("Items", "Itm", 2.25, 60.);
-TopScores::AddCategory("Survival", "Sv", 2.25, 75.);
+TopScores::AddCategory("Items", "", 2.25, 60.);
+TopScores::AddCategory("Survival", "", 2.25, 75.);
 ST2::SetColWidth("LibST_SMPoints", 5.);
 ST2::DestroyCol("LibST_SMRoundPoints");
 ***
@@ -166,6 +178,7 @@ declare SpawnedToads = False;
 // ---------------------------------- //
 ***Match_InitMap***
 ***
+PauseMenu::SetQuitButtonAvailable(True);
 ST2::SetFooterText(TL::Compose("%1 -", _("Remaining players: ")));
 UIResetAll();
 UISetStartTime(-1);

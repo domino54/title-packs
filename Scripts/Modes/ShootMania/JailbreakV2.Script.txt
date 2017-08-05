@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2017-07-29            //
+//  script version: 2017-08-05            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"JailbreakArena, JailbreakV2Arena"
-#Const Version		"2017-07-29"
+#Const Version		"2017-08-05"
 #Const ScriptName	"Modes/ShootMania/JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -15,11 +15,14 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_RoundsToWin		2		as _("Rounds to win")			///< Number of rounds to win a map
-#Setting S_RoundGapToWin	2		as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
-#Setting S_RoundsLimit		3		as _("Rounds limit")			///< Point limit on map
-#Setting S_TimeLimit		600 	as _("Time limit (seconds)")	///< Time limit (seconds)
-#Setting S_UseLaserInJail	True	as _("Force Laser in jail")		///< If True players in jail will have Laser
+#Setting S_RoundsToWin			2		as _("Rounds to win")			///< Number of rounds to win a map
+#Setting S_RoundGapToWin		2		as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
+#Setting S_RoundsLimit			3		as _("Rounds limit")			///< Point limit on map
+#Setting S_TimeLimit			600 	as _("Time limit (seconds)")	///< Time limit (seconds)
+#Setting S_UseLaserInJail		True	as _("Force Laser in jail")		///< If True players in jail will have Laser
+#Setting S_WarmUpDuration		0		as _("Warm up duration (sec.)") 
+#Setting S_NbPlayersPerTeamMin	1		as _("Minumum number of players in each team")
+#Setting S_NbPlayersPerTeamMax	3		as _("Maximum number of players per team (0: no max)")
 
 // ---------------------------------- //
 // Constants
@@ -65,11 +68,22 @@ Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
+	MM_SetProgressiveFormats([1, 1], S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1);
+}
+***
+
+// ---------------------------------- //
 // Set the scores table
 // ---------------------------------- //
 ***ScoresTable***
 ***
-TopScores::AddCategory("Release", "Rel", 2.25, 75.);
+TopScores::AddCategory("Release", "", 2.25, 60.);
 ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
 ***
 
@@ -155,6 +169,11 @@ if (!MapValidated) GT_SkipInvalidMap();
 ***Match_StartMap***
 ***
 ClearGlobalVariables();
+GT_InitWarmUp(S_NbPlayersPerTeamMax);
+
+// Do the Warm Up
+if (!MM_IsMatchServer() && S_WarmUpDuration > 0 && S_NbPlayersPerTeamMax > 0)
+	GT_DoWarmUp(S_WarmUpDuration, S_NbPlayersPerTeamMax);
 ***
 
 // ---------------------------------- //
@@ -239,6 +258,9 @@ ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
 
 // Wait for enough players to start the game
 GT_WaitForPlayers(S_NbPlayersPerTeamMin);
+
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 
 // ---------------------------------- //
 // New map sound

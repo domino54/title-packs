@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  OVERRUNNING by domino54               //
-//  script version: 2017-07-22            //
+//  script version: 2017-08-05            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"OverrunningArena"
-#Const Version		"2017-07-22"
+#Const Version		"2017-08-05"
 #Const ScriptName	"Modes/ShootMania/Overrunning.Script.txt"
 
 // ---------------------------------- //
@@ -14,6 +14,7 @@
 // ---------------------------------- //
 #Setting S_TimeLimit			600 	as _("Time limit (seconds)")
 #Setting S_PointsLimit			25		as _("Points limit")
+#Setting S_MatchmakingFormat	6		as _("Number of players in matchmaking mode")
 #Setting S_PlayerArmorPoints	5		///< Increase default armor points
 
 // ---------------------------------- //
@@ -53,6 +54,40 @@ Log::RegisterScript(ScriptName, Version);
 ***
 
 // ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+declare Integer[] MatchmakingFormats;
+for (I, 1, S_MatchmakingFormat) MatchmakingFormats.add(1);
+MM_SetFormat(MatchmakingFormats);
+***
+
+// ---------------------------------- //
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
+GT_UseAutospawnObjects = False;
+GT_UseComboWeapons = False;
+GT_UseRepliePickups = False;
+GT_UseRandomToads = False;
+GT_AutoManageOnArmorEmpty = False;
+GT_AutoManageOnHit = False;
+GT_AutoManageOnRespawn = False;
+GT_CharactersDataFileURL = C_OverrunningVehiclesURL;
+***
+
+// ---------------------------------- //
+// Set up the pause menu
+// ---------------------------------- //
+***GalaxyTitles_PauseMenu***
+***
+PauseMenu::SetButtonLabel("GT_CharSelection", "Change vehicle");
+PauseMenu::SetButtonIcon("GT_CharSelection", C_ImgBase^"Icons/CanyonCar.png");
+***
+
+// ---------------------------------- //
 // Adjust the scores table
 // ---------------------------------- //
 ***ScoresTable***
@@ -71,21 +106,6 @@ ModeInfo::SetName("Overrunning");
 ModeInfo::SetType(ModeInfo::C_Type_FreeForAll);
 ModeInfo::SetRules("1. Hit your opponents to score points.\n2. The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.");
 ModeInfo::SetStatusMessage(Description);
-***
-
-// ---------------------------------- //
-// Galaxy settings
-// ---------------------------------- //
-***GalaxyTitles_Settings***
-***
-GT_UseAutospawnObjects = False;
-GT_UseComboWeapons = False;
-GT_UseRepliePickups = False;
-GT_UseRandomToads = False;
-GT_AutoManageOnArmorEmpty = False;
-GT_AutoManageOnHit = False;
-GT_AutoManageOnRespawn = False;
-GT_CharactersDataFileURL = C_OverrunningVehiclesURL;
 ***
 
 // ---------------------------------- //
@@ -142,9 +162,11 @@ foreach (MapLandmark in MapLandmarks_Gauge) {
 	else MapLandmark.Base.Clan = 2;
 }
 
-// ---------------------------------- //
 // Wait for enough players to start game
 while (!ServerShutdownRequested && !MatchEndRequested && Players.count <= 0) MB_Yield();
+
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 
 // ---------------------------------- //
 // Init scores

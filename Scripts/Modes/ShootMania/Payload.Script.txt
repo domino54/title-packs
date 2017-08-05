@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PAYLOAD by domino54                   //
-//  script version: 2017-07-19            //
+//  script version: 2017-08-05            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"PayloadArena"
-#Const Version		"2017-07-19"
+#Const Version		"2017-08-05"
 #Const ScriptName	"Modes/ShootMania/Payload.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -18,7 +18,10 @@
 #Setting S_TimeLimit				300 	as _("Time limit (seconds)")
 #Setting S_AllowPayloadReversing	True	as _("Allow Payload to move backwards")
 #Setting S_EnableDebugMode			False	as _("Debug mode (for developers only)")
-
+#Setting S_WarmUpDuration			0		as _("Warm up duration (sec.)") 
+#Setting S_NbPlayersPerTeamMin		1		as _("Minumum number of players in each team")
+#Setting S_NbPlayersPerTeamMax		5		as _("Maximum number of players per team (0: no max)")
+	
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
@@ -58,11 +61,22 @@ Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
+	MM_SetProgressiveFormats([1, 1], S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1);
+}
+***
+
+// ---------------------------------- //
 // Set the scores table
 // ---------------------------------- //
 ***ScoresTable***
 ***
-TopScores::AddCategory("Attack", "Atk", 2.25, 60.);
+TopScores::AddCategory("Attack", "", 2.25, 60.);
 ***
 
 // ---------------------------------- //
@@ -169,6 +183,7 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 ***Match_StartMap***
 ***
+GT_InitWarmUp(S_NbPlayersPerTeamMax);
 TeamsPayloadMaxDist = [0., 0., 0.];
 Layers::Attach("Payload:Interface");
 
@@ -256,6 +271,26 @@ for (Sector, 1, G_CurMapTotalNbSectors) {
 
 // Send Checkpoints data to the UI
 UISetCheckpointsDistances(G_SectorCheckpointsDist);
+
+// ---------------------------------- //
+// Deautomatize Gates used on the map
+foreach (MapLandmark in MapLandmarks_Gate) {
+	MapLandmark.Gate.Automatic = False;
+	MapLandmark.Gate.ManualClosed = False;
+	MapLandmark.Gate.Clan = 0;
+	MapLandmark.Gauge.Speed = 0;
+	MapLandmark.Gauge.ValueReal = 0.;
+}
+
+// Init UI
+UISetNbPlayersPushingPayload(0);
+UISetLastPushTime(-1);
+UISetIsOvertime(False);
+UISetAttackingTeam(3 - G_AttackingClan);
+
+// Warm Up
+if (!MM_IsMatchServer() && S_WarmUpDuration > 0 && S_NbPlayersPerTeamMax > 0)
+	GT_DoWarmUp(S_WarmUpDuration, S_NbPlayersPerTeamMax);
 ***
 
 // ---------------------------------- //
@@ -311,10 +346,6 @@ foreach (MapLandmark in MapLandmarks_Gauge) {
 // ---------------------------------- //
 // Deautomatize Gates used on the map
 foreach (MapLandmark in MapLandmarks_Gate) {
-	MapLandmark.Gate.Automatic = False;
-	MapLandmark.Gate.ManualClosed = False;
-	MapLandmark.Gate.Clan = 0;
-	MapLandmark.Gauge.Speed = 0;
 	MapLandmark.Gauge.ValueReal = 0.;
 }
 
@@ -329,6 +360,9 @@ foreach (Player in Players) {
 
 // Wait for enough players to start the game
 GT_WaitForPlayers(S_NbPlayersPerTeamMin);
+
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 
 // ---------------------------------- //
 // Close Gates after warm-up
@@ -530,6 +564,9 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 	G_PayloadPosition = GetPayloadPosition(G_PayloadTrackCurrentDist);
 	SetObjectsPosition(PayloadStructureObjects, G_PayloadPosition);
 	
+	// Save the furthest distance
+	if (G_PayloadTrackCurrentDist > PrevPayloadDistance) TeamsPayloadMaxDist[G_AttackingClan] = G_PayloadTrackCurrentDist;
+	
 	MiniMap::SetMarker("Payload", "Payload.png", Teams[G_AttackingClan - 1].ColorPrimary, G_PayloadPosition);
 	
 	// ---------------------------------- //
@@ -566,7 +603,9 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 		// ---------------------------------- //
 		// Stop the round
 		else {
+			TeamsPayloadMaxDist[G_AttackingClan] = G_PayloadTrackTotalDist;
 			MB_StopRound();
+
 			Message::SendBigMessage(TL::Compose(
 				_("$<%1$> captured the last pole."), Teams[G_AttackingClan - 1].ColorizedName),
 				3000, 0, CUIConfig::EUISound::VictoryPoint, 0
@@ -602,9 +641,6 @@ if (PrevPayloadDistance != G_PayloadTrackCurrentDist) {
 		else MapLandmark.Gauge.ValueReal = 0.;
 	}
 
-	// Save the furthest distance
-	if (G_PayloadTrackCurrentDist > PrevPayloadDistance) TeamsPayloadMaxDist[G_AttackingClan] = G_PayloadTrackCurrentDist;
-	
 	PrevPayloadDistance = G_PayloadTrackCurrentDist;
 }
 

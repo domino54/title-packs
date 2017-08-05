@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  CONFIRMED by domino54                 //
-//  script version: 2017-06-28            //
+//  script version: 2017-08-05            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"MeleeArena, TeamMeleeArena"
-#Const Version		"2017-06-28"
+#Const Version		"2017-08-05"
 #Const ScriptName	"Modes/ShootMania/Confirmed.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -15,8 +15,11 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_TimeLimit	300 as _("Time limit (seconds)")	///< Time limit (seconds)
-#Setting S_PointsLimit	50	as _("Points limit")			///< First team to reach this number wins
+#Setting S_TimeLimit			300	as _("Time limit (seconds)")
+#Setting S_PointsLimit			50	as _("Points limit")
+#Setting S_WarmUpDuration		0	as _("Warm up duration (sec.)") 
+#Setting S_NbPlayersPerTeamMin	1	as _("Minumum number of players in each team")
+#Setting S_NbPlayersPerTeamMax	3	as _("Maximum number of players per team (0: no max)")
 
 #Const Description _("TYPE: Team versus Team\nOBJECTIVE: Pick up coins dropped by opposite team players to score points for your team. First team to reach points limit wins.")
 
@@ -43,6 +46,17 @@ Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
+	MM_SetProgressiveFormats([1, 1], S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1);
+}
+***
+
+// ---------------------------------- //
 // Adjust the scores table
 // ---------------------------------- //
 ***ScoresTable***
@@ -53,7 +67,7 @@ ST2::SetColScript("LibST_SMPoints", """
 declare Score <=> (_Score as CSmScore);
 Label_Col.Value = TL::ToText(Score.RoundPoints + Score.Points);
 """);
-TopScores::AddCategory("Confirmations", "Con", 2.25, 60.);
+TopScores::AddCategory("Confirmations", "", 2.25, 60.);
 ***
 
 // ---------------------------------- //
@@ -118,6 +132,8 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 ***Match_StartMap***
 ***
+GT_InitWarmUp(S_NbPlayersPerTeamMax);
+
 // ---------------------------------- //
 // Variables
 G_ClanAvailableSpawns = [0 => Ident[], 1 => Ident[], 2 => Ident[]];
@@ -145,8 +161,17 @@ foreach (Clan => LandmarksIds in G_ClanSpawnLandmarks) {
 	}
 }
 
-// Wait for enough players to start the game
-GT_WaitForPlayers(S_NbPlayersPerTeamMin);
+// ---------------------------------- //
+// Do the Warm Up
+if (!MM_IsMatchServer()) {
+	if (S_WarmUpDuration > 0 && S_NbPlayersPerTeamMax > 0) GT_DoWarmUp(S_WarmUpDuration, S_NbPlayersPerTeamMax);
+	
+	// Wait for enough players to start the game
+	else GT_WaitForPlayers(S_NbPlayersPerTeamMin);
+}
+
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 
 // Attach interface
 Interfancy::SetModuleVisibility("ScoreSummary", True);

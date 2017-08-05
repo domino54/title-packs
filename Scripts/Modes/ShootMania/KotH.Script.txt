@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-07-29            //
+//  script version: 2017-08-05            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-07-29"
+#Const Version		"2017-08-05"
 #Const ScriptName	"Modes/ShootMania/KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -21,6 +21,9 @@
 #Setting S_UseDefaultTeams		False	as _("Use default teams (Blue vs Red)")
 #Setting S_GoalCaptureDuration	100		as _("Time team requires to capture the Goal")
 #Setting S_DarkerGoalColor		False	as "<hidden>"
+#Setting S_WarmUpDuration		0		as _("Warm up duration (sec.)") 
+#Setting S_NbPlayersPerTeamMin	1		as _("Minumum number of players in each team")
+#Setting S_NbPlayersPerTeamMax	3		as _("Maximum number of players per team (0: no max)")
 
 // ---------------------------------- //
 // Constants
@@ -57,11 +60,22 @@ Log::RegisterScript(Clans::GetScriptName(), Clans::GetScriptVersion());
 ***
 
 // ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
+	MM_SetProgressiveFormats([1, 1], S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1);
+}
+***
+
+// ---------------------------------- //
 // Set the scores table
 // ---------------------------------- //
 ***ScoresTable***
 ***
-TopScores::AddCategory("Capture", "Cap", 3., 75.);
+TopScores::AddCategory("Capture", "", 3., 60.);
 if (!UseClans) {
 	ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
 	ST2::SetColScript("LibST_SMPoints", """
@@ -167,11 +181,17 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 ***Match_StartMap***
 ***
+if (UseClans) GT_InitWarmUp(S_NbPlayersPerTeamMax);
+
 Clans::ResetClansPoints();
 for (Clan, 1, C_TeamsNbMax) Interfancy::ResetCustomTeamPoints(Clan);
 UpdateScoresTableFooter();
 G_SpawnsList.clear();
 G_LatestSpawnId = NullId;
+
+// Do the Warm Up
+if (UseClans && !MM_IsMatchServer() && S_WarmUpDuration > 0 && S_NbPlayersPerTeamMax > 0)
+	GT_DoWarmUp(S_WarmUpDuration, S_NbPlayersPerTeamMax);
 ***
 
 // ---------------------------------- //
@@ -201,6 +221,9 @@ if (CentralGoal.Base != Null) CentralGoal.Base.Clan = 0;
 // ---------------------------------- //
 // Wait for enough players to start game
 while (!ServerShutdownRequested && !MatchEndRequested && Players.count <= 0) MB_Yield();
+
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 
 // Get target amount of teams
 UpdateTeamsAmount();

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-07-29            //
+//  script version: 2017-08-05            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-07-29"
+#Const GTVersion	"2017-08-05"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -20,6 +20,7 @@
 #Include "Libs/domino54/Blacklist.Script.txt" as Blacklist
 #Include "Libs/domino54/Characters.Script.txt" as Characters
 #Include "Libs/domino54/CupAdmin.Script.txt" as CupAdmin
+#Include "Libs/domino54/CustomNames.Script.txt" as Names
 #Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
 #Include "Libs/domino54/GTST.Script.txt" as GTST
@@ -57,10 +58,7 @@
 #Setting S_ToadsRespawnTime		60		as _("Toads respawn time (0 = don't spawn)")
 #Setting S_ToadsSpawnRatio		.5		as "<hidden>" //_("Percentage amount of Toads to spawn on landmarks")
 #Setting S_WeaponsDropLifetime	0		as "<hidden>" ///< Duration before bropped weapons reappear on landmarks
-#Setting S_WarmUpDuration		300		as "<hidden>" ///< Duration of the warm up round (0 = no warmup)
 #Setting S_RespawnTime			3000	as "<hidden>" ///< Time before respawn
-#Setting S_NbPlayersPerTeamMax	0		as "<hidden>" ///< Maximum number of players per team (0: no max)
-#Setting S_NbPlayersPerTeamMin	1		as "<hidden>" ///< Minumum number of players per team
 #Setting S_CustomLayersURLs		""		as "<hidden>" ///< Try to load custom layers from an URL
 #Setting S_CustomBlacklistURL	""		as "<hidden>" ///< URL of the custom blacklist file
 #Setting S_KillfeedOffsetY		0.		as "<hidden>" ///< For server hosters: killfeed Y offset
@@ -175,19 +173,6 @@ MB_Settings_UseDefaultDispenserObjects = False;
 ***
 
 // ---------------------------------- //
-// Initialize matchmaking lobby
-// ---------------------------------- //
-***MM_SetupMatchmaking***
-***
-MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
-if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
-	declare Formats = Integer[][];
-	for (I, S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1) if (I > 0) Formats.add([I, I]);
-	MM_SetProgressiveFormats(Formats);
-}
-***
-
-// ---------------------------------- //
 // Set default scores table format
 // ---------------------------------- //
 ***ScoresTable***
@@ -210,8 +195,9 @@ ST2::SetColWidth("LibST_SMRoundPoints", 4.);
 ST2::SetColLegend("LibST_SMPoints", _("Total"));
 ST2::DestroyCol("LibST_Tags");
 // Custom
-TopScores::AddCategory("Support", "Sp", 2.25, 70.);
-TopScores::AddCategory("Hit", "Hit", 2.25, 80.);
+TopScores::AddCategory("Support", "", 2.25, 70.);
+TopScores::AddCategory("Hit", "", 2.25, 80.);
+Names::InitST2();
 
 // ---------------------------------- //
 // Teams mode
@@ -262,27 +248,34 @@ PauseMenu::SetButtonIcon("LibPM_ChangeTeam", C_ImgBase^"Icons/Versus.png");
 PauseMenu::SetButtonIcon("LibPM_ManageServer", C_ImgBase^"Icons/Server.png");
 PauseMenu::SetButtonIcon("LibPM_Advanced", C_ImgBase^"Icons/AdvancedSettings.png");
 
-// Create buttons for Storage Player and Characters
+// Storage Music Player button
 PauseMenu::CreateButton("GT_StoragePlayer", "Storage Player", C_ImgBase^"Icons/Headphones.png", 6.);
-PauseMenu::CreateButton("GT_CharSelection", "Change character", C_ImgBase^"Icons/Run.png", 7.);
-
 PauseMenu::SetButtonScript("GT_StoragePlayer", """
 CloseInGameMenu(::EInGameMenuResult::Resume);
 declare Boolean LibStoragePlayer_ToggleShowWindow for This;
 LibStoragePlayer_ToggleShowWindow = True;
 """);
 
+// Character selection button
+PauseMenu::CreateButton("GT_CharSelection", "Change character", C_ImgBase^"Icons/Run.png", 7.);
 PauseMenu::SetButtonScript("GT_CharSelection", """
 CloseInGameMenu(::EInGameMenuResult::Resume);
 declare Boolean LibCharacters_ToggleShowWindow for This;
 LibCharacters_ToggleShowWindow = True;
 """);
 
+// Official Discord server button
+PauseMenu::CreateButton("GT_JoinDiscord", "Join Discord", C_ImgBase^"Icons/Discord.png", 8.);
+PauseMenu::SetButtonScript("GT_JoinDiscord", """
+CloseInGameMenu(::EInGameMenuResult::Resume);
+OpenLink("https://discordapp.com/invite/BBHC3sT", CMlScript::LinkType::ExternalBrowser);
+""");
+
 PauseMenu::SetButtonVisibility("GT_CharSelection", False);
 ***
 
 // ---------------------------------- //
-// Initialize server
+// Init server for both lobby and match
 // ---------------------------------- //
 ***Match_InitServer***
 ***
@@ -319,16 +312,6 @@ Models::LoadCustom("Sintel", "Characters\\SintelSample.Item.Gbx");
 Models::LoadArenaPlayer("Susu.zip");
 Models::LoadArenaPlayer("TronMan.zip");
 Models::LoadArenaPlayer("StormWoman.Skin.Pack.Gbx");
-
-// ---------------------------------- //
-// Load warm-up
-WarmUp::Load();
-WarmUp::SetLayerPosition(<0., -58.>);
-if (UseClans) {
-	WarmUp::CreateGroup("Clan1", S_NbPlayersPerTeamMax);
-	WarmUp::CreateGroup("Clan2", S_NbPlayersPerTeamMax);
-	WarmUp::DisplayClanSelection(True);
-}
 
 // ---------------------------------- //
 // Create custom interface
@@ -371,10 +354,17 @@ Streaks::Load();
 MiniMap::Load();
 MiniMap::SetOpponentsVisibility(!MM_IsMatchServer());
 
+// ---------------------------------- //
 // Load Fancy Messages
 FancyMessages::Load();
-FancyMessages::FormatBigMessage(<0., 54., 0.>, "Eurostile_Bold", 8);
-FancyMessages::FormatStatusMessage(<0., 62., 0.>, "Eurostile_Bold", 3);
+declare BigMessagePosY = 54.;
+declare StatusMessagePosY = 62.;
+if (MM_IsLobbyServer()) {
+	BigMessagePosY = 48.;
+	StatusMessagePosY = 56.;
+}
+FancyMessages::FormatBigMessage(<0., BigMessagePosY>, "Eurostile_Bold", 8);
+FancyMessages::FormatStatusMessage(<0., StatusMessagePosY>, "Eurostile_Bold", 3);
 
 // Load GalaxyTitles library
 GalaxyTitles::Load();
@@ -387,22 +377,18 @@ declare PrevMaximumNbReplies = S_MaximumNbReplies;
 declare PrevEnableCharSelection = S_EnableCharSelection;
 declare PrevPlayerNbArmorMax = S_PlayerArmorPoints;
 
+WarmUp::Load();
+WarmUp::SetLayerPosition(<0., -58.>);
 Webhook::SetMapSwitching(True);
 Killfeed::SetMapSwitching(True);
 Killfeed::Build();
 ***
 
 // ---------------------------------- //
-// Server start
+// Server start (both lobby and match)
 // ---------------------------------- //
-***Match_StartServer***
+***MB_Private_StartServer***
 ***
-//PauseMenu::SetModeRules(ModeInfo::GetName(), ModeInfo::GetRules(), "");
-
-// Disable Constructor in non-team modes
-if (GT_CharactersDataFileURL == C_DefaultCharactersURL)
-	Characters::SetCharAvailable(3, UseClans);
-
 // ---------------------------------- //
 // Create the scores table
 ST2::Load();
@@ -411,8 +397,15 @@ ST2::SetStyle("LibST_SMBasePoints");
 +++ScoresTable+++
 ST2::Build("SM");
 
+//PauseMenu::SetModeRules(ModeInfo::GetName(), ModeInfo::GetRules(), "");
+
+// Disable Constructor in non-team modes
+if (GT_CharactersDataFileURL == C_DefaultCharactersURL)
+	Characters::SetCharAvailable(3, UseClans);
+
 // Update scores summary visibility
 Interfancy::SetModuleVisibility("ScoreSummary", UseClans);
+Interfancy::SetModuleVisibility("Countdown", !MM_IsLobbyServer());
 
 // Obtain custom weapons icons
 foreach (WeaponId in Inventory::GetCustomWeapons()) {
@@ -427,10 +420,6 @@ declare GT_CharactersAvailable = S_EnableCharSelection && Http.IsValidUrl(GT_Cha
 PauseMenu::SetButtonVisibility("GT_CharSelection", GT_CharactersAvailable);
 if (GT_CharactersAvailable) Characters::Manual();
 else Characters::Hide();
-
-// ---------------------------------- //
-// Stop the script if server is in matchmaking mode and mode doesn't support it
-assert(!(MM_IsMatchmakingServer() && !GT_AllowMatchmakingMode), "This game mode does not support matchmaking mode!");
 ***
 
 ***MB_Private_AfterLoadMap***
@@ -448,30 +437,18 @@ TopScores::MatchBegin();
 Interfancy::ClearData();
 GalaxyTitles::ResetAll();
 CupAdmin::StartMap();
+PauseMenu::SetQuitButtonAvailable(!MM_IsMatchServer());
 
 // Clear all messages
 UIManager.UIAll.BigMessage = "";
 UIManager.UIAll.StatusMessage = "";
 FancyMessages::ResetData();
 
-// Warm-up
-if (UseClans) GT_InitWarmUp();
-
 // ---------------------------------- //
 // Reset clan scores
 ClanScores[1] = 0;
 ClanScores[2] = 0;
 MM_SetScores([ClanScores[1], ClanScores[2]]);
-
-// ---------------------------------- //
-// Wait players when using matchmaking
-if (MM_IsMatchServer()) {
-	GT_DoWarmUp();
-}
-
-// ---------------------------------- //
-// Matchmaking: allow substitutes
-if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 ***
 
 // ---------------------------------- //
@@ -483,7 +460,23 @@ TopScores::RoundBegin();
 
 // Update players clans
 GT_AutoBalance();
-foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
+***
+
+***Match_StartRound***
+***
+// ---------------------------------- //
+// Init players clan and spawnability
+if (UseClans) {
+	foreach (Player in AllPlayers) SetPlayerClan(Player, GT_GetRequestedClan(Player));
+	if (GT_SpawnIsLimited()) {
+		foreach (Player in AllPlayers) {
+			if (Player.CurrentClan == 1) WarmUp::SetPlayerGroup(Player, "Clan1");
+			else if (Player.CurrentClan == 2) WarmUp::SetPlayerGroup(Player, "Clan2");
+		}
+		WarmUp::Clean();
+		WarmUp::Fill();
+	}
+}
 ***
 
 // ---------------------------------- //
@@ -491,6 +484,7 @@ foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 // ---------------------------------- //
 ***Match_StartPlayLoop***
 ***
+foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
 Turrets::ResetAllPlayers();
 Toads::ResetAllPlayers();
 Markers::Reset();
@@ -536,6 +530,7 @@ ST2::XmlRpcLoop();
 Statistics::Loop();
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
 Streaks::Loop();
+WarmUp::Yield();
 Webhook::Loop(S_WebhookURL);
 WebLayers::Update(S_CustomLayersURLs);
 ***
@@ -577,7 +572,7 @@ if (Toads::BelongsToLib(Event.Victim)) {
 
 	// Send notice and destroy the Toad
 	if (Players.exists(Event.Victim.Driver.Owner)) Killfeed::SendNotice(
-		"Toad - "^Event.Victim.Driver.Owner.Name,
+		"Toad - "^Names::Get(Event.Victim.Driver.Owner),
 		ShooterLogin, C_ImgBase^"Icons/"^EventIcon, ""
 	);
 	declare Destroyed = Toads::DestroyToad(Event.Victim.Id, Toads::GetCooldown());
@@ -859,10 +854,16 @@ foreach (Event in PendingEvents) {
 							AddPlayerArmor(Event.Victim, HealedArmor, Event.Shooter, Points);
 							GT_PassOnHit(Event);
 
-							Interfancy::SendCrosshairNote(Event.Shooter, ["Healed $<%1$>", Event.Victim.User.Name], 2000);
-							Interfancy::SendCrosshairNote(Event.Victim, ["$<%1$> healed you!", Event.Shooter.User.Name], 2000);
+							Interfancy::SendCrosshairNote(Event.Shooter, ["Healed $<%1$>", Names::Get(Event.Victim)], 2000);
+							Interfancy::SendCrosshairNote(Event.Victim, ["$<%1$> healed you!", Names::Get(Event.Shooter)], 2000);
 						}
 					}
+					// ---------------------------------- //
+					// Friendly fire
+					else if (False) {
+						PassOn(Event);
+					}
+
 					else Discard(Event);
 				}
 				// ---------------------------------- //
@@ -897,7 +898,12 @@ foreach (Event in PendingEvents) {
 					}
 					else GT_PassOnHit(Event);
 				}
-				
+				// ---------------------------------- //
+				// Own Toad hit
+				else if (Event.Victim.IsBot && Event.Shooter == Event.Victim.Driver.Owner) {
+					Discard(Event);
+					continue;
+				}
 				// ---------------------------------- //
 				// Enemy hit
 				else {
@@ -961,7 +967,7 @@ foreach (Event in PendingEvents) {
 
 				// Send notice and destroy the Turret
 				if (Players.exists(VictimTurretOwner)) Killfeed::SendNotice(
-					"Turret - "^VictimTurretOwner.User.Name,
+					"Turret - "^Names::Get(VictimTurretOwner),
 					ShooterLogin, C_ImgBase^"Icons/"^EventIcon, ""
 				);
 				declare Destroyed = Turrets::DestroyTurret(Event.VictimTurret.Id, Turrets::GetCooldown());
@@ -1161,14 +1167,13 @@ if (GT_UseAutoEndSequence) {
 	// ---------------------------------- //
 	// Set the map winner
 	declare Text WinnerName;
+	declare WinnerScoreId = GT_GetWinnerScoreId();
+
 	if (UseClans) {
 		foreach (Clan => Points in ClanScores)
 			if (Clan != 0 && Points > ClanScores[3 - Clan]) WinnerName = Teams[Clan - 1].ColorizedName;
 	}
-	else {
-		declare WinnerScoreId = GT_GetWinnerScoreId();
-		if (WinnerScoreId != NullId && Scores[WinnerScoreId].User != Null) WinnerName = Scores[WinnerScoreId].User.Name;
-	}
+	else if (WinnerScoreId != NullId && Scores[WinnerScoreId].User != Null) WinnerName = Names::Get(Scores[WinnerScoreId]);
 	
 	// ---------------------------------- //
 	// Display the round winner
@@ -1412,6 +1417,15 @@ Void GT_UnspawnPlayersChangingClan() {
 }
 
 // ---------------------------------- //
+/** Check if the spawns of the players are limited to a specific list.
+ *
+ *	@return		True if the player spawns are limited, False otherwise.
+ */
+Boolean GT_SpawnIsLimited() {
+	return WarmUp::GroupExists("Clan1") && WarmUp::GroupExists("Clan2");
+}
+
+// ---------------------------------- //
 /** Check if a player is valid to be spawned in mode
  *
  *	@param	_Player		The player to check
@@ -1420,6 +1434,14 @@ Void GT_UnspawnPlayersChangingClan() {
  */
 Boolean GT_IsValidPlayer(CSmPlayer _Player) {
 	if (_Player == Null) return False;
+
+	// Competitive mode
+	if (GT_SpawnIsLimited()) {
+		if (WarmUp::GetPlayerSlot(_Player) <= 0) return False;
+		if (_Player.CurrentClan == 1 && WarmUp::GetPlayerGroup(_Player) == "Clan1") return True;
+		if (_Player.CurrentClan == 2 && WarmUp::GetPlayerGroup(_Player) == "Clan2") return True;
+		return False;
+	}
 	
 	// Skip invalid player in matchmaking
 	if (MM_IsMatchServer() && !MM_PlayerIsAllowedToPlay(_Player)) return False;
@@ -1506,22 +1528,6 @@ Void GT_PassOnHit(CSmModeEvent _Event) {
 	if (_Event.Type == CSmModeEvent::EType::OnActionCustomEvent) {
 		declare EventDamage = GT_GetEventDamage(_Event);
 		if (_Event.Victim != Null) RemovePlayerArmor(_Event.Victim, EventDamage, _Event.Shooter, EventDamage / 100);
-	}
-}
-
-// ---------------------------------- //
-/// Initialize the warm up properties
-Void GT_InitWarmUp() {
-	if (S_NbPlayersPerTeamMax > 0) {
-		if (WarmUp::GroupExists("Clan1")) WarmUp::SetSlotsNb("Clan1", S_NbPlayersPerTeamMax);
-		else WarmUp::CreateGroup("Clan1", S_NbPlayersPerTeamMax);
-		if (WarmUp::GroupExists("Clan2")) WarmUp::SetSlotsNb("Clan2", S_NbPlayersPerTeamMax);
-		else WarmUp::CreateGroup("Clan2", S_NbPlayersPerTeamMax);
-		WarmUp::DisplayClanSelection(True);
-	} else {
-		WarmUp::DestroyGroup("Clan1");
-		WarmUp::DestroyGroup("Clan2");
-		WarmUp::DisplayClanSelection(False);
 	}
 }
 
@@ -1615,11 +1621,34 @@ Void GT_DisableTimeLimit() {
 }
 
 // ---------------------------------- //
-/// Do the warm-up
-Void GT_DoWarmUp() {
-	WarmUp::SetAllSlotsIcons("Clan1", "file://Media/Manialinks/ShootMania/Common/Rocket.dds");
-	WarmUp::SetAllSlotsIcons("Clan2", "file://Media/Manialinks/ShootMania/Common/Rocket.dds");
-	
+/** Initialize the warm up properties.
+ *
+ *	@param	_NbPlayersPerTeam	Number of players in each team.
+ */
+Void GT_InitWarmUp(Integer _NbPlayersPerTeam) {
+	if (_NbPlayersPerTeam > 0) {
+		if (WarmUp::GroupExists("Clan1")) WarmUp::SetSlotsNb("Clan1", _NbPlayersPerTeam);
+		else WarmUp::CreateGroup("Clan1", _NbPlayersPerTeam);
+		if (WarmUp::GroupExists("Clan2")) WarmUp::SetSlotsNb("Clan2", _NbPlayersPerTeam);
+		else WarmUp::CreateGroup("Clan2", _NbPlayersPerTeam);
+
+		WarmUp::SetAllSlotsIcons("Clan1", "file://Media/Manialinks/ShootMania/Common/Rocket.dds");
+		WarmUp::SetAllSlotsIcons("Clan2", "file://Media/Manialinks/ShootMania/Common/Rocket.dds");
+		WarmUp::DisplayClanSelection(True);
+	} else {
+		WarmUp::DestroyGroup("Clan1");
+		WarmUp::DestroyGroup("Clan2");
+		WarmUp::DisplayClanSelection(False);
+	}
+}
+
+// ---------------------------------- //
+/** Do the warm-up
+ *
+ *	@param	_WarmUpDuration		Duration of the warm-up.
+ *	@param	_NbPlayersPerTeam	Number of players in each team.
+ */
+Void GT_DoWarmUp(Integer _WarmUpDuration, Integer _NbPlayersPerTeam) {
 	SM::UnspawnAllPlayers();
 	
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
@@ -1628,14 +1657,12 @@ Void GT_DoWarmUp() {
 	UIManager.UIAll.StatusMessage = _("Press F6 once you're ready.");
 	UIManager.UIAll.BigMessage = TL::Compose("$f90%1", _("Warm-up"));
 	
-	WarmUp::Begin();
-	
 	// Set players clan
+	WarmUp::Begin();
 	if (UseClans) foreach (Player in AllPlayers) {
 		SetPlayerClan(Player, GT_GetRequestedClan(Player));
 		WarmUp::SetPlayerGroup(Player, "Clan"^Player.CurrentClan);
 	}
-	
 	WarmUp::Fill();
 	
 	// Initialize warm-up
@@ -1643,11 +1670,13 @@ Void GT_DoWarmUp() {
 	GalaxyTitles::InitObjects();
 	MiniMap::Show();
 	
-	declare PrevWarmUpDuration = S_WarmUpDuration - 1;
+	declare PrevWarmUpDuration = _WarmUpDuration - 1;
 	declare Ident[] SpawnsList;
 	declare Ident LatestSpawnId;
 	
 	MB_EnablePlayMode(True);
+
+	UIManager.UIAll.OverlayHideCountdown = True;
 	
 	// ---------------------------------- //
 	// Warm-up sequence loop
@@ -1659,15 +1688,15 @@ Void GT_DoWarmUp() {
 		
 		// ---------------------------------- //
 		// Update warm-up duration
-		if (PrevWarmUpDuration != S_WarmUpDuration) {
-			PrevWarmUpDuration = S_WarmUpDuration;
+		if (PrevWarmUpDuration != _WarmUpDuration) {
+			PrevWarmUpDuration = _WarmUpDuration;
 			
-			declare LongTimer = S_WarmUpDuration*1000;
+			declare LongTimer = _WarmUpDuration*1000;
 			declare ShortTimer = 5000;
 			if (LongTimer <= 0) { LongTimer = 0; ShortTimer = 0; }
 			
-			WarmUp::SetGroupTimers("Clan1", [ShortTimer => [-1, S_NbPlayersPerTeamMax], LongTimer => [1, S_NbPlayersPerTeamMax]]);
-			WarmUp::SetGroupTimers("Clan2", [ShortTimer => [-1, S_NbPlayersPerTeamMax], LongTimer => [1, S_NbPlayersPerTeamMax]]);
+			WarmUp::SetGroupTimers("Clan1", [ShortTimer => [-1, _NbPlayersPerTeam], LongTimer => [1, _NbPlayersPerTeam]]);
+			WarmUp::SetGroupTimers("Clan2", [ShortTimer => [-1, _NbPlayersPerTeam], LongTimer => [1, _NbPlayersPerTeam]]);
 		}
 		
 		WarmUp::Loop();

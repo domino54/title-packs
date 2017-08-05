@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  INVASION by domino54                  //
-//  script version: 2017-07-22            //
+//  script version: 2017-08-05            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"InvasionArena, HordeArena"
-#Const Version				"2017-07-22"
+#Const Version				"2017-08-05"
 #Const ScriptName			"Modes/ShootMania/Invasion.Script.txt"
 
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
@@ -25,6 +25,7 @@
 #Setting S_UseWeaponsOverheating	True	as _("Allow Arrow and Nucleus overheating")
 #Setting S_ToadAggroRadiusMax		80.		as _("Toads fire range on maximum difficulty")
 #Setting S_UseTeamsMode				False	as _("Teams mode (require server restart)")
+#Setting S_MatchmakingFormat		6		as _("Number of players in matchmaking mode")
 #Setting S_MaxNbToadsAtOnce			60		as "<hidden>" ///< Maximum amount of Toads spawned at once
 #Setting S_MaximumNbReplies			5		///< Increased Replies limit
 #Setting S_UsePlayerClublinks		False	///< Disable Clublinks
@@ -165,6 +166,16 @@ Log::RegisterScript(ScriptName, Version);
 Log::RegisterScript(InvasionUI::GetScriptName(), InvasionUI::GetScriptVersion());
 Log::RegisterScript(Sound::GetScriptName(), Sound::GetScriptVersion());
 Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
+***
+
+// ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+declare Integer[] MatchmakingFormats;
+for (I, 1, S_MatchmakingFormat) MatchmakingFormats.add(1);
+MM_SetFormat(MatchmakingFormats);
 ***
 
 // ---------------------------------- //
@@ -371,7 +382,10 @@ foreach (MapLandmark in MapLandmarks) {
 foreach (Team in Teams) Team.EmblemUrl = S_NeutralEmblemUrl;
 
 // Wait for enough players to start game
-while (PlayersNbTotal < 1) MB_Yield();
+while (!ServerShutdownRequested && !MatchEndRequested && Players.count <= 0) MB_Yield();
+
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 
 // ---------------------------------- //
 // Check if there are Gold crystals on the map

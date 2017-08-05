@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2017-07-19            //
+//  script version: 2017-08-05            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2017-07-19"
+#Const Version		"2017-08-05"
 #Const ScriptName	"Modes/ShootMania/GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -16,11 +16,14 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_RoundsToWin		2	as _("Rounds to win")			///< Number of rounds to win a map
-#Setting S_RoundGapToWin	2	as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
-#Setting S_RoundsLimit		3	as _("Rounds limit")			///< Point limit on map
-#Setting S_TimeLimit	240		as _("Time limit (seconds)")	///< Time limit (seconds)
-#Setting S_MaxNbBalls	0		as _("Force a specific number of balls (0 = dynamic count)")	///< Max balls spwned
+#Setting S_RoundsToWin			2	as _("Rounds to win")			///< Number of rounds to win a map
+#Setting S_RoundGapToWin		2	as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
+#Setting S_RoundsLimit			3	as _("Rounds limit")			///< Point limit on map
+#Setting S_TimeLimit			240	as _("Time limit (seconds)")	///< Time limit (seconds)
+#Setting S_MaxNbBalls			0	as _("Force a specific number of balls (0 = dynamic count)")	///< Max balls spwned
+#Setting S_WarmUpDuration		0	as _("Warm up duration (sec.)") 
+#Setting S_NbPlayersPerTeamMin	1	as _("Minumum number of players in each team")
+#Setting S_NbPlayersPerTeamMax	4	as _("Maximum number of players per team (0: no max)")
 
 // ---------------------------------- //
 // Constants
@@ -67,12 +70,23 @@ Log::RegisterScript(Map::GetScriptName(), Map::GetScriptVersion());
 ***
 
 // ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+MM_SetFormat([S_NbPlayersPerTeamMax, S_NbPlayersPerTeamMax]);
+if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
+	MM_SetProgressiveFormats([1, 1], S_NbPlayersPerTeamMin, S_NbPlayersPerTeamMax-1);
+}
+***
+
+// ---------------------------------- //
 // Set the scores table
 // ---------------------------------- //
 ***ScoresTable***
 ***
-TopScores::AddCategory("Shield", "OS", 2.25, 50.);
-TopScores::AddCategory("Dunks", "Dk", 2.25, 60.);
+TopScores::AddCategory("Shield", "", 2.25, 50.);
+TopScores::AddCategory("Dunks", "", 2.25, 60.);
 ***
 
 // ---------------------------------- //
@@ -151,11 +165,17 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 ***Match_StartMap***
 ***
+GT_InitWarmUp(S_NbPlayersPerTeamMax);
+
 // ---------------------------------- //
 // Reset round scores
 for (I, 1, 2) ClanRoundScores[I] = 0;
 UIManager.UIAll.ScoreSummary_RoundPoints1 = 0;
 UIManager.UIAll.ScoreSummary_RoundPoints2 = 0;
+
+// Do the Warm Up
+if (!MM_IsMatchServer() && S_WarmUpDuration > 0 && S_NbPlayersPerTeamMax > 0)
+	GT_DoWarmUp(S_WarmUpDuration, S_NbPlayersPerTeamMax);
 ***
 
 // ---------------------------------- //
@@ -248,6 +268,9 @@ foreach (Player in Players) {
 
 // Wait for enough players to start the game
 GT_WaitForPlayers(S_NbPlayersPerTeamMin);
+
+// Matchmaking: allow substitutes
+if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
 
 // ---------------------------------- //
 // New map sound

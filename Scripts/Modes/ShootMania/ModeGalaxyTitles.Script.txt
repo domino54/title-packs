@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-08-05            //
+//  script version: 2017-08-09            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-08-05"
+#Const GTVersion	"2017-08-09"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -50,6 +50,7 @@
 #Setting S_UseComboWeapons		True	as _("Use Weapons pick-ups (if available on map)")
 #Setting S_PlayerArmorPoints	3		as _("Amount of players Armor points (1 min, 10 max)")
 #Setting S_EnableCharSelection	True	as _("Allow players to choose their character")
+#Setting S_CharSelectionTime	10		as _("Character selection display duration (s)")
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
 #Setting S_UseAutoBalance		False	as _("Balance teams on round start")
 #Setting S_MaximumNbWeapons		1		as _("Max. slots amount of every Weapon")
@@ -93,12 +94,18 @@
 #Const C_EventMaxDamage		100		///< Maximum damage amount inflicted by weapons
 #Const C_PlayerStaminaMax	1.25	///< Amount of player stamina
 
+// ---------------------------------- //
 // Classes
 #Const C_ScoutStaminaMax		1.
+#Const C_ScoutAmmoGain			.875
 #Const C_SummonerAmmoGain		.875
 #Const C_SummonerRocketMax		3
+#Const C_SummonerToadCooldown	5000
+#Const C_ConstruTurretDeploy	0
+#Const C_ConstruTurretCooldown	5000
+#Const C_ConstruTurretArmorMax	600
 #Const C_HealerAmmoGain			.875
-#Const C_HealerSupplyCooldown	4000
+#Const C_HealerSupplyCooldown	5000
 
 // ---------------------------------- //
 // Global variables
@@ -294,12 +301,20 @@ Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
 while (!Translations::LoadingLoop()) MB_Yield();
 
 // ---------------------------------- //
-// Load Turrets, models and Toads
+// Load Turrets
 Turrets::Load();
 Turrets::SetAutoDestroyTurrets(False);
+Turrets::SetDeployTime(C_ConstruTurretDeploy);
+Turrets::SetCooldown(C_ConstruTurretCooldown);
+Turrets::SetArmorMax(C_ConstruTurretArmorMax);
+
+// Load models
 Models::Load();
+
+// Load Toads
 Toads::Load();
 Toads::SetAutoDestroyToads(False);
+Toads::SetCooldown(C_SummonerToadCooldown);
 
 // ---------------------------------- //
 // Load characters
@@ -309,9 +324,11 @@ Characters::Build("Eurostile", "Eurostile_Bold");
 Characters::SetArmorBase(S_PlayerArmorPoints);
 
 Models::LoadCustom("Sintel", "Characters\\SintelSample.Item.Gbx");
+/*
 Models::LoadArenaPlayer("Susu.zip");
 Models::LoadArenaPlayer("TronMan.zip");
 Models::LoadArenaPlayer("StormWoman.Skin.Pack.Gbx");
+*/
 
 // ---------------------------------- //
 // Create custom interface
@@ -1273,6 +1290,7 @@ if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterI
 	// Sintel
 	case 1 : {
 		Models::SetCustom(Player, "Sintel");
+		SetPlayerReloadAllWeapons(Player, False);
 
 		Inventory::SetAvailableWeapons(Player, [CSmMode::EWeapon::Missile, CSmMode::EWeapon::Rocket]);
 		Inventory::ChangeWeaponHotkey(Player, CSmMode::EWeapon::Missile, CSmModeEvent::EActionInput::Activable1);
@@ -1280,6 +1298,8 @@ if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterI
 		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, 4);
 
 		Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
+		Player.StaminaMax = C_ScoutStaminaMax;
+		Player.AmmoGain = C_ScoutAmmoGain;
 	}
 	// ---------------------------------- //
 	// Susu
@@ -1305,9 +1325,10 @@ if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterI
 	// Medic
 	case 4 : {
 		Models::SetArenaPlayer(Player, "StormWoman.Skin.Pack.Gbx");
-
 		GalaxyTitles::LoadInfiniteSupplies(Player, C_HealerSupplyCooldown);
 		GalaxyTitles::SetPlayerCanPickUpSupplies(Player, False);
+
+		Player.AmmoGain = C_HealerAmmoGain;
 
 		/*
 		Inventory::RemoveWeapon(_Player, CSmMode::EWeapon::Laser);
@@ -1315,9 +1336,6 @@ if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterI
 		Inventory::AddWeapon(_Player, "MediShot");
 		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, 4);
 		*/
-
-		Player.AmmoGain = C_HealerAmmoGain;
-		Player.StaminaMax = C_ScoutStaminaMax;
 	}
 	// ---------------------------------- //
 	// Toad
@@ -1621,6 +1639,21 @@ Void GT_DisableTimeLimit() {
 }
 
 // ---------------------------------- //
+/// Display character selection screen.
+Void GT_ShowCharSelection() {
+	if (!S_EnableCharSelection || S_CharSelectionTime <= 0) return;
+	if (!Http.IsValidUrl(GT_CharactersDataFileURL)) return;
+	if (MB_GetRoundCount() != 1) return;
+
+	declare SelectionEndTime = Now + S_CharSelectionTime * 1000;
+	Characters::SetDisplayEndTime(SelectionEndTime);
+
+	Characters::Show();
+	while (Now < SelectionEndTime) MB_Yield();
+	Characters::Manual();
+}
+
+// ---------------------------------- //
 /** Initialize the warm up properties.
  *
  *	@param	_NbPlayersPerTeam	Number of players in each team.
@@ -1762,6 +1795,11 @@ Void GT_DoWarmUp(Integer _WarmUpDuration, Integer _NbPlayersPerTeam) {
  *	@param	_AllTeamsTotal		In teams mode: count players from all teams if set to True.
  */
 Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
+	if (_MinimumNbPlayers <= 0) return;
+
+	// Init players clans
+	foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
+
 	// ---------------------------------- //
 	// Skip the section entriely if there are enough players
 	declare GT_HasEnoughPlayers = False;
@@ -1791,6 +1829,7 @@ Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
 	declare GT_WaitingLastSpawnId = NullId;
 	declare GT_StopWaiting = False;
 	declare GT_WasPaused = CupAdmin::IsCupPaused();
+	declare GT_HasWaited = False;
 
 	SM::UnspawnAllPlayers();
 	MiniMap::Show();
@@ -1827,6 +1866,7 @@ Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
 		// Stop waiting
 		if (!CupAdmin::IsCupPaused() && GT_HasEnoughPlayers) GT_StopWaiting = True;
 		if (GT_StopWaiting) break;
+		GT_HasWaited = True;
 
 		GT_UnspawnPlayersChangingClan();
 
@@ -1912,7 +1952,7 @@ Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
 
 	// ---------------------------------- //
 	// Waiting end message
-	if (!ServerShutdownRequested && !MatchEndRequested) {
+	if (!ServerShutdownRequested && !MatchEndRequested && GT_HasWaited) {
 		declare Message = _("A new player joins the game.");
 		if (GT_WasPaused) Message = "Competition has been resumed!";
 		

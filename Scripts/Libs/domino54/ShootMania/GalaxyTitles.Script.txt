@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-07-29            //
+//  script version: 2017-08-09            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-07-29"
+#Const Version		"2017-08-09"
 #Const ScriptName	"Libs/domino54/ShootMania/GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -1616,7 +1616,12 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 	if (!LibInventory_PlayerItemHotkey.exists(_Event.ActionInput)) return;
 	declare ItemName = LibInventory_PlayerItemHotkey.keyof(_Event.ActionInput);
 
+	// Return if the item is not ready
+	if (Inventory::GetItemAmount(_Event.Player, ItemName) == 0) return;
+	if (!Inventory::CooldownIsReady(_Event.Player, ItemName)) return;
+
 	// Check if the player has infinite supplies
+	declare IsUnlimited = Inventory::GetItemAmount(_Event.Player, ItemName) < 0;
 	declare Integer LibGalaxyTitles_SuppliesCooldown for _Event.Player;
 
 	switch (ItemName) {
@@ -1624,24 +1629,22 @@ Void UseConsumableItems(CSmModeEvent _Event) {
 		// Use a Replie
 		case C_LibGalaxyTitles_ReplieItemId : {
 			if (!Private_CanUseHealing(_Event.Player)) return;
-
-			declare ItemCooldown = C_LibGalaxyTitles_ReplieUseCooldown;
-			if (LibGalaxyTitles_SuppliesCooldown > 0) ItemCooldown = LibGalaxyTitles_SuppliesCooldown;
-			
-			// Use Replie
-			if (!Inventory::UseItem(_Event.Player, ItemName, ItemCooldown, False)) return;
-			Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
 			NbAffected_Total = UseHealing(_Event.Player);
+			Statistics::TrackEvent(_Event.Player, "RepliesUsedTotal", 1);
 			
+			declare ItemCooldown = C_LibGalaxyTitles_ReplieUseCooldown;
+			if (IsUnlimited) ItemCooldown = LibGalaxyTitles_SuppliesCooldown + NbAffected_Total * 1000;
+			declare Used = Inventory::UseItem(_Event.Player, ItemName, ItemCooldown, False);
 		}
 		// ---------------------------------- //
 		// Use a Fuel
 		case C_LibGalaxyTitles_FuelItemId : {
 			if (!Private_CanUseBoost(_Event.Player)) return;
-
-			// Use Fuel
-			if (!Inventory::UseItem(_Event.Player, ItemName, LibGalaxyTitles_SuppliesCooldown, False)) return;
 			NbAffected_Total = UseBoost(_Event.Player);
+
+			declare ItemCooldown = C_LibGalaxyTitles_ReplieUseCooldown;
+			if (IsUnlimited) ItemCooldown = LibGalaxyTitles_SuppliesCooldown + NbAffected_Total * 1000;
+			declare Used = Inventory::UseItem(_Event.Player, ItemName, LibGalaxyTitles_SuppliesCooldown, False);
 		}
 	}
 

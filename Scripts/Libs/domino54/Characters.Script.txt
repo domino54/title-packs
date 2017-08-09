@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2017-07-29            //
+//  script version: 2017-08-09            //
 // -------------------------------------- //
 
-#Const Version		"2017-07-29"
+#Const Version		"2017-08-09"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
@@ -454,6 +454,8 @@ declare Frame_MapSelectionWindow	<=> (Page.GetFirstChild("Frame_MapSelectionWind
 declare Frame_BackgroundBlur		<=> (Page.GetFirstChild("Frame_BackgroundBlur") as CMlFrame);
 declare Label_WindowTitleText		<=> (Page.GetFirstChild("Label_WindowTitleText") as CMlLabel);
 declare Quad_CharSelectionClose		<=> (Page.GetFirstChild("Quad_CharSelectionClose") as CMlQuad);
+declare Frame_SelectionEndTime		<=> (Page.GetFirstChild("Frame_SelectionEndTime") as CMlFrame);
+declare Label_SelectionEndTime		<=> (Page.GetFirstChild("Label_SelectionEndTime") as CMlLabel);
 
 declare Frame_CharButtonsOffset		<=> (Page.GetFirstChild("Frame_CharButtonsOffset") as CMlFrame);
 declare Frame_CharButtonsPageSwitch	<=> (Page.GetFirstChild("Frame_CharButtonsPageSwitch") as CMlFrame);
@@ -506,6 +508,7 @@ declare persistent Persistant_LibCharacters_SavedChar for LocalUser = Integer[Te
 declare netwrite Integer Net_LibCharacters_PlayerCharacter for UI = 0;
 declare netread Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
 declare netread Integer Net_LibCharacters_DisplayMode for Teams[0];
+declare netread Integer Net_LibCharacters_DisplayEndTime for Teams[0];
 declare netread Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
 declare netread Integer Net_LibCharacters_CharacterBaseArmor for Teams[0];
 declare netread Text Net_LibCharacters_WindowTitleText for Teams[0];
@@ -523,6 +526,7 @@ declare UserSettingWindowVisible = False;
 declare UpdateCharactersList = True;
 declare UpdateCharacterPreview = True;
 declare UpdateCurCharIcon = True;
+declare UpdateTimer = True;
 declare InterfaceColor = <1., 0., 0.>;
 declare CurSelectedCharacter = G_LibCharacters_Characters[0];
 declare CurHoveredCharacter = -1;
@@ -542,6 +546,7 @@ declare PrevIsSpectator = False;
 declare PrevNbPlayers = -1;
 declare PrevWindowTitleText = "";
 declare PrevGUIPlayerId = NullId;
+declare PrevDisplayEndTime = -1;
 
 /// Reset UI
 EnableMenuNavigation(False, False, Null, 0);
@@ -771,6 +776,30 @@ if (PrevWindowTitleText != Net_LibCharacters_WindowTitleText) {
 if (PrevDisplayMode != Net_LibCharacters_DisplayMode) {
 	PrevDisplayMode = Net_LibCharacters_DisplayMode;
 	Quad_CharSelectionClose.Visible = Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeManual}}};
+	UpdateTimer = True;
+}
+
+// ---------------------------------- //
+// Update display end time
+if (PrevDisplayEndTime != Net_LibCharacters_DisplayEndTime) {
+	PrevDisplayEndTime = Net_LibCharacters_DisplayEndTime;
+	UpdateTimer = True;
+}
+
+// ---------------------------------- //
+// Update timer
+if (UpdateTimer) {
+	UpdateTimer = False;
+
+	Frame_SelectionEndTime.Visible =
+		Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeVisible}}} &&
+		Net_LibCharacters_DisplayEndTime > 0;
+}
+
+// ---------------------------------- //
+// Manage the countdown
+if (Frame_SelectionEndTime.Visible) {
+	Label_SelectionEndTime.Value = TL::TimeToText(Net_LibCharacters_DisplayEndTime - GameTime + 1000);
 }
 
 // ---------------------------------- //
@@ -857,7 +886,7 @@ if (UpdateCharactersList) {
 		// Amount of players using the character
 		declare NbPlayersUsing = 0;
 		foreach (Player in Players) {
-			if (Player.IsBot || Player.RequestsSpectate) continue;
+			if (Player.RequestsSpectate) continue;
 			if (!IsSpectator && InputPlayer.CurrentClan > 0 && Player.CurrentClan != InputPlayer.CurrentClan) continue;
 			declare netread Integer Net_LibCharacters_ServerCharacter for Player;
 			if (Net_LibCharacters_ServerCharacter != CharacterId) continue;
@@ -1569,6 +1598,16 @@ Void SetWindowTitle(Text _TitleText) {
 }
 
 // ---------------------------------- //
+/** Set the window display end time.
+ *
+ *	@param	_EndTime	Display end time.
+ */
+Void SetDisplayEndTime(Integer _EndTime) {
+	declare netwrite Integer Net_LibCharacters_DisplayEndTime for Teams[0];
+	Net_LibCharacters_DisplayEndTime = _EndTime;
+}
+
+// ---------------------------------- //
 /// Unload the library.
 Void Unload() {
 	Private_ResetCharactersData();
@@ -1588,7 +1627,6 @@ Void Unload() {
 	G_LibCharacters_RequestStartTime = -1;
 
 	foreach (Player in AllPlayers) {
-		if (Player.IsBot) continue;
 		declare Integer PrevCharacterId for Player;
 		PrevCharacterId = -1;
 	}
@@ -1638,8 +1676,6 @@ Void Loop() {
 	G_LibCharacters_CharChangeRequests.clear();
 
 	foreach (Player in AllPlayers) {
-		if (Player.IsBot) continue;
-
 		declare PlayerCharacter = GetPlayerChar(Player);
 		declare PrevCharacterId for Player = -1;
 

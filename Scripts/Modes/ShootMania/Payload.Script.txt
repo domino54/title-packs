@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PAYLOAD by domino54                   //
-//  script version: 2017-08-05            //
+//  script version: 2017-08-09            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"PayloadArena"
-#Const Version		"2017-08-05"
+#Const Version		"2017-08-09"
 #Const ScriptName	"Modes/ShootMania/Payload.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -183,7 +183,7 @@ if (!MapValidated) GT_SkipInvalidMap();
 // ---------------------------------- //
 ***Match_StartMap***
 ***
-GT_InitWarmUp(S_NbPlayersPerTeamMax);
+if (S_WarmUpDuration > 0) GT_InitWarmUp(S_NbPlayersPerTeamMax);
 TeamsPayloadMaxDist = [0., 0., 0.];
 Layers::Attach("Payload:Interface");
 
@@ -359,10 +359,13 @@ foreach (Player in Players) {
 }
 
 // Wait for enough players to start the game
-GT_WaitForPlayers(S_NbPlayersPerTeamMin);
+if (!S_EnableDebugMode) GT_WaitForPlayers(S_NbPlayersPerTeamMin);
 
 // Matchmaking: allow substitutes
 if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
+
+// Character selection screen
+GT_ShowCharSelection();
 
 // ---------------------------------- //
 // Close Gates after warm-up
@@ -900,107 +903,6 @@ Void UpdateMarkers(Ident _PayloadObjectId) {
 		declare Pos = MapLandmark.Position.X^" "^MapLandmark.Position.Y + 2^" "^MapLandmark.Position.Z;
 		Markers::AddMarker("Checkpoint", "<marker manialinkframeid='Frame_MarkerCheckpoint' visibility='WhenInFrustum' pos='"^Pos^"' />");
 	}
-}
-
-// ---------------------------------- //
-/** Wait for enough players to play
- *
- *	@param	_MinimumNbPlayers	The number of players to wait in each clan before starting the map
- */
-Void WaitForPlayers(Integer _MinimumNbPlayers) {
-	// ---------------------------------- //
-	// Initialize
-	declare OldSequence = UIManager.UIAll.UISequence;
-	UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
-	
-	declare HasWaited = False;
-	declare WasPause = False;
-	StartTime = Now;
-
-	// Enable PvP
-	UsePvPCollisions = True;
-	UsePvPWeapons = True;
-	
-	foreach (Player in AllPlayers) SetPlayerClan(Player, GT_GetRequestedClan(Player));
-	
-	// ---------------------------------- //
-	// Initialize objects
-	GalaxyTitles::ResetAll();
-	GalaxyTitles::InitObjects();
-	GalaxyTitles::SetObjectsSpawnTier(-1);
-
-	// ---------------------------------- //
-	// Waiting for players play loop
-	while (!ServerShutdownRequested && !MatchEndRequested && !S_EnableDebugMode) {
-		MB_Yield();
-
-		// Let the server sleep if there's no players on it
-		if (PlayersNbTotal <= 0) continue;
-		
-		// Stop waiting if there are enough players to start the game
-		if (ClansNbPlayers[1] >= _MinimumNbPlayers && ClansNbPlayers[2] >= _MinimumNbPlayers && !CupAdmin::IsCupPaused()) break;
-		
-		// ---------------------------------- //
-		// Display big message
-		if (!HasWaited) {
-			UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Warning;
-			
-			if (CupAdmin::IsCupPaused()) {
-				Translations::SetStatusMessage("Competition has been paused");
-				UIManager.UIAll.BigMessage = TL::Compose("$F90%1", _("Pause"));
-				WasPause = True;
-			}
-			else UIManager.UIAll.BigMessage = _("Waiting for players in each team...");
-			
-			HasWaited = True;
-		}
-		
-		GalaxyTitles::SpawnObjects();
-		GT_UnspawnPlayersChangingClan();
-		WarmUp::ManageEvents();
-		
-		// ---------------------------------- //
-		// Spawn players
-		foreach (Player in Players) {
-			if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned) continue;
-			
-			// ---------------------------------- //
-			// Initialize player
-			SetPlayerClan(Player, GT_GetRequestedClan(Player));
-			Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
-			Player.StaminaMax = C_PlayerStaminaMax;
-			
-			// Spawn player
-			if (Player.CurrentClan == 0) continue;
-			declare CSmMapPlayerSpawn PlayerSpawn;
-			if (Player.CurrentClan == G_AttackingClan) PlayerSpawn <=> Map::GetPlayerSpawn("SpawnAtk", 1);
-			else PlayerSpawn <=> Map::GetPlayerSpawn("SpawnDef", 1);
-			if (PlayerSpawn != Null) SM::Spawn(Player, Player.CurrentClan, PlayerSpawn, Now + S_RespawnTime);
-		}
-	}
-	
-	StartTime = -1;
-	
-	// ---------------------------------- //
-	// Player joined the game
-	if (HasWaited) {
-		SM::UnspawnAllPlayers();
-		GalaxyTitles::ResetAll();
-		
-		if (!ServerShutdownRequested && !MatchEndRequested) {
-			declare Message = _("A new player joins the game.");
-			if (WasPause) Message = "Competition has been resumed!";
-			
-			Translations::SendBigMessage(Message, 5000, 0, CUIConfig::EUISound::Default, 0);
-			MB_Sleep(5000);
-		}
-	}
-	
-	// ---------------------------------- //
-	// Revert changes
-	UIManager.UIAll.BigMessage = "";
-	UIManager.UIAll.StatusMessage = "";
-	UIManager.UIAll.UISequence = OldSequence;
 }
 
 // ---------------------------------- //

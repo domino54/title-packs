@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PLAYERS TOADS by domino54     //
-//  script version: 2017-07-19            //
+//  script version: 2017-08-09            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	they can summon it or destory it.
  */
 
-#Const Version		"2017-07-19"
+#Const Version		"2017-08-09"
 #Const ScriptName	"Libs/domino54/ShootMania/PlayersToads.Script.txt"
 
 #Include "MathLib" as ML
@@ -32,6 +32,7 @@
 #Const C_LibPlayersToads_InventoryItemId	"LibPlayersToads_Toad"
 #Const C_LibPlayersToads_DefaultActionInput	CSmModeEvent::EActionInput::Consumable2
 #Const C_LibPlayersToads_DefaultCooldown	10000	///< Default cooldown after Toad destruction.
+#Const C_LibPlayersToads_DefaultArmorMax	300		///< Default Toad armor max.
 #Const C_LibPlayersToads_NbGaugesInModel	10		///< Amount of gauges in a single gauge widget.
 #Const C_LibPlayersToads_GaugeTotalLength	36.		///< Length of a widget's gauge bar.
 #Const C_LibPlayersToads_GaugeSpacingWidth	.5		///< Spaceing between smaller gauges in the widget.
@@ -59,6 +60,7 @@
 declare Ident G_LibPlayersToads_ToadModelId;		///< ID of the Toad item model.
 declare Ident[] G_LibPlayersToads_CreatedToads;		///< IDs of the Toads created by the library.
 declare Integer G_LibPlayersToads_ToadCooldown;		///< Cooldown before new Toad can be placed after destruction.
+declare Integer G_LibPlayersToads_ToadArmorMax;		///< Toad maximum armor.
 declare Boolean G_LibPlayersToads_AutoDestroyToads;	///< Automatically destroy Toads.
 declare Text[] G_LibPlayersToads_CreatedMarkers;	///< Markers breated by the library.
 
@@ -646,6 +648,12 @@ CSmPlayer CreateToad(CSmPlayer _Player) {
 	SetPlayerReloadAllWeapons(Toad, True);
 	Clans::SetPlayerClan(Toad, Clans::GetPlayerClan(_Player));
 
+	// ---------------------------------- //
+	// Set the Toad armor
+	declare ToadArmorMax = ML::Max(G_LibPlayersToads_ToadArmorMax, 100);
+	Toad.ArmorMax = ToadArmorMax;
+	Toad.Armor = ToadArmorMax;
+
 	// Spawn Toad
 	SpawnBotPlayer(Toad, _Player, Toad.ArmorMax, Vec3, Now + 3000);
 
@@ -774,6 +782,26 @@ Integer GetCooldown() {
 }
 
 // ---------------------------------- //
+/** Set the Toad maximum armor.
+ *
+ *	@param	_ArmorMax	The new maximum armor.
+ */
+Void SetArmorMax(Integer _ArmorMax) {
+	declare ArmorMax = _ArmorMax;
+	if (ArmorMax < 0) ArmorMax = C_LibPlayersToads_DefaultArmorMax; 
+	G_LibPlayersToads_ToadArmorMax = ML::Max(ArmorMax, 100);
+}
+
+// ---------------------------------- //
+/** Get the Toad maximum armor.
+ *
+ *	@return		Current maximum armor value.
+ */
+Integer GetArmorMax() {
+	return G_LibPlayersToads_ToadArmorMax;
+}
+
+// ---------------------------------- //
 /** Set if the library will automatically destroy Toads.
  *
  *	@param	_AutoDestroyToads	Updated setting.
@@ -802,6 +830,7 @@ Void Load() {
 
 	G_LibPlayersToads_ToadModelId = ItemList_Add(C_LibPlayersToads_ToadModelName);
 	SetCooldown(-1);
+	SetArmorMax(-1);
 	SetAutoDestroyToads(True);
 
 	Layers::Create(C_LibPlayersToads_GUILayerIdStatus, Private_CreateManialinkToadsUI());

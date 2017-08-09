@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PLAYERS TURRETS by domino54   //
-//  script version: 2017-07-12            //
+//  script version: 2017-08-09            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	has been already placed.
  */
 
-#Const Version		"2017-07-12"
+#Const Version		"2017-08-09"
 #Const ScriptName	"Libs/domino54/ShootMania/PlayersTurrets.Script.txt"
 
 #Include "MathLib" as ML
@@ -33,6 +33,7 @@
 #Const C_LibPlayersTurrets_DefaultActionInput	CSmModeEvent::EActionInput::Consumable2
 #Const C_LibPlayersTurrets_DefaultDeployTime	1500	///< Default turret deploy time.
 #Const C_LibPlayersTurrets_DefaultCooldown		10000	///< Default cooldown after turret destruction.
+#Const C_LibPlayersTurrets_DefaultArmorMax		500		///< Default turret armor max.
 #Const C_LibPlayersTurrets_DeployCancelDist		.75		///< Distance after which deploy is aborted.
 #Const C_LibPlayersTurrets_NbGaugesInModel		10		///< Amount of gauges in a single gauge widget.
 #Const C_LibPlayersTurrets_GaugeTotalLength		36.		///< Length of a widget's gauge bar.
@@ -46,6 +47,7 @@ declare Ident G_LibPlayersTurrets_TurretModelId;		///< ID of the turret item mod
 declare Ident[] G_LibPlayersTurrets_CreatedTurrets;		///< IDs of the turrets created by the library.
 declare Integer G_LibPlayersTurrets_DeployTime;			///< Time player has to stand still to deploy a turret.
 declare Integer G_LibPlayersTurrets_TurretCooldown;		///< Cooldown before new turret can be placed after destruction.
+declare Integer G_LibPlayersTurrets_TurretArmorMax;		///< Turret maximum armor.
 declare Boolean G_LibPlayersTurrets_AutoDestroyTurrets;	///< Automatically destroy turrets.
 declare Text[] G_LibPlayersTurrets_CreatedMarkersMM;	///< Minimap markers created by the library.
 declare Text[] G_LibPlayersTurrets_CreatedMarkersWorld;	///< Physical markers created by the library.
@@ -712,6 +714,12 @@ CModeTurret CreateTurret(CSmPlayer _Player) {
 	LibPlayersTurrets_PlayerTurretId = Turret.Id;
 	LibPlayersTurrets_TurretSpawnTime = Now;
 
+	// ---------------------------------- //
+	// Set the turret armor
+	declare TurretArmorMax = ML::Max(G_LibPlayersTurrets_TurretArmorMax, 100);
+	Turret.ArmorMax = TurretArmorMax;
+	Turret.Armor = TurretArmorMax;
+
 	Private_UpdatePlayerTurretInfo(_Player);
 
 	// ---------------------------------- //
@@ -891,6 +899,26 @@ Integer GetCooldown() {
 }
 
 // ---------------------------------- //
+/** Set the turret maximum armor.
+ *
+ *	@param	_ArmorMax	The new maximum armor.
+ */
+Void SetArmorMax(Integer _ArmorMax) {
+	declare ArmorMax = _ArmorMax;
+	if (ArmorMax < 0) ArmorMax = C_LibPlayersTurrets_DefaultArmorMax; 
+	G_LibPlayersTurrets_TurretArmorMax = ML::Max(ArmorMax, 100);
+}
+
+// ---------------------------------- //
+/** Get the Turret maximum armor.
+ *
+ *	@return		Current maximum armor value.
+ */
+Integer GetArmorMax() {
+	return G_LibPlayersTurrets_TurretArmorMax;
+}
+
+// ---------------------------------- //
 /** Set if the library will automatically destroy Turrets.
  *
  *	@param	_AutoDestroyTurrets	Updated setting.
@@ -920,6 +948,7 @@ Void Load() {
 	G_LibPlayersTurrets_TurretModelId = ItemList_Add(C_LibPlayersTurrets_TurretModelPath);
 	SetDeployTime(-1);
 	SetCooldown(-1);
+	SetArmorMax(-1);
 	SetAutoDestroyTurrets(True);
 
 	Layers::Create(C_LibPlayersTurrets_GUILayerIdStatus, Private_CreateManialinkTurretsUI());

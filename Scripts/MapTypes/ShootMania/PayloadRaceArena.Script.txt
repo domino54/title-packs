@@ -1,0 +1,103 @@
+// -------------------------------------- //
+//  PAYLOAD RACE ARENA by domino54        //
+//  script version: 2017-08-22            //
+// -------------------------------------- //
+
+#RequireContext CSmMapType
+
+#Const Version			"2017-08-22"
+#Const MapTypeVersion	1
+#Const ScriptName		"PayloadRaceArena.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+// Custom libraries
+#Include "Libs/domino54/EditAnchors.Script.txt" as EditAnchors
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_Rules "$<%11.$> Place exactly one Spawn #1 and one Spawn #2.\n$<%12.$> Place one Goal #1 and one Goal #2.\n$<%13.$> Place exactly one Payload #1 and Payload #2 bot paths, connecting area near Spawn with the Goal. Bot paths have to be the same length."
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Initialize the anchors
+Void InitAnchors() {
+	foreach (Anchor in AnchorData) {
+		if (Anchor.DefaultTag == "Spawn") {
+			if (Anchor.Tag != "Spawn") Anchor.Tag = Anchor.DefaultTag;
+			if (Anchor.Order != 1 && Anchor.Order != 2) Anchor.Order = 1;
+		} else if (Anchor.DefaultTag == "Goal" || Anchor.DefaultTag == "Checkpoint") {
+			if (Anchor.Tag != "Goal") Anchor.Tag = "Goal";
+			if (Anchor.Order != 1 && Anchor.Order != 2) Anchor.Order = 1;
+		} else {
+			Anchor.Tag = Anchor.DefaultTag;
+			Anchor.Order = Anchor.DefaultOrder;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Check if the map is valid
+Void UpdateValidability() {
+	ValidationStatus = CSmMapType::ValidationStatus::NotValidable;
+	InitAnchors();
+	Anchor::UpdateAnchorCounts();
+	
+	// ---------------------------------- //
+	// Check if map has exactly one landmark type per team
+	for (I, 1, 2) {
+		if (
+			!Anchor::HasExactlyOneAnchor("Spawn", I, TL::Compose(_("You must place exactly one Spawn #%1"), ""^I)) ||
+			!Anchor::HasExactlyOneAnchor("Goal", I, TL::Compose(_("You must place exactly one Goal #%1"), ""^I))
+		) return;
+	}
+	
+	// Map is valid
+	ValidationStatus = CSmMapType::ValidationStatus::Validated;	
+}
+
+// ---------------------------------- //
+/// Show the anchor edition manialink
+Void EditAnchorData(Ident _EditedAnchorDataId) {
+	if (_EditedAnchorDataId == NullId) return;
+	UpdateValidability();
+	EditAnchors::EditAnchor(_EditedAnchorDataId);
+	UpdateValidability();
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	MapType::SetVersion(MapTypeVersion);
+	UpdateValidability();
+	CustomEditAnchorData = True;
+	
+	EditAnchors::SetRulesText(TL::Compose(C_Rules, "$o$070"));
+	EditAnchors::SetAvailableTags([
+		"Spawn" => ["Spawn #1", "Spawn #2"],
+		"Goal" => ["Goal #1", "Goal #2"],
+		"Checkpoint" => ["Goal #1", "Goal #2"]
+	]);
+	
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			switch (Event.Type) {
+				case CPluginEvent::Type::MapModified	: UpdateValidability();			
+				case CPluginEvent::Type::EditAnchor		: EditAnchorData(Event.EditedAnchorDataId);
+			}
+		}
+	}
+}

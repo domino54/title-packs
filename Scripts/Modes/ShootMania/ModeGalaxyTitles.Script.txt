@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-08-09            //
+//  script version: 2017-08-22            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-08-09"
+#Const GTVersion	"2017-08-22"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -51,6 +51,7 @@
 #Setting S_PlayerArmorPoints	3		as _("Amount of players Armor points (1 min, 10 max)")
 #Setting S_EnableCharSelection	True	as _("Allow players to choose their character")
 #Setting S_CharSelectionTime	10		as _("Character selection display duration (s)")
+#Setting S_EnableFriendlyFire	False	as "<hidden>" ///< Allow players to damage their teammates
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
 #Setting S_UseAutoBalance		False	as _("Balance teams on round start")
 #Setting S_MaximumNbWeapons		1		as _("Max. slots amount of every Weapon")
@@ -67,6 +68,7 @@
 #Setting S_EnableMapSelection	True	as "<hidden>" ///< Allow players to choose which map they want to play next
 #Setting S_PodiumTrackDuration	8000	as "<hidden>" ///< Duration of the podium sequence (10 max)
 #Setting S_WebhookURL			""		as "<hidden>" ///< URL of the webhook to send notifications
+#Setting S_AutoManageAFK		True
 
 #Setting S_ScriptEnvironment /* "production" */ "development"
 
@@ -85,27 +87,40 @@
 #Const C_OnlineTranslationsURL	"http://raw.githubusercontent.com/domino54/title-packs/master/Media/Translations/Default.xml"
 #Const C_DefaultCharactersURL	"file://Media/Characters/GalaxyDefault.xml"
 #Const C_ScriptTicksPerSecond	100		///< The amount of script ticks per second
+#Const C_EventMaxDamage			100		///< Maximum damage amount inflicted by weapons
 #Const C_NoCollisionsDuration	6000	///< No collision duration at the beginning of the round
 #Const C_EnviroKillTimeOut		7500	///< Time after which environmental elimination won't be performed
 #Const C_MaxPodiumSeqDuration	10000	///< Maximum duration of the podium sequence
 #Const C_SuddenDeathPointsLimit	3
 #Const C_DefaultKillfeedPosn	<159., 89.>		///< Default position of the Killfeed layer
 
-#Const C_EventMaxDamage		100		///< Maximum damage amount inflicted by weapons
-#Const C_PlayerStaminaMax	1.25	///< Amount of player stamina
-
 // ---------------------------------- //
-// Classes
-#Const C_ScoutStaminaMax		1.
-#Const C_ScoutAmmoGain			.875
-#Const C_SummonerAmmoGain		.875
-#Const C_SummonerRocketMax		3
-#Const C_SummonerToadCooldown	5000
-#Const C_ConstruTurretDeploy	0
-#Const C_ConstruTurretCooldown	5000
-#Const C_ConstruTurretArmorMax	600
-#Const C_HealerAmmoGain			.875
-#Const C_HealerSupplyCooldown	5000
+// Galaxy default characters
+// ---------------------------------- //
+#Const C_PlayerStaminaMax	1.25	///< Amount of player stamina
+// Sintel
+#Const C_ClassScout_ArmorMaxDelta	-100
+#Const C_ClassScout_AmmoReload		.875
+#Const C_ClassScout_AmmoMaxMissile	1
+#Const C_ClassScout_TotalStamina	1.
+// Susu
+#Const C_ClassSusu_AmmoReload		.875
+#Const C_ClassSusu_AmmoMaxRocket	3
+#Const C_ClassSusu_TotalStamina		1.
+#Const C_ClassSusu_ToadCooldown		8000
+// Constructor
+#Const C_ClassEngie_AmmoReload		.875
+#Const C_ClassEngie_AmmoMaxRocket	3
+#Const C_ClassEngie_TotalStamina	1.
+#Const C_ClassEngie_TurretDeploy	0
+#Const C_ClassEngie_TurretCooldown	8000
+#Const C_ClassEngie_TurretArmorMax	400
+// Medic
+#Const C_ClassMedic_AmmoReload		.875
+#Const C_ClassMedic_ReplieCooldown	5000
+// Toad
+#Const C_ClassToad_ArmorMaxDelta	-100
+#Const C_ClassToad_MovementSpeed	.625
 
 // ---------------------------------- //
 // Global variables
@@ -304,9 +319,9 @@ while (!Translations::LoadingLoop()) MB_Yield();
 // Load Turrets
 Turrets::Load();
 Turrets::SetAutoDestroyTurrets(False);
-Turrets::SetDeployTime(C_ConstruTurretDeploy);
-Turrets::SetCooldown(C_ConstruTurretCooldown);
-Turrets::SetArmorMax(C_ConstruTurretArmorMax);
+Turrets::SetDeployTime(C_ClassEngie_TurretDeploy);
+Turrets::SetCooldown(C_ClassEngie_TurretCooldown);
+Turrets::SetArmorMax(C_ClassEngie_TurretArmorMax);
 
 // Load models
 Models::Load();
@@ -314,7 +329,7 @@ Models::Load();
 // Load Toads
 Toads::Load();
 Toads::SetAutoDestroyToads(False);
-Toads::SetCooldown(C_SummonerToadCooldown);
+Toads::SetCooldown(C_ClassSusu_ToadCooldown);
 
 // ---------------------------------- //
 // Load characters
@@ -324,11 +339,9 @@ Characters::Build("Eurostile", "Eurostile_Bold");
 Characters::SetArmorBase(S_PlayerArmorPoints);
 
 Models::LoadCustom("Sintel", "Characters\\SintelSample.Item.Gbx");
-/*
 Models::LoadArenaPlayer("Susu.zip");
 Models::LoadArenaPlayer("TronMan.zip");
 Models::LoadArenaPlayer("StormWoman.Skin.Pack.Gbx");
-*/
 
 // ---------------------------------- //
 // Create custom interface
@@ -433,7 +446,8 @@ foreach (WeaponId in Inventory::GetCustomWeapons()) {
 
 // ---------------------------------- //
 // Character selection
-declare GT_CharactersAvailable = S_EnableCharSelection && Http.IsValidUrl(GT_CharactersDataFileURL);
+declare IsCustomGameplay = MapPlayerModelName != "" && MapPlayerModelName != "ArenaPlayer";
+declare GT_CharactersAvailable = S_EnableCharSelection && Http.IsValidUrl(GT_CharactersDataFileURL) && !IsCustomGameplay;
 PauseMenu::SetButtonVisibility("GT_CharSelection", GT_CharactersAvailable);
 if (GT_CharactersAvailable) Characters::Manual();
 else Characters::Hide();
@@ -764,7 +778,7 @@ foreach (Event in PendingEvents) {
 				else if (Event.VictimTurret != Null) {
 					// ---------------------------------- //
 					// Custom Turret
-					if (Turrets::BelongsToLib(Event.ShooterTurret)) {
+					if (Turrets::BelongsToLib(Event.ShooterTurret) && Turrets::BelongsToLib(Event.VictimTurret)) {
 						declare Shooter = Turrets::GetTurretOwner(Event.ShooterTurret);
 						if (
 							(Turrets::GetTurretClan(Event.VictimTurret) != 0 && Turrets::GetTurretClan(Event.VictimTurret) == Turrets::GetTurretClan(Event.ShooterTurret)) ||
@@ -823,21 +837,23 @@ foreach (Event in PendingEvents) {
 				// ---------------------------------- //
 				// Turret hit
 				if (Event.VictimTurret != Null) {
-					if (Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Turrets::GetTurretClan(Event.VictimTurret)) {
-						Discard(Event);
-						continue;
-					}
 					// ---------------------------------- //
 					// Manage custom turret hit
-					else if (Turrets::BelongsToLib(Event.VictimTurret)) {
+					if (Turrets::BelongsToLib(Event.VictimTurret)) {
 						declare Shooter = Event.Shooter;
 						if (Shooter.IsBot) Shooter = Event.Shooter.Driver.Owner;
 
-						if (Shooter == Null || Shooter == Turrets::GetTurretOwner(Event.VictimTurret)) {
+						if (
+							Shooter == Null || Shooter == Turrets::GetTurretOwner(Event.VictimTurret) ||
+							(Event.Shooter.CurrentClan != 0 && Event.Shooter.CurrentClan == Turrets::GetTurretClan(Event.VictimTurret))
+						) {
 							Discard(Event);
 							continue;
 						}
-						
+
+						declare Points = EventDamage / 100;
+						Scores::AddPlayerRoundPoints(Shooter.Score, Points);
+						TopScores::AddPoints(Shooter.Score, "Hit", Points);
 						GT_PassOnHit(Event);
 					}
 					else GT_PassOnHit(Event);
@@ -877,8 +893,22 @@ foreach (Event in PendingEvents) {
 					}
 					// ---------------------------------- //
 					// Friendly fire
-					else if (False) {
+					else if (S_EnableFriendlyFire) {
+						declare Points = EventDamage / 100;
+						Scores::RemovePlayerRoundPoints(Event.Shooter.Score, Points);
+						TopScores::RemovePoints(Event.Shooter.Score, "Hit", Points);
+						Event.ShooterPoints *= -1;
 						PassOn(Event);
+
+						// ---------------------------------- //
+						// Send warning
+						Interfancy::SendCrosshairNote(Event.Shooter, ["$t$F00%1!", "Friendly fire"], 2000);
+						declare UI <=> UIManager.GetUI(Event.Shooter);
+						if (UI != Null) UI.SendNotice(
+							"", CUIConfig::ENoticeLevel::Default,
+							Null, CUIConfig::EAvatarVariant::Default,
+							CUIConfig::EUISound::Warning, 0
+						);
 					}
 
 					else Discard(Event);
@@ -979,7 +1009,7 @@ foreach (Event in PendingEvents) {
 				declare VictimTurretOwner <=> Turrets::GetTurretOwner(Event.VictimTurret);
 				if (ShooterTurretOwner != Null) {
 					ShooterLogin = ShooterTurretOwner.User.Login;
-					EventIcon = "Turret.png";
+					EventIcon = "TurretKill.png";
 				}
 
 				// Send notice and destroy the Turret
@@ -1044,6 +1074,14 @@ foreach (Event in PendingEvents) {
 		declare Switched = Inventory::SwitchWeapon(Event.Player, Event.ActionInput);
 		declare UsedTurret = Turrets::UseActionButton(Event.Player, Event.ActionInput);
 		declare UsedToad = Toads::UseActionButton(Event.Player, Event.ActionInput);
+
+		if (UsedToad) {
+			declare Toad <=> Toads::GetPlayerToad(Event.Player);
+			if (Toad != Null) {
+				Interfancy::SetCharacterIcon(Toad, Characters::GetCharIcon(5), Characters::GetCharIcon2(5));
+				Interfancy::SetArmorText(Toad, Characters::GetCharName(5));
+			}
+		}
 
 		GalaxyTitles::UseConsumableItems(Event);
 
@@ -1196,11 +1234,17 @@ if (GT_UseAutoEndSequence) {
 	// Display the round winner
 	UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
 	UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::ForcedVisible;
-	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::EndRound;
+	UIManager.UIAll.BigMessageSound = CUIConfig::EUISound::Silence;
 	UIManager.UIAll.BigMessageSoundVariant = 0;
 	
 	if (WinnerName == "") UIManager.UIAll.BigMessage = _("|Match|Draw");
 	else UIManager.UIAll.BigMessage = TL::Compose(_("$<%1$> wins the match!"), WinnerName);
+
+	UIManager.UIAll.SendNotice(
+		"", CUIConfig::ENoticeLevel::Default,
+		Null, CUIConfig::EAvatarVariant::Default,
+		CUIConfig::EUISound::EndRound, 0
+	);
 	
 	MB_Sleep(4000);
 	
@@ -1280,12 +1324,13 @@ WarmUp::Unload();
 // ---------------------------------- //
 ***Private_GalaxyTitles_ConfigCharacter***
 ***
+declare GalaxyDefaultCharacters = GT_CharactersDataFileURL == C_DefaultCharactersURL;
 declare PlayerCharacterId = 0;
 if (S_EnableCharSelection) PlayerCharacterId = Characters::GetPlayerChar(Player);
 
 // ---------------------------------- //
 // Default Galaxy characters
-if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterId) {
+if (GalaxyDefaultCharacters) switch (PlayerCharacterId) {
 	// ---------------------------------- //
 	// Sintel
 	case 1 : {
@@ -1294,41 +1339,40 @@ if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterI
 
 		Inventory::SetAvailableWeapons(Player, [CSmMode::EWeapon::Missile, CSmMode::EWeapon::Rocket]);
 		Inventory::ChangeWeaponHotkey(Player, CSmMode::EWeapon::Missile, CSmModeEvent::EActionInput::Activable1);
-		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Missile, 1);
-		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, 4);
+		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Missile, C_ClassScout_AmmoMaxMissile);
 
-		Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
-		Player.StaminaMax = C_ScoutStaminaMax;
-		Player.AmmoGain = C_ScoutAmmoGain;
+		Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints * 100 + C_ClassScout_ArmorMaxDelta, 100, 1000);
+		Player.StaminaMax = C_ClassScout_TotalStamina;
+		Player.AmmoGain = C_ClassScout_AmmoReload;
 	}
 	// ---------------------------------- //
 	// Susu
 	case 2 : {
 		Models::SetArenaPlayer(Player, "Susu.zip");
-		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, C_SummonerRocketMax);
+		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, C_ClassSusu_AmmoMaxRocket);
 		Toads::AddToInventory(Player);
 
-		Player.AmmoGain = C_SummonerAmmoGain;
-		Player.StaminaMax = C_ScoutStaminaMax;
+		Player.AmmoGain = C_ClassSusu_AmmoReload;
+		Player.StaminaMax = C_ClassSusu_TotalStamina;
 	}
 	// ---------------------------------- //
 	// Constructor
 	case 3 : {
 		Models::SetArenaPlayer(Player, "TronMan.zip");
-		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, C_SummonerRocketMax);
+		Inventory::SetWeaponSlots(Player, CSmMode::EWeapon::Rocket, C_ClassEngie_AmmoMaxRocket);
 		Turrets::AddToInventory(Player);
 
-		Player.AmmoGain = C_SummonerAmmoGain;
-		Player.StaminaMax = C_ScoutStaminaMax;
+		Player.AmmoGain = C_ClassEngie_AmmoReload;
+		Player.StaminaMax = C_ClassEngie_TotalStamina;
 	}
 	// ---------------------------------- //
 	// Medic
 	case 4 : {
 		Models::SetArenaPlayer(Player, "StormWoman.Skin.Pack.Gbx");
-		GalaxyTitles::LoadInfiniteSupplies(Player, C_HealerSupplyCooldown);
+		GalaxyTitles::LoadInfiniteSupplies(Player, C_ClassMedic_ReplieCooldown);
 		GalaxyTitles::SetPlayerCanPickUpSupplies(Player, False);
 
-		Player.AmmoGain = C_HealerAmmoGain;
+		Player.AmmoGain = C_ClassMedic_AmmoReload;
 
 		/*
 		Inventory::RemoveWeapon(_Player, CSmMode::EWeapon::Laser);
@@ -1341,9 +1385,8 @@ if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterI
 	// Toad
 	case 5 : {
 		Player.ForceModelId = GalaxyTitles::GetToadModel();
-
-		Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints - 1, 1, 10) * 100;
-		Player.SpeedPower = .75;
+		Player.ArmorMax = ML::Clamp(S_PlayerArmorPoints * 100 + C_ClassToad_ArmorMaxDelta, 100, 1000);
+		Player.SpeedPower = C_ClassToad_MovementSpeed;
 	}
 }
 
@@ -1352,14 +1395,15 @@ if (GT_CharactersDataFileURL == C_DefaultCharactersURL) switch (PlayerCharacterI
 // ---------------------------------- //
 // Current character name
 declare PlayerCharacterName = "";
-if (PlayerCharacterId > 0) PlayerCharacterName = Characters::GetCharName(Player);
+if (!GalaxyDefaultCharacters || PlayerCharacterId > 0)
+	PlayerCharacterName = Characters::GetCharName(Player);
 Interfancy::SetArmorText(Player, PlayerCharacterName);
 
 // ---------------------------------- //
 // Current character icon
 declare PlayerCharacterIcon1 = "";
 declare PlayerCharacterIcon2 = "";
-if (PlayerCharacterId > 0) {
+if (!GalaxyDefaultCharacters || PlayerCharacterId > 0) {
 	PlayerCharacterIcon1 = Characters::GetCharIcon(Player);
 	PlayerCharacterIcon2 = Characters::GetCharIcon2(Player);
 }
@@ -1651,6 +1695,43 @@ Void GT_ShowCharSelection() {
 	Characters::Show();
 	while (Now < SelectionEndTime) MB_Yield();
 	Characters::Manual();
+}
+
+// ---------------------------------- //
+/** Get the match winning clan.
+ *
+ *	@param	_ClansPoints	Scores of the clans (omit to use defalt clans scores).
+ *	@param	_RoundsToWin	Min. number of won rounds to win the match.
+ *	@param	_RoundGapToWin	Min. points gap with other teams to win the match.
+ *	@param	_RoundsLimit	Clan, which reached this number wins (0 = ignore).
+ *
+ *	@return		Number of the clan winning the match.
+ */
+Integer GT_GetMatchWinner(Integer[] _ClansPoints, Integer _RoundsToWin, Integer _RoundGapToWin, Integer _RoundsLimit) {
+	declare ClansPoints = _ClansPoints;
+	if (_ClansPoints.count <= 0) return 0; 
+	
+	foreach (I => Points in _ClansPoints) {
+		if (I == 0) continue;
+		if (_RoundsLimit > 0 && Points >= _RoundsLimit) return I;
+
+		// Get the smallest points gap of the team
+		declare MinPointsGap = Points;
+		foreach (Clan => OpponentsPoints in _ClansPoints) {
+			if (Clan == I) continue;
+			declare PointsGap = Points - OpponentsPoints;
+			if (PointsGap < MinPointsGap) MinPointsGap = PointsGap;
+		}
+
+		if (Points >= _RoundsToWin && MinPointsGap >= _RoundGapToWin) return I;
+	}
+	return 0;
+}
+
+Integer GT_GetMatchWinner(Integer _RoundsToWin, Integer _RoundGapToWin, Integer _RoundsLimit) {
+	declare Integer[] ClansPoints;
+	foreach (Clan => Points in ClanScores) ClansPoints.add(Points);
+	return GT_GetMatchWinner(ClansPoints, _RoundsToWin, _RoundGapToWin, _RoundsLimit);
 }
 
 // ---------------------------------- //

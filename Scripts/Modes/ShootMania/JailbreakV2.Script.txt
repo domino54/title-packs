@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2017-08-09            //
+//  script version: 2017-08-22            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"JailbreakArena, JailbreakV2Arena"
-#Const Version		"2017-08-09"
+#Const Version		"2017-08-22"
 #Const ScriptName	"Modes/ShootMania/JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -16,10 +16,11 @@
 // Settings
 // ---------------------------------- //
 #Setting S_RoundsToWin			2		as _("Rounds to win")			///< Number of rounds to win a map
-#Setting S_RoundGapToWin		2		as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
+#Setting S_RoundGapToWin		1		as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
 #Setting S_RoundsLimit			3		as _("Rounds limit")			///< Point limit on map
 #Setting S_TimeLimit			600 	as _("Time limit (seconds)")	///< Time limit (seconds)
 #Setting S_UseLaserInJail		True	as _("Force Laser in jail")		///< If True players in jail will have Laser
+#Setting S_UseDebugMode			False	as _("Enable debug mode (for developers only)")
 #Setting S_WarmUpDuration		0		as _("Warm up duration (sec.)") 
 #Setting S_NbPlayersPerTeamMin	1		as _("Minumum number of players in each team")
 #Setting S_NbPlayersPerTeamMax	3		as _("Maximum number of players per team (0: no max)")
@@ -30,8 +31,10 @@
 #Const C_JailStayOpenTime			750		///< Additional time to leave jail after teammates left the Goal
 #Const C_MissingPlayersInterval		1500	///< Time between each check of the missing players ids
 #Const C_TimeBeforeRoundEnds		1000	///< Time before round end sequence starts after passing end conditions
-#Const C_GateSectorSize		<7.5, 8., 7.5>	///< Size of the Gate sector
-#Const C_GateSectorOffset	<0., -.5, 0.>	///< Offset of the Gate sector
+//#Const C_GateSectorSize		<7.5, 8., 7.5>	///< Size of the Gate sector
+//#Const C_GateSectorOffset	<0., -.5, 0.>	///< Offset of the Gate sector
+#Const C_GateSectorHeight	9.		///< New Gate trigger height
+#Const C_GateSectorWidth	6.5		///< New Gate trigger width
 
 // Interface
 #Const C_UIPlayersIconsPosition	<40., 87.5, 5.>
@@ -116,7 +119,7 @@ GT_KillfeedTranslations = ["$<%1$> released $<%2$>"];
 UseClans = True;
 
 // Disable certain characters
-Characters::SetCharAvailable(5, False);
+// Characters::SetCharAvailable(5, False);
 
 // ---------------------------------- //
 // Register callbacks
@@ -257,7 +260,7 @@ foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
 ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
 
 // Wait for enough players to start the game
-GT_WaitForPlayers(S_NbPlayersPerTeamMin);
+if (!S_UseDebugMode) GT_WaitForPlayers(S_NbPlayersPerTeamMin);
 
 // Matchmaking: allow substitutes
 if (MM_IsMatchServer()) MM_AllowSubstitutes(True);
@@ -268,6 +271,7 @@ GT_ShowCharSelection();
 // ---------------------------------- //
 // New map sound
 UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+declare UseDebugMode = S_UseDebugMode;
 
 StartTime = Now + S_RespawnTime;
 if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
@@ -376,8 +380,10 @@ if (PrevSpectatorsCount != Spectators.count) {
 // ---------------------------------- //
 // Check if someone stands on the pole
 foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
-	if (MapLandmark == Null || MapLandmark.Sector == Null || MapLandmark.Sector.PlayersIds.count <= 0) continue;
-	declare SectorHasClanPlayer = False;
+	if (MapLandmark == Null || MapLandmark.Sector == Null)
+	if (!UseDebugMode && MapLandmark.Sector.PlayersIds.count <= 0) continue;
+
+	declare SectorHasClanPlayer = UseDebugMode;
 	declare SectorHasEnemyPlayer = False;
 	
 	foreach (Id in MapLandmark.Sector.PlayersIds) {
@@ -393,11 +399,15 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 // ---------------------------------- //
 // Manage player functions
 foreach (Player in Players) {
+	declare Integer PrevPlayerTriggerNum for Player;
+	declare PlayerTriggerNum = GetPlayerTriggerNum(Player);
+
 	// ---------------------------------- //
 	// Spawn players
 	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate && GT_IsValidPlayer(Player)) {
 		GT_InitPlayer(Player);
 		UpdateClansPlayersLists();
+		PrevPlayerTriggerNum = 0;
 		
 		// ---------------------------------- //
 		// Select player spawn
@@ -410,6 +420,7 @@ foreach (Player in Players) {
 				Inventory::SetAvailableWeapons(Player, Text[]);
 				Inventory::AddWeaponSlots(Player, CSmMode::EWeapon::Laser, 1);
 				Inventory::SetWeapon(Player, CSmMode::EWeapon::Laser);
+				SetPlayerAmmoMax(Player, CSmMode::EWeapon::Rocket, 4);
 			}
 		}
 		else
@@ -429,16 +440,6 @@ foreach (Player in Players) {
 		PrevPlayerClan = Player.CurrentClan;
 		UpdateClansPlayersLists();
 	}
-	
-	// ---------------------------------- //
-	// Set player free if is in their gate sector
-	declare Boolean HasJustRespawned for Player;
-	
-	if (IsInJail(Player) && Player.Armor > 0 && !HasJustRespawned &&
-		Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && IsInGateSector(Player))
-			ReleasePlayer(Player);
-	
-	HasJustRespawned = False;
 	
 	// ---------------------------------- //
 	// Event when player triggers OffZone surface
@@ -464,6 +465,25 @@ foreach (Player in Players) {
 		
 		PlayerPrevIsInOffZone = Player.IsInOffZone;
 	}
+
+	// ---------------------------------- //
+	// Gate trigger change
+	declare Boolean HasJustRespawned for Player;
+
+	if (PrevPlayerTriggerNum != PlayerTriggerNum) {
+		if (PrevPlayerTriggerNum != 0 && PlayerTriggerNum != 0) {
+			if (Player.Armor > 0 && !HasJustRespawned && Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+				if (IsInJail(Player)) ReleasePlayer(Player);
+				else {
+					JailPlayer(Player, Null);
+					UnspawnPlayer(Player);
+				}
+			}
+		}
+		PrevPlayerTriggerNum = PlayerTriggerNum;
+	}
+
+	HasJustRespawned = False;
 }
 
 // ---------------------------------- //
@@ -490,7 +510,7 @@ if (CurrentTimeLimit != S_TimeLimit) {
 
 // ---------------------------------- //
 // Victory conditions
-for (Clan, 1, 2) if (ClansNbPlayers[Clan] <= 0 || G_ClansFreePlayers[Clan].count <= 0) MB_StopRound();
+if (!UseDebugMode) for (Clan, 1, 2) if (ClansNbPlayers[Clan] <= 0 || G_ClansFreePlayers[Clan].count <= 0) MB_StopRound();
 if (GT_TimeReachedLimit()) MB_StopRound();
 ***
 
@@ -563,15 +583,8 @@ UIManager.UIAll.BigMessage = "";
 // ---------------------------------- //
 // Map end conditions
 ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
-
-foreach (Clan => Points in ClanScores) {
-	if (Clan == 0) continue;
-	if (
-		Points >= S_RoundsLimit ||
-		(Points >= S_RoundsToWin && Points - ClanScores[3 - Clan] >= S_RoundGapToWin)
-	)
-		MB_StopMatch();
-}
+declare MatchWiningClan = GT_GetMatchWinner(S_RoundsToWin, S_RoundGapToWin, S_RoundsLimit);
+if (MatchWiningClan > 0) MB_StopMatch();
 ***
 
 // ---------------------------------- //
@@ -617,12 +630,69 @@ Boolean IsInJail(CSmPlayer _Player) {
 }
 
 // ---------------------------------- //
+/** Check if player is in 1st trigger type.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if player is in the trigger.
+ */
+Boolean IsInTrigger1(CSmPlayer _Player) {
+	if (_Player == Null || _Player.Position == <0., 0., 0.>) return False;
+
+	declare metadata Vec3[] JailbreakV2Arena_GateTriggers_1 for Map;
+	foreach (TriggerPos in JailbreakV2Arena_GateTriggers_1) {
+		if (_Player.Position.Y < TriggerPos.Y) continue;
+		if (_Player.Position.Y > TriggerPos.Y + C_GateSectorHeight) continue;
+		if (ML::Abs(_Player.Position.X - TriggerPos.X) > C_GateSectorWidth / 2) continue;
+		if (ML::Abs(_Player.Position.Z - TriggerPos.Z) > C_GateSectorWidth / 2) continue;
+		return True;
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if player is in 2nd trigger type.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if player is in the trigger.
+ */
+Boolean IsInTrigger2(CSmPlayer _Player) {
+	if (_Player == Null || _Player.Position == <0., 0., 0.>) return False;
+
+	declare metadata Vec3[] JailbreakV2Arena_GateTriggers_2 for Map;
+	foreach (TriggerPos in JailbreakV2Arena_GateTriggers_2) {
+		if (_Player.Position.Y < TriggerPos.Y) continue;
+		if (_Player.Position.Y > TriggerPos.Y + C_GateSectorHeight) continue;
+		if (ML::Abs(_Player.Position.X - TriggerPos.X) > C_GateSectorWidth / 2) continue;
+		if (ML::Abs(_Player.Position.Z - TriggerPos.Z) > C_GateSectorWidth / 2) continue;
+		return True;
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/** Get the trigger number the player is in.
+ *
+ *	@param	_Player		The player to get trigger number.
+ *
+ *	@return		Number of the player trigger.
+ */
+Integer GetPlayerTriggerNum(CSmPlayer _Player) {
+	if (_Player == Null || _Player.Position == <0., 0., 0.>) return 0;
+	if (IsInTrigger1(_Player)) return 1;
+	if (IsInTrigger2(_Player)) return 2;
+	return 0;
+}
+
+// ---------------------------------- //
 /** Check if Player is in their team Gate sector
  *
  *	@param	_Player		Player to check
  *
  *	@return		True, if Player stands on their Gate
  */
+ /*
 Boolean IsInGateSector(CSmPlayer _Player) {
 	if (_Player == Null || _Player.RequestsSpectate || _Player.CurrentClan == 0 ||
 		_Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned ||
@@ -646,6 +716,7 @@ Boolean IsInGateSector(CSmPlayer _Player) {
 	
 	return IsInSector;
 }
+*/
 
 // ---------------------------------- //
 /// Update the amount of players
@@ -1154,7 +1225,7 @@ if (PrevSettingsUpdateTime != Net_Jailbreak_SettingsUpdateTime) {
 // Check if someone is standing on Goals
 foreach (Clan => MapLandmark in ClanGoalLandmarks) {
 	if (MapLandmark == Null || MapLandmark.Sector == Null) continue;
-	declare SectorHasClanPlayer = False;
+	declare SectorHasClanPlayer = {{{S_UseDebugMode}}};
 	declare SectorHasEnemyPlayer = False;
 	
 	foreach (Id in MapLandmark.Sector.PlayersIds) {

@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 ARENA by domino54        //
-//  script version: 2016-07-01            //
+//  script version: 2017-08-22            //
 //  original concept by Akbalder          //
 // -------------------------------------- //
 
 #RequireContext CSmMapType
 
-#Const Version			"2016-07-01"
-#Const MapTypeVersion	1
+#Const Version			"2017-08-22"
+#Const MapTypeVersion	2
 #Const ScriptName		"JailbreakV2Arena.Script.txt"
 
 #Include "TextLib" as TL
@@ -20,6 +20,8 @@
 // Constants
 // ---------------------------------- //
 #Const C_Rules "$<%11.$> Place exactly one Spawn #1 and one Spawn #2, where players appear at the beginning of the round.\n$<%12.$> Place one JailSpawn #1 and one JailSpawn #2 in isolated rooms, where jailed players spawn after being eliminated.\n$<%13.$> Place one Goal #1 and one Goal #2 - teammates standing on them will make the Gates open and OffZone harmless.\n$<%14.$> Place the same number of Gate #1 and Gate #2 or use OffZone to build the jail doors.\n$<%15.$> Players $F00can't$g leave the jail other way than going through a Gate or the OffZone.\n$<%16.$> Gates $F00must$g be placed with their round capture plate at the outside of the jail - standing on it makes the player free."
+
+#Const C_GateTriggerSize	6.5
 
 // ---------------------------------- //
 // Functions
@@ -49,8 +51,55 @@ Void InitAnchors() {
 }
 
 // ---------------------------------- //
+/// Save triggers locations
+Void SaveGateTriggers() {
+	declare metadata Vec3[] JailbreakV2Arena_GateTriggers_1 for Map;
+	declare metadata Vec3[] JailbreakV2Arena_GateTriggers_2 for Map;
+	
+	JailbreakV2Arena_GateTriggers_1.clear();
+	JailbreakV2Arena_GateTriggers_2.clear();
+	
+	foreach (Data in AnchorData)	{
+		if (Data.Tag != "Gate" || Data.Block == Null) continue;
+		
+		declare IsDoubleGate = TL::Find("Center", Data.Block.BlockModel.Name, False, False);
+		declare Vec3 TriggerPosition_1;
+		declare Vec3 TriggerPosition_2;
+		
+		// ---------------------------------- //
+		// First trigger position (plate)
+		for (I, 0, 2) TriggerPosition_1[I] = Data.Block.Coord[I] * 8. + 4.;
+		TriggerPosition_1.Y = (Data.Block.Coord.Y - CollectionGroundY) * 2.;
+		
+		if (IsDoubleGate) switch (Data.Block.Direction) {
+			case CBlock::CardinalDirections::North	: TriggerPosition_1.Z += 4.;
+			case CBlock::CardinalDirections::East	: TriggerPosition_1.X += 4.;
+			case CBlock::CardinalDirections::South	: TriggerPosition_1.Z += 4.;
+			case CBlock::CardinalDirections::West	: TriggerPosition_1.X += 4.;
+		}
+		
+		// ---------------------------------- //
+		// Second trigger position (behind)
+		TriggerPosition_2 = TriggerPosition_1;
+		
+		switch (Data.Block.Direction) {
+			case CBlock::CardinalDirections::North	: TriggerPosition_2.Z += C_GateTriggerSize;
+			case CBlock::CardinalDirections::East	: TriggerPosition_2.X -= C_GateTriggerSize;
+			case CBlock::CardinalDirections::South	: TriggerPosition_2.Z -= C_GateTriggerSize;
+			case CBlock::CardinalDirections::West	: TriggerPosition_2.X += C_GateTriggerSize;
+		}
+		
+		// ---------------------------------- //
+		// Save triggers in map file
+		JailbreakV2Arena_GateTriggers_1.add(TriggerPosition_1);
+		JailbreakV2Arena_GateTriggers_2.add(TriggerPosition_2);
+	}
+}
+
+// ---------------------------------- //
 /// Check if the map is valid
 Void UpdateValidability() {
+	SaveGateTriggers();
 	ValidationStatus = CSmMapType::ValidationStatus::NotValidable;
 	InitAnchors();
 	Anchor::UpdateAnchorCounts();
@@ -67,7 +116,7 @@ Void UpdateValidability() {
 		if (
 			!Anchor::HasExactlyOneAnchor("Spawn", I, TL::Compose(_("You must place exactly one Spawn #%1"), ""^I)) ||
 			!Anchor::HasExactlyOneAnchor("JailSpawn", I, TL::Compose(_("You must place exactly one JailSpawn #%1"), ""^I)) ||
-			!Anchor::HasExactlyOneAnchor("Goal", I, TL::Compose(_("You must place at least one Goal #%1"), ""^I))
+			!Anchor::HasExactlyOneAnchor("Goal", I, TL::Compose(_("You must place exactly one Goal #%1"), ""^I))
 		) return;
 	}
 	
@@ -82,7 +131,6 @@ Void UpdateValidability() {
 	// Map is valid
 	ValidationStatus = CSmMapType::ValidationStatus::Validated;	
 }
-
 
 // ---------------------------------- //
 /// Show the anchor edition manialink

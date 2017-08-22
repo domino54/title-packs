@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PLAYERS TURRETS by domino54   //
-//  script version: 2017-08-09            //
+//  script version: 2017-08-22            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
  *	has been already placed.
  */
 
-#Const Version		"2017-08-09"
+#Const Version		"2017-08-22"
 #Const ScriptName	"Libs/domino54/ShootMania/PlayersTurrets.Script.txt"
 
 #Include "MathLib" as ML
@@ -51,6 +51,7 @@ declare Integer G_LibPlayersTurrets_TurretArmorMax;		///< Turret maximum armor.
 declare Boolean G_LibPlayersTurrets_AutoDestroyTurrets;	///< Automatically destroy turrets.
 declare Text[] G_LibPlayersTurrets_CreatedMarkersMM;	///< Minimap markers created by the library.
 declare Text[] G_LibPlayersTurrets_CreatedMarkersWorld;	///< Physical markers created by the library.
+declare Integer[Ident] G_LibPlayersTurrets_TakenMarkersSlots;
 
 /// Turrets information
 declare Ident[Ident] G_LibPlayersTurrets_TurretPlayerId;	///< ID of the turret's owner.
@@ -338,34 +339,336 @@ main() {
  */
 Text Private_CreateManialinkTurretMarker() {
 	declare R = 9/16.;
+
+	declare GaugeModel = "";
+	for (I, 0, 9) GaugeModel ^= "<gauge size='0 7' valign='center' drawbg='0' id='Gauge_Step#"^I^"' hidden='1' />";
+
+	declare TurretsMarkers = "";
+	for (I, 0, 15)
+		TurretsMarkers ^= "<frameinstance modelid='FrameModel_TurretMarker' id='Frame_TurretMarker#"^I^"' hidden='1' />";
+
 	return """
 <manialink version="3" name="{{{C_LibPlayersTurrets_GUILayerIdMarker}}}">
+<stylesheet>
+	<style class="FontB" halign="center" valign="center2" textsize="1" textemboss="1" textprefix="$n" textcolor="FFF" textfont="Eurostile_Bold" />
+</stylesheet>
+
 <frame id="Frame_PlayerTurretMarker">
 	<quad size="{{{8*R}}} 8" halign="center" valign="center" autoscale="0" image="{{{C_ImgBase}}}Minimap/Turret.png" id="Quad_PlayerTurretMarker" hidden="1" />
 </frame>
+
+<framemodel id="FrameModel_TurretMarker">
+	<frame id="Frame_TurretMarkerContainer" pos="0 3" hidden="1">
+		<quad pos="0 4" size="{{{7*R}}} 7" halign="center" valign="center" autoscale="0" image="{{{C_ImgBase}}}Minimap/Turret.png" id="Quad_TurretIcon" />
+		<label class="FontB" textprefix="$n$t" id="Label_MarkerTextTurret" />
+		<frame pos="{{{-14. * R}}} -2">{{{GaugeModel}}}</frame>
+		<label pos="0 -4.25" class="FontB" id="Label_MarkerTurretOwner" />
+		<quad pos="0 -1.75" size="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" />
+	</frame>
+</framemodel>
+{{{TurretsMarkers}}}
+
+<frameinstance modelid="FrameModel_TurretMarker" id="Frame_CurPlayerMarker" hidden="1" />
+
 <script><!--
 
 #Include "MathLib" as ML
+#Include "TextLib" as TL
 
-{{{ManialinkTools::Functions(["HsvToRgb"])}}}
+#Const C_ScaleDistanceMax	30.
+#Const C_GaugeTotalLength	{{{28. * R}}}
+#Const C_GaugePositionFix	4.
+#Const C_GaugeSpacingWidth	0.
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load manialink elements
+declare Frame_CurPlayerMarker <=> ((Page.GetFirstChild("Frame_CurPlayerMarker") as CMlFrame).Controls[0] as CMlFrame);
+declare Quad_PlayerTurretIcon <=> (Frame_CurPlayerMarker.GetFirstChild("Quad_TurretIcon") as CMlQuad);
+declare Quad_PlayerMarkerIcon <=> (Frame_CurPlayerMarker.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
+declare Label_PlayerTextTurret <=> (Frame_CurPlayerMarker.GetFirstChild("Label_MarkerTextTurret") as CMlLabel);
+declare Label_PlayerTurretOwner <=> (Frame_CurPlayerMarker.GetFirstChild("Label_MarkerTurretOwner") as CMlLabel);
+
+// ---------------------------------- //
+// Load turrets markers
+declare CMlFrame[] Frame_TurretMarkers;
+for (I, 0, 15) {
+	declare Frame <=> (Page.GetFirstChild("Frame_TurretMarker#"^I) as CMlFrame);
+	Frame_TurretMarkers.add(Frame);
+	declare CMlGauge[] Gauges for Frame;
+	for (I, 0, 9) Gauges.add((Frame.GetFirstChild("Gauge_Step#"^I) as CMlGauge));
+}
+
+/// Local player Turret marker gauges
+declare CMlGauge[] LocalTurretGauges;
+for (I, 0, 9)
+	LocalTurretGauges.add((Frame_CurPlayerMarker.GetFirstChild("Gauge_Step#"^I) as CMlGauge));
+
+/// Translations
+Label_PlayerTextTurret.Value = Translate("Turret");
+
+// ---------------------------------- //
+// Net data
+declare netread Integer Net_LibPlayersTurrets_TurretsLastUpdate for Teams[0];
+declare netread Vec3[Integer] Net_LibPlayersTurrets_TurretMarkerPos for Teams[0];
+declare netread Text[Integer] Net_LibPlayersTurrets_TurretOwnerLogin for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare UpdateTurretsMarkers = True;
+declare UpdateTurretGauge = True;
+declare LocalPlayerTurretPos = Vec3;
+
+// Update
+declare PrevGUIPlayerColor = -1.;
+declare PrevTurretsUpdate = -1;
+declare PrevGUIPlayerId = NullId;
+declare PrevGUIPlayerName = "";
+declare PrevTurretArmor = -1;
+declare PrevTurretArmorMax = -1;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update markers on server command
+if (PrevTurretsUpdate != Net_LibPlayersTurrets_TurretsLastUpdate) {
+	PrevTurretsUpdate = Net_LibPlayersTurrets_TurretsLastUpdate;
+	UpdateTurretsMarkers = True;
+}
+
+// ---------------------------------- //
+// Update markers on GUIPlayer change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerId != GUIPlayer.Id) {
+		PrevGUIPlayerId = GUIPlayer.Id;
+		UpdateTurretsMarkers = True;
+	}
+} else if (PrevGUIPlayerId != NullId) {
+	PrevGUIPlayerId = NullId;
+	UpdateTurretsMarkers = True;
+}
+
+// ---------------------------------- //
+// Update turrets markers
+if (UpdateTurretsMarkers) {
+	UpdateTurretsMarkers = False;
+
+	foreach (I => Frame in Frame_TurretMarkers) {
+		declare OwnerLogin = "";
+		if (Net_LibPlayersTurrets_TurretOwnerLogin.existskey(I)) OwnerLogin = Net_LibPlayersTurrets_TurretOwnerLogin[I];
+
+		// Local player turret position
+		if (GUIPlayer != Null && GUIPlayer.User.Login == OwnerLogin && Net_LibPlayersTurrets_TurretMarkerPos.existskey(I))
+			LocalPlayerTurretPos = Net_LibPlayersTurrets_TurretMarkerPos[I];
+
+		// Get the main container
+		declare Container = (Frame.Controls[0] as CMlFrame);
+		Container.Visible = Net_LibPlayersTurrets_TurretMarkerPos.existskey(I) && (GUIPlayer == Null || OwnerLogin != GUIPlayer.User.Login);
+		if (!Container.Visible) continue;
+
+		// ---------------------------------- //
+		// Laod marker elements
+		declare Label_MarkerTextTurret <=> (Frame.GetFirstChild("Label_MarkerTextTurret") as CMlLabel);
+		declare Label_MarkerTurretOwner <=> (Frame.GetFirstChild("Label_MarkerTurretOwner") as CMlLabel);
+		declare Quad_TurretIcon <=> (Frame.GetFirstChild("Quad_TurretIcon") as CMlQuad);
+		declare Quad_MarkerIcon <=> (Frame.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
+
+		// Get the Turret owner
+		declare CSmPlayer Owner;
+		foreach (Player in Players) if (Player.User.Login == OwnerLogin) { Owner <=> Player; break; }
+		
+		// ---------------------------------- //
+		// Update color of the marker
+		declare MarkerColor = <1., 1., 1.>;
+		if (Owner != Null) MarkerColor = HsvToRgb(<Owner.GetLinearHue, 1., 1.>);
+		Quad_MarkerIcon.Colorize = MarkerColor;
+		Quad_TurretIcon.Colorize = MarkerColor;
+
+		declare CMlGauge[] Gauges for Frame;
+		foreach (Gauge in Gauges) Gauge.Color = MarkerColor;
+
+		Label_MarkerTextTurret.Value = Translate("Turret");
+		Label_MarkerTextTurret.TextColor = Brightness(MarkerColor, 3.);
+
+		// ---------------------------------- //
+		// Display Turret's owner name
+		declare OwnerName = OwnerLogin;
+		if (Owner != Null) OwnerName = Owner.User.Name;
+		Label_MarkerTurretOwner.Value = OwnerName;
+	}
+}
+
+// ---------------------------------- //
+// Manage visible markers
+foreach (I => Frame in Frame_TurretMarkers) {
+	if (!Frame.Visible || !Frame.Controls[0].Visible) continue;
+	
+	declare TurretPosition = Net_LibPlayersTurrets_TurretMarkerPos[I];
+	declare Container = (Frame.Controls[0] as CMlFrame);
+
+	// ---------------------------------- //
+	// Marker scale depending on distance to the Turret
+	if (GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>) {
+		declare Distance = ML::Distance(GUIPlayer.Position, TurretPosition);
+		Container.RelativeScale = 1. - (ML::Min(Distance, C_ScaleDistanceMax) / C_ScaleDistanceMax) * .5;
+	}
+	else Container.RelativeScale = .5;
+
+	declare OwnerLogin = "";
+	declare CSmPlayer Owner;
+	if (Net_LibPlayersTurrets_TurretOwnerLogin.existskey(I)) OwnerLogin = Net_LibPlayersTurrets_TurretOwnerLogin[I];
+	foreach (Player in Players) if (Player.User.Login == OwnerLogin) { Owner <=> Player; break; }
+	if (Owner == Null) continue;
+
+	declare netread Integer Net_LibPlayersTurrets_TurretArmor for Owner;
+	declare netread Integer Net_LibPlayersTurrets_TurretArmorMax for Owner;
+	
+	declare CMlGauge[] Gauges for Frame;
+	SetModuleRatio(Gauges, Net_LibPlayersTurrets_TurretArmor / 100., Net_LibPlayersTurrets_TurretArmorMax / 100);
+}
+
+// ---------------------------------- //
+// Local player Turret marker visibility
+Frame_CurPlayerMarker.Visible = GUIPlayer != Null && GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned;
+if (Frame_CurPlayerMarker.Visible) {
+	declare netread Integer Net_LibPlayersTurrets_TurretSpawnTime for GUIPlayer;
+	Frame_CurPlayerMarker.Visible = Net_LibPlayersTurrets_TurretSpawnTime > 0 && GameTime >= Net_LibPlayersTurrets_TurretSpawnTime;
+}
+
+// ---------------------------------- //
+// Manage current player Turret marker
+if (GUIPlayer != Null && Frame_CurPlayerMarker.Visible) {
+	// ---------------------------------- //
+	// Update local player Turret marker color
+	if (PrevGUIPlayerColor != GUIPlayer.GetLinearHue) {
+		PrevGUIPlayerColor = GUIPlayer.GetLinearHue;
+		declare MarkerColor = HsvToRgb(<PrevGUIPlayerColor, 1., 1.>);
+
+		Quad_PlayerTurretIcon.Colorize = MarkerColor;
+		Quad_PlayerMarkerIcon.Colorize = MarkerColor;
+		Label_PlayerTextTurret.TextColor = Brightness(MarkerColor, 3.);
+		foreach (Gauge in LocalTurretGauges) Gauge.Color = MarkerColor;
+	}
+
+	// ---------------------------------- //
+	// Update GUIPlayer Turret's owner's name
+	if (PrevGUIPlayerName != GUIPlayer.User.Name) {
+		PrevGUIPlayerName = GUIPlayer.User.Name;
+		Label_PlayerTurretOwner.Value = PrevGUIPlayerName;
+	}
+
+	// ---------------------------------- //
+	// Update gauge on Turret armor change
+	declare netread Integer Net_LibPlayersTurrets_TurretArmor for GUIPlayer;
+	if (PrevTurretArmor != Net_LibPlayersTurrets_TurretArmor) {
+		PrevTurretArmor = Net_LibPlayersTurrets_TurretArmor;
+		UpdateTurretGauge = True;
+	}
+
+	// ---------------------------------- //
+	// Update gauge on Turret armor max change
+	declare netread Integer Net_LibPlayersTurrets_TurretArmorMax for GUIPlayer;
+	if (PrevTurretArmorMax != Net_LibPlayersTurrets_TurretArmorMax) {
+		PrevTurretArmorMax = Net_LibPlayersTurrets_TurretArmorMax;
+		UpdateTurretGauge = True;
+	}
+
+	// ---------------------------------- //
+	// Update armor gauge
+	if (UpdateTurretGauge) {
+		UpdateTurretGauge = False;
+		SetModuleRatio(LocalTurretGauges, Net_LibPlayersTurrets_TurretArmor / 100., Net_LibPlayersTurrets_TurretArmorMax / 100);
+	}
+
+	// ---------------------------------- //
+	// Change marker scale depending on distance
+	if (GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>) {
+		declare Distance = ML::Distance(GUIPlayer.Position, LocalPlayerTurretPos);
+		Frame_CurPlayerMarker.RelativeScale = 1. - (ML::Min(Distance, C_ScaleDistanceMax) / C_ScaleDistanceMax) * .5;
+	}
+	else Frame_CurPlayerMarker.RelativeScale = .5;
+}
+
+***
+
+{{{Translations::InjectInManialink(["Turret"])}}}
+{{{ManialinkTools::Functions(["HsvToRgb", "Brightness", "SetGaugeRatio"])}}}
+
+// ---------------------------------- //
+/** Set module value
+ *
+ *	@param	_Gauges		Array of gauges used by the module
+ *	@param	_Energy		Amount of currently loaded energy
+ *	@param	_Slots		Amount of available energy slots
+ */
+Void SetModuleRatio(CMlGauge[] _Gauges, Real _Energy, Integer _Slots) {
+	declare persistent Persistent_LibInterfancy_ShowGaugesBgs for LocalUser = False;
+	
+	// ---------------------------------- //
+	// Hide gauges if there are no slots
+	if (_Slots <= 0) {
+		foreach (Gauge in _Gauges) Gauge.Visible = False;
+		
+		// There is nothing more to do without slots
+		return;
+	}
+	// ---------------------------------- //
+	// Adjust up to N gauges for slots
+	else if (_Slots <= _Gauges.count) {
+		declare SpacingSizeSub = 0.;
+		if (_Slots >= 2) SpacingSizeSub = C_GaugeSpacingWidth * (_Slots - 1) / _Slots;
+		declare GaugeSlotSize = C_GaugeTotalLength / _Slots + C_GaugePositionFix - SpacingSizeSub;
+		
+		foreach (I => Gauge in _Gauges) {
+			Gauge.Visible = I <= _Slots - 1;
+			if (!Gauge.Visible) continue;
+			
+			Gauge.Size.X = GaugeSlotSize;
+			Gauge.RelativePosition_V3.X = (GaugeSlotSize - C_GaugePositionFix) * I - C_GaugePositionFix / 2;
+			if (I > 0) Gauge.RelativePosition_V3.X += C_GaugeSpacingWidth * I;
+		}
+	}
+	// ---------------------------------- //
+	// Use one gauge for over N slots
+	else {
+		foreach (I => Gauge in _Gauges) {
+			Gauge.Visible = I == 0;
+			if (!Gauge.Visible) continue;
+			
+			Gauge.Size.X = C_GaugeTotalLength + C_GaugePositionFix;
+			Gauge.RelativePosition_V3.X = -C_GaugePositionFix / 2;
+		}
+	}
+	
+	// ---------------------------------- //
+	// Set gauges ratios
+	foreach (I => Gauge in _Gauges) {
+		if (!Gauge.Visible) continue;
+		// Gauge.DrawBlockBackground = _Module == "Stamina";
+		
+		// ---------------------------------- //
+		// Format ratios for gauges until N slots
+		if (_Slots <= _Gauges.count) SetGaugeRatio(Gauge, _Energy - I);
+		
+		// ---------------------------------- //
+		// Format ratio for gauge above N slots
+		else SetGaugeRatio(Gauge, _Energy / _Slots);
+	}
+}
 
 main() {
-	declare Quad_PlayerTurretMarker <=> (Page.GetFirstChild("Quad_PlayerTurretMarker") as CMlQuad);
-	declare PrevGUIPlayerColor = -1.;
-
+	---Main---
 	while (True) {
 		yield;
-
-		Quad_PlayerTurretMarker.Visible = GUIPlayer != Null && GUIPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned;
-		if (Quad_PlayerTurretMarker.Visible) {
-			declare netread Integer Net_LibPlayersTurrets_TurretSpawnTime for GUIPlayer;
-			Quad_PlayerTurretMarker.Visible = Net_LibPlayersTurrets_TurretSpawnTime > 0 && GameTime >= Net_LibPlayersTurrets_TurretSpawnTime;
-		}
-
-		if (GUIPlayer != Null && PrevGUIPlayerColor != GUIPlayer.GetLinearHue) {
-			PrevGUIPlayerColor = GUIPlayer.GetLinearHue;
-			Quad_PlayerTurretMarker.Colorize = HsvToRgb(<PrevGUIPlayerColor, 1., 1.>);
-		}
+		---Yield---
 	}
 }
 --></script>
@@ -421,6 +724,11 @@ Void Private_UpdateTurretArmorInfo(Ident _TurretId) {
 
 	Net_LibPlayersTurrets_TurretArmor = Turret.Armor;
 	Net_LibPlayersTurrets_TurretArmorMax = Turret.ArmorMax;
+}
+
+Void Private_TriggerTurretsMarkersUpdate() {
+	declare netwrite Integer Net_LibPlayersTurrets_TurretsLastUpdate for Teams[0];
+	Net_LibPlayersTurrets_TurretsLastUpdate = Now;
 }
 
 // ---------------------------------- //
@@ -606,12 +914,24 @@ Boolean DestroyTurret(Ident _TurretId, Integer _Cooldown) {
 
 			// Remove the minimap marker
 			declare TurretMarkerId = "LibPlayersTurrets_"^Player.User.Login;
-			declare Boolean Removed;
-			Removed = G_LibPlayersTurrets_CreatedMarkersMM.remove(TurretMarkerId);
-			Removed = G_LibPlayersTurrets_CreatedMarkersWorld.remove(TurretMarkerId);
+			declare Removed = G_LibPlayersTurrets_CreatedMarkersMM.remove(TurretMarkerId);
 			Minimap::DestroyMarker(TurretMarkerId);
 			Markers::RemoveMarker(TurretMarkerId, Player);
 		}
+	}
+
+	if (G_LibPlayersTurrets_TakenMarkersSlots.existskey(_TurretId)) {
+		declare netwrite Vec3[Integer] Net_LibPlayersTurrets_TurretMarkerPos for Teams[0];
+
+		declare MarkerSlot = G_LibPlayersTurrets_TakenMarkersSlots[_TurretId];
+		declare TurretMarkerId = "LibPlayersTurrets#"^MarkerSlot;
+
+		declare Boolean Removed;
+		Removed = G_LibPlayersTurrets_TakenMarkersSlots.removekey(_TurretId);
+		Removed = Net_LibPlayersTurrets_TurretMarkerPos.removekey(MarkerSlot);
+
+		Markers::RemoveMarker(TurretMarkerId);
+		Private_TriggerTurretsMarkersUpdate();
 	}
 
 	declare Boolean Removed;
@@ -652,9 +972,7 @@ Boolean DestroyTurret(CSmPlayer _Player, Integer _Cooldown) {
 
 	// Remove the minimap marker
 	declare TurretMarkerId = "LibPlayersTurrets_"^_Player.User.Login;
-	declare Boolean Removed;
-	Removed = G_LibPlayersTurrets_CreatedMarkersMM.remove(TurretMarkerId);
-	Removed = G_LibPlayersTurrets_CreatedMarkersWorld.remove(TurretMarkerId);
+	declare Removed = G_LibPlayersTurrets_CreatedMarkersWorld.remove(TurretMarkerId);
 	Minimap::DestroyMarker(TurretMarkerId);
 	Markers::RemoveMarker(TurretMarkerId, _Player);
 
@@ -723,17 +1041,36 @@ CModeTurret CreateTurret(CSmPlayer _Player) {
 	Private_UpdatePlayerTurretInfo(_Player);
 
 	// ---------------------------------- //
-	// Create marker
+	// Create minimap and private marker
 	declare TurretMarkerId = "LibPlayersTurrets_"^_Player.User.Login;
+	declare Pos = LibPlayersTurrets_TurretDeployPos;
 	Minimap::SetMarker(TurretMarkerId, "Turret.png", Vec3, LibPlayersTurrets_TurretDeployPos, _Player);
 	G_LibPlayersTurrets_CreatedMarkersMM.add(TurretMarkerId);
 
-	declare Pos = LibPlayersTurrets_TurretDeployPos;
-	G_LibPlayersTurrets_CreatedMarkersWorld.add(TurretMarkerId);
 	Markers::AddMarker(TurretMarkerId, """<marker
-		pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" box="0 1.5 0" visibility="WhenInFrustum"
-		minimapvisibility="Never" manialinkframeid="Frame_PlayerTurretMarker"
+		pos="{{{Pos.X^" "^Pos.Y + .5^" "^Pos.Z}}}" box="1 1 1" visibility="WhenInFrustum"
+		minimapvisibility="Never" manialinkframeid="Frame_CurPlayerMarker" 
 	/> """, _Player);
+	G_LibPlayersTurrets_CreatedMarkersWorld.add(TurretMarkerId);
+
+	// ---------------------------------- //
+	// Create world marker
+	declare MarkerSlot = 0;
+	while (G_LibPlayersTurrets_TakenMarkersSlots.exists(MarkerSlot)) MarkerSlot += 1;
+	declare WorldMarkerId = "LibPlayersTurrets#"^MarkerSlot;
+
+	Markers::AddMarker(WorldMarkerId, """<marker
+		pos="{{{Pos.X^" "^Pos.Y + .5^" "^Pos.Z}}}" box="1 1 1" visibility="WhenInMiddleOfScreen"
+		minimapvisibility="Never" manialinkframeid="Frame_TurretMarker#{{{MarkerSlot}}}" 
+	/> """);
+	G_LibPlayersTurrets_TakenMarkersSlots[Turret.Id] = MarkerSlot;
+
+	// Marker net data
+	declare netwrite Vec3[Integer] Net_LibPlayersTurrets_TurretMarkerPos for Teams[0];
+	declare netwrite Text[Integer] Net_LibPlayersTurrets_TurretOwnerLogin for Teams[0];
+	Net_LibPlayersTurrets_TurretMarkerPos[MarkerSlot] = LibPlayersTurrets_TurretDeployPos;
+	Net_LibPlayersTurrets_TurretOwnerLogin[MarkerSlot] = _Player.User.Login;
+	Private_TriggerTurretsMarkersUpdate();
 
 	return Turret;
 }

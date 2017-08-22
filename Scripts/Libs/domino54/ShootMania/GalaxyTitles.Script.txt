@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-08-09            //
+//  script version: 2017-08-22            //
 // -------------------------------------- //
 
 /**
@@ -13,15 +13,19 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-08-09"
+#Const Version		"2017-08-22"
 #Const ScriptName	"Libs/domino54/ShootMania/GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/ShootMania/Score.Script.txt" as Score
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/MarkersPro.Script.txt" as Markers
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
 #Include "Libs/domino54/Statistics.Script.txt" as Statistics
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
+#Include "Libs/domino54/Translations.Script.txt" as Translations
 #Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
 #Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
 #Include "Libs/domino54/ShootMania/MiniMap.Script.txt" as MiniMap
@@ -69,10 +73,12 @@
 #Const C_LibGalaxyTitles_ReplieActionSlot	CSmMode::EActionSlot::Slot_H
 #Const C_LibGalaxyTitles_ReplieItemId		"LibGT_Replie"
 #Const C_LibGalaxyTitles_FuelItemId			"LibGT_Fuel"
+#Const C_LibGalaxyTitles_MarkersLayerId		"LibGalaxyTitles:ObjectsMarkers"
 
 /// Colors of the weapons items shown in the Minimap library
 #Const C_LibGalaxyTitles_MinimapColors [
-	"Laser" => <1., 0., 1.>, "Nucleus" => <1., 0., .5>, "Arrow" => <1., 0., 0.>, "Rocket" => <1., 1., 0.>
+	"Laser" => <.75, 0., 1.>, "Nucleus" => <1., 0., .5>, "Arrow" => <1., 0., 0.>, "Rocket" => <1., 1., 0.>,
+	"Armor" => <0., 1., 1.>, "Fuel" => <0., .75, 1.>, "Replie" => <1., 0., .625>
 ]
 
 /// Default amount of bullets in every weapon when player spawns
@@ -119,6 +125,330 @@ declare Vec3[Integer] G_LibGalaxyTitles_PrevTeamsColors;
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the objects markers module.
+ *
+ *	@return		The objects markers manailink.
+ */
+Text Private_CreateManialinkMarkers() {
+	declare R = 9/16.;
+	
+	// ---------------------------------- //
+	// Create a marker frame for each anchor on the map
+	declare MarkersFrames = "";
+	declare I = 0;
+	foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+		if (!C_LibGalaxyTitles_AcceptedObjects.exists(MapLandmark.Tag)) continue;
+		MarkersFrames ^= "<frameinstance modelid='FrameModel_ObjectMarker' id='Frame_ObjectMarker#"^I^"' hidden='1' />";
+		declare Integer MarkerFrameOrder for MapLandmark;
+		MarkerFrameOrder = I;
+		I += 1;
+	}
+
+	return """
+<manialink version="3" name="{{{C_LibGalaxyTitles_MarkersLayerId}}}">
+<stylesheet>
+	<style class="FontB" halign="center" valign="center2" textsize="1" textemboss="1" textprefix="$n" textcolor="FFF" textfont="Eurostile_Bold" />
+</stylesheet>
+
+<framemodel id="FrameModel_ObjectMarker">
+	<frame id="Frame_MarkerContainer">
+		<quad pos="0 4" size="{{{7*R}}} 7" halign="center" valign="center" autoscale="0" image="{{{C_ImgBase}}}Minimap/Nucleus.png" id="Quad_MarkerObjectIcon" opacity="0" />
+		<label class="FontB" textprefix="$n$t" id="Label_MarkerObjectName" opacity="0" />
+		<label pos="0 -3.25" class="FontB" textsize="2" id="Label_MarkerNextSpawn" opacity="0" />
+		<quad pos="0 -1.75" size="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerArrowDown" opacity="0" />
+	</frame>
+</framemodel>
+
+<frame id="Frame_ObjectMarkersContainer">{{{MarkersFrames}}}</frame>
+
+<script><!--
+/**
+ *	{{{C_LibGalaxyTitles_MarkersLayerId}}}
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_AcceptedObjects		{{{dump(C_LibGalaxyTitles_AcceptedObjects)}}}
+#Const C_ObjectsColors			{{{dump(C_LibGalaxyTitles_MinimapColors)}}}
+#Const C_MarkerMaxOpacityDist	6.
+#Const C_MarkerMinOpacityDist	12.
+#Const C_ObjectsIcons [
+	"Laser" => "{{{C_ImgBase}}}Minimap/Laser.png",
+	"Nucleus" => "{{{C_ImgBase}}}Minimap/Nucleus.png",
+	"Arrow" => "{{{C_ImgBase}}}Minimap/Arrow.png",
+	"Rocket" => "{{{C_ImgBase}}}Minimap/Rocket.png",
+	"Armor" => "{{{C_ImgBase}}}Minimap/Armor.png",
+	"Fuel" => "{{{C_ImgBase}}}Minimap/Fuel.png",
+	"Replie" => "{{{C_ImgBase}}}Minimap/Replie.png"
+]
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load manialink elements
+declare Frame_ObjectMarkersContainer <=> (Page.GetFirstChild("Frame_ObjectMarkersContainer") as CMlFrame);
+
+declare CMlFrame[Vec3] Frame_ObjectsMarkers;
+declare CMlFrame[Vec3] Frame_ObjectsMarkers_Active;
+
+// ---------------------------------- //
+// Net data
+declare netread Integer Net_LibGalaxyTitles_MarkersUpdate for Teams[0];
+declare netread Vec3[] Net_LibGalaxyTitles_AvailableMarkers for Teams[0];
+declare netread Integer[Vec3] Net_LibGalaxyTitles_ObjectsNextSpawn for Teams[0];
+declare netread Text[Vec3] Net_LibGalaxyTitles_ObjectsOwners for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare UpdateObjectsMarkers = True;
+
+// Update
+declare PrevMarkersUpdate = -1;
+declare PrevGUIPlayerIsNotNull = False;
+
+// ---------------------------------- //
+// Initialize objects markers
+declare I = 0;
+foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+	if (!C_AcceptedObjects.exists(MapLandmark.Tag)) continue;
+	declare Frame <=> (Page.GetFirstChild("Frame_ObjectMarker#"^I) as CMlFrame);
+	Frame_ObjectsMarkers[MapLandmark.Position] = Frame;
+
+	// ---------------------------------- //
+	// Load frame elements
+	declare Label_MarkerObjectName <=> (Frame.GetFirstChild("Label_MarkerObjectName") as CMlLabel);
+	declare Quad_MarkerObjectIcon <=> (Frame.GetFirstChild("Quad_MarkerObjectIcon") as CMlQuad);
+	declare Quad_MarkerArrowDown <=> (Frame.GetFirstChild("Quad_MarkerArrowDown") as CMlQuad);
+
+	// ---------------------------------- //
+	// Set marker label and icon
+	Label_MarkerObjectName.Value = Translate(MapLandmark.Tag);
+	Quad_MarkerObjectIcon.ImageUrl = C_ObjectsIcons[MapLandmark.Tag];
+
+	// ---------------------------------- //
+	// Set the marker color
+	declare Color = C_ObjectsColors[MapLandmark.Tag];
+	Quad_MarkerObjectIcon.Colorize = Color;
+	Quad_MarkerArrowDown.Colorize = Color;
+	Label_MarkerObjectName.TextColor = Brightness(Color, 3.);
+	I += 1;
+}
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update markers on server command
+if (PrevMarkersUpdate != Net_LibGalaxyTitles_MarkersUpdate) {
+	PrevMarkersUpdate = Net_LibGalaxyTitles_MarkersUpdate;
+	UpdateObjectsMarkers = True;
+}
+
+// ---------------------------------- //
+// Update markers on GUIPlayer change
+if (PrevGUIPlayerIsNotNull != (GUIPlayer != Null)) {
+	PrevGUIPlayerIsNotNull = (GUIPlayer != Null);
+	Frame_ObjectMarkersContainer.Visible = PrevGUIPlayerIsNotNull;
+	UpdateObjectsMarkers = True;
+}
+
+// ---------------------------------- //
+// Upate the objects markers
+if (UpdateObjectsMarkers) {
+	UpdateObjectsMarkers = False;
+
+	// Clear active markers array
+	Frame_ObjectsMarkers_Active.clear();
+
+	foreach (ObjectPos => Frame in Frame_ObjectsMarkers) {
+		if (!Frame_ObjectMarkersContainer.Visible) break;
+
+		// ---------------------------------- //
+		// Check if the marker is visible
+		declare Frame_MarkerContainer <=> (Frame.GetFirstChild("Frame_MarkerContainer") as CMlFrame);
+		Frame_MarkerContainer.Visible = Net_LibGalaxyTitles_AvailableMarkers.exists(ObjectPos);
+		if (!Frame_MarkerContainer.Visible) continue;
+		Frame_ObjectsMarkers_Active[ObjectPos] = Frame;
+
+		// ---------------------------------- //
+		// Load frame elements
+		declare Label_MarkerNextSpawn <=> (Frame.GetFirstChild("Label_MarkerNextSpawn") as CMlLabel);
+		Label_MarkerNextSpawn.TextSizeReal = 3.;
+
+		// Get the object owner login
+		declare OwnerLogin = "";
+		if (Net_LibGalaxyTitles_ObjectsOwners.existskey(ObjectPos))
+			OwnerLogin = Net_LibGalaxyTitles_ObjectsOwners[ObjectPos];
+
+		// ---------------------------------- //
+		// Display the object owner name
+		if (OwnerLogin != "") {
+			declare OwnerName = OwnerLogin;
+			foreach (Player in Players) if (Player.User.Login == OwnerLogin) { OwnerName = Player.User.Name; break; }
+			Label_MarkerNextSpawn.Value = OwnerName;
+			Label_MarkerNextSpawn.TextSizeReal = 2.;
+		}
+
+		// ---------------------------------- //
+		// Get the object next spawn time
+		declare Integer ObjectNextSpawnTime for Frame;
+		if (OwnerLogin == "" && Net_LibGalaxyTitles_ObjectsNextSpawn.existskey(ObjectPos))
+			ObjectNextSpawnTime = Net_LibGalaxyTitles_ObjectsNextSpawn[ObjectPos];
+		else ObjectNextSpawnTime = -1;
+	}
+}
+
+// ---------------------------------- //
+// Adjust opacity of displayed markers
+foreach (ObjectPos => Frame in Frame_ObjectsMarkers_Active) {
+	if (!Frame_ObjectMarkersContainer.Visible) break;
+	if (!Frame.Visible || !Frame.Controls[0].Visible) continue;
+
+	declare Opacity = 0.;
+	if (GUIPlayer != Null) Opacity = GetOpacity(ML::Distance(GUIPlayer.Position, ObjectPos));
+	
+	// ---------------------------------- //
+	// Load frame elements
+	declare Label_MarkerObjectName <=> (Frame.GetFirstChild("Label_MarkerObjectName") as CMlLabel);
+	declare Label_MarkerNextSpawn <=> (Frame.GetFirstChild("Label_MarkerNextSpawn") as CMlLabel);
+	declare Quad_MarkerObjectIcon <=> (Frame.GetFirstChild("Quad_MarkerObjectIcon") as CMlQuad);
+	declare Quad_MarkerArrowDown <=> (Frame.GetFirstChild("Quad_MarkerArrowDown") as CMlQuad);
+
+	Label_MarkerObjectName.Opacity = Opacity;
+	Label_MarkerNextSpawn.Opacity = Opacity;
+	Quad_MarkerObjectIcon.Opacity = Opacity;
+	Quad_MarkerArrowDown.Opacity = Opacity;
+
+	if (Opacity <= 0) continue;
+
+	// ---------------------------------- //
+	// Display the object next spawn time
+	declare Integer ObjectNextSpawnTime for Frame;
+	if (ObjectNextSpawnTime <= 0) continue;
+
+	declare TimeToSpawn = ML::Max(ObjectNextSpawnTime - GameTime, 0) / 1000.;
+	Label_MarkerNextSpawn.Value = TL::FormatReal(TimeToSpawn, 1, False, False);
+}
+***
+
+{{{ManialinkTools::Functions(["Brightness"])}}}
+{{{Translations::InjectInManialink(C_LibGalaxyTitles_AcceptedObjects)}}}
+
+// ---------------------------------- //
+/** Get the opacity of a marker according to distance.
+ *
+ *	@param	_Distance	Distance to the marker.
+ *
+ *	@return		Opacity of the marker.
+ */
+Real GetOpacity(Real _Distance) {
+	if (_Distance <= C_MarkerMaxOpacityDist) return 1.;
+	if (_Distance <= C_MarkerMinOpacityDist) return 1. - ((_Distance - C_MarkerMaxOpacityDist) / (C_MarkerMinOpacityDist - C_MarkerMaxOpacityDist));
+	return 0.;
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Set the next spawn time of the landmark object on marker.
+ *
+ *	@param	_MapLandmark	Landmark to set object next spawn time.
+ *	@param	_NextSpawnTime	Time when the object will be spawned again.
+ */
+Void Private_MarkerSetObjectNextSpawn(CSmMapLandmark _MapLandmark, Integer _NextSpawnTime) {
+	if (_MapLandmark == Null || _MapLandmark.ObjectAnchor == Null) return;
+
+	declare netwrite Integer[Vec3] Net_LibGalaxyTitles_ObjectsNextSpawn for Teams[0];
+	declare netwrite Integer Net_LibGalaxyTitles_MarkersUpdate for Teams[0];
+
+	if (_NextSpawnTime > 0) Net_LibGalaxyTitles_ObjectsNextSpawn[_MapLandmark.Position] = _NextSpawnTime;
+	else if (Net_LibGalaxyTitles_ObjectsNextSpawn.existskey(_MapLandmark.Position)) {
+		declare Removed = Net_LibGalaxyTitles_ObjectsNextSpawn.removekey(_MapLandmark.Position);
+	}
+	Net_LibGalaxyTitles_MarkersUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Set the owner of the landmark object on marker.
+ *
+ *	@param	_MapLandmark	Landmark to set object owner.
+ *	@param	_OwnerLogin		Login of the owner displayed on marker.
+ */
+Void Private_MarkerSetObjectOwner(CSmMapLandmark _MapLandmark, Text _OwnerLogin) {
+	if (_MapLandmark == Null || _MapLandmark.ObjectAnchor == Null) return;
+
+	declare netwrite Text[Vec3] Net_LibGalaxyTitles_ObjectsOwners for Teams[0];
+	declare netwrite Integer Net_LibGalaxyTitles_MarkersUpdate for Teams[0];
+
+	if (_OwnerLogin != "") Net_LibGalaxyTitles_ObjectsOwners[_MapLandmark.Position] = _OwnerLogin;
+	else if (Net_LibGalaxyTitles_ObjectsOwners.existskey(_MapLandmark.Position)) {
+		declare Removed = Net_LibGalaxyTitles_ObjectsOwners.removekey(_MapLandmark.Position);
+	}
+	Net_LibGalaxyTitles_MarkersUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Remove marker from landmark when object is spawned.
+ *
+ *	@param	_MapLandmark	Landmark to remove marker.
+ */
+Void Private_RemoveLandmarkMarker(CSmMapLandmark _MapLandmark) {
+	if (_MapLandmark == Null || _MapLandmark.ObjectAnchor == Null) return;
+
+	Private_MarkerSetObjectNextSpawn(_MapLandmark, -1);
+	Private_MarkerSetObjectOwner(_MapLandmark, "");
+
+	declare netwrite Vec3[] Net_LibGalaxyTitles_AvailableMarkers for Teams[0];
+	declare netwrite Integer Net_LibGalaxyTitles_MarkersUpdate for Teams[0];
+	declare Removed = Net_LibGalaxyTitles_AvailableMarkers.remove(_MapLandmark.Position);
+	Net_LibGalaxyTitles_MarkersUpdate = Now;
+
+	declare Integer MarkerFrameOrder for _MapLandmark;
+	Markers::RemoveMarker("LibGalaxyTitles_Object#"^MarkerFrameOrder);
+}
+
+// ---------------------------------- //
+/** Create marker over landmark with unspawned object.
+ *
+ *	@param	_MapLandmark	Landmark to create marker.
+ */
+Void Private_CreateLandmarkMarker(CSmMapLandmark _MapLandmark) {
+	if (_MapLandmark == Null || _MapLandmark.ObjectAnchor == Null) return;
+	Private_RemoveLandmarkMarker(_MapLandmark);
+
+	declare Integer MarkerFrameOrder for _MapLandmark;
+	declare Pos = _MapLandmark.Position;
+
+	declare netwrite Vec3[] Net_LibGalaxyTitles_AvailableMarkers for Teams[0];
+	declare netwrite Integer Net_LibGalaxyTitles_MarkersUpdate for Teams[0];
+	Net_LibGalaxyTitles_AvailableMarkers.add(_MapLandmark.Position);
+	Net_LibGalaxyTitles_MarkersUpdate = Now;
+
+	Markers::AddMarker("LibGalaxyTitles_Object#"^MarkerFrameOrder, """<marker
+		pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_ObjectMarker#{{{MarkerFrameOrder}}}"
+		minimapvisibility="Never" visibility="WhenVisible" box="0 .625 0"
+	/>""");
+}
 
 // ---------------------------------- //
 /** Get the third team color
@@ -306,6 +636,22 @@ Void DestroyLibObjects() {
 	// Destroy markers
 	foreach (MarkerTag in G_LibGalaxyTitles_MinimapMarkers) MiniMap::DestroyMarker(MarkerTag);
 	G_LibGalaxyTitles_MinimapMarkers.clear();
+
+	// Destroy markers layer
+	Layers::Detach(C_LibGalaxyTitles_MarkersLayerId);
+	Layers::Destroy(C_LibGalaxyTitles_MarkersLayerId);
+
+	// ---------------------------------- //
+	// Reset markers data
+	declare netwrite Vec3[] Net_LibGalaxyTitles_AvailableMarkers for Teams[0];
+	declare netwrite Integer Net_LibGalaxyTitles_MarkersUpdate for Teams[0];
+	declare netwrite Integer[Vec3] Net_LibGalaxyTitles_ObjectsNextSpawn for Teams[0];
+	declare netwrite Text[Vec3] Net_LibGalaxyTitles_ObjectsOwners for Teams[0];
+
+	Net_LibGalaxyTitles_AvailableMarkers.clear();
+	Net_LibGalaxyTitles_ObjectsNextSpawn.clear();
+	Net_LibGalaxyTitles_ObjectsOwners.clear();
+	Net_LibGalaxyTitles_MarkersUpdate = -1;
 }
 
 // ---------------------------------- //
@@ -746,6 +1092,12 @@ Void InitObjects(Boolean _UseWeapons, Boolean _UseReplies) {
 		declare Ident[] PlayerWeaponsToDrop for Player;
 		PlayerWeaponsToDrop.clear();
 	}
+
+	// ---------------------------------- //
+	// Create markers layer
+	Layers::Create(C_LibGalaxyTitles_MarkersLayerId, Private_CreateManialinkMarkers());
+	Layers::SetType(C_LibGalaxyTitles_MarkersLayerId, CUILayer::EUILayerType::Markers);
+	Layers::Attach(C_LibGalaxyTitles_MarkersLayerId);
 }
 
 // ---------------------------------- //
@@ -791,7 +1143,7 @@ CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag, Ident _AnchorId) {
 		case "Replie"	: Object = ObjectCreate(G_LibGalaxyTitles_Objects["Replie"]);
 	}
 	if (Object == Null) return Null;
-	
+
 	// ---------------------------------- //
 	// Set object properties
 	declare Ident LibGalaxyTitles_AnchorId for Object;
@@ -803,8 +1155,10 @@ CSmObject SpawnObject(Vec3 _Position, Text _ObjectTag, Ident _AnchorId) {
 	if (_AnchorId != NullId) {
 		declare MapLandmark <=> MapLandmarks[AnchorId];
 		Object.SetAnchor(MapLandmark.ObjectAnchor);
+		Private_RemoveLandmarkMarker(MapLandmark);
 	}
 	else Object.SetPosition(_Position);
+
 	G_LibGalaxyTitles_CreatedObjects.add(Object.Id);
 	return Object;
 }
@@ -876,28 +1230,30 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			declare Ident LibGalaxyTitles_AnchorId for Object;
 			LibGalaxyTitles_AnchorId = MapLandmarkId;
 			
-			// Create weapon marker
-			if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
-				declare MarkerTag = "Object#"^MapLandmark.Id;
-				MiniMap::SetMarker(
-					MarkerTag, MapLandmark.Tag^".png",
-					C_LibGalaxyTitles_MinimapColors[MapLandmark.Tag], Position
-				);
-				G_LibGalaxyTitles_MinimapMarkers.add(MarkerTag);
-			}
-			
+			// Create item marker
+			declare MarkerTag = "Object#"^MapLandmark.Id;
+			MiniMap::SetMarker(
+				MarkerTag, MapLandmark.Tag^".png",
+				C_LibGalaxyTitles_MinimapColors[MapLandmark.Tag], Position
+			);
+			G_LibGalaxyTitles_MinimapMarkers.add(MarkerTag);
+
 			// Save object Id in dropped objects array
-			declare SpawnTime = Now;
-			while (G_LibGalaxyTitles_DroppedObjects.existskey(SpawnTime)) SpawnTime += 1;
-			G_LibGalaxyTitles_DroppedObjects[SpawnTime] = Object.Id;
+			declare DestructionTime = Now + G_LibGalaxyTitles_ObjectsDropLifetime;
+			while (G_LibGalaxyTitles_DroppedObjects.existskey(DestructionTime)) DestructionTime += 1;
+			G_LibGalaxyTitles_DroppedObjects[DestructionTime] = Object.Id;
+
+			// Update landmark marker
+			Private_MarkerSetObjectOwner(MapLandmark, "");
+			Private_MarkerSetObjectNextSpawn(MapLandmark, DestructionTime);
 		}
 	}
 	
 	// ---------------------------------- //
 	// Get the timed out objects
 	declare Ident[] ObjectsToDestroy;
-	foreach (SpawnTime => ObjectId in G_LibGalaxyTitles_DroppedObjects)
-		if (Now > SpawnTime + G_LibGalaxyTitles_ObjectsDropLifetime) ObjectsToDestroy.add(ObjectId);
+	foreach (DestructionTime => ObjectId in G_LibGalaxyTitles_DroppedObjects)
+		if (Now >= DestructionTime) ObjectsToDestroy.add(ObjectId);
 	
 	// ---------------------------------- //
 	// Destroy objects on tier change
@@ -905,7 +1261,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 		G_LibGalaxyTitles_PrevObjectsSpawnTier = G_LibGalaxyTitles_ObjectsSpawnTier;
 
 		foreach (ObjectId in G_LibGalaxyTitles_CreatedObjects) {
-			if (G_LibGalaxyTitles_ObjectsSpawnTier < 0) break;
+			if (G_LibGalaxyTitles_ObjectsSpawnTier <= 0) break;
 			if (!Objects.existskey(ObjectId)) continue;
 			declare Object <=> Objects[ObjectId];
 
@@ -913,7 +1269,14 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			if (LibGalaxyTitles_AnchorId == NullId || !MapLandmarks.existskey(LibGalaxyTitles_AnchorId)) continue;
 			declare MapLandmark <=> MapLandmarks[LibGalaxyTitles_AnchorId];
 
-			if (MapLandmark.Order != G_LibGalaxyTitles_ObjectsSpawnTier) ObjectsToDestroy.add(ObjectId);
+			if (MapLandmark.Order != 0 && MapLandmark.Order != G_LibGalaxyTitles_ObjectsSpawnTier) ObjectsToDestroy.add(ObjectId);
+		}
+
+		// Remove landmarks markers
+		foreach (MapLandmark in MapLandmarks_ObjectAnchor) {
+			if (G_LibGalaxyTitles_ObjectsSpawnTier <= 0) break;
+			if (MapLandmark.Order != 0 && MapLandmark.Order == G_LibGalaxyTitles_ObjectsSpawnTier) continue;
+			Private_RemoveLandmarkMarker(MapLandmark);
 		}
 	}
 
@@ -935,6 +1298,9 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 			declare Ident LibGalaxyTitles_ObjectPlayerId for MapLandmark;
 			LibGalaxyTitles_ObjectSpawned = False;
 			LibGalaxyTitles_ObjectPlayerId = NullId;
+
+			// Remove marker
+			Private_RemoveLandmarkMarker(MapLandmark);
 
 			// ---------------------------------- //
 			// Destroy weapon marker
@@ -959,7 +1325,7 @@ Void SpawnObjects(Boolean _SpawnObjects) {
 
 		// ---------------------------------- //
 		// Continue if object doesn't  belong to the current tier
-		if (G_LibGalaxyTitles_ObjectsSpawnTier >= 0 && MapLandmark.Order != G_LibGalaxyTitles_ObjectsSpawnTier) continue;
+		if (G_LibGalaxyTitles_ObjectsSpawnTier > 0 && MapLandmark.Order != 0 && MapLandmark.Order != G_LibGalaxyTitles_ObjectsSpawnTier) continue;
 		
 		// ---------------------------------- //
 		// Continue if landmark spawns weapons when they're not available
@@ -1115,18 +1481,23 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 		LibGalaxyTitles_ObjectSpawned = False;
 		LibGalaxyTitles_ObjectNextSpawn = Now + _RespawnTime;
 		
+		// Create landmark marker
+		Private_CreateLandmarkMarker(MapLandmark);
+		Private_MarkerSetObjectNextSpawn(MapLandmark, LibGalaxyTitles_ObjectNextSpawn);
+
 		// ---------------------------------- //
 		// Set weapon carrier
 		if (C_LibGalaxyTitles_WeaponItemsTags.exists(MapLandmark.Tag)) {
 			LibGalaxyTitles_ObjectNextSpawn = Now;
 			LibGalaxyTitles_ObjectPlayerId = Player.Id;
-			
-			// ---------------------------------- //
-			// Destroy weapon marker
-			declare MarkerTag = "Object#"^MapLandmark.Id;
-			MiniMap::DestroyMarker(MarkerTag);
-			declare Removed = G_LibGalaxyTitles_MinimapMarkers.remove(MarkerTag);
+			Private_MarkerSetObjectOwner(MapLandmark, Player.User.Login);
 		}
+
+		// ---------------------------------- //
+		// Destroy weapon marker
+		declare MarkerTag = "Object#"^MapLandmark.Id;
+		MiniMap::DestroyMarker(MarkerTag);
+		declare Removed = G_LibGalaxyTitles_MinimapMarkers.remove(MarkerTag);
 	}
 	
 	// ---------------------------------- //
@@ -1179,7 +1550,7 @@ Boolean PickUpObject(CSmModeEvent _Event, Integer _RespawnTime, Boolean _TrueIfP
 		declare Ident[] PlayerWeaponsToDrop for Player;
 		if (!PlayerWeaponsToDrop.exists(LibGalaxyTitles_AnchorId)) PlayerWeaponsToDrop.add(LibGalaxyTitles_AnchorId);
 	}
-	
+
 	// Destroy the object
 	declare Destroyed = DestroyObject(_Event.Object);
 	return True;

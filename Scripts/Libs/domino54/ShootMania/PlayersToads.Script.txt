@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PLAYERS TOADS by domino54     //
-//  script version: 2017-08-09            //
+//  script version: 2017-08-22            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	they can summon it or destory it.
  */
 
-#Const Version		"2017-08-09"
+#Const Version		"2017-08-22"
 #Const ScriptName	"Libs/domino54/ShootMania/PlayersToads.Script.txt"
 
 #Include "MathLib" as ML
@@ -38,7 +38,7 @@
 #Const C_LibPlayersToads_GaugeSpacingWidth	.5		///< Spaceing between smaller gauges in the widget.
 #Const C_LibPlayersToads_ToadInfoPos		<155., -58.>
 #Const C_LibPlayersToads_ToadShootPeriod	1000	///< Time between each shot of the Toad. Depends on AmmoGain.
-#Const C_LibPlayersToads_ItemSearchRadius	24.		///< Sphere, within which the Toad will search for items to pick.
+#Const C_LibPlayersToads_ItemSearchRadius	16.		///< Sphere, within which the Toad will search for items to pick.
 #Const C_LibPlayersToads_ItemSearchPeriod	500		///< Time between each object search of the Toad.
 #Const C_LibPlayersToads_ItemHeightDiffMax	2.25	///< Maximum height difference between Toad, owner and the item.		
 #Const C_LibPlayersToads_ItemIdleDistance	.5		///< Distance not traveled by Toad when picking up an item to consider Toad being stuck.
@@ -46,10 +46,10 @@
 #Const C_LibPlayersToads_ItemIdleTimeout	5000	///< Time for how long the Toad will ignore the item, which couldn't be reached.
 #Const C_LibPlayersToads_TargetSearchPeriod	500		///< Time between each potential enemy search of the Toad.
 #Const C_LibPlayersToads_TgtHeightDiffMax	4.		///< Maximum height difference between Toad and a potential target.
-#Const C_LibPlayersToads_ToadAggroRadius	24.		///< Toad's aggressivity radius. Will searh for targets within this sphere.
-#Const C_LibPlayersToads_ToadDisengageDist	16.		///< Distance after aggro sphere the target will be discarded.
+#Const C_LibPlayersToads_ToadAggroRadius	16.		///< Toad's aggressivity radius. Will searh for targets within this sphere.
+#Const C_LibPlayersToads_ToadDisengageDist	8.		///< Distance after aggro sphere the target will be discarded.
 #Const C_LibPlayersToads_ToadSpeedFollow	1.		///< Toad speed when following it's owner.
-#Const C_LibPlayersToads_ToadSpeedAttack	.625	///< Toad speed while attacking an opponent.
+#Const C_LibPlayersToads_ToadSpeedAttack	.5		///< Toad speed while attacking an opponent.
 #Const C_LibPlayersToads_ToadAccuracy		.875
 #Const C_LibPlayersToads_ToadArmorMax		300
 #Const C_LibPlayersToads_ToadAmmoGain		1.
@@ -637,6 +637,8 @@ CSmPlayer CreateToad(CSmPlayer _Player) {
 	Toad.Driver.ShootRadius = Toad.Driver.AggroRadius;
 	Toad.Driver.DisengageDistance = Toad.Driver.AggroRadius + C_LibPlayersToads_ToadDisengageDist;
 	Toad.Driver.Accuracy = C_LibPlayersToads_ToadAccuracy;
+	Toad.Driver.ShootPeriodMin = 0;
+	Toad.Driver.ShootPeriodMax = 0;
 
 	Toad.ArmorMax = C_LibPlayersToads_ToadArmorMax;
 	Toad.SpeedPower = C_LibPlayersToads_ToadSpeedFollow;
@@ -644,6 +646,7 @@ CSmPlayer CreateToad(CSmPlayer _Player) {
 	Toad.ForceColor = Color::HsvToRgb(<_Player.GetLinearHue, 1., 1.>);
 	
 	SetPlayerAmmoMax(Toad, CSmMode::EWeapon::Laser, 0);
+	SetPlayerAmmoMax(Toad, CSmMode::EWeapon::Rocket, 1);
 	SetPlayerWeapon(Toad, CSmMode::EWeapon::Rocket, False);
 	SetPlayerReloadAllWeapons(Toad, True);
 	Clans::SetPlayerClan(Toad, Clans::GetPlayerClan(_Player));
@@ -898,10 +901,12 @@ Void Loop() {
 
 		// ---------------------------------- //
 		// Adjust shoot period
+		/*
 		declare ShootPeriod = 0;
 		if (Toad.AmmoGain > 0) ShootPeriod = ML::NearestInteger(C_LibPlayersToads_ToadShootPeriod / Toad.AmmoGain);
 		Toad.Driver.ShootPeriodMin = ShootPeriod;
 		Toad.Driver.ShootPeriodMax = Toad.Driver.ShootPeriodMin;
+		*/
 
 		// ---------------------------------- //
 		// Cancel attacking random target

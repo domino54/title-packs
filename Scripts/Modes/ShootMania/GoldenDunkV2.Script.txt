@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2017-08-09            //
+//  script version: 2017-08-22            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2017-08-09"
+#Const Version		"2017-08-22"
 #Const ScriptName	"Modes/ShootMania/GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -17,7 +17,7 @@
 // Settings
 // ---------------------------------- //
 #Setting S_RoundsToWin			2	as _("Rounds to win")			///< Number of rounds to win a map
-#Setting S_RoundGapToWin		2	as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
+#Setting S_RoundGapToWin		1	as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
 #Setting S_RoundsLimit			3	as _("Rounds limit")			///< Point limit on map
 #Setting S_TimeLimit			240	as _("Time limit (seconds)")	///< Time limit (seconds)
 #Setting S_MaxNbBalls			0	as _("Force a specific number of balls (0 = dynamic count)")	///< Max balls spwned
@@ -126,7 +126,8 @@ Interfancy::SetRoundPointsVisibility(True);
 
 // ---------------------------------- //
 // Load objects
-G_ObjectsIds["Ball"] = ItemList_Add("SMCommon\\SpeedBall\\Ball.Item.Gbx");
+G_ObjectsIds["Ball"] = ItemList_Add("SpeedBall\\Ball.Item.Gbx");
+G_ObjectsIds["BallStatic"] = ItemList_Add("PickUpSpeedBall\\Ball.Item.Gbx");
 ***
 
 // ---------------------------------- //
@@ -140,8 +141,8 @@ declare MapValidated = True;
 for (Order, 1, 2) if (Map::GetLandmarkPlayerSpawn("Spawn", Order) == Null) MapValidated = False;
 if (Map::GetLandmarkGauge("Checkpoint", 0) == Null) MapValidated = False;
 if (
-	(Map::GetLandmarkPlayerSpawn("Goal", 1) == Null) !=
-	(Map::GetLandmarkPlayerSpawn("Goal", 2) == Null)
+	(Map::GetLandmarkGauge("Goal", 1) == Null) !=
+	(Map::GetLandmarkGauge("Goal", 2) == Null)
 ) MapValidated = False;
 
 // ---------------------------------- //
@@ -371,11 +372,12 @@ foreach (PlayerId in PlayersIdsToRemove) {
 		declare SpawnTime = Now;
 		while (G_DroppedBalls.existskey(SpawnTime)) SpawnTime -= 1;
 		
-		G_DroppedBalls[SpawnTime] = ObjectCreate(G_ObjectsIds["Ball"]);
-		G_DroppedBalls[SpawnTime].SetPosition(Position + <0., .5, 0.>);
+		declare Object <=> ObjectCreate(G_ObjectsIds["Ball"]);
+		Object.SetPosition(Position + <0., .5, 0.>);
+		G_DroppedBalls[SpawnTime] = Object;
 		
 		// Set object tag
-		declare Text Tag for G_DroppedBalls[SpawnTime];
+		declare Text Tag for Object;
 		Tag = "Ball";
 	}
 	
@@ -416,7 +418,7 @@ if (PrevCheckpointBallVisible != (G_NbBallsTotal < G_NbBallsMax)) {
 	// Create ball
 	if (PrevCheckpointBallVisible) {
 		if (CentralBall == Null) {
-			CentralBall = ObjectCreate(G_ObjectsIds["Ball"]);
+			CentralBall = ObjectCreate(G_ObjectsIds["BallStatic"]);
 			CentralBall.SetPosition(G_CentralCheckpointLandmark.Position + <0., .5, 0.>);
 		}
 	}
@@ -433,7 +435,7 @@ if (PrevCheckpointBallVisible != (G_NbBallsTotal < G_NbBallsMax)) {
 // Manage player functions
 foreach (Player in Players) {
 	declare Boolean JustRespawned for Player;
-	declare Vec3[] ForbiddenPositions for Player;
+	declare Vec3[Ident] ForbiddenPositions for Player;
 
 	// ---------------------------------- //
 	// Spawn players
@@ -476,16 +478,16 @@ foreach (Player in Players) {
 	// ---------------------------------- //
 	// Let the player pick up balls they dropped if moved
 	if (ForbiddenPositions.count > 0) {
-		declare Vec3[] PositionsToRemove;
+		declare Ident[] PositionsToRemove;
 		
 		// Check if player has moved from the drop position
-		foreach (Position in ForbiddenPositions)
-			if (ML::Distance(Player.Position, Position) >= C_BallRepickDistance) PositionsToRemove.add(Position);
+		foreach (ObjectId => Position in ForbiddenPositions)
+			if (ML::Distance(Player.Position, Position) >= C_BallRepickDistance) PositionsToRemove.add(ObjectId);
 		
 		// Remove object position if moved enough
 		while (PositionsToRemove.count > 0) {
 			declare Boolean Removed;
-			Removed = ForbiddenPositions.remove(PositionsToRemove[0]);
+			Removed = ForbiddenPositions.removekey(PositionsToRemove[0]);
 			Removed = PositionsToRemove.removekey(0);
 		}
 	}
@@ -693,14 +695,8 @@ UIManager.UIAll.BigMessage = "";
 
 // ---------------------------------- //
 // Map end conditions
-foreach (Clan => Points in ClanRoundScores) {
-	if (Clan == 0) continue;
-	if (
-		Points >= S_RoundsLimit ||
-		(Points >= S_RoundsToWin && Points - ClanRoundScores[3 - Clan] >= S_RoundGapToWin)
-	)
-		MB_StopMatch();
-}
+declare MatchWiningClan = GT_GetMatchWinner(S_RoundsToWin, S_RoundGapToWin, S_RoundsLimit);
+if (MatchWiningClan > 0) MB_StopMatch();
 ***
 
 ***EndMapBeforeCloseLadder***
@@ -876,7 +872,7 @@ Void UpdateMarkers() {
 		
 		// ---------------------------------- //
 		// Minimap marker
-		declare MarkerId = "Ball:"^Object.Position;
+		declare MarkerId = "Ball:"^Object.Id;
 		G_CreatedMarkersMinimap.add(MarkerId);
 		MiniMap::SetMarker(MarkerId, "Ball.png", <1., 1., 1.>, Object.Position);
 		
@@ -885,7 +881,7 @@ Void UpdateMarkers() {
 		declare Pos = Object.Position;
 		Markers::AddMarker(MarkerId, """
 			<marker
-				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
+				objectid="{{{Object.Id}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
 				visibility="WhenInFrustum" minimapvisibility="Never" box="0 .75 0"
 			 />
 		""");
@@ -967,8 +963,8 @@ Boolean PickUpBall(CSmModeEvent _Event) {
 	
 	// ---------------------------------- //
 	// Pick up only if item is not forbidden
-	declare Vec3[] ForbiddenPositions for _Event.Player;
-	if (ForbiddenPositions.exists(_Event.Object.Position)) return True;
+	declare Vec3[Ident] ForbiddenPositions for _Event.Player;
+	if (ForbiddenPositions.existskey(_Event.Object.Id)) return True;
 	
 	// ---------------------------------- //
 	// Remove ball from dropped balls array and give it to a player
@@ -1003,18 +999,20 @@ Void DropBall(CSmPlayer _Player) {
 	// Create ball object
 	declare SpawnTime = Now;
 	while (G_DroppedBalls.existskey(SpawnTime)) SpawnTime -= 1;
-	
-	G_DroppedBalls[SpawnTime] = ObjectCreate(G_ObjectsIds["Ball"]);
-	G_DroppedBalls[SpawnTime].SetPosition(_Player.Position + <0., .5, 0.>);
+
+	declare Object <=> ObjectCreate(G_ObjectsIds["Ball"]);
+	Object = ObjectCreate(G_ObjectsIds["Ball"]);
+	Object.SetPosition(_Player.Position + <0., .5, 0.>);
+	G_DroppedBalls[SpawnTime] = Object;
 	
 	// Set object tag
-	declare Text Tag for G_DroppedBalls[SpawnTime];
+	declare Text Tag for Object;
 	Tag = "Ball";
 	
 	// ---------------------------------- //
 	// Prevent player from picking up item
-	declare Vec3[] ForbiddenPositions for _Player;
-	ForbiddenPositions.add(G_DroppedBalls[SpawnTime].Position);
+	declare Vec3[Ident] ForbiddenPositions for _Player;
+	ForbiddenPositions[Object.Id] = Object.Position;
 	
 	// Update markers again (required)
 	UpdateMarkers();

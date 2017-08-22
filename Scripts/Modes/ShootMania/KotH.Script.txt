@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-08-09            //
+//  script version: 2017-08-22            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-08-09"
+#Const Version		"2017-08-22"
 #Const ScriptName	"Modes/ShootMania/KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -578,13 +578,10 @@ UIManager.UIAll.BigMessage = "";
 
 // ---------------------------------- //
 // Map end conditions
-if (UseClans) {
-	foreach (Team => Points in ClanScores) if (Points >= S_RoundsToWin) MB_StopMatch();
-} else {
-	declare Integer[Integer] TeamsScores;
-	for (Team, 1, G_NbTeams) TeamsScores[Team] = Clans::GetClanPoints(Team);
-	foreach (Team => Points in TeamsScores) if (Points >= S_RoundsToWin) MB_StopMatch();
-}
+declare ClansPoints = Clans::GetClansPoints();
+if (!UseClans) foreach (Clan => Points in ClanScores) ClansPoints.add(Points);
+declare MatchWiningClan = GT_GetMatchWinner(ClansPoints, S_RoundsToWin, S_RoundGapToWin, S_RoundsLimit);
+if (MatchWiningClan > 0) MB_StopMatch();
 ***
 
 // ---------------------------------- //

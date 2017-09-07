@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-08-22            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-08-22"
+#Const GTVersion	"2017-09-07"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -30,6 +30,7 @@
 #Include "Libs/domino54/MarkersPro.Script.txt" as Markers
 #Include "Libs/domino54/Models.Script.txt" as Models
 #Include "Libs/domino54/PauseMenu2.Script.txt" as PauseMenu
+#Include "Libs/domino54/PlayerList.Script.txt" as PlayerList
 #Include "Libs/domino54/Statistics.Script.txt" as Statistics
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
@@ -53,7 +54,6 @@
 #Setting S_CharSelectionTime	10		as _("Character selection display duration (s)")
 #Setting S_EnableFriendlyFire	False	as "<hidden>" ///< Allow players to damage their teammates
 #Setting S_NbFakeUsers			0		as _("Number of fake players")	///< Amount of fake players (bots)
-#Setting S_UseAutoBalance		False	as _("Balance teams on round start")
 #Setting S_MaximumNbWeapons		1		as _("Max. slots amount of every Weapon")
 #Setting S_MaximumNbReplies		3		as _("Max. amount of Replies held")
 #Setting S_ObjectsRespawnTime	15		as _("Items respawn time (0 = don't spawn)")
@@ -141,9 +141,10 @@ declare Boolean GT_AutoManageOnNearMiss;	///< Automatically manage OnNearMiss ev
 declare Boolean GT_AutoManageOnRespawn;		///< Automatically manage OnPlayerRequestRespawn event
 declare Boolean GT_AutoManageOnObjectTouch;	///< Automatically manage OnPlayerTouchesObject events
 declare Boolean GT_AutoRespawnOnCharChange;	///< Automatically respawn players changing their character
-declare Boolean GT_AllowMatchmakingMode;	///< Defines if the mode can use matchmaking feature
 declare Boolean GT_DisableOffZoneDamage;	///< Disable OffZone eliminations (Tornado may stil leliminate players)
 declare Boolean GT_DisableTornadoDamage;	///< Disable Tornado eliminations (only if OffZone is disabled)
+declare Real G_NearMissMaxDistLaser;		///< Maximum miss distance using Laser weapon.
+declare Real G_NearMissMaxDistRocket;		///< Maximum miss distance using Rocket weapon.
 declare Text[] GT_KillfeedTranslations;		///< Translations to be loaded with the Killfeed library
 declare Text GT_CharactersDataFileURL;		///< URL to the file containing data of characters to load.
 
@@ -217,8 +218,11 @@ ST2::SetColWidth("LibST_SMRoundPoints", 4.);
 ST2::SetColLegend("LibST_SMPoints", _("Total"));
 ST2::DestroyCol("LibST_Tags");
 // Custom
-TopScores::AddCategory("Support", "", 2.25, 70.);
-TopScores::AddCategory("Hit", "", 2.25, 80.);
+TopScores::AddCategory("Hit", "Most damage", "", 1., "", 2.25, 80.);
+TopScores::AddCategory("Support", "Best Support", "", 1., "", 2.25, 70.);
+TopScores::SetBackground("file://Media/Manialinks/ShootMania/Common/topsBg.dds", <182., 182.>, <0., 12.>);
+TopScores::SetFont("Eurostile", "Eurostile_Bold");
+TopScores::SetFormat(2, 1);
 Names::InitST2();
 
 // ---------------------------------- //
@@ -254,7 +258,8 @@ GT_AutoManageOnNearMiss = True;
 GT_AutoManageOnRespawn = True;
 GT_AutoManageOnObjectTouch = True;
 GT_AutoRespawnOnCharChange = True;
-GT_AllowMatchmakingMode = True;
+G_NearMissMaxDistLaser = 1.;
+G_NearMissMaxDistRocket = 0.;
 GT_CharactersDataFileURL = C_DefaultCharactersURL;
 ***
 
@@ -293,7 +298,16 @@ CloseInGameMenu(::EInGameMenuResult::Resume);
 OpenLink("https://discordapp.com/invite/BBHC3sT", CMlScript::LinkType::ExternalBrowser);
 """);
 
+// Feedback forum topic link
+PauseMenu::CreateButton("GT_LeaveFeedback", "Leave feedback", C_ImgBase^"Icons/Idea.png", 9.);
+PauseMenu::SetButtonScript("GT_LeaveFeedback", """
+CloseInGameMenu(::EInGameMenuResult::Resume);
+OpenLink("", CMlScript::LinkType::ExternalBrowser);
+""");
+
 PauseMenu::SetButtonVisibility("GT_CharSelection", False);
+PauseMenu::SetButtonVisibility("GT_LeaveFeedback", False);
+//PauseMenu::SetButtonVisibility("LibPM_Advanced", False);
 ***
 
 // ---------------------------------- //
@@ -303,9 +317,10 @@ PauseMenu::SetButtonVisibility("GT_CharSelection", False);
 ***
 // ---------------------------------- //
 // Set mode options
-UseClans = False; ///< Disable clans by default
-ForceNavMapsComputation = True; ///< Lets the bots move around
-UseAutoSpawnBots = False; ///< Disable bots items placed on map by user
+UseClans = False; ///< Disable clans by default.
+ForceNavMapsComputation = True; ///< Lets the bots move around.
+UseAutoSpawnBots = False; ///< Disable bots items placed on map by user.
+UseSameWallJump = True; ///< Enable multiple wall-jumps.
 
 // Update mode settings
 +++GalaxyTitles_Settings+++
@@ -396,6 +411,8 @@ if (MM_IsLobbyServer()) {
 FancyMessages::FormatBigMessage(<0., BigMessagePosY>, "Eurostile_Bold", 8);
 FancyMessages::FormatStatusMessage(<0., StatusMessagePosY>, "Eurostile_Bold", 3);
 
+//PlayerList::Load();
+
 // Load GalaxyTitles library
 GalaxyTitles::Load();
 
@@ -422,10 +439,12 @@ Killfeed::Build();
 // ---------------------------------- //
 // Create the scores table
 ST2::Load();
+TopScores::Load();
 ST2::SetStyle("LibST_SMBaseSolo");
 ST2::SetStyle("LibST_SMBasePoints");
 +++ScoresTable+++
 ST2::Build("SM");
+TopScores::Build();
 
 //PauseMenu::SetModeRules(ModeInfo::GetName(), ModeInfo::GetRules(), "");
 
@@ -457,6 +476,7 @@ else Characters::Hide();
 ***
 Webhook::SetMapSwitching(False);
 Killfeed::SetMapSwitching(False);
+MapSelection::StartMap();
 ***
 
 // ---------------------------------- //
@@ -488,9 +508,6 @@ MM_SetScores([ClanScores[1], ClanScores[2]]);
 ***Match_InitRound***
 ***
 TopScores::RoundBegin();
-
-// Update players clans
-GT_AutoBalance();
 ***
 
 ***Match_StartRound***
@@ -523,6 +540,7 @@ Markers::Reset();
 UIManager.UIAll.BigMessage = "";
 UIManager.UIAll.StatusMessage = "";
 MiniMap::Show();
+PlayerList::Show();
 
 // ---------------------------------- //
 // Init GalaxyTitles functions
@@ -599,6 +617,7 @@ if (Toads::BelongsToLib(Event.Victim)) {
 	if (Event.Shooter != Null) {
 		if (Event.Shooter.IsBot || GT_JustHitByToad) EventIcon = "Toad.png";
 		if (!Event.Shooter.IsBot) ShooterLogin = Event.Shooter.User.Login;
+		Statistics::TrackEvent(Event.Shooter, "DestroyedToads", 1);
 	}
 
 	// Send notice and destroy the Toad
@@ -642,18 +661,26 @@ if (Event.Shooter != Null) {
 
 	// ---------------------------------- //
 	// Eliminated by player's Turret
-	else if (GT_JustHitByTurret) Killfeed::SendNotice(
-		Event.Victim.Login, Event.Shooter.Login,
-		C_ImgBase^"Icons/TurretKill.png", AssistantLogin
-	);
+	else if (GT_JustHitByTurret) {
+		Statistics::TrackEvent(Event.Shooter, "TurretEliminations", 1);
+		Statistics::TrackEvent(Event.Victim, "EliminatedByTurret", 1);
+		Killfeed::SendNotice(
+			Event.Victim.Login, Event.Shooter.Login,
+			C_ImgBase^"Icons/TurretKill.png", AssistantLogin
+		);
+	}
 
 	// ---------------------------------- //
 	// Eliminated by player's Toad
-	else if (GT_JustHitByToad) Killfeed::SendNotice(
-		Event.Victim.Login, Event.Shooter.Login,
-		C_ImgBase^"Icons/Toad.png", AssistantLogin
-	);
-	
+	else if (GT_JustHitByToad) {
+		Statistics::TrackEvent(Event.Shooter, "ToadEliminations", 1);
+		Statistics::TrackEvent(Event.Victim, "EliminatedByToad", 1);
+		Killfeed::SendNotice(
+			Event.Victim.Login, Event.Shooter.Login,
+			C_ImgBase^"Icons/Toad.png", AssistantLogin
+		);
+	}
+
 	// ---------------------------------- //
 	// Eliminated by wild Toad
 	else if (Event.Shooter.IsBot && EventAssistant == Null) 
@@ -765,6 +792,8 @@ foreach (Event in PendingEvents) {
 			// Get the event damage
 			declare EventDamage = GT_GetEventDamage(Event);
 			Event.Damage = EventDamage;
+
+			+++OnHitConditions+++
 
 			// ---------------------------------- //
 			// Turret shooter
@@ -895,9 +924,10 @@ foreach (Event in PendingEvents) {
 					// Friendly fire
 					else if (S_EnableFriendlyFire) {
 						declare Points = EventDamage / 100;
+						+++OnHit+++
 						Scores::RemovePlayerRoundPoints(Event.Shooter.Score, Points);
 						TopScores::RemovePoints(Event.Shooter.Score, "Hit", Points);
-						Event.ShooterPoints *= -1;
+						Event.ShooterPoints = -Points;
 						PassOn(Event);
 
 						// ---------------------------------- //
@@ -954,14 +984,11 @@ foreach (Event in PendingEvents) {
 				// ---------------------------------- //
 				// Enemy hit
 				else {
-					+++OnHitConditions+++
-					
 					declare Points = ML::Min(EventDamage, Event.Victim.Armor) / 100;
+					+++OnHit+++
 					Scores::AddPlayerRoundPoints(Event.Shooter.Score, Points);
 					TopScores::AddPoints(Event.Shooter.Score, "Hit", Points);
 					Event.ShooterPoints = Points;
-					
-					+++OnHit+++
 					
 					// ---------------------------------- //
 					// Environmental eliminations
@@ -1004,6 +1031,7 @@ foreach (Event in PendingEvents) {
 				if (Event.Shooter != Null) {
 					if (Event.Shooter.IsBot) EventIcon = "Toad.png";
 					else ShooterLogin = Event.Shooter.User.Login;
+					Statistics::TrackEvent(Event.Shooter, "DestroyedTurrets", 1);
 				}
 				declare ShooterTurretOwner <=> Turrets::GetTurretOwner(Event.ShooterTurret);
 				declare VictimTurretOwner <=> Turrets::GetTurretOwner(Event.VictimTurret);
@@ -1023,6 +1051,7 @@ foreach (Event in PendingEvents) {
 		// ---------------------------------- //
 		// Manual event management
 		else {
+			declare Points = Event.Damage / 100;
 			+++OnHit+++
 		}
 	}
@@ -1099,9 +1128,11 @@ foreach (Event in PendingEvents) {
 		// ---------------------------------- //
 		// Display near miss message
 		if (
-			GT_AutoManageOnNearMiss && !Event.Shooter.IsBot && Event.Victim != Null && Event.WeaponNum == 1 &&
+			GT_AutoManageOnNearMiss && !Event.Shooter.IsBot && Event.Victim != Null &&
 			(Event.Shooter.CurrentClan == 0 || Event.Shooter.CurrentClan != Event.Victim.CurrentClan)
 		) {
+			if (Event.WeaponNum == 1 && Event.MissDist >= G_NearMissMaxDistLaser) continue;
+			if (Event.WeaponNum == 2 && Event.MissDist >= G_NearMissMaxDistRocket) continue;
 			Interfancy::DisplayNearMiss(Event.Shooter, Event.MissDist);
 		}
 		Statistics::OnNearMiss(Event);
@@ -1192,6 +1223,7 @@ Turrets::ResetAllPlayers();
 Toads::ResetAllPlayers();
 GalaxyTitles::ResetAll();
 MiniMap::Hide();
+PlayerList::Hide();
 Markers::Reset();
 ***
 
@@ -1303,6 +1335,7 @@ Killfeed::SetMapSwitching(True);
 ***Match_EndServer***
 ***
 Characters::Unload();
+FancyMessages::Unload();
 GalaxyTitles::Unload();
 Interfancy::Unload();
 Killfeed::Unload();
@@ -1311,10 +1344,10 @@ Markers::Unload();
 MiniMap::Unload();
 Models::Unload();
 PauseMenu::Unload();
+PlayerList::Unload();
 Statistics::Unload();
 StoragePlayer::Unload();
 Streaks::Unload();
-FancyMessages::Unload();
 
 WarmUp::Unload();
 ***
@@ -1327,6 +1360,7 @@ WarmUp::Unload();
 declare GalaxyDefaultCharacters = GT_CharactersDataFileURL == C_DefaultCharactersURL;
 declare PlayerCharacterId = 0;
 if (S_EnableCharSelection) PlayerCharacterId = Characters::GetPlayerChar(Player);
+Characters::SendPlayerCharInfo(Player, PlayerCharacterId);
 
 // ---------------------------------- //
 // Default Galaxy characters
@@ -1442,7 +1476,7 @@ Integer GT_GetRequestedClan(CSmPlayer _Player) {
 // ---------------------------------- //
 /// Teams balance based on players total points
 Void GT_AutoBalance() {
-	if (!S_UseAutoBalance) return;
+	// if (!S_UseAutoBalance) return;
 	MB_AutoTeamBalance();
 
 	foreach (I => Player in Players) {
@@ -1495,7 +1529,7 @@ Boolean GT_SpawnIsLimited() {
  *	@return		True if the player is valid, false otherwise
  */
 Boolean GT_IsValidPlayer(CSmPlayer _Player) {
-	if (_Player == Null) return False;
+	if (_Player == Null || _Player.RequestsSpectate) return False;
 
 	// Competitive mode
 	if (GT_SpawnIsLimited()) {
@@ -1686,14 +1720,14 @@ Void GT_DisableTimeLimit() {
 /// Display character selection screen.
 Void GT_ShowCharSelection() {
 	if (!S_EnableCharSelection || S_CharSelectionTime <= 0) return;
+	if (!MB_MapIsRunning() || MB_GetRoundCount() != 1) return;
 	if (!Http.IsValidUrl(GT_CharactersDataFileURL)) return;
-	if (MB_GetRoundCount() != 1) return;
 
 	declare SelectionEndTime = Now + S_CharSelectionTime * 1000;
 	Characters::SetDisplayEndTime(SelectionEndTime);
 
 	Characters::Show();
-	while (Now < SelectionEndTime) MB_Yield();
+	while (MB_MapIsRunning() && Now < SelectionEndTime) MB_Yield();
 	Characters::Manual();
 }
 
@@ -1860,6 +1894,7 @@ Void GT_DoWarmUp(Integer _WarmUpDuration, Integer _NbPlayersPerTeam) {
 	SM::UnspawnAllPlayers();
 	GalaxyTitles::ResetAll();
 	MiniMap::Hide();
+	MB_Sleep(5000);
 }
 
 // ---------------------------------- //
@@ -1876,7 +1911,7 @@ Void GT_DoWarmUp(Integer _WarmUpDuration, Integer _NbPlayersPerTeam) {
  *	@param	_AllTeamsTotal		In teams mode: count players from all teams if set to True.
  */
 Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
-	if (_MinimumNbPlayers <= 0) return;
+	if (_MinimumNbPlayers <= 0 || !MB_MapIsRunning()) return;
 
 	// Init players clans
 	foreach (Player in Players) SetPlayerClan(Player, GT_GetRequestedClan(Player));
@@ -1930,7 +1965,7 @@ Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
 
 	// ---------------------------------- //
 	// Waiting sequence loop
-	while (!ServerShutdownRequested && !MatchEndRequested) {
+	while (MB_MapIsRunning()) {
 		MB_Yield();
 
 		+++GalaxyTitles_WaitingYield+++
@@ -1996,6 +2031,10 @@ Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
 			SetPlayerClan(Player, GT_GetRequestedClan(Player));
 			Player.ArmorMax = ML::Max(1, ML::Min(S_PlayerArmorPoints, 10)) * 100;
 			Player.StaminaMax = C_PlayerStaminaMax;
+
+			// Characters
+			declare PlayerCharacterId = Characters::GetPlayerChar(Player);
+			Characters::SendPlayerCharInfo(Player, PlayerCharacterId);
 
 			+++GalaxyTitles_WaitingInitPlayer+++
 

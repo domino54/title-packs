@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  INVASION by domino54                  //
-//  script version: 2017-08-05            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"InvasionArena, HordeArena"
-#Const Version				"2017-08-05"
+#Const Version				"2017-09-07"
 #Const ScriptName			"Modes/ShootMania/Invasion.Script.txt"
 
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
@@ -91,7 +91,7 @@
 #Const C_ToadFrequencyGimp		6	///< Amount of usual Toads between each Gimp Toad
 #Const C_ToadFrequencyWeapon	12	///< Amount of usual Toads between each Toad carrying a special weapon
 #Const C_ToadFrequencyZombie	18	///< Amount of usual Toads between each Zombie
-#Const C_ToadWeaponTypes ["Nucleus", "Laser", "Arrow"] ///< Types of Toads weapons
+#Const C_ToadWeaponTypes ["Nucleus", "Laser", "Missile", "Arrow"] ///< Types of Toads weapons
 
 /// Special Toad types parameters
 #Const C_ToadGimpBlinkFrequency		250		///< Frequency of the Gimp Toads blink animation
@@ -114,7 +114,8 @@
 /// Colors of each available Toad type
 #Const C_ToadTypesColors [
 	"Default" => <0., 1., 0.>, "Gimp" => <0., 1., .75>, "Zombie" => <1., .5, 0.>,
-	"Nucleus" => <0., .5, 1.>, "Laser" => <1., 0., 0.>, "Arrow" => <1., .75, 0.>
+	"Nucleus" => <0., .5, 1.>, "Laser" => <1., 0., 0.>, "Arrow" => <1., .75, 0.>,
+	"Missile" => <.5, 0., 1.>
 ]
 
 /// Maximum amount of bullets in each weapon of a Toad
@@ -188,6 +189,7 @@ MM_SetFormat(MatchmakingFormats);
 ST2::CreateCol("Invasion_Evolution", _("Evo"), "", 3., 90.);
 ST2::DestroyCol("LibST_SMRoundPoints");
 TopScores::RemoveCategory("Hit");
+TopScores::Unload();
 
 // ---------------------------------- //
 // Score points
@@ -221,7 +223,6 @@ GT_AutoManageOnHit = False;
 GT_AutoManageOnShoot = False;
 GT_AutoManageOnArmorEmpty = False;
 GT_AutoManageOnNearMiss = False;
-GT_AllowMatchmakingMode = False;
 GT_CharactersDataFileURL = "";
 ***
 
@@ -1454,6 +1455,10 @@ Void SpawnToad(CSmMapBotPath _BotPath, Integer _NbToadsSpawned, Integer _ArmorMa
 		// ---------------------------------- //
 		// Arrow Toads
 		case "Arrow" : SetPlayerWeapon(Bot, ::EWeapon::Arrow, False);
+
+		// ---------------------------------- //
+		// Missile Toads
+		case "Missile" : SetPlayerWeapon(Bot, ::EWeapon::Missile, False);
 	}
 	
 	// Spawn bot

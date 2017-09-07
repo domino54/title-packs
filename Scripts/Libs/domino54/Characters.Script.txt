@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2017-08-22            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
-#Const Version		"2017-08-22"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
@@ -72,6 +72,7 @@ declare Integer[Integer][Integer] G_LibCharacters_CharWeapons;
  */
 Text Private_CreateManialinkSelection(Text _FontMedium, Text _FontBold) {
 	declare netwrite Text Net_LibCharacters_WindowTitleText for Teams[0];
+	declare netwrite Text Net_LibCharacters_SwitchCharNote for Teams[0];
 
 	// ---------------------------------- //
 	// Statistics data
@@ -230,6 +231,7 @@ if (GUIPlayer != Null) {
 	foreach (Pros in G_LibCharacters_CharactersPros) foreach (Phrase in Pros) RequiredTranslations.add(Phrase);
 	foreach (Cons in G_LibCharacters_CharactersCons) foreach (Phrase in Cons) RequiredTranslations.add(Phrase);
 	RequiredTranslations.add(Net_LibCharacters_WindowTitleText);
+	RequiredTranslations.add(Net_LibCharacters_SwitchCharNote);
 
 	return """
 <manialink version="3" name="{{{C_LibCharacters_LayerId}}}">
@@ -237,6 +239,7 @@ if (GUIPlayer != Null) {
 	<style class="FontM" valign="center2" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(_FontMedium)}}}" />
 	<style class="FontB" valign="center2" style="TextValueSmallSm" textcolor="FFF" textfont="{{{TL::MLEncode(_FontBold)}}}" />
 	<style class="Pro" size="3.6 3.5" halign="left" valign="center" />
+	<style id="Label_SwitchCharNote" halign="center" textsize="1" textcolor="FFF" textfont="{{{TL::MLEncode(_FontBold)}}}" />
 </stylesheet>
 
 <!-- Map selection window -->
@@ -390,6 +393,8 @@ if (GUIPlayer != Null) {
 	</frame>
 </frame>
 
+<label pos="0 -16" id="Label_SwitchCharNote" hidden="1" opacity="0" />
+
 <!-- Background blur -->
 <frame id="Frame_BackgroundBlur" z-index="9" hidden="1">
 	<quad size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
@@ -407,6 +412,8 @@ if (GUIPlayer != Null) {
 
 #Const C_ButtonColorEnabled		<1., 1., 1.>
 #Const C_ButtonColorDisabled	<.5, .5, .5>
+#Const C_SwitchCharNoteTime		2500
+#Const C_SwitchCharNoteFade		500
 
 // ---------------------------------- //
 // Imported variables
@@ -456,6 +463,7 @@ declare Label_WindowTitleText		<=> (Page.GetFirstChild("Label_WindowTitleText") 
 declare Quad_CharSelectionClose		<=> (Page.GetFirstChild("Quad_CharSelectionClose") as CMlQuad);
 declare Frame_SelectionEndTime		<=> (Page.GetFirstChild("Frame_SelectionEndTime") as CMlFrame);
 declare Label_SelectionEndTime		<=> (Page.GetFirstChild("Label_SelectionEndTime") as CMlLabel);
+declare Label_SwitchCharNote		<=> (Page.GetFirstChild("Label_SwitchCharNote") as CMlLabel);
 
 declare Frame_CharButtonsOffset		<=> (Page.GetFirstChild("Frame_CharButtonsOffset") as CMlFrame);
 declare Frame_CharButtonsPageSwitch	<=> (Page.GetFirstChild("Frame_CharButtonsPageSwitch") as CMlFrame);
@@ -512,6 +520,7 @@ declare netread Integer Net_LibCharacters_DisplayEndTime for Teams[0];
 declare netread Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
 declare netread Integer Net_LibCharacters_CharacterBaseArmor for Teams[0];
 declare netread Text Net_LibCharacters_WindowTitleText for Teams[0];
+declare netread Text Net_LibCharacters_SwitchCharNote for Teams[0];
 
 // ---------------------------------- //
 // Shared variables
@@ -545,6 +554,7 @@ declare PrevCharacterBaseArmor = -1;
 declare PrevIsSpectator = False;
 declare PrevNbPlayers = -1;
 declare PrevWindowTitleText = "";
+declare PrevSwitchCharNote = "";
 declare PrevGUIPlayerId = NullId;
 declare PrevDisplayEndTime = -1;
 
@@ -650,6 +660,32 @@ foreach (Event in PendingEvents) {
 		if (Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel) {
 			UserSettingWindowVisible = False;
 		}
+	}
+}
+
+// ---------------------------------- //
+// Switch character note
+Label_SwitchCharNote.Visible =
+	!IsSpectator && Net_LibCharacters_DisplayMode != {{{C_LibCharacters_DisplayModeHidden}}} &&
+	GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> &&
+	GameTime > GUIPlayer.StartTime - C_SwitchCharNoteFade &&
+	GameTime < GUIPlayer.StartTime + C_SwitchCharNoteTime + C_SwitchCharNoteFade;
+
+if (Label_SwitchCharNote.Visible) {
+	if (GameTime < GUIPlayer.StartTime)
+		Label_SwitchCharNote.Opacity = ML::ToReal(GameTime - GUIPlayer.StartTime + C_SwitchCharNoteFade) / C_SwitchCharNoteFade;
+	else if (GameTime > GUIPlayer.StartTime + C_SwitchCharNoteTime)
+		Label_SwitchCharNote.Opacity = 1 - ML::ToReal(GameTime - GUIPlayer.StartTime - C_SwitchCharNoteTime) / C_SwitchCharNoteFade;
+	else
+		Label_SwitchCharNote.Opacity = 1.;
+
+	Label_SwitchCharNote.Opacity *= .5;
+
+	// ---------------------------------- //
+	// Update window title text
+	if (PrevSwitchCharNote != Net_LibCharacters_SwitchCharNote) {
+		PrevSwitchCharNote = Net_LibCharacters_SwitchCharNote;
+		Label_SwitchCharNote.Value = TL::ToUpperCase(Translate(PrevSwitchCharNote));
 	}
 }
 
@@ -1196,6 +1232,47 @@ main() {
 }
 
 // ---------------------------------- //
+/** Check if a player is bot.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player is bot.
+ */
+Boolean Private_IsBot(CPlayer _Player) {
+	if (_Player == Null) return False;
+	switchtype (_Player) {
+		case CTmPlayer : return False;
+		case CSmPlayer : {
+			declare Player <=> (_Player as CSmPlayer);
+			return Player.IsBot;
+		}
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if a player is currently spawned.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player is spawned.
+ */
+Boolean Private_IsSpawned(CPlayer _Player) {
+	if (_Player == Null) return False;
+	switchtype (_Player) {
+		case CTmPlayer : {
+			declare Player <=> (_Player as CTmPlayer);
+			return Player.IsSpawned;
+		}
+		case CSmPlayer : {
+			declare Player <=> (_Player as CSmPlayer);
+			return Player.SpawnStatus != CSmPlayer::ESpawnStatus::NotSpawned;
+		}
+	}
+	return False;
+}
+
+// ---------------------------------- //
 /// Completely wipe characters data.
 Void Private_ResetCharactersData() {
 	// Reset stats data
@@ -1455,7 +1532,7 @@ Boolean IsCharAvailable(Integer _CharId) {
 }
 
 // ---------------------------------- //
-/** Get the character of a player
+/** Get the character of a player.
  *
  *	@param	_Player		The player to get their character.
  *
@@ -1472,6 +1549,20 @@ Integer GetPlayerChar(CPlayer _Player) {
 
 	if (!IsCharAvailable(PlayerCharacter)) return 0;
 	return PlayerCharacter;
+}
+
+// ---------------------------------- //
+/** Send the id of a character player is currently spawned with.
+ *
+ *	@param	_Player		The player to send their character id.
+ *	@param	_CharId		Id of the character player is using.
+ */
+Void SendPlayerCharInfo(CPlayer _Player, Integer _CharId) {
+	if (_Player == Null) return;
+	declare netwrite Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
+	declare netwrite Integer Net_LibCharacters_ServerCharacter for _Player;
+	Net_LibCharacters_LastPlayerCharChange = Now;
+	Net_LibCharacters_ServerCharacter = _CharId;
 }
 
 // ---------------------------------- //
@@ -1598,6 +1689,16 @@ Void SetWindowTitle(Text _TitleText) {
 }
 
 // ---------------------------------- //
+/** Set the character switch note text.
+ *
+ *	@param	_CharSwitchNote		Character switch note.
+ */
+Void SetCharSwitchNote(Text _CharSwitchNote) {
+	declare netwrite Text Net_LibCharacters_SwitchCharNote for Teams[0];
+	Net_LibCharacters_SwitchCharNote = _CharSwitchNote;
+}
+
+// ---------------------------------- //
 /** Set the window display end time.
  *
  *	@param	_EndTime	Display end time.
@@ -1638,9 +1739,20 @@ Void Load() {
 	Unload();
 	Hide();
 
+	foreach (Player in AllPlayers) {
+		declare PlayerCharacter = GetPlayerChar(Player);
+		SendPlayerCharInfo(Player, PlayerCharacter);
+	}
+
 	switchtype (This) {
-		case CSmMode : SetWindowTitle("Choose your character");
-		case CTmMode : SetWindowTitle("Choose your vehicle");
+		case CSmMode : {
+			SetWindowTitle("Choose your character");
+			SetCharSwitchNote("Press 'M' to change character");
+		}
+		case CTmMode : {
+			SetWindowTitle("Choose your vehicle");
+			SetCharSwitchNote("Press 'M' to change vehicle");
+		}
 	}
 
 	Layers::Create(C_LibCharacters_LayerId);
@@ -1676,6 +1788,7 @@ Void Loop() {
 	G_LibCharacters_CharChangeRequests.clear();
 
 	foreach (Player in AllPlayers) {
+		if (Private_IsBot(Player)) continue;
 		declare PlayerCharacter = GetPlayerChar(Player);
 		declare PrevCharacterId for Player = -1;
 
@@ -1684,9 +1797,7 @@ Void Loop() {
 		G_LibCharacters_CharChangeRequests[Player.Id] = PlayerCharacter;
 
 		// Update interfaces
-		declare netwrite Integer Net_LibCharacters_ServerCharacter for Player;
-		declare netwrite Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
-		Net_LibCharacters_ServerCharacter = PlayerCharacter;
-		Net_LibCharacters_LastPlayerCharChange = Now;
+		if (Private_IsSpawned(Player)) continue;
+		SendPlayerCharInfo(Player, PlayerCharacter);
 	}
 }

@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  GOLDEN DUNK V2 by domino54            //
-//  script version: 2017-08-22            //
+//  script version: 2017-09-07            //
 //  original author: steeffeen            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "GoldenDunkV2Arena"
-#Const Version		"2017-08-22"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Modes/ShootMania/GoldenDunkV2.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -16,14 +16,16 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_RoundsToWin			2	as _("Rounds to win")			///< Number of rounds to win a map
-#Setting S_RoundGapToWin		1	as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
-#Setting S_RoundsLimit			3	as _("Rounds limit")			///< Point limit on map
-#Setting S_TimeLimit			240	as _("Time limit (seconds)")	///< Time limit (seconds)
-#Setting S_MaxNbBalls			0	as _("Force a specific number of balls (0 = dynamic count)")	///< Max balls spwned
-#Setting S_WarmUpDuration		0	as _("Warm up duration (sec.)") 
-#Setting S_NbPlayersPerTeamMin	1	as _("Minumum number of players in each team")
-#Setting S_NbPlayersPerTeamMax	4	as _("Maximum number of players per team (0: no max)")
+#Setting S_RoundsToWin			2		as _("Rounds to win")			///< Number of rounds to win a map
+#Setting S_RoundGapToWin		1		as _("Round gap to win")		///< Minimum gap between the two leaders to win a map
+#Setting S_RoundsLimit			3		as _("Rounds limit")			///< Point limit on map
+#Setting S_UseThrowableBall		False	as _("Use throwable Ball")
+#Setting S_UseAutoBalance		True	as _("Balance teams on round start")
+#Setting S_TimeLimit			240		as _("Time limit (seconds)")	///< Time limit (seconds)
+#Setting S_MaxNbBalls			0		as _("Force a specific number of balls (0 = dynamic count)")	///< Max balls spwned
+#Setting S_WarmUpDuration		0		as _("Warm up duration (sec.)") 
+#Setting S_NbPlayersPerTeamMin	1		as _("Minumum number of players in each team")
+#Setting S_NbPlayersPerTeamMax	4		as _("Maximum number of players per team (0: no max)")
 
 // ---------------------------------- //
 // Constants
@@ -36,7 +38,11 @@
 #Const C_GoalPercentPerPoint	.1		///< Shield % required to load for next point in construction category
 #Const C_NbPlayersPerNextBall	4		///< Amount of additional players required to spawn a next ball
 #Const C_MaxNbBallsTotal		10		///< Overall maximum amount of balls
-#Const C_DroppedBallLifetime	5000	///< Duratin for how long ball can stay dropped on the ground
+#Const C_PlayerBallThrowSpeed	45.		///< Throwing speed of the Ball.
+#Const C_BallRespawnMaxSpeed	.125	///< Ball starts respawning if object moves below this speed.
+#Const C_BallRespawnSetDelay	125		///< Time before Ball starts respawning after last move.
+#Const C_BallRespawnDuration	5000	///< Duration of the Ball respawn.
+#Const C_BallMaxLifeDuration	10000	///< Max Ball life duration when not respawning.
 #Const C_BallRepickDistance		3.		///< Distance to travel before ball can be picked up by the same player again
 
 #Const Description _("TYPE: Team versus Team\nOBJECTIVE: Pick up a ball from the checkpoint in the middle of map and bring it to the enemy hoop area. Team with more points when time ends wins.")
@@ -54,7 +60,7 @@ declare Integer G_NbBallsMax;		///< Maximum amount of balls on the map
 declare Text[] G_CreatedMarkersMinimap;	///< List of custom minimap markers
 declare Text[] G_CreatedMarkersWorld;	///< List of custom world markers
 declare Ident[] G_BallCarriersIds;	///< Ids of players carrying balls
-declare CSmObject[Integer] G_DroppedBalls;	///< Dropped balls objects
+declare CSmObject[] G_DroppedBalls;	///< Dropped balls objects
 
 declare Ident[Text] G_ObjectsIds;	///< Ids of the objects used by the game mode
 declare Boolean G_IsOvertime;		///< True, if game is in overtime mode
@@ -85,8 +91,9 @@ if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
 // ---------------------------------- //
 ***ScoresTable***
 ***
-TopScores::AddCategory("Shield", "", 2.25, 50.);
-TopScores::AddCategory("Dunks", "", 2.25, 60.);
+TopScores::AddCategory("Dunks", "Most Dunks", "", 2., "", 2.25, 60.);
+TopScores::AddCategory("Shield", "OffZone Shield", "", 3., "", 2.25, 50.);
+TopScores::SetFormat(4, 1);
 ***
 
 // ---------------------------------- //
@@ -115,14 +122,13 @@ GT_AutoManageOnArmorEmpty = False;
 ***
 UseClans = True;
 
-declare ClanRoundScores = [0 => 0, 1 => 0, 2 => 0];
+declare ClanRoundScores = [0, 0, 0];
 declare netwrite Net_GoldenDunk_IsOvertime for Teams[0] = False;
 
 // Create custom interface
 Layers::Create("GoldenDunk:Interface", CreateManialinkInterface());
 Layers::Create("GoldenDunk:Markers", CreateManialinkMarkers());
 Layers::SetType("GoldenDunk:Markers", CUILayer::EUILayerType::Markers);
-Interfancy::SetRoundPointsVisibility(True);
 
 // ---------------------------------- //
 // Load objects
@@ -170,9 +176,9 @@ if (S_WarmUpDuration > 0) GT_InitWarmUp(S_NbPlayersPerTeamMax);
 
 // ---------------------------------- //
 // Reset round scores
-for (I, 1, 2) ClanRoundScores[I] = 0;
-UIManager.UIAll.ScoreSummary_RoundPoints1 = 0;
-UIManager.UIAll.ScoreSummary_RoundPoints2 = 0;
+ClanRoundScores = [0, 0, 0];
+Interfancy::ResetClanRoundPoints();
+Interfancy::SetRoundPointsVisibility(True);
 
 // Do the Warm Up
 if (!MM_IsMatchServer() && S_WarmUpDuration > 0 && S_NbPlayersPerTeamMax > 0)
@@ -188,7 +194,7 @@ declare CurrentTimeLimit = S_TimeLimit;
 declare Integer LeadClan;
 declare Integer PrevLeadClan;
 declare CSmObject CentralBall;
-declare Integer[] BallsToUnspawn;
+declare Ident[] BallsToUnspawn;
 declare Vec3[Ident] LastKnownBallsPositions;
 declare Integer PrevMaxBalls;
 declare PrevCheckpointBallVisible = False;
@@ -266,6 +272,18 @@ foreach (Player in Players) {
 	PlayerShieldPercLoaded = 0.;
 	PrevPlayerShieldPercLoaded = 0.;
 }
+
+// ---------------------------------- //
+// Create central ball
+if (CentralBall != Null) {
+	CentralBall.SetUnspawned();
+	ObjectDestroy(CentralBall);
+	CentralBall = Null;
+}
+CentralBall = ObjectCreate(G_ObjectsIds["BallStatic"]);
+
+// Balance teams
+if (S_UseAutoBalance) GT_AutoBalance();
 
 // Wait for enough players to start the game
 GT_WaitForPlayers(S_NbPlayersPerTeamMin);
@@ -369,16 +387,16 @@ foreach (PlayerId in PlayersIdsToRemove) {
 	// ---------------------------------- //
 	// Create ball in place where the player was last seen
 	if (G_NbBallsTotal < G_NbBallsMax && Position != <0., 0., 0.>) {
-		declare SpawnTime = Now;
-		while (G_DroppedBalls.existskey(SpawnTime)) SpawnTime -= 1;
-		
 		declare Object <=> ObjectCreate(G_ObjectsIds["Ball"]);
 		Object.SetPosition(Position + <0., .5, 0.>);
-		G_DroppedBalls[SpawnTime] = Object;
+		G_DroppedBalls.add(Object);
 		
 		// Set object tag
 		declare Text Tag for Object;
 		Tag = "Ball";
+
+		declare Integer ObjectSpawnTime for Object;
+		ObjectSpawnTime = Now;
 	}
 	
 	UpdateMarkers();
@@ -416,37 +434,27 @@ if (PrevCheckpointBallVisible != (G_NbBallsTotal < G_NbBallsMax)) {
 	
 	// ---------------------------------- //
 	// Create ball
-	if (PrevCheckpointBallVisible) {
-		if (CentralBall == Null) {
-			CentralBall = ObjectCreate(G_ObjectsIds["BallStatic"]);
-			CentralBall.SetPosition(G_CentralCheckpointLandmark.Position + <0., .5, 0.>);
-		}
-	}
-	// ---------------------------------- //
-	// Destroy ball
-	else if (CentralBall != Null) {
-		CentralBall.SetUnspawned();
-		ObjectDestroy(CentralBall);
-		CentralBall = Null;
-	}
+	if (PrevCheckpointBallVisible) CentralBall.SetPosition(G_CentralCheckpointLandmark.Position + <0., .5, 0.>);
+	else CentralBall.SetUnspawned();
 }
 
 // ---------------------------------- //
 // Manage player functions
 foreach (Player in Players) {
 	declare Boolean JustRespawned for Player;
-	declare Vec3[Ident] ForbiddenPositions for Player;
+	declare Ident[] PlayerIgnoredBalls for Player;
 
 	// ---------------------------------- //
 	// Spawn players
 	if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && !Player.RequestsSpectate && GT_IsValidPlayer(Player)) {
 		GT_InitPlayer(Player);
+		Player.ThrowSpeed = C_PlayerBallThrowSpeed;
 
 		// Add ball to the inventory
 		Inventory::CreateItemSlot(Player, "Ball", CSmModeEvent::EActionInput::Consumable2, 0, "Ball.png");
 		
 		// Clear forbidden items
-		ForbiddenPositions.clear();
+		PlayerIgnoredBalls.clear();
 		
 		// Spawn player
 		declare PlayerSpawn <=> G_ClanSpawnLandmarks[Player.CurrentClan].PlayerSpawn;
@@ -477,18 +485,21 @@ foreach (Player in Players) {
 	
 	// ---------------------------------- //
 	// Let the player pick up balls they dropped if moved
-	if (ForbiddenPositions.count > 0) {
-		declare Ident[] PositionsToRemove;
+	if (PlayerIgnoredBalls.count > 0) {
+		declare Ident[] BallsToRemove;
 		
 		// Check if player has moved from the drop position
-		foreach (ObjectId => Position in ForbiddenPositions)
-			if (ML::Distance(Player.Position, Position) >= C_BallRepickDistance) PositionsToRemove.add(ObjectId);
+		foreach (ObjectId in PlayerIgnoredBalls) {
+			if (!Objects.existskey(ObjectId)) continue;
+			declare Object <=> Objects[ObjectId];
+			if (ML::Distance(Player.Position, Object.Position) >= C_BallRepickDistance) BallsToRemove.add(Object.Id);
+		}
 		
 		// Remove object position if moved enough
-		while (PositionsToRemove.count > 0) {
+		while (BallsToRemove.count > 0) {
 			declare Boolean Removed;
-			Removed = ForbiddenPositions.removekey(PositionsToRemove[0]);
-			Removed = PositionsToRemove.removekey(0);
+			Removed = PlayerIgnoredBalls.remove(BallsToRemove[0]);
+			Removed = BallsToRemove.removekey(0);
 		}
 	}
 	
@@ -544,6 +555,7 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 				["$<%1$> have loaded their Shield!", Teams[Clan - 1].ColorizedName],
 				4000, 0, CUIConfig::EUISound::Capture, 0
 			);
+			MiniMap::Flash(MapLandmark.Base.Clan);
 		}
 		// ---------------------------------- //
 		// Goal has been decaptured
@@ -552,6 +564,7 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 				["$<%1$> have destroyed $<%2$> Shield!", Teams[(3 - Clan) - 1].ColorizedName, Teams[Clan - 1].ColorizedName],
 				4000, 0, CUIConfig::EUISound::PhaseChange, 0
 			);
+			MiniMap::Flash(MapLandmark.Base.Clan);
 		}
 		
 		PrevRatio = MapLandmark.Gauge.ValueReal;
@@ -579,14 +592,39 @@ foreach (Clan => MapLandmark in G_ClanGoalLandmarks) {
 
 // ---------------------------------- //
 // Destroy timed out balls
-foreach (SpawnTime => Object in G_DroppedBalls)
-	if (Now >= SpawnTime + C_DroppedBallLifetime && !BallsToUnspawn.exists(SpawnTime)) BallsToUnspawn.add(SpawnTime);
+foreach (Object in G_DroppedBalls) {
+	declare ObjectSpawnTime for Object = -1;
+	declare ObjectUnspawnTime for Object = -1;
+	declare PrevObjectPosition for Object = Vec3;
+	declare LastObjectMoveTime for Object = -1;
+
+	declare ObjectSpeed = ML::Distance(PrevObjectPosition, Object.Position) * C_ScriptTicksPerSecond;
+	PrevObjectPosition = Object.Position;
+	
+	if (ObjectSpeed > C_BallRespawnMaxSpeed) LastObjectMoveTime = Now;
+	
+	if (Now > LastObjectMoveTime + C_BallRespawnSetDelay && ObjectUnspawnTime < 0) {
+		ObjectUnspawnTime = Now + C_BallRespawnDuration;
+		LastObjectMoveTime = -1;
+		UpdateMarkers();
+	}
+	
+	if (!BallsToUnspawn.exists(Object.Id)) {
+		if (ObjectUnspawnTime > 0 && Now >= ObjectUnspawnTime) BallsToUnspawn.add(Object.Id);
+		if (Object.Status == CSmObject::EStatus::InWorld && Object.Position.Y <= -50) BallsToUnspawn.add(Object.Id);
+		if (ObjectUnspawnTime <= 0 && Now >= ObjectSpawnTime + C_BallMaxLifeDuration) BallsToUnspawn.add(Object.Id);
+	}
+}
 
 while (BallsToUnspawn.count > 0) {
-	G_DroppedBalls[BallsToUnspawn[0]].SetUnspawned();
-	ObjectDestroy(G_DroppedBalls[BallsToUnspawn[0]]);
-	declare Removed1 = G_DroppedBalls.removekey(BallsToUnspawn[0]);
+	declare ObjectId = BallsToUnspawn[0];
+	declare Object <=> G_DroppedBalls[ObjectId];
+
+	declare Removed1 = G_DroppedBalls.remove(Objects[ObjectId]);
 	declare Removed2 = BallsToUnspawn.removekey(0);
+
+	Object.SetUnspawned();
+	ObjectDestroy(Object);
 	UpdateMarkers();
 }
 
@@ -603,7 +641,13 @@ if (PrevLeadClan != LeadClan && !G_IsOvertime) {
 	if (G_CentralCheckpointLandmark.Base != Null) G_CentralCheckpointLandmark.Base.Clan = LeadClan;
 	if (G_CentralCheckpointLandmark.Gauge != Null) G_CentralCheckpointLandmark.Gauge.Clan = LeadClan;
 	
-	if (LeadClan > 0) Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 2, CUIConfig::EUISound::PhaseChange, 1);
+	if (LeadClan > 0) {
+		Message::SendBigMessage(
+			TL::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName),
+			3000, 2, CUIConfig::EUISound::PhaseChange, 1
+		);
+		MiniMap::Flash();
+	}
 }
 
 // ---------------------------------- //
@@ -645,7 +689,6 @@ SM::UnspawnAllPlayers();
 G_NbBallsTotal = 0;
 G_BallCarriersIds.clear();
 G_DroppedBalls.clear();
-CentralBall = Null;
 Net_GoldenDunk_IsOvertime = False;
 ObjectDestroyAll();
 
@@ -660,6 +703,12 @@ foreach (MapLandmark in G_ClanGoalLandmarks) {
 declare RoundWinner = 0;
 foreach (Clan => Points in ClanScores)
 	if (Clan != 0 && Points > ClanScores[3 - Clan]) RoundWinner = Clan;
+
+// ---------------------------------- //
+// Add team points
+if (RoundWinner != 0) ClanRoundScores[RoundWinner] += 1;
+MM_SetScores([ClanRoundScores[1], ClanRoundScores[2]]);
+for (I, 1, 2) Interfancy::SetClanRoundPoints(I, ClanRoundScores[I]);
 
 MB_Sleep(3000);
 
@@ -681,13 +730,6 @@ declare Msg = _("|Match|Draw");
 if (RoundWinner != 0) Msg = TL::Compose(_("$<%1$> wins the round!"), Teams[RoundWinner - 1].ColorizedName);
 Message::SendBigMessage(Msg, 6000, 0, CUIConfig::EUISound::EndRound, 0);
 
-// ---------------------------------- //
-// Add team points
-if (RoundWinner != 0) ClanRoundScores[RoundWinner] += 1;
-MM_SetScores([ClanRoundScores[1], ClanRoundScores[2]]);
-UIManager.UIAll.ScoreSummary_RoundPoints1 = ClanRoundScores[1];
-UIManager.UIAll.ScoreSummary_RoundPoints2 = ClanRoundScores[2];
-
 MB_Sleep(6000);
 
 UIManager.UIAll.ScoreTableVisibility = CUIConfig::EVisibility::Normal;
@@ -695,12 +737,14 @@ UIManager.UIAll.BigMessage = "";
 
 // ---------------------------------- //
 // Map end conditions
-declare MatchWiningClan = GT_GetMatchWinner(S_RoundsToWin, S_RoundGapToWin, S_RoundsLimit);
+declare MatchWiningClan = GT_GetMatchWinner(ClanRoundScores, S_RoundsToWin, S_RoundGapToWin, S_RoundsLimit);
 if (MatchWiningClan > 0) MB_StopMatch();
 ***
 
 ***EndMapBeforeCloseLadder***
 ***
+Interfancy::ResetClanRoundPoints();
+Interfancy::SetRoundPointsVisibility(False);
 foreach (Clan => Points in ClanRoundScores) ClanScores[Clan] = Points;
 ***
 
@@ -865,9 +909,12 @@ Void UpdateMarkers() {
 	
 	// ---------------------------------- //
 	// Create markers for dropped balls
-	foreach (SpawnTime => Object in G_DroppedBalls) {
+	foreach (Object in G_DroppedBalls) {
 		if (Object == Null) continue;
-		Net_GoldenDunk_MarkersInformation.add("time:"^SpawnTime + C_DroppedBallLifetime);
+		declare ObjectUnspawnTime for Object = -1;
+		if (ObjectUnspawnTime <= 0) continue; 
+
+		Net_GoldenDunk_MarkersInformation.add("time:"^ObjectUnspawnTime);
 		I += 1;
 		
 		// ---------------------------------- //
@@ -881,8 +928,8 @@ Void UpdateMarkers() {
 		declare Pos = Object.Position;
 		Markers::AddMarker(MarkerId, """
 			<marker
-				objectid="{{{Object.Id}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
-				visibility="WhenInFrustum" minimapvisibility="Never" box="0 .75 0"
+				pos="{{{Pos.X^" "^Pos.Y^" "^Pos.Z}}}" manialinkframeid="Frame_BallMarker#{{{I}}}"
+				visibility="WhenInFrustum" minimapvisibility="Never" box="0 1 0"
 			 />
 		""");
 		G_CreatedMarkersWorld.add(MarkerId);
@@ -963,8 +1010,8 @@ Boolean PickUpBall(CSmModeEvent _Event) {
 	
 	// ---------------------------------- //
 	// Pick up only if item is not forbidden
-	declare Vec3[Ident] ForbiddenPositions for _Event.Player;
-	if (ForbiddenPositions.existskey(_Event.Object.Id)) return True;
+	declare Ident[] PlayerIgnoredBalls for _Event.Player;
+	if (PlayerIgnoredBalls.exists(_Event.Object.Id)) return True;
 	
 	// ---------------------------------- //
 	// Remove ball from dropped balls array and give it to a player
@@ -984,38 +1031,53 @@ Boolean PickUpBall(CSmModeEvent _Event) {
 }
 
 // ---------------------------------- //
-/** Drop a ball from the player
+/** Drop a ball from the player.
  *
- *	@param	_Player		The player to drop the ball
+ *	@param	_Player		The player to drop the ball.
+ *	@param	_IsThrown	If True, the ball will be thrown.
  */
-Void DropBall(CSmPlayer _Player) {
+Void DropBall(CSmPlayer _Player, Boolean _IsThrown) {
 	if (_Player == Null || !IsCarryingBall(_Player)) return;
 	RemoveBall(_Player.Id);
 	UpdateMarkers();
 	
 	if (G_NbBallsTotal >= G_NbBallsMax) return;
+
+	// ---------------------------------- //
+	// Get the ball position and velocity
+	declare ObjectPosition = _Player.Position + <0., .5, 0.>;
+	declare ObjectVelocity = _Player.Velocity;
+
+	if (_IsThrown && S_UseThrowableBall) {
+		ObjectPosition = _Player.Position + <0., 1.6, 0.>;
+		ObjectVelocity = _Player.AimDirection * _Player.ThrowSpeed;
+	}
 	
 	// ---------------------------------- //
 	// Create ball object
-	declare SpawnTime = Now;
-	while (G_DroppedBalls.existskey(SpawnTime)) SpawnTime -= 1;
-
 	declare Object <=> ObjectCreate(G_ObjectsIds["Ball"]);
 	Object = ObjectCreate(G_ObjectsIds["Ball"]);
-	Object.SetPosition(_Player.Position + <0., .5, 0.>);
-	G_DroppedBalls[SpawnTime] = Object;
+	Object.SetPositionAndVel(ObjectPosition, ObjectVelocity);
+	G_DroppedBalls.add(Object);
 	
 	// Set object tag
 	declare Text Tag for Object;
 	Tag = "Ball";
+
+	declare Integer ObjectSpawnTime for Object;
+	ObjectSpawnTime = Now;
 	
 	// ---------------------------------- //
 	// Prevent player from picking up item
-	declare Vec3[Ident] ForbiddenPositions for _Player;
-	ForbiddenPositions[Object.Id] = Object.Position;
+	declare Ident[] PlayerIgnoredBalls for _Player;
+	PlayerIgnoredBalls.add(Object.Id);
 	
 	// Update markers again (required)
 	UpdateMarkers();
+}
+
+Void DropBall(CSmPlayer _Player) {
+	DropBall(_Player, False);
 }
 
 // ---------------------------------- //
@@ -1026,7 +1088,7 @@ Void DropBall(CSmPlayer _Player) {
  */
 Boolean DropBall(CSmPlayer _Player, CSmModeEvent::EActionInput _ActionInput) {
 	if (_Player == Null || !IsCarryingBall(_Player) || _ActionInput != CSmMode::EActionInput::Consumable2) return False;
-	DropBall(_Player);
+	DropBall(_Player, True);
 	return True;
 }
 
@@ -1139,9 +1201,9 @@ Text CreateManialinkInterface() {
  />
 
 <frame id="Frame_OffZoneShield" pos="0 75">
-	<frame id="Frame_OffZoneShieldBlink" clip="1" clipos="-250" clipsize="3 12">
+	<frame id="Frame_OffZoneShieldBlink" size="3 12" halign="center" valign="center">
 		<quad
-			size="48 12" halign="center" valign="center"
+			size="48 12" halign="center" valign="center" id="Quad_OffZoneShieldBlink"
 			image="{{{C_ImgBase}}}OffZoneShieldBlink.png"
 		 />
 	</frame>
@@ -1175,6 +1237,7 @@ declare Quad_CurLandmarkIcon		<=> (Page.GetFirstChild("Quad_CurLandmarkIcon") as
 declare Quad_GoldenDunk				<=> (Page.GetFirstChild("Quad_GoldenDunk") as CMlQuad);
 declare Quad_OffZoneShield			<=> (Page.GetFirstChild("Quad_OffZoneShield") as CMlQuad);
 declare Frame_OffZoneShieldBlink	<=> (Page.GetFirstChild("Frame_OffZoneShieldBlink") as CMlFrame);
+declare Quad_OffZoneShieldBlink		<=> (Page.GetFirstChild("Quad_OffZoneShieldBlink") as CMlQuad);
 
 declare Quad_BallCarrierL <=> (Page.GetFirstChild("Quad_BallCarrierL") as CMlQuad);
 declare Quad_BallCarrierR <=> (Page.GetFirstChild("Quad_BallCarrierR") as CMlQuad);
@@ -1523,7 +1586,8 @@ if (PrevOffZoneShieldVisible != OffZoneShieldVisible) {
 // Create subtle flash animation
 Frame_OffZoneShieldBlink.Visible = OffZoneShieldVisible;
 if (Frame_OffZoneShieldBlink.Visible) {
-	Frame_OffZoneShieldBlink.ClipWindowRelativePosition.X = -250 + 500 * (Now % 7500) / 7500.;
+	Frame_OffZoneShieldBlink.RelativePosition.X = -200 + 400 * (Now % 7000) / 7000.;
+	Quad_OffZoneShieldBlink.RelativePosition.X = -Frame_OffZoneShieldBlink.RelativePosition.X;
 }
 ***
 

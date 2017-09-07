@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY TOP SCORES by domino54        //
-//  script version: 2016-12-16            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 /**
@@ -11,16 +11,45 @@
  *	match.
  */
 
-#Const Version		"2016-12-16"
+#Const Version		"2017-09-07"
 #Const ScriptName	"TopScores.Script.txt"
 
+#Include "MathLib" as ML
 #Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/ScoresTable2.Script.txt" as ST2
+#Include "Libs/domino54/Translations.Script.txt" as Translations
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibTopScores_UILayerId			"LibTopScores:AltMenu"
+#Const C_LibTopScores_PlayerRowHeight	5.5
+#Const G_LibTopScores_DefaultWindowPos	<0., -4.>
+#Const G_LibTopScores_DefaultWindowSize	<166., 90.>
+#Const G_LibTopScores_DefaultSpacing	1.
+#Const G_LibTopScores_DefaultHeaderSize	6.
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Text[] G_LibTopScores_TopsIds;
+declare Text[] G_LibTopScores_TopsIds;			///< Ids of all existing top scores categories.
+declare Real[Text] G_LibTopScores_TopsOrder;	///< Names of the categories.
+declare Text[Text] G_LibTopScores_TopsHeaders;	///< Categories order in the top scores window.
+declare Text[Text] G_LibTopScores_TopsIcons;	///< Icons of the categories.
+
+/// Window properties
+declare Vec2 G_LibTopScores_TopsWindowPos;		///< Position of the top scores window.
+declare Vec2 G_LibTopScores_TopsWindowSize;		///< Size of the top scores window.
+declare Text G_LibTopScores_BackgroundPath;		///< Path to the window background image file.
+declare Vec2 G_LibTopScores_BackgroundSize;		///< Size of the background image.
+declare Vec2 G_LibTopScores_BackgroundOffset;	///< Background image offset from the center.
+declare Integer G_LibTopScores_NbCategoriesX;	///< Amount of categories displayed horizontally.
+declare Integer G_LibTopScores_NbCategoriesY;	///< Amount of categories displayed vertically.
+declare Real G_LibTopScores_CategoriesSpacing;	///< Size of the gap between categories frames.
+declare Real G_LibTopScores_HeaderLineHeight;	///< Height of the categories headers.
+declare Text G_LibTopScores_FontNameMedium;		///< Thin font used in the UI.
+declare Text G_LibTopScores_FontNameBold;		///< Bold font used in the UI.
 
 // ---------------------------------- //
 // Functions
@@ -44,6 +73,417 @@ Void Private_SetColValue(CScore _Score, Text _CategoryId, Integer _Points) {
 }
 
 // ---------------------------------- //
+/** Create manialink of the top scores library.
+ *
+ *	@return		The top scores manialink.
+ */
+Text Private_CreateManialinkTopScores() {
+	// ---------------------------------- //
+	// Get the size of the tops window
+	declare Size = G_LibTopScores_TopsWindowSize;
+	declare Position = G_LibTopScores_TopsWindowPos + <-Size.X/2, Size.Y/2>;
+	declare BgSize = G_LibTopScores_BackgroundSize;
+	declare BgPos = <Size.X/2, -Size.Y/2> + G_LibTopScores_BackgroundOffset;
+	declare BgImage = TL::MLEncode(G_LibTopScores_BackgroundPath);
+
+	// ---------------------------------- //
+	// Get the size of a single category frame
+	declare NbTopsX = ML::Max(G_LibTopScores_NbCategoriesX, 1);
+	declare NbTopsY = ML::Max(G_LibTopScores_NbCategoriesY, 1);
+	declare TopSize = <
+		(Size.X - G_LibTopScores_CategoriesSpacing * (NbTopsX+1)) / NbTopsX,
+		(Size.Y - G_LibTopScores_CategoriesSpacing * (NbTopsY+1)) / NbTopsY
+	>;
+
+	// ---------------------------------- //
+	// Create a frame for each category
+	declare NbTopCategories = NbTopsX * NbTopsY;
+	declare CategoriesFrames = "";
+	for (I, 0, NbTopCategories - 1) {
+		declare X = I % NbTopsX * (TopSize.X + G_LibTopScores_CategoriesSpacing) + G_LibTopScores_CategoriesSpacing;
+		declare Y = I / NbTopsX * -(TopSize.Y + G_LibTopScores_CategoriesSpacing) - G_LibTopScores_CategoriesSpacing;
+		CategoriesFrames ^= "<frameinstance modelid='FrameModel_TopCategory' id='Frame_TopCategory#"^I^"' pos='"^X^" "^Y^"' hidden='0' />";
+	}
+
+	// ---------------------------------- //
+	// Create player rows for categories
+	declare HeaderHeight = G_LibTopScores_HeaderLineHeight;
+	declare NbPlayersRows = ML::NearestInteger((TopSize.Y - HeaderHeight) / C_LibTopScores_PlayerRowHeight);
+	declare RowHeight = (TopSize.Y - HeaderHeight) / ML::Max(NbPlayersRows, 1);
+	declare PlayersRowsFrames = "";
+
+	for (I, 0, NbPlayersRows - 1) {
+		declare Y = I * -RowHeight;
+		PlayersRowsFrames ^= "<frameinstance modelid='FrameModel_TopPlayerRow' id='Frame_TopPlayerRow#"^I^"' pos='0 "^Y^"' hidden='1' />";
+	}
+
+	// ---------------------------------- //
+	// Dump tops data
+	declare Text[] AvailableTopsIds;
+	foreach (TopId => Offset in G_LibTopScores_TopsOrder) AvailableTopsIds.add(TopId);
+
+	declare Dump_TopsIds = dump(AvailableTopsIds);
+	declare Dump_TopsHeaders = dump(G_LibTopScores_TopsHeaders);
+	declare Dump_TopsIcons = dump(G_LibTopScores_TopsIcons);
+
+	if (Dump_TopsIds == "[]") Dump_TopsIds = "Text[]";
+	if (Dump_TopsHeaders == "[]") Dump_TopsHeaders = "Text[Text]";
+	if (Dump_TopsIcons == "[]") Dump_TopsIcons = "Text[Text]";
+
+	// ---------------------------------- //
+	// Create the manialink
+	declare Text[] RequiredTranslations;
+	foreach (Name in G_LibTopScores_TopsHeaders) RequiredTranslations.add(Name);
+	declare FontM = G_LibTopScores_FontNameMedium;
+	declare FontB = G_LibTopScores_FontNameBold;
+	declare RowCenterY = -RowHeight/2 - .25;
+
+	return """
+<manialink version="3" name="{{{C_LibTopScores_UILayerId}}}">
+<stylesheet>
+	<style id="Label_CategoryName" style="TextValueSmallSm" valign="center2" textsize="1.5" textcolor="FFF" textfont="{{{TL::MLEncode(FontB)}}}" />
+	<style id="Label_CategoryIcon" halign="center" valign="center2" textsize="1.5 " textemboss="1" textcolor="FFF" />
+	<style id="Label_PlayerRowPosition" style="TextValueSmallSm" halign="center" valign="center2" textsize="1.25" textcolor="FFF" textfont="{{{TL::MLEncode(FontB)}}}" />
+	<style id="Label_PlayerRowName" valign="center2" textsize="1.5" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(FontM)}}}" />
+	<style id="Label_PlayerRowPoints" halign="right" valign="center2" textsize="1.5" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(FontM)}}}" />
+</stylesheet>
+
+<frame id="Frame_TopScoresWindow" pos="{{{Position.X^" "^Position.Y}}}" z-index="1">
+	<framemodel id="FrameModel_TopCategory">
+		<frame id="Frame_CategoryHeader">
+			<label pos="1.5 {{{-HeaderHeight/2}}}" size="{{{TopSize.X - 8}}}" textprefix="$t" id="Label_CategoryName" />
+			<label pos="{{{TopSize.X-3^" "^-HeaderHeight/2}}}" id="Label_CategoryIcon" />
+			<quad size="{{{TopSize.X^" "^HeaderHeight}}}" bgcolor="000" opacity=".5" />
+		</frame>
+		<frame pos="0 {{{-HeaderHeight}}}">
+			<framemodel id="FrameModel_TopPlayerRow">
+				<label pos="{{{(RowHeight-.5)/2^" "^RowCenterY}}}" id="Label_PlayerRowPosition" />
+				<label pos="{{{RowHeight+.5^" "^RowCenterY}}}" size="{{{TopSize.X-14}}}" id="Label_PlayerRowName" />
+				<label pos="{{{TopSize.X-1^" "^RowCenterY}}}" id="Label_PlayerRowPoints" />
+				<quad pos="0 -.5" size="{{{TopSize.X^" "^RowHeight-.5}}}" bgcolor="FFF" opacity=".125" id="Quad_PlayerRowIsLocal" hidden="1" />
+				<quad pos="0 -.5" size="{{{RowHeight-.5^" "^RowHeight-.5}}}" bgcolor="FFF" opacity=".0625" />
+				<quad pos="0 -.5" size="{{{TopSize.X^" "^RowHeight-.5}}}" bgcolor="FFF" opacity=".0625" />
+			</framemodel>
+			{{{PlayersRowsFrames}}}
+		</frame>
+	</framemodel>
+	{{{CategoriesFrames}}}
+	<quad pos="{{{BgPos.X^" "^BgPos.Y}}}" size="{{{BgSize.X^" "^BgSize.Y}}}" halign="center" valign="center" image="{{{BgImage}}}" bgcolor="0007" />
+</frame>
+
+<script><!--
+/**
+ *	{{{C_LibTopScores_UILayerId}}}
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Imported variables
+declare G_LibTopScores_TopsIds = {{{Dump_TopsIds}}};
+declare G_LibTopScores_TopsHeaders = {{{Dump_TopsHeaders}}};
+declare G_LibTopScores_TopsIcons = {{{Dump_TopsIcons}}};
+
+// ---------------------------------- //
+// Load interface elements
+declare Frame_TopScoresWindow <=> (Page.GetFirstChild("Frame_TopScoresWindow") as CMlFrame);
+
+declare CMlFrame[] Frame_TopCategories;
+for (I, 0, {{{NbTopCategories-1}}}) Frame_TopCategories.add((Page.GetFirstChild("Frame_TopCategory#"^I) as CMlFrame));
+
+foreach (Frame in Frame_TopCategories) {
+	declare CMlFrame[] Frame_TopPlayersRows for Frame;
+	for (I, 0, {{{NbPlayersRows-1}}}) Frame_TopPlayersRows.add((Frame.GetFirstChild("Frame_TopPlayerRow#"^I) as CMlFrame));
+}
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_LibTopScores_LastTopsUpdate for Teams[0];
+declare netread Boolean Net_LibTopScores_UseMatchScores for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare UpdateTopCategories = True;
+declare DisplayMatchScores = False;
+
+// Update
+declare PrevTopsUpdate = -1;
+declare PrevGUIPlayerId = NullId;
+declare PrevUseMatchScores = False;
+
+// ---------------------------------- //
+// Initialize categories
+foreach (I => Frame in Frame_TopCategories) {
+	Frame.Visible = G_LibTopScores_TopsIds.existskey(I);
+	if (!Frame.Visible) continue;
+	declare CurTopId = G_LibTopScores_TopsIds[I];
+
+	declare Label_CategoryName <=> (Frame.GetFirstChild("Label_CategoryName") as CMlLabel);
+	declare Label_CategoryIcon <=> (Frame.GetFirstChild("Label_CategoryIcon") as CMlLabel);
+
+	declare TopName = CurTopId;
+	if (G_LibTopScores_TopsHeaders.existskey(CurTopId)) TopName = G_LibTopScores_TopsHeaders[CurTopId];
+	Label_CategoryName.Value = Translate(TopName);
+
+	declare TopIconPath = "";
+	if (G_LibTopScores_TopsIcons.existskey(CurTopId)) TopIconPath = G_LibTopScores_TopsIcons[CurTopId];
+	Label_CategoryIcon.Visible = TL::Length(TopIconPath) == 1;
+	if (Label_CategoryIcon.Visible) Label_CategoryIcon.Value = TopIconPath;
+}
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Server tops update
+if (PrevTopsUpdate != Net_LibTopScores_LastTopsUpdate) {
+	PrevTopsUpdate = Net_LibTopScores_LastTopsUpdate;
+	UpdateTopCategories = True;
+}
+
+// ---------------------------------- //
+// Match points visibility change
+if (PrevUseMatchScores != Net_LibTopScores_UseMatchScores) {
+	PrevUseMatchScores = Net_LibTopScores_UseMatchScores;
+	DisplayMatchScores = PrevUseMatchScores;
+	UpdateTopCategories = True;
+}
+
+// ---------------------------------- //
+// On GUIPlayer change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerId != GUIPlayer.Id) {
+		PrevGUIPlayerId = GUIPlayer.Id;
+		UpdateTopCategories = True;
+	}
+}
+else if (PrevGUIPlayerId != NullId) {
+	PrevGUIPlayerId = NullId;
+	UpdateTopCategories = True;
+}
+
+// ---------------------------------- //
+// Update tops categories frames
+if (UpdateTopCategories) {
+	UpdateTopCategories = False;
+
+	// Get the local score object
+	declare CScore LocalScore;
+	if (GUIPlayer != Null && GUIPlayer.Score != Null) LocalScore <=> GUIPlayer.Score;
+	else if (InputPlayer != Null && InputPlayer.Score != Null) LocalScore <=> InputPlayer.Score;
+
+	foreach (FrameOrder => Frame in Frame_TopCategories) {
+		if (!Frame.Visible) continue;
+		declare CurTopId = G_LibTopScores_TopsIds[FrameOrder];
+		declare CMlFrame[] Frame_TopPlayersRows for Frame;
+
+		// Get the sorted scores array of the current category
+		declare Ident[] SortedScores;
+		if (DisplayMatchScores) SortedScores = SortedScores_Match(CurTopId);
+		else SortedScores = SortedScores_Round(CurTopId);
+
+		// ---------------------------------- //
+		// Check if local player should be shown on bottom
+		declare ShowLocalLast = False;
+		declare LocalPlayerKey = 1;
+
+		if (LocalScore != Null && SortedScores.exists(LocalScore.Id)) {
+			LocalPlayerKey = SortedScores.keyof(LocalScore.Id);
+			ShowLocalLast = LocalPlayerKey >= Frame_TopPlayersRows.count;
+		}
+
+		// ---------------------------------- //
+		// Format players rows
+		foreach (I => Row in Frame_TopPlayersRows) {
+			Row.Visible = SortedScores.existskey(I);
+			if (!Row.Visible) continue;
+
+			// Get the row attributes
+			declare IsLastRow = I == Frame_TopPlayersRows.count - 1;
+			declare ScoreKey = I;
+			if (ShowLocalLast && IsLastRow) ScoreKey = LocalPlayerKey;
+			declare Score <=> Scores[SortedScores[ScoreKey]];
+
+			// Get the player position
+			declare Integer ScorePoints;
+			if (DisplayMatchScores) ScorePoints = GetPlayerMatchPoints(Score, CurTopId);
+			else ScorePoints = GetPlayerRoundPoints(Score, CurTopId);
+
+			// ---------------------------------- //
+			// Format the frame
+			declare Label_PlayerRowPosition <=> (Row.GetFirstChild("Label_PlayerRowPosition") as CMlLabel);
+			declare Label_PlayerRowName <=> (Row.GetFirstChild("Label_PlayerRowName") as CMlLabel);
+			declare Label_PlayerRowPoints <=> (Row.GetFirstChild("Label_PlayerRowPoints") as CMlLabel);
+			declare Quad_PlayerRowIsLocal <=> (Row.GetFirstChild("Quad_PlayerRowIsLocal") as CMlQuad);
+
+			Label_PlayerRowPosition.Value = TL::ToText(ScoreKey + 1);
+			Label_PlayerRowName.Value = Score.User.Name;
+			Label_PlayerRowPoints.Value = TL::ToText(ScorePoints);
+			Quad_PlayerRowIsLocal.Visible = LocalScore != Null && Score.Id == LocalScore.Id;
+		}
+	}
+}
+***
+
+{{{Translations::InjectInManialink(RequiredTranslations)}}}
+
+// ---------------------------------- //
+/** Get category round points of a player.
+ *
+ *	@param	_Score			The player to get their round points.
+ *	@param	_CategoryId		Id of the category to get the round points from.
+ *
+ *	@return		The round points of the player in category.
+ */
+Integer GetPlayerRoundPoints(CScore _Score, Text _CategoryId) {
+	declare netread Integer[Text] Net_LibTopScores_PlayerRoundPoints for _Score;
+	if (!Net_LibTopScores_PlayerRoundPoints.existskey(_CategoryId)) return 0;
+	return Net_LibTopScores_PlayerRoundPoints[_CategoryId];
+}
+
+// ---------------------------------- //
+/** Get the sorted ids array of players in given category.
+ *
+ *	@param	_CategoryId		Id of the category to get the players from.
+ *
+ *	@return		Players from the given category.
+ */
+Ident[] SortedScores_Round(Text _CategoryId) {
+	declare Integer[Ident] ScoresPoints;
+	foreach (Score in Scores) {
+		declare RoundPoints = GetPlayerRoundPoints(Score, _CategoryId);
+		if (RoundPoints > 0) ScoresPoints[Score.Id] = -RoundPoints;
+	}
+	ScoresPoints = ScoresPoints.sort();
+	declare Ident[] SortedScores;
+	foreach (ScoreId => Points in ScoresPoints) SortedScores.add(ScoreId);
+	return SortedScores;
+}
+
+// ---------------------------------- //
+/** Get category match points of a player.
+ *
+ *	@param	_Score			The player to get their match points.
+ *	@param	_CategoryId		Id of the category to get the match points from.
+ *
+ *	@return		The match points of the player in category.
+ */
+Integer GetPlayerMatchPoints(CScore _Score, Text _CategoryId) {
+	declare netread Integer[Text] Net_LibTopScores_PlayerMatchPoints for _Score;
+	if (!Net_LibTopScores_PlayerMatchPoints.existskey(_CategoryId)) return 0;
+	return Net_LibTopScores_PlayerMatchPoints[_CategoryId];
+}
+
+// ---------------------------------- //
+/** Get the sorted ids array of players in given category.
+ *
+ *	@param	_CategoryId		Id of the category to get the players from.
+ *
+ *	@return		Players from the given category.
+ */
+Ident[] SortedScores_Match(Text _CategoryId) {
+	declare Integer[Ident] ScoresPoints;
+	foreach (Score in Scores) {
+		declare MatchPoints = GetPlayerMatchPoints(Score, _CategoryId);
+		if (MatchPoints > 0) ScoresPoints[Score.Id] = -MatchPoints;
+	}
+	ScoresPoints = ScoresPoints.sort();
+	declare Ident[] SortedScores;
+	foreach (ScoreId => Points in ScoresPoints) SortedScores.add(ScoreId);
+	return SortedScores;
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+		---Yield---
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Trigger tops update.
+Void Private_TriggerUpdate() {
+	declare netwrite Integer Net_LibTopScores_LastTopsUpdate for Teams[0];
+	Net_LibTopScores_LastTopsUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Set the round points of a player.
+ *
+ *	@param	_Score			The player to set the points.
+ *	@param	_CategoryId		Category of the points.
+ *	@param	_Points			The amount of player round points.
+ */
+Void Private_SetPlayerRoundPoints(CScore _Score, Text _CategoryId, Integer _Points) {
+	if (_Score == Null) return;
+	declare netwrite Integer[Text] Net_LibTopScores_PlayerRoundPoints for _Score;
+	Net_LibTopScores_PlayerRoundPoints[_CategoryId] = _Points;
+	Private_TriggerUpdate();
+}
+
+// ---------------------------------- //
+/** Reset the round points of a player.
+ *
+ *	@param	_Score	The player to clear their round points.
+ */
+Void Private_ClearPlayerRoundPoints(CScore _Score) {
+	if (_Score == Null) return;
+	declare netwrite Integer[Text] Net_LibTopScores_PlayerRoundPoints for _Score;
+	Net_LibTopScores_PlayerRoundPoints.clear();
+	Private_TriggerUpdate();
+}
+
+// ---------------------------------- //
+/** Set the match points of a player.
+ *
+ *	@param	_Score			The player to set the points.
+ *	@param	_CategoryId		Category of the points.
+ *	@param	_Points			The amount of player match points.
+ */
+Void Private_SetPlayerMatchPoints(CScore _Score, Text _CategoryId, Integer _Points) {
+	if (_Score == Null) return;
+	declare netwrite Integer[Text] Net_LibTopScores_PlayerMatchPoints for _Score;
+	Net_LibTopScores_PlayerMatchPoints[_CategoryId] = _Points;
+	Private_TriggerUpdate();
+}
+
+// ---------------------------------- //
+/** Reset the match points of a player.
+ *
+ *	@param	_Score	The player to clear their match points.
+ */
+Void Private_ClearPlayerMatchPoints(CScore _Score) {
+	if (_Score == Null) return;
+	declare netwrite Integer[Text] Net_LibTopScores_PlayerMatchPoints for _Score;
+	Net_LibTopScores_PlayerMatchPoints.clear();
+	Private_TriggerUpdate();
+}
+
+// ---------------------------------- //
+/** Set if the window should display round or match points.
+ *
+ *	@param	_ShowMatchPoints	If True, match points will be seen. Round points when False.
+ */
+Void Private_SetShowMatchPoints(Boolean _ShowMatchPoints) {
+	declare netwrite Boolean Net_LibTopScores_UseMatchScores for Teams[0];
+	Net_LibTopScores_UseMatchScores = _ShowMatchPoints;
+}
+
+// ---------------------------------- //
 // Public
 // ---------------------------------- //
 
@@ -62,37 +502,77 @@ Text GetScriptVersion() { return Version; }
 Text GetScriptName() { return ScriptName; }
 
 // ---------------------------------- //
-/** Create new category
- *	/!\ Must be placed before ST2::Build() /!\
- *
- *	@param	_CategoryId		Id of the category to add
- *	@param	_LegendLabel	Label displayed over ScoresTable2 column
- *	@param	_Width			Width of the ScoresTable2 column
- *	@param	_Position		Position of the column in ScoresTable2
+/** Create a new tops menu and scores table category.
+
+ *	@param	_CategoryId		Id of the category to add.
+ *	@param	_CategoryName	Name of the new category.
+ *	@param	_IconPath		Category icon displayed aside the name.
+ *	@param	_FramePos		Position of the frame in window.
+ *	@param	_LegendLabel	Label displayed over ScoresTable2 column.
+ *	@param	_ColWidth		Width of the ScoresTable2 column.
+ *	@param	_ColumnPos		Position of the column in ScoresTable2.
  */
-Void AddCategory(Text _CategoryId, Text _LegendLabel, Real _Width, Real _Position) {
+Void AddCategory(Text _CategoryId, Text _CategoryName, Text _IconPath, Real _FramePos, Text _LegendLabel, Real _ColWidth, Real _ColumnPos) {
 	if (G_LibTopScores_TopsIds.exists(_CategoryId)) return;
 	G_LibTopScores_TopsIds.add(_CategoryId);
-	if (_LegendLabel != "") ST2::CreateCol(_CategoryId, _LegendLabel, "", _Width, _Position);
+
+	// Create a frame in the tops menu
+	if (_CategoryName != "") {
+		G_LibTopScores_TopsHeaders[_CategoryId] = _CategoryName;
+		G_LibTopScores_TopsIcons[_CategoryId] = _IconPath;
+		G_LibTopScores_TopsOrder[_CategoryId] = _FramePos;
+		G_LibTopScores_TopsOrder = G_LibTopScores_TopsOrder.sort();
+	}
+
+	// Create a column in the scores table
+	if (_LegendLabel != "") ST2::CreateCol(_CategoryId, _LegendLabel, "", _ColWidth, _ColumnPos);
 }
 
 // ---------------------------------- //
-/** Create new category
+/** Create a new tops menu only category.
+
+ *	@param	_CategoryId		Id of the category to add.
+ *	@param	_CategoryName	Name of the new category.
+ *	@param	_IconPath		Category icon displayed aside the name.
+ *	@param	_FramePos		Position of the frame in window.
+ */
+Void AddCategory(Text _CategoryId, Text _CategoryName, Text _IconPath, Real _FramePos) {
+	AddCategory(_CategoryId, _CategoryName, _IconPath, _FramePos, "", 0., 0.);
+}
+
+// ---------------------------------- //
+/** Create a new scores table only category.
+
+ *	@param	_CategoryId		Id of the category to add.
+ *	@param	_LegendLabel	Label displayed over ScoresTable2 column.
+ *	@param	_ColWidth		Width of the ScoresTable2 column.
+ *	@param	_ColumnPos		Position of the column in ScoresTable2.
+ */
+Void AddCategory(Text _CategoryId, Text _LegendLabel, Real _ColWidth, Real _ColumnPos) {
+	AddCategory(_CategoryId, "", "", 0., _LegendLabel, _ColWidth, _ColumnPos);
+}
+
+// ---------------------------------- //
+/** Create a new invisible category.
  *
- *	Note: This function won't display ScoresTable2 column.
- *
- *	@param	_CategoryId		Id of the category to add
+ *	@param	_CategoryId		Id of the category to add.
  */
 Void AddCategory(Text _CategoryId) { AddCategory(_CategoryId, "", 0., 0.); }
 
 // ---------------------------------- //
-/** Remove existing category
+/** Remove an existing category.
  *
- *	@param	_CategoryId		Id of the category to remove
+ *	@param	_CategoryId		Id of the category to remove.
  */
 Void RemoveCategory(Text _CategoryId) {
 	if (!G_LibTopScores_TopsIds.exists(_CategoryId)) return;
 	ST2::DestroyCol(_CategoryId);
+
+	declare Boolean Removed;
+	Removed = G_LibTopScores_TopsIds.remove(_CategoryId);
+	Removed = G_LibTopScores_TopsOrder.removekey(_CategoryId);
+	Removed = G_LibTopScores_TopsHeaders.removekey(_CategoryId);
+	Removed = G_LibTopScores_TopsIcons.removekey(_CategoryId);
 }
 
 // ---------------------------------- //
@@ -108,6 +588,121 @@ Void ClearCategory(Text _CategoryId) {
 /// Clear values of all columns
 Void ClearAllCategories() {
 	foreach (CategoryId in G_LibTopScores_TopsIds) ClearCategory(CategoryId);
+}
+
+// ---------------------------------- //
+/** Set the position of the top scores window.
+ *
+ *	@param	_TopsPosition	Top scores window position.
+ */
+Void SetPosition(Vec2 _TopsPosition) {
+	G_LibTopScores_TopsWindowPos = _TopsPosition;
+}
+
+// ---------------------------------- //
+/** Set the size of the top scores window.
+ *
+ *	@param	_TopsSize	Top scores window size.
+ */
+Void SetSize(Vec2 _TopsSize) {
+	G_LibTopScores_TopsWindowSize = _TopsSize;
+}
+
+// ---------------------------------- //
+/** Set the window background properties.
+ *
+ *	@param	_ImagePath	Background image path.
+ *	@param	_BgSize		Size of the background image.
+ *	@param	_BgOffset	Offset of the background image.
+ */
+Void SetBackground(Text _ImagePath, Vec2 _BgSize, Vec2 _BgOffset) {
+	G_LibTopScores_BackgroundPath = _ImagePath;
+	G_LibTopScores_BackgroundSize = _BgSize;
+	G_LibTopScores_BackgroundOffset = _BgOffset;
+}
+
+Void SetFormat(Integer _NbTopsX, Integer _NbTopsY) {
+	G_LibTopScores_NbCategoriesX = ML::Max(_NbTopsX, 1);
+	G_LibTopScores_NbCategoriesY = ML::Max(_NbTopsY, 1);
+}
+
+// ---------------------------------- //
+/** Set the categories frames spacing.
+ *
+ *	@param	_SpacingSize	Categories spacing width.
+ */
+Void SetSpacing(Real _SpacingSize) {
+	G_LibTopScores_CategoriesSpacing = ML::Max(_SpacingSize, 0.);
+}
+
+// ---------------------------------- //
+/** Set the height of the categories headers.
+ *
+ *	@param	_HeaderHeight	Categories headers height.
+ */
+Void SetHeaderHeight(Real _HeaderHeight) {
+	G_LibTopScores_HeaderLineHeight = ML::Max(_HeaderHeight, 0.);
+}
+
+// ---------------------------------- //
+/** Set the fonts used for the top scores window.
+ *
+ *	@param	_FontMedium		Thin interface font.
+ *	@param	_FontBold		Bold interface font.
+ */
+Void SetFont(Text _FontMedium, Text _FontBold) {
+	G_LibTopScores_FontNameMedium = _FontMedium;
+	G_LibTopScores_FontNameBold = _FontBold;
+}
+
+// ---------------------------------- //
+/// Set the window to show current round scores.
+Void ShowRoundPoints() {
+	Private_SetShowMatchPoints(False);
+}
+
+// ---------------------------------- //
+/// Set the window to show total match scores.
+Void ShowMatchPoints() {
+	Private_SetShowMatchPoints(True);
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	while (G_LibTopScores_TopsIds.existskey(0)) RemoveCategory(G_LibTopScores_TopsIds[0]);
+
+	Layers::Detach(C_LibTopScores_UILayerId);
+	Layers::Destroy(C_LibTopScores_UILayerId);
+
+	UIManager.UIAll.AltMenuNoCustomScores = False;
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+
+	// Set default window settings
+	SetPosition(G_LibTopScores_DefaultWindowPos);
+	SetSize(G_LibTopScores_DefaultWindowSize);
+	SetBackground("", G_LibTopScores_DefaultWindowSize, Vec2);
+	SetSpacing(G_LibTopScores_DefaultSpacing);
+	SetHeaderHeight(G_LibTopScores_DefaultHeaderSize);
+	SetFormat(1, 1);
+	SetFont("", "");
+
+	// Create interface layer
+	Layers::Create(C_LibTopScores_UILayerId);
+	Layers::SetType(C_LibTopScores_UILayerId, CUILayer::EUILayerType::AltMenu);
+	Layers::Attach(C_LibTopScores_UILayerId);
+
+	// Disable scores while holding Alt
+	UIManager.UIAll.AltMenuNoCustomScores = True;
+}
+
+Void Build() {
+	Layers::Update(C_LibTopScores_UILayerId, Private_CreateManialinkTopScores());
 }
 
 // ---------------------------------- //
@@ -180,6 +775,8 @@ Void AddPoints(CScore _Score, Text _CategoryId, Integer _Points) {
 	if (LibTopScores_RoundPoints[_CategoryId] < 0) LibTopScores_MatchPoints[_CategoryId] = 0;
 	
 	Private_SetColValue(_Score, _CategoryId, LibTopScores_RoundPoints[_CategoryId]);
+	Private_SetPlayerRoundPoints(_Score, _CategoryId, LibTopScores_RoundPoints[_CategoryId]);
+	Private_SetPlayerMatchPoints(_Score, _CategoryId, LibTopScores_MatchPoints[_CategoryId]);
 }
 
 // ---------------------------------- //
@@ -203,6 +800,8 @@ Void MatchBegin() {
 		declare Integer[Text] LibTopScores_RoundPoints for Score;
 		LibTopScores_MatchPoints.clear();
 		LibTopScores_RoundPoints.clear();
+		Private_ClearPlayerRoundPoints(Score);
+		Private_ClearPlayerMatchPoints(Score);
 	}
 }
 
@@ -210,9 +809,12 @@ Void MatchBegin() {
 /// Handle the round start
 Void RoundBegin() {
 	ClearAllCategories();
+	ShowRoundPoints();
+
 	foreach (Score in Scores) {
 		declare Integer[Text] LibTopScores_RoundPoints for Score;
 		LibTopScores_RoundPoints.clear();
+		Private_ClearPlayerRoundPoints(Score);
 	}
 }
 
@@ -231,6 +833,8 @@ Void RoundEnd() {
 /// Handle the match end
 Void MatchEnd() {
 	ClearAllCategories();
+	ShowMatchPoints();
+
 	foreach (Score in Scores) {
 		declare Integer[Text] LibTopScores_MatchPoints for Score;
 		foreach (CategoryId => Points in LibTopScores_MatchPoints)

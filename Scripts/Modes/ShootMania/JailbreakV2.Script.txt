@@ -1,13 +1,13 @@
 // -------------------------------------- //
 //  JAILBREAK V2 by domino54              //
-//  script version: 2017-08-22            //
+//  script version: 2017-09-07            //
 //  original author: Akbalder             //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"JailbreakArena, JailbreakV2Arena"
-#Const Version		"2017-08-22"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Modes/ShootMania/JailbreakV2.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -20,6 +20,7 @@
 #Setting S_RoundsLimit			3		as _("Rounds limit")			///< Point limit on map
 #Setting S_TimeLimit			600 	as _("Time limit (seconds)")	///< Time limit (seconds)
 #Setting S_UseLaserInJail		True	as _("Force Laser in jail")		///< If True players in jail will have Laser
+#Setting S_UseAutoBalance		True	as _("Balance teams on round start")
 #Setting S_UseDebugMode			False	as _("Enable debug mode (for developers only)")
 #Setting S_WarmUpDuration		0		as _("Warm up duration (sec.)") 
 #Setting S_NbPlayersPerTeamMin	1		as _("Minumum number of players in each team")
@@ -86,7 +87,8 @@ if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
 // ---------------------------------- //
 ***ScoresTable***
 ***
-TopScores::AddCategory("Release", "", 2.25, 60.);
+TopScores::AddCategory("Release", "Most Releases", "", 2., "", 2.25, 60.);
+TopScores::SetFormat(3, 1);
 ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
 ***
 
@@ -259,6 +261,9 @@ foreach (Clan => GateLandmarks in G_ClanGateLandmarks) {
 
 ST2::SetFooterText(TL::Compose("%1"^S_RoundsToWin, _("Points limit : ")));
 
+// Balance teams
+if (S_UseAutoBalance) GT_AutoBalance();
+
 // Wait for enough players to start the game
 if (!S_UseDebugMode) GT_WaitForPlayers(S_NbPlayersPerTeamMin);
 
@@ -364,6 +369,18 @@ foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// Player left the game
 	else if (Event.Type == CSmModeEvent::EType::OnPlayerRemoved) RemoveDisconnectedPlayers();
+}
+
+// ---------------------------------- //
+// Respawn jailed players changing characters
+foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
+	if (!Players.existskey(PlayerId)) continue;
+	declare Player <=> Players[PlayerId];
+	if (!IsInJail(Player)) continue;
+
+	UnspawnPlayer(Player);
+	Toads::DestroyToad(Player);
+	Turrets::DestroyTurret(Player);
 }
 
 // ---------------------------------- //
@@ -845,10 +862,13 @@ Void JailPlayer(CSmPlayer _Victim, CSmPlayer _Shooter) {
 			if (PlayerId != _Victim.Id) LastTeammate = AllPlayers[PlayerId];
 		
 		// Send notification
-		if (LastTeammate != Null) Translations::SendStatusMessage(
-			LastTeammate, "You're the last free team member!",
-			4000, 1, CUIConfig::EUISound::Warning, 0
-		);
+		if (LastTeammate != Null) {
+			Translations::SendStatusMessage(
+				LastTeammate, "You're the last free team member!",
+				4000, 1, CUIConfig::EUISound::Warning, 0
+			);
+			MiniMap::Flash(LastTeammate);
+		}
 	}
 	
 	/*

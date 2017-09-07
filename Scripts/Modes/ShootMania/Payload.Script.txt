@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PAYLOAD by domino54                   //
-//  script version: 2017-08-22            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"PayloadArena, PayloadRaceArena"
-#Const Version		"2017-08-22"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Modes/ShootMania/Payload.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -20,6 +20,7 @@
 #Setting S_RoundsToWin				2		as _("Rounds to win (Race)")	///< Number of rounds to win a map
 #Setting S_RoundGapToWin			1		as _("Round gap to win (Race)")	///< Minimum gap between the two leaders to win a map
 #Setting S_RoundsLimit				3		as _("Rounds limit (Race)")		///< Point limit on map
+#Setting S_UseAutoBalance			True	as _("Balance teams on match start")
 #Setting S_EnableDebugMode			False	as _("Debug mode (for developers only)")
 #Setting S_WarmUpDuration			0		as _("Warm up duration (sec.)") 
 #Setting S_NbPlayersPerTeamMin		1		as _("Minumum number of players in each team")
@@ -85,7 +86,8 @@ if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
 // ---------------------------------- //
 ***ScoresTable***
 ***
-TopScores::AddCategory("Attack", "", 2.25, 60.);
+TopScores::AddCategory("Attack", "Best Attacker", "", 2., "", 2.25, 60.);
+TopScores::SetFormat(3, 1);
 ***
 
 // ---------------------------------- //
@@ -314,6 +316,9 @@ for (Order, 0, 2) {
 }
 
 if (G_IsPayloadRace) UISetCheckpointsDistances([1 => G_PayloadTrackTotalDist]);
+
+// Balance teams
+if (S_UseAutoBalance) GT_AutoBalance();
 
 // ---------------------------------- //
 // Deautomatize Gates used on the map
@@ -732,6 +737,7 @@ for (Clan, 1, 2) {
 					_("$<%1$> captured the goal!"), Teams[Clan-1].ColorizedName),
 					3000, 0, CUIConfig::EUISound::VictoryPoint, 0
 				);
+				MiniMap::Flash();
 			}
 
 			// ---------------------------------- //
@@ -744,10 +750,13 @@ for (Clan, 1, 2) {
 			if (PrevLeadingClan != LeadingTeam) {
 				PrevLeadingClan = LeadingTeam;
 
-				if (LeadingTeam != 0) Message::SendBigMessage(
-					TL::Compose(_("$<%1$> takes the lead!"), Teams[LeadingTeam-1].ColorizedName),
-					3000, 1, CUIConfig::EUISound::PhaseChange, 1
-				);
+				if (LeadingTeam != 0) {
+					Message::SendBigMessage(
+						TL::Compose(_("$<%1$> takes the lead!"), Teams[LeadingTeam-1].ColorizedName),
+						3000, 1, CUIConfig::EUISound::PhaseChange, 1
+					);
+					MiniMap::Flash();
+				}
 			}
 
 			continue;
@@ -759,6 +768,7 @@ for (Clan, 1, 2) {
 			G_CapturedSectors += 1;
 			UpdateBasesColors();
 			GalaxyTitles::SetObjectsSpawnTier(G_CapturedSectors + 1);
+			MiniMap::Flash();
 			
 			// Give point for the attacking team
 			ClanScores[G_AttackingClan] += 1;
@@ -1138,18 +1148,24 @@ Void UpdateMarkers(Ident _PayloadObjectId, Integer _Clan) {
 }
 
 // ---------------------------------- //
+/// UI update.
+Void TriggerUIUpdate() {
+	declare netwrite Integer Net_Payload_LastUIUpdate for Teams[0];
+	Net_Payload_LastUIUpdate = Now;
+}
+
+// ---------------------------------- //
 /** Set UI Checkpoints distances
  *
  *	@param	_CPDistances	Checkpoints distances
  */
 Void UISetCheckpointsDistances(Real[Integer] _CPDistances) {
 	declare netwrite Real[] Net_Payload_CheckpointDistances for Teams[0];
-	declare netwrite Integer Net_Payload_LastUIUpdate for Teams[0];
-	Net_Payload_LastUIUpdate = Now;
-
 	Net_Payload_CheckpointDistances.clear();
+
 	foreach (Distance in _CPDistances) Net_Payload_CheckpointDistances.add(Distance);
 	Net_Payload_CheckpointDistances = Net_Payload_CheckpointDistances.sort();
+	TriggerUIUpdate();
 }
 
 // ---------------------------------- //
@@ -1171,6 +1187,7 @@ Void UISetPayloadDistance(Real _PayloadDistance, Integer _Clan) {
 Void UISetAttackingTeam(Integer _AttackingTeam) {
 	declare netwrite Integer Net_Payload_AttackingTeam for Teams[0];
 	Net_Payload_AttackingTeam = ML::Clamp(_AttackingTeam, 1, 2);
+	TriggerUIUpdate();
 }
 
 // ---------------------------------- //
@@ -1214,6 +1231,7 @@ Void UISetIsOvertime(Boolean _IsOvertime) {
 Void UISetIsPayloadRace(Boolean _IsPayloadRace) {
 	declare netwrite Boolean Net_Payload_IsPayloadRace for Teams[0];
 	Net_Payload_IsPayloadRace = _IsPayloadRace;
+	TriggerUIUpdate();
 }
 
 // ---------------------------------- //

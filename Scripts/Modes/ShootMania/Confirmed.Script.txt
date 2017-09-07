@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  CONFIRMED by domino54                 //
-//  script version: 2017-08-09            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"MeleeArena, TeamMeleeArena"
-#Const Version		"2017-08-09"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Modes/ShootMania/Confirmed.Script.txt"
 
 #Include "Libs/Nadeo/Color.Script.txt" as Color
@@ -15,11 +15,12 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
-#Setting S_TimeLimit			300	as _("Time limit (seconds)")
-#Setting S_PointsLimit			50	as _("Points limit")
-#Setting S_WarmUpDuration		0	as _("Warm up duration (sec.)") 
-#Setting S_NbPlayersPerTeamMin	1	as _("Minumum number of players in each team")
-#Setting S_NbPlayersPerTeamMax	3	as _("Maximum number of players per team (0: no max)")
+#Setting S_TimeLimit			300		as _("Time limit (seconds)")
+#Setting S_PointsLimit			50		as _("Points limit")
+#Setting S_WarmUpDuration		0		as _("Warm up duration (sec.)") 
+#Setting S_UseAutoBalance		True	as _("Balance teams on match start")
+#Setting S_NbPlayersPerTeamMin	1		as _("Minumum number of players in each team")
+#Setting S_NbPlayersPerTeamMax	3		as _("Maximum number of players per team (0: no max)")
 
 #Const Description _("TYPE: Team versus Team\nOBJECTIVE: Pick up coins dropped by opposite team players to score points for your team. First team to reach points limit wins.")
 
@@ -67,7 +68,8 @@ ST2::SetColScript("LibST_SMPoints", """
 declare Score <=> (_Score as CSmScore);
 Label_Col.Value = TL::ToText(Score.RoundPoints + Score.Points);
 """);
-TopScores::AddCategory("Confirmations", "", 2.25, 60.);
+TopScores::AddCategory("Confirmations", "Most Confirmations", "", 2., "", 2.25, 60.);
+TopScores::SetFormat(3, 1);
 ***
 
 // ---------------------------------- //
@@ -161,6 +163,9 @@ foreach (Clan => LandmarksIds in G_ClanSpawnLandmarks) {
 	}
 }
 
+// Balance teams
+if (S_UseAutoBalance) GT_AutoBalance();
+
 // ---------------------------------- //
 // Do the Warm Up
 if (!MM_IsMatchServer()) {
@@ -245,7 +250,10 @@ else LeadClan = 0;
 
 if (PrevLeadClan != LeadClan && LeadClan != 0) {
 	PrevLeadClan = LeadClan;
-	if (LeadClan > 0) Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 2, CUIConfig::EUISound::PhaseChange, 1);
+	if (LeadClan > 0) {
+		Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Teams[LeadClan - 1].ColorizedName), 3000, 2, CUIConfig::EUISound::PhaseChange, 1);
+		MiniMap::Flash();
+	}
 }
 
 // ---------------------------------- //

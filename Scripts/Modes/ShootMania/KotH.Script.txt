@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  KING OF THE HILL by domino54          //
-//  script version: 2017-08-22            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "RoyalArena"
-#Const Version		"2017-08-22"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Modes/ShootMania/KotH.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -15,10 +15,13 @@
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
+#Setting S_RoundsToWin			2		as _("Rounds to win")
+#Setting S_RoundGapToWin		1		as _("Round gap to win")
+#Setting S_RoundsLimit			3		as _("Rounds limit")
 #Setting S_TimeLimit			600		as _("Time limit (seconds)")
-#Setting S_RoundsToWin			2		as _("Number of rounds to win a map")
 #Setting S_NbTeams				0		as _("Number of teams (2 - 4, 0 = auto)")
 #Setting S_UseDefaultTeams		False	as _("Use default teams (Blue vs Red)")
+#Setting S_UseAutoBalance		True	as _("Balance teams on round start")
 #Setting S_GoalCaptureDuration	100		as _("Time team requires to capture the Goal")
 #Setting S_DarkerGoalColor		False	as "<hidden>"
 #Setting S_WarmUpDuration		0		as _("Warm up duration (sec.)") 
@@ -75,7 +78,8 @@ if (S_NbPlayersPerTeamMax > S_NbPlayersPerTeamMin) {
 // ---------------------------------- //
 ***ScoresTable***
 ***
-TopScores::AddCategory("Capture", "", 3., 60.);
+TopScores::AddCategory("Capture", "Best Capturer", "", 2., "", 2.25, 60.);
+TopScores::SetFormat(3, 1);
 if (!UseClans) {
 	ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
 	ST2::SetColScript("LibST_SMPoints", """
@@ -460,10 +464,13 @@ if (PrevLeadingTeam != LeadingTeamNum) {
 		case 2 : LeadingTeamName = Teams[1].ColorizedName;
 	}
 
-	if (LeadingTeamNum > 0) Message::SendBigMessage(
-		TL::Compose(_("$<%1$> takes the lead!"), LeadingTeamName),
-		3000, 1, CUIConfig::EUISound::PhaseChange, 1
-	);
+	if (LeadingTeamNum > 0) {
+		Message::SendBigMessage(
+			TL::Compose(_("$<%1$> takes the lead!"), LeadingTeamName),
+			3000, 1, CUIConfig::EUISound::PhaseChange, 1
+		);
+		MiniMap::Flash();
+	}
 }
 
 // ---------------------------------- //

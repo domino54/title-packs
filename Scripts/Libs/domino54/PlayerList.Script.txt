@@ -1,0 +1,81 @@
+
+// Experimental library
+
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+#Const C_LibTeamsInfo_LibUILayerId		"LibTeamsInfo:Players"
+#Const C_LibTeamsInfo_LayerDefaultPos	<40., -5.>
+#Const C_LibTeamsInfo_MaxIconsInRow		8
+#Const C_LibTeamsInfo_MaxNbColumns		1
+
+declare Boolean G_LibTeamsInfo_IsLibraryLoaded;
+
+Text Private_CreateManialinkTeamsInfo() {
+
+	declare Size = <40., 5.>;
+
+	declare PlayersListLeft = "";
+	declare PlayersListRight = "";
+
+	for (I, 0, C_LibTeamsInfo_MaxIconsInRow * C_LibTeamsInfo_MaxNbColumns - 1) {
+		declare Y = I % C_LibTeamsInfo_MaxIconsInRow * -Size.Y;
+		declare X = I / C_LibTeamsInfo_MaxIconsInRow * Size.X;
+		PlayersListLeft ^= "<frameinstance modelid='FrameModel_PlayerIcon' hidden='0' pos='"^-X^" "^Y^"' />";
+		PlayersListRight ^= "<frameinstance modelid='FrameModel_PlayerIcon' hidden='0' pos='"^X^" "^Y^"' />";
+	}
+
+	return """
+<manialink version="3" name="{{{C_LibTeamsInfo_LayerDefaultPos}}}">
+
+<framemodel id="FrameModel_PlayerIcon">
+	<quad pos="1" size="{{{Size.Y - 1^" "^Size.Y - 1}}}" valign="center" id="Quad_PlayerAvatar" image="file://Avatars/domino54/default" />
+	<label pos="{{{Size.Y + 1}}}" size="{{{Size.X - Size.Y - 3}}}" valign="center2" textsize="1" textemboss="1" textcolor="FFF" id="Label_PlayerName" text="{{{Users[0].Name}}}" />
+	<quad size="{{{Size.X^" "^Size.Y - .5}}}" valign="center" bgcolor="F00" opacity=".375" />
+	<quad size="{{{Size.X^" "^Size.Y - .5}}}" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+</framemodel>
+
+<frame pos="-160" scale="1">
+	{{{PlayersListLeft}}}
+</frame>
+
+<script><!--
+--></script>
+</manialink>
+	""";
+}
+
+Void Show() {
+	if (!G_LibTeamsInfo_IsLibraryLoaded) return;
+	Layers::Attach(C_LibTeamsInfo_LibUILayerId);
+}
+
+Void Hide() {
+	if (!G_LibTeamsInfo_IsLibraryLoaded) return;
+	Layers::Detach(C_LibTeamsInfo_LibUILayerId);
+}
+
+Void SetVisibility(Boolean _IsVisible) {
+	if (!G_LibTeamsInfo_IsLibraryLoaded) return;
+	if (_IsVisible) Show();
+	else Hide();
+}
+
+Void OpponentsArmorVisibility(Boolean _IsVisible) {
+	if (!G_LibTeamsInfo_IsLibraryLoaded) return;
+	declare netwrite Boolean Net_LibTeamsInfo_ShowOpponentsArmor for Teams[0];
+	Net_LibTeamsInfo_ShowOpponentsArmor = _IsVisible;
+}
+
+Void Unload() {
+	Hide();
+	Layers::Destroy(C_LibTeamsInfo_LibUILayerId);
+	G_LibTeamsInfo_IsLibraryLoaded = False;
+}
+
+Void Load() {
+	Unload();
+	G_LibTeamsInfo_IsLibraryLoaded = True;
+
+	Layers::Create(C_LibTeamsInfo_LibUILayerId, Private_CreateManialinkTeamsInfo());
+	OpponentsArmorVisibility(False);
+}

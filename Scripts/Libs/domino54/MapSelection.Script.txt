@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY MAP SELECTION by domino54     //
-//  script version: 2017-08-22            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
-#Const Version		"2017-08-22"
+#Const Version		"2017-09-07"
 #Const ScriptName	"MapSelection.Script.txt"
 
 #Include "MathLib" as ML
@@ -764,6 +764,14 @@ Void Load(Text _FontMedium, Text _FontBold) {
 }
 
 // ---------------------------------- //
+/// Save next map UID when current one starts.
+Void StartMap() {
+	if (Map == Null) return;
+	declare Text LibMapSelection_NextMapUID for This;
+	if (MapList.existskey(NextMapIndex)) LibMapSelection_NextMapUID = MapList[NextMapIndex].MapUid;
+}
+
+// ---------------------------------- //
 /** Initialize the map selection screen.
  *
  *	@param	_EndTime				Time after which the map will be selected.
@@ -773,6 +781,10 @@ Void Load(Text _FontMedium, Text _FontBold) {
  */
 Boolean SelectionStart(Integer _EndTime, Boolean _ListLeastPlayedMaps) {
 	if (Map == Null || _EndTime <= Now || Players.count <= 0 || MapList.count < C_LibMapSelection_MinNbMapsRequired) return False;
+
+	// Skip map selection if next map has been forced by someone
+	declare Text LibMapSelection_NextMapUID for This;
+	if (MapList.existskey(NextMapIndex) && MapList[NextMapIndex].MapUid != LibMapSelection_NextMapUID) return False;
 
 	// Reset library data
 	G_LibMapSelection_AvailableToVote.clear();

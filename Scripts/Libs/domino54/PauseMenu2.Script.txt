@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PAUSE MENU 2 by domino54      //
-//  script version: 2017-08-05            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 /**
@@ -15,7 +15,7 @@
  *	using multiple custom teams.
  */
 
-#Const Version		"2017-08-05"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Libs/domino54/PauseMenu2.Script.txt"
 
 #Include "TextLib" as TL
@@ -55,35 +55,41 @@ declare Integer[Ident] G_LibPauseMenu_CustomTeamChangeRequests;
  *	@return		The pause menu manialink.
  */
 Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
-
 	// ---------------------------------- //
+	// Dump buttons array
 	declare Text[] AvailableButtonsIds;
 	foreach (ButtonId => ButtonOffset in G_LibPauseMenu_ButtonsOffsets) AvailableButtonsIds.add(ButtonId);
 	declare Dump_AvailableButtonsIds = dump(AvailableButtonsIds);
 	if (Dump_AvailableButtonsIds == "[]") Dump_AvailableButtonsIds = "Text[]";
 
 	// ---------------------------------- //
+	// Dump text arrays
 	declare Dump_ButtonsLabels = dump(G_LibPauseMenu_ButtonsLabels);
 	declare Dump_ButtonsIcons = dump(G_LibPauseMenu_ButtonsIcons);
 	if (Dump_ButtonsLabels == "[]") Dump_ButtonsLabels = "Text[Text]";
 	if (Dump_ButtonsIcons == "[]") Dump_ButtonsIcons = "Text[Text]";
 
 	// ---------------------------------- //
+	// Create pause menu tiles
 	declare ButtonsFrames = "";
 	for (I, 0, AvailableButtonsIds.count - 1)
 		ButtonsFrames ^= "<frameinstance modelid='FrameModel_PauseMenuButton' id='Frame_PauseMenuButton#"^I^"' hidden='1' />";
 
 	// ---------------------------------- //
+	// Format menu buttons script part
 	declare MenuButtonsScripts = "";
 	foreach (ButtonId => ButtonScript in G_LibPauseMenu_ButtonsScripts)
 		MenuButtonsScripts ^= "case \""^ButtonId^"\" : {\n"^ButtonScript^"\n}\n";
 
 	// ---------------------------------- //
+	// Create teams cards buttons
 	declare TeamsButtons = "";
-	for (I, 0, 5)
-		TeamsButtons ^= "<frameinstance modelid='FrameModel_TeamSelectionCard' id='Frame_TeamSelectionCard#"^I^"' pos='"^I*55.5^"' hidden='1' />";
+	for (I, 0, 5) TeamsButtons ^= "<frameinstance modelid='FrameModel_TeamSelectionCard' id='Frame_TeamSelectionCard#"^I^"' pos='"^I*55.5^"' hidden='1' />";
 
-	//
+	declare ServerManagerButtons = "";
+	for (I, 0, 9) ServerManagerButtons ^= "<frameinstance modelid='FrameModel_ServerMgrButton' id='Frame_ServerMgrButton#"^I^"' pos='0 "^I*-9^"' hidden='0' />";
+
+	// List required translations
 	declare Text[] RequiredTranslations;
 	foreach (ButtonId => Label in G_LibPauseMenu_ButtonsLabels) RequiredTranslations.add(Label);
 	
@@ -169,6 +175,35 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 	</frame>
 </frame>
 
+<frame id="Frame_ManageServerWindow" pos="-37 0" hidden="1">
+	<label pos="2 -2" class="FontM" id="Label_MapSelectionTitle" textsize="4" textprefix="$t" text="Manage server" translate="1" />
+	<quad pos="0 -6" size="74 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<frame pos="2 -8">
+		<framemodel id="FrameModel_ServerMgrButton">
+			<label pos="2 -4" class="FontM" textsize="2" textprefix="$t" id="Label_MenuButtonLabel" />
+
+			<quad size="70 8" bgcolorfocus="FFF2" class="Click" id="Quad_MenuButtonCard" ScriptEvents="1" />
+			<quad size="70 8" bgcolor="FFF" opacity=".125" />
+		</framemodel>
+		{{{ServerManagerButtons}}}
+	</frame>
+
+	<!-- Sevrer Manager bottom row -->
+	<frame id="Frame_ManageServerBottom" pos="0 -8">
+		<quad size="74 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+		<!-- Return button -->
+		<frame id="Frame_ReturnButton" pos="2 -2">
+			<label pos="2.25 -4.125" class="FontM" text="" />
+			<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Return" translate="1" />
+
+			<quad size="70 8" bgcolorfocus="FFF2" class="Click" id="Quad_ManageServerButton" ScriptEvents="1" />
+			<quad size="70 8" bgcolor="FFF" opacity=".125" />
+		</frame>
+	</frame>
+</frame>
+
 <quad size="320 180" halign="center" valign="center" image="file://Media/Images/Effects/Vignette.dds" />
 <quad size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
 <quad size="320 180" halign="center" valign="center" bgcolor="000" opacity=".5" />
@@ -185,10 +220,21 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 #Const C_LibPauseMenu_ContextDefault		0
 #Const C_LibPauseMenu_ContextConfirmQuit	1
 #Const C_LibPauseMenu_ContextSwitchTeam		2
+#Const C_LibPauseMenu_ContextManageServer	3
 
 #Const C_QuitColorEnabled	<1., 1., 1.>
 #Const C_QuitColorDisabled	<0., 0., 0.>
 #Const C_QuitColorTextOff	<.5, .5, .5>
+
+#Const C_ServerManagerButtons ["Restart", "NextMap", "BalanceTeams", "MapsBrowser", "PlayersManager", "ScriptSettings"]
+#Const C_ServerManagerButtonsText [
+	"Restart" => _("Restart map"),
+	"NextMap" => _("Go to next map"),
+	"BalanceTeams" => _("Balance teams"),
+	"MapsBrowser" => _("Select next map"),
+	"PlayersManager" => _("View players"),
+	"ScriptSettings" => _("Mode settings")
+]
 
 // ---------------------------------- //
 // Main
@@ -221,6 +267,14 @@ declare CMlFrame[] Frame_TeamSelectionCards;
 for (I, 0, 5) Frame_TeamSelectionCards.add((Page.GetFirstChild("Frame_TeamSelectionCard#"^I) as CMlFrame));
 
 // ---------------------------------- //
+// Server manager
+declare Frame_ManageServerWindow <=> (Page.GetFirstChild("Frame_ManageServerWindow") as CMlFrame);
+declare Frame_ManageServerBottom <=> (Page.GetFirstChild("Frame_ManageServerBottom") as CMlFrame);
+
+declare CMlFrame[] Frame_ServerMgrButtons;
+for (I, 0, 9) Frame_ServerMgrButtons.add((Page.GetFirstChild("Frame_ServerMgrButton#"^I) as CMlFrame));
+
+// ---------------------------------- //
 // Netcode
 declare netread Boolean Net_LibPauseMenu_DisableQuitButton for Teams[0];
 declare netread Text[] Net_LibPauseMenu_DisabledButtons for Teams[0];
@@ -238,6 +292,7 @@ declare PauseActiveContext = C_LibPauseMenu_ContextDefault;
 declare ActionToTrigger = "";
 declare UpdateWindowButtons = True;
 declare UpdateTeamSelection = True;
+declare UpdateServerMgrButtons = True;
 
 // Update
 declare PrevPageIsVisible = False;
@@ -245,6 +300,7 @@ declare PrevActiveContext = -1;
 declare PrevQuitDisabled = False;
 declare PrevButtonsUpdate = -1;
 declare PrevIsSpectator = False;
+declare PrevObserverMode = UI.SpectatorObserverMode;
 declare PrevNbPlayers = -1;
 declare PrevCustomTeamsUpdate = -1;
 declare PrevNbCustomTeams = -1;
@@ -330,6 +386,11 @@ foreach (Event in PendingEvents) {
 			PauseActiveContext = C_LibPauseMenu_ContextDefault;
 		
 		// ---------------------------------- //
+		// Return from the server manager
+		else if (Event.ControlId == "Quad_ManageServerButton")
+			PauseActiveContext = C_LibPauseMenu_ContextDefault;
+
+		// ---------------------------------- //
 		// Pause menu tiles buttons
 		else if (Event.ControlId == "Quad_MenuButtonCard") {
 			declare Text QuadButtonId for Event.Control;
@@ -379,11 +440,51 @@ if (PrevActiveContext != PauseActiveContext) {
 
 	Frame_PauseMainWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextDefault;
 	Frame_ChangeTeamWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextSwitchTeam;
+	Frame_ManageServerWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextManageServer;
 }
 
 // ---------------------------------- //
 // Loop depending on active context
 switch (PauseActiveContext) {
+	case C_LibPauseMenu_ContextManageServer : {
+
+		// ---------------------------------- //
+		// Update server manager page buttons
+		if (UpdateServerMgrButtons) {
+			UpdateServerMgrButtons = False;
+
+			// ---------------------------------- //
+			// List the available buttons
+			declare Text[] AvailableButtons;
+			foreach (ButtonId in C_ServerManagerButtons) {
+				switch (ButtonId) {
+					case "BalanceTeams" : if (!UseClans || UseForcedClans) continue;
+				}
+				AvailableButtons.add(ButtonId);
+			}
+
+			// ---------------------------------- //
+			// Format buttons frames
+			foreach (I => Frame in Frame_ServerMgrButtons) {
+				Frame.Visible = AvailableButtons.existskey(I);
+				if (!Frame.Visible) continue;
+				declare ButtonId = AvailableButtons[I];
+
+				// ---------------------------------- //
+				// Set the button text
+				declare Label_MenuButtonLabel <=> (Frame.GetFirstChild("Label_MenuButtonLabel") as CMlLabel);
+				declare ButtonText = ButtonId;
+				if (C_ServerManagerButtonsText.existskey(ButtonId)) ButtonText = C_ServerManagerButtonsText[ButtonId];
+				Label_MenuButtonLabel.Value = ButtonText;
+			}
+
+			// Adjust the window size
+			declare TotalHeight = 9. + AvailableButtons.count * 9.;
+			Frame_ManageServerBottom.RelativePosition_V3.Y = -TotalHeight;
+			TotalHeight += 10.;
+			Frame_ManageServerWindow.RelativePosition_V3.Y = TotalHeight / 2;
+		}
+	}
 	// ---------------------------------- //
 	// Team selection context
 	case C_LibPauseMenu_ContextSwitchTeam : {
@@ -442,7 +543,7 @@ switch (PauseActiveContext) {
 			// Set window position
 			declare TotalWidth = TotalNbTeams * 55.5 + 3.;
 			Frame_ChangeTeamWindow.RelativePosition_V3.X = TotalWidth / -2.;
-			Quad_TeamWinSeparator1.Size.X = TotalWidth;
+			Quad_TeamWinSeparator1.Size.X = TotalWidth; 
 			Quad_TeamWinSeparator2.Size.X = TotalWidth;
 
 			// ---------------------------------- //
@@ -534,6 +635,10 @@ switch (PauseActiveContext) {
 			PrevIsSpectator = IsSpectator;
 			UpdateWindowButtons = True;
 		}
+		if (PrevObserverMode != UI.SpectatorObserverMode) {
+			PrevObserverMode = UI.SpectatorObserverMode;
+			UpdateWindowButtons = True;
+		}
 
 		// ---------------------------------- //
 		// Update the tiles
@@ -546,6 +651,10 @@ switch (PauseActiveContext) {
 			foreach (ButtonId in AvailableButtonsIds) {
 				if (Net_LibPauseMenu_DisabledButtons.exists(ButtonId)) continue;
 				switch (ButtonId) {
+					case "LibPM_Spectator" : {
+						if (UI.SpectatorObserverMode == CUIConfig::EObserverMode::Forced || UI.ForceSpectator) continue;
+						if (UI.SpectatorObserverMode == CUIConfig::EObserverMode::Forbidden) continue;
+					}
 					case "LibPM_ChangeTeam" : if (IsSpectator || (!UseClans && Net_LibPauseMenu_NbCustomTeams <= 0) || UseForcedClans) continue;
 				}
 				ButtonsIds.add(ButtonId);
@@ -774,6 +883,7 @@ Void CreateButton(Text _ButtonId, Text _ButtonLabel, Text _ButtonIcon, Real _But
 		case "LibPM_SaveReplay" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::Resume); ActionToTrigger = \"maniaplanet:savereplay\";";
 		case "LibPM_ChangeTeam" : ButtonScript = "PauseActiveContext = C_LibPauseMenu_ContextSwitchTeam;";
 		case "LibPM_ManageServer" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::ServerSettings);";
+		//case "LibPM_ManageServer" : ButtonScript = "PauseActiveContext = C_LibPauseMenu_ContextManageServer;";
 		case "LibPM_Advanced" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::AdvancedMenu);";
 	}
 	SetButtonScript(_ButtonId, ButtonScript);
@@ -807,12 +917,19 @@ Void CreateStandardButtons() {
 }
 
 // ---------------------------------- //
-/// Hide buttons unwanted for a solo game.
+/** Hide buttons unwanted for a solo game.
+ *
+ *	@param	_IsSolo		If True, unnecessary buttons will be hidden.
+ */
+Void SetSoloMode(Boolean _IsSolo) {
+	SetButtonVisibility("LibPM_Spectator", !_IsSolo);
+	SetButtonVisibility("LibPM_ChangeTeam", !_IsSolo);
+	SetButtonVisibility("LibPM_ManageServer", !_IsSolo);
+	SetButtonVisibility("LibPM_Advanced", !_IsSolo);
+}
+
 Void SetSoloMode() {
-	SetButtonVisibility("LibPM_Spectator", True);
-	SetButtonVisibility("LibPM_ChangeTeam", True);
-	SetButtonVisibility("LibPM_ManageServer", True);
-	SetButtonVisibility("LibPM_Advanced", True);
+	SetSoloMode(True);
 }
 
 // ---------------------------------- //

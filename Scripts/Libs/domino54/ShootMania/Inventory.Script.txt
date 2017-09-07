@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INVENTORY by domino54         //
-//  script version: 2017-07-29            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Hotbar manialink can be fully customized with several formatting functions.
  */
 
-#Const Version		"2017-07-29"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Libs/domino54/ShootMania/Inventory.Script.txt"
 
 #Include "MathLib" as ML
@@ -152,6 +152,10 @@ Text Private_CreateManialinkInventory() {
 	declare ItemsModels = "";
 	for (I, 0, C_LibInventory_UINbItemsDisplayed - 1)
 		ItemsModels ^= "<frameinstance modelid='FrameModel_InventoryItem' id='Frame_InventoryItem#"^I^"' hidden='1' />";
+
+	declare CompactCooldownFrames = "";
+	for (I, 0, C_LibInventory_UINbItemsDisplayed - 1)
+		CompactCooldownFrames ^= "<frameinstance modelid='FrameModel_CompactCooldown' id='Frame_CompactCooldown#"^I^"' pos='0 "^-4*I^"' hidden='1' />";
 		
 	return """
 <manialink version="3" name="{{{C_LibInventory_UILayerID}}}">
@@ -165,14 +169,24 @@ Text Private_CreateManialinkInventory() {
 
 <framemodel id="FrameModel_InventoryItem">
 	<label halign="center" valign="center2" id="Label_ItemCooldown" opacity="0" />
-	<label posn="4.5 -5.25" halign="right" valign="bottom" id="Label_ItemAmount" opacity="0" />
-	<label posn="-4.25 4.25" id="Label_ItemHotkey" opacity="0" />
-	<quad halign="center" valign="center" autoscale="0" sizen="7 7" id="Quad_ItemIcon" opacity="0" />
-	<quad halign="center" valign="center" autoscale="0" sizen="10 10" id="Quad_ItemIsCurWeapon" opacity="0" hidden="1" />
-	<quad halign="center" valign="center" autoscale="0" sizen="10.5 10" id="Quad_ItemBackground" opacity="0" />
+	<label pos="4.5 -5.25" halign="right" valign="bottom" id="Label_ItemAmount" opacity="0" />
+	<label pos="-4.25 4.25" id="Label_ItemHotkey" opacity="0" />
+	<quad halign="center" valign="center" autoscale="0" size="7 7" id="Quad_ItemIcon" opacity="0" />
+	<quad halign="center" valign="center" autoscale="0" size="10 10" id="Quad_ItemIsCurWeapon" opacity="0" hidden="1" />
+	<quad halign="center" valign="center" autoscale="0" size="10.5 10" id="Quad_ItemBackground" opacity="0" />
 </framemodel>
 
 <frame id="Frame_InventoryHotbar"><frame id="Frame_HotbarItems">{{{ItemsModels}}}</frame></frame>
+
+<framemodel id="FrameModel_CompactCooldown">
+	<quad pos="-12" size="0 .5" valign="center" bgcolor="FFF" opacity=".75" id="Quad_CooldownBarValue" />
+	<quad pos="-12" size="28 .5" valign="center" bgcolor="FFF" opacity=".25" id="Quad_CooldownBarBg" />
+	<quad pos="-14.5" halign="center" valign="center" autoscale="0" scale=".5" size="7 7" id="Quad_ItemIcon" />
+	<quad pos="-14.5" halign="center" valign="center" autoscale="0" scale=".5" size="10 10" id="Quad_ItemBackground" />
+</framemodel>
+
+<frame id="Frame_CompactCooldownBox" pos="0 -20">{{{CompactCooldownFrames}}}</frame>
+
 
 <script><!--
 /**
@@ -193,11 +207,16 @@ Text Private_CreateManialinkInventory() {
 // Load interface elements
 declare Frame_InventoryHotbar <=> (Page.GetFirstChild("Frame_InventoryHotbar") as CMlFrame);
 declare Frame_HotbarItems <=> (Page.GetFirstChild("Frame_HotbarItems") as CMlFrame);
+declare Frame_CompactCooldownBox <=> (Page.GetFirstChild("Frame_CompactCooldownBox") as CMlFrame);
 
 /// Load inventory items frames
 declare CMlFrame[] Frame_InventoryItems;
 for (I, 0, {{{C_LibInventory_UINbItemsDisplayed - 1}}})
 	Frame_InventoryItems.add((Page.GetFirstChild("Frame_InventoryItem#"^I) as CMlFrame));
+
+declare CMlFrame[] Frame_CompactCooldowns;
+for (I, 0, {{{C_LibInventory_UINbItemsDisplayed - 1}}})
+	Frame_CompactCooldowns.add((Page.GetFirstChild("Frame_CompactCooldown#"^I) as CMlFrame));
 
 // ---------------------------------- //
 // Netcode
@@ -206,10 +225,20 @@ declare netread Text[Text] Net_LibInventory_Settings for Teams[0];
 declare netread Text Net_LibInventory_IconsPathPrefix for Teams[0];
 
 // ---------------------------------- //
+// Persistent settings
+declare persistent Boolean Persistant_LibInventory_HideCompactCooldown for LocalUser;
+
+// ---------------------------------- //
 // Variables
 declare DisplayHotbar = True;
 declare IsHotbarVisible = False;
 declare UpdateHotbarItems = True;
+
+declare UpdateCooldownsVisibility = True;
+declare Frame_CompactCooldowns_Active = CMlFrame[Text];
+declare CompactCooldownItems = Text[];
+declare CompactCooldownStart = Integer[Text];
+declare CompactCooldownDuration = Integer[Text];
 
 // Update
 declare PrevSettingsUpdate = -1;
@@ -274,6 +303,7 @@ if (PrevSettingsUpdate != Net_LibInventory_SettingsUpdate) {
 			// Format item background quad
 			case "FormatQuadBackground" : {
 				foreach (Frame in Frame_InventoryItems) FormatControl(Frame.GetFirstChild("Quad_ItemBackground"), SettingValue);
+				foreach (Frame in Frame_CompactCooldowns) FormatControl(Frame.GetFirstChild("Quad_ItemBackground"), SettingValue);
 			}
 			// ---------------------------------- //
 			// Format item current weapon quad
@@ -310,211 +340,275 @@ if (PrevIsHotbarVisible != IsHotbarVisible) {
 }
 
 // Continue if the hotbar is not visible
-if (!IsHotbarVisible) continue;
+if (IsHotbarVisible) {
+	// ---------------------------------- //
+	// Update hotbar color on player color change
+	if (PrevInterfaceColor != GUIPlayer.GetLinearHue) {
+		PrevInterfaceColor = GUIPlayer.GetLinearHue;
 
-// ---------------------------------- //
-// Update hotbar color on player color change
-if (PrevInterfaceColor != GUIPlayer.GetLinearHue) {
-	PrevInterfaceColor = GUIPlayer.GetLinearHue;
-
-	declare Color = HsvToRgb(<GUIPlayer.GetLinearHue, 1., 1.>);
-	foreach (I => Frame in Frame_InventoryItems) {
-		declare Quads = [
-			(Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad),
-			(Frame.GetFirstChild("Quad_ItemBackground") as CMlQuad),
-			(Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad)
-		];
-		foreach (Quad in Quads) Quad.Colorize = Color;
+		declare Color = HsvToRgb(<GUIPlayer.GetLinearHue, 1., 1.>);
+		foreach (I => Frame in Frame_InventoryItems) {
+			declare Quads = [
+				(Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad),
+				(Frame.GetFirstChild("Quad_ItemBackground") as CMlQuad),
+				(Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad)
+			];
+			foreach (Quad in Quads) Quad.Colorize = Color;
+		}
 	}
-}
-
-// ---------------------------------- //
-// Trigger hotbar items update on player change
-if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
-	PrevGUIPlayerLogin = GUIPlayer.User.Login;
-	UpdateHotbarItems = True;
-}
-
-// ---------------------------------- //
-// Trigger hotbar items update on mode update
-declare netread Integer Net_LibInventory_PlayerUpdate for GUIPlayer;
-
-if (PrevPlayerUpdateTime != Net_LibInventory_PlayerUpdate) {
-	PrevPlayerUpdateTime = Net_LibInventory_PlayerUpdate;
-	UpdateHotbarItems = True;
-}
-
-// ---------------------------------- //
-// Update the hotbar items
-if (UpdateHotbarItems) {
-	UpdateHotbarItems = False;
 
 	// ---------------------------------- //
-	// Get infrmation about the current player's items
-	declare netread Text[] Net_LibInventory_PlayerItems for GUIPlayer;
-	declare netread Text[Text] Net_LibInventory_PlayerItemIcon for GUIPlayer;
-	declare netread Text[Text] Net_LibInventory_PlayerItemHotkey for GUIPlayer;
-	declare netread Integer[Text] Net_LibInventory_PlayerItemAmount for GUIPlayer;
-	declare netread Integer[Text] Net_LibInventory_PlayerItemWeaponNum for GUIPlayer;
-	declare netread Integer[Text] Net_LibInventory_PlayerItemCooldownStart for GUIPlayer;
-	declare netread Integer[Text] Net_LibInventory_PlayerItemCooldownDuration for GUIPlayer;
-	declare netread Text[] Net_LibInventory_PlayerActiveItems for GUIPlayer;
+	// Trigger hotbar items update on player change
+	if (PrevGUIPlayerLogin != GUIPlayer.User.Login) {
+		PrevGUIPlayerLogin = GUIPlayer.User.Login;
+		UpdateHotbarItems = True;
+	}
 
 	// ---------------------------------- //
-	// Configure items slots
+	// Trigger hotbar items update on mode update
+	declare netread Integer Net_LibInventory_PlayerUpdate for GUIPlayer;
+
+	if (PrevPlayerUpdateTime != Net_LibInventory_PlayerUpdate) {
+		PrevPlayerUpdateTime = Net_LibInventory_PlayerUpdate;
+		UpdateHotbarItems = True;
+	}
+
+	// ---------------------------------- //
+	// Update the hotbar items
+	if (UpdateHotbarItems) {
+		UpdateHotbarItems = False;
+
+		// Reset compact cooldowns
+		CompactCooldownItems.clear();
+		UpdateCooldownsVisibility = True;
+
+		// ---------------------------------- //
+		// Get infrmation about the current player's items
+		declare netread Text[] Net_LibInventory_PlayerItems for GUIPlayer;
+		declare netread Text[Text] Net_LibInventory_PlayerItemIcon for GUIPlayer;
+		declare netread Text[Text] Net_LibInventory_PlayerItemHotkey for GUIPlayer;
+		declare netread Integer[Text] Net_LibInventory_PlayerItemAmount for GUIPlayer;
+		declare netread Integer[Text] Net_LibInventory_PlayerItemWeaponNum for GUIPlayer;
+		declare netread Integer[Text] Net_LibInventory_PlayerItemCooldownStart for GUIPlayer;
+		declare netread Integer[Text] Net_LibInventory_PlayerItemCooldownDuration for GUIPlayer;
+		declare netread Text[] Net_LibInventory_PlayerActiveItems for GUIPlayer;
+
+		// ---------------------------------- //
+		// Configure items slots
+		foreach (I => Frame in Frame_InventoryItems) {
+			Frame.Visible = Net_LibInventory_PlayerItems.existskey(I);
+			if (!Frame.Visible) continue;
+			declare CurItemId = Net_LibInventory_PlayerItems[I];
+
+			// Set the frame position
+			Frame.RelativePosition_V3.X = I * HotbarItemSize.X;
+
+			// ---------------------------------- //
+			// Load frame elements
+			declare Label_ItemAmount <=> (Frame.GetFirstChild("Label_ItemAmount") as CMlLabel);
+			declare Label_ItemHotkey <=> (Frame.GetFirstChild("Label_ItemHotkey") as CMlLabel);
+			declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
+
+			// ---------------------------------- //
+			// Set current item icon image
+			declare CurItemIconPath = "";
+			if (Net_LibInventory_PlayerItemIcon.existskey(CurItemId)) CurItemIconPath = Net_LibInventory_PlayerItemIcon[CurItemId];
+			Quad_ItemIcon.ImageUrl = Net_LibInventory_IconsPathPrefix^CurItemIconPath;
+
+			// ---------------------------------- //
+			// Set current item hotkey label
+			declare CurItemHotkey = "";
+			if (Net_LibInventory_PlayerItemHotkey.existskey(CurItemId)) CurItemHotkey = Net_LibInventory_PlayerItemHotkey[CurItemId];
+
+			// Special layouts check
+			if (CurItemHotkey == "Q") {
+				declare ExplodePath = TL::Split("|", LocalUser.ZonePath);
+				declare Country = "";
+				if (ExplodePath.existskey(2)) Country = ExplodePath[2];
+
+				if (LocalUser.Language == "fr" || C_CountriesAZERTY.exists(Country)) CurItemHotkey = "A"; ///< AZERTY
+				if (Country == "Lithuania") CurItemHotkey = "Ą"; ///< ĄŹERTY
+			}
+
+			// Set hotkey name
+			Label_ItemHotkey.Value = TL::ToUpperCase(CurItemHotkey);
+
+			// ---------------------------------- //
+			// Set current item amount
+			declare CurItemAmount = -1;
+			if (Net_LibInventory_PlayerItemAmount.existskey(CurItemId)) CurItemAmount = Net_LibInventory_PlayerItemAmount[CurItemId];
+			Label_ItemAmount.Visible = CurItemAmount >= 0;
+
+			if (Label_ItemAmount.Visible) {
+				Label_ItemAmount.Value = TL::ToText(CurItemAmount);
+				if (CurItemAmount > 0) Label_ItemAmount.TextColor = {{{C_LibInventory_UIItemColorDefault}}};
+				else Label_ItemAmount.TextColor = {{{C_LibInventory_UIItemColorEmpty}}};
+			}
+
+			// ---------------------------------- //
+			// Save the item attributes in the frame
+			declare Text FrameItemId for Frame;
+			declare Text FrameItemIconUrl for Frame;
+			declare Integer FrameItemAmount for Frame;
+			declare Integer FrameItemWeaponNum for Frame;
+			declare Integer FrameItemCooldownStart for Frame;
+			declare Integer FrameItemCooldownDuration for Frame;
+			declare Boolean FrameItemIsActive for Frame;
+
+			FrameItemId = CurItemId;
+			FrameItemIconUrl = Quad_ItemIcon.ImageUrl;
+			FrameItemAmount = CurItemAmount;
+			FrameItemWeaponNum = -1;
+			FrameItemCooldownStart = -1;
+			FrameItemCooldownDuration = 0;
+			FrameItemIsActive = Net_LibInventory_PlayerActiveItems.exists(CurItemId);
+
+			if (Net_LibInventory_PlayerItemWeaponNum.existskey(CurItemId)) FrameItemWeaponNum = Net_LibInventory_PlayerItemWeaponNum[CurItemId];
+			if (Net_LibInventory_PlayerItemCooldownStart.existskey(CurItemId)) FrameItemCooldownStart = Net_LibInventory_PlayerItemCooldownStart[CurItemId];
+			if (Net_LibInventory_PlayerItemCooldownDuration.existskey(CurItemId)) FrameItemCooldownDuration = Net_LibInventory_PlayerItemCooldownDuration[CurItemId];
+
+			// Trigger amount update
+			declare Integer PrevFrameItemAmount for Frame;
+			PrevFrameItemAmount = -2;
+
+			// Compact cooldown
+			declare ItemIsCooling = FrameItemCooldownStart > 0 && GameTime < FrameItemCooldownStart + FrameItemCooldownDuration;
+			if (ItemIsCooling) {
+				CompactCooldownItems.add(CurItemId);
+				CompactCooldownStart[CurItemId] = FrameItemCooldownStart;
+				CompactCooldownDuration[CurItemId] = FrameItemCooldownDuration;
+			}
+		}
+
+		// ---------------------------------- //
+		// Calculate the hotbar size depending on displayed items count
+		declare HotbarSize = <ML::Min(Net_LibInventory_PlayerItems.count, Frame_InventoryItems.count) * HotbarItemSize.X, HotbarItemSize.Y>;
+		
+		// Get the horizontal position of the items
+		declare Position = <0., 0.>;
+		switch (HotbarHorizontalAlign) {
+			case "left"		: Position.X = HotbarItemSize.X / 2;
+			case "center"	: Position.X = -(HotbarSize.X - HotbarItemSize.X) / 2;
+			case "right"	: Position.X = -HotbarSize.X + HotbarItemSize.X / 2;
+		}
+		
+		// Get the vertical position of the items
+		switch (HotbarVerticalAlign) {
+			case "top"		: Position.Y = -HotbarItemSize.Y / 2;
+			case "bottom"	: Position.Y = HotbarItemSize.Y / 2;
+		}
+		
+		// Set the items position
+		Frame_HotbarItems.RelativePosition_V3 = Position;
+	}
+
+	// ---------------------------------- //
+	// Manage additional functions of items cards
 	foreach (I => Frame in Frame_InventoryItems) {
-		Frame.Visible = Net_LibInventory_PlayerItems.existskey(I);
 		if (!Frame.Visible) continue;
-		declare CurItemId = Net_LibInventory_PlayerItems[I];
-
-		// Set the frame position
-		Frame.RelativePosition_V3.X = I * HotbarItemSize.X;
 
 		// ---------------------------------- //
-		// Load frame elements
-		declare Label_ItemAmount <=> (Frame.GetFirstChild("Label_ItemAmount") as CMlLabel);
-		declare Label_ItemHotkey <=> (Frame.GetFirstChild("Label_ItemHotkey") as CMlLabel);
-		declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
-
-		// ---------------------------------- //
-		// Set current item icon image
-		declare CurItemIconPath = "";
-		if (Net_LibInventory_PlayerItemIcon.existskey(CurItemId)) CurItemIconPath = Net_LibInventory_PlayerItemIcon[CurItemId];
-		Quad_ItemIcon.ImageUrl = Net_LibInventory_IconsPathPrefix^CurItemIconPath;
-
-		// ---------------------------------- //
-		// Set current item hotkey label
-		declare CurItemHotkey = "";
-		if (Net_LibInventory_PlayerItemHotkey.existskey(CurItemId)) CurItemHotkey = Net_LibInventory_PlayerItemHotkey[CurItemId];
-
-		// Special layouts check
-		if (CurItemHotkey == "Q") {
-			declare ExplodePath = TL::Split("|", LocalUser.ZonePath);
-			declare Country = "";
-			if (ExplodePath.existskey(2)) Country = ExplodePath[2];
-
-			if (LocalUser.Language == "fr" || C_CountriesAZERTY.exists(Country)) CurItemHotkey = "A"; ///< AZERTY
-			if (Country == "Lithuania") CurItemHotkey = "Ą"; ///< ĄŹERTY
-		}
-
-		// Set hotkey name
-		Label_ItemHotkey.Value = TL::ToUpperCase(CurItemHotkey);
-
-		// ---------------------------------- //
-		// Set current item amount
-		declare CurItemAmount = -1;
-		if (Net_LibInventory_PlayerItemAmount.existskey(CurItemId)) CurItemAmount = Net_LibInventory_PlayerItemAmount[CurItemId];
-		Label_ItemAmount.Visible = CurItemAmount >= 0;
-
-		if (Label_ItemAmount.Visible) {
-			Label_ItemAmount.Value = TL::ToText(CurItemAmount);
-			if (CurItemAmount > 0) Label_ItemAmount.TextColor = {{{C_LibInventory_UIItemColorDefault}}};
-			else Label_ItemAmount.TextColor = {{{C_LibInventory_UIItemColorEmpty}}};
-		}
-
-		// ---------------------------------- //
-		// Save the item attributes in the frame
+		// Data of the frame's item
+		declare Text FrameItemId for Frame;
 		declare Integer FrameItemAmount for Frame;
 		declare Integer FrameItemWeaponNum for Frame;
 		declare Integer FrameItemCooldownStart for Frame;
 		declare Integer FrameItemCooldownDuration for Frame;
 		declare Boolean FrameItemIsActive for Frame;
 
-		FrameItemAmount = CurItemAmount;
-		FrameItemWeaponNum = -1;
-		FrameItemCooldownStart = -1;
-		FrameItemCooldownDuration = 0;
-		FrameItemIsActive = Net_LibInventory_PlayerActiveItems.exists(CurItemId);
+		// Update
+		declare PrevFrameItemIsCurWeapon for Frame = False;
+		declare PrevFrameItemAmount for Frame = -2;
+		declare PrevFrameItemIsCooling for Frame = False;
 
-		if (Net_LibInventory_PlayerItemWeaponNum.existskey(CurItemId)) FrameItemWeaponNum = Net_LibInventory_PlayerItemWeaponNum[CurItemId];
-		if (Net_LibInventory_PlayerItemCooldownStart.existskey(CurItemId)) FrameItemCooldownStart = Net_LibInventory_PlayerItemCooldownStart[CurItemId];
-		if (Net_LibInventory_PlayerItemCooldownDuration.existskey(CurItemId)) FrameItemCooldownDuration = Net_LibInventory_PlayerItemCooldownDuration[CurItemId];
+		// Check if the item is currently equipped weapon
+		declare IsEquippedWeapon = FrameItemAmount != 0 && ((FrameItemWeaponNum > 0 && FrameItemWeaponNum == GUIPlayer.CurWeapon) || FrameItemIsActive);
 
-		// Trigger amount update
-		declare Integer PrevFrameItemAmount for Frame;
-		PrevFrameItemAmount = -2;
-	}
+		// ---------------------------------- //
+		// On item weapon state change
+		if (PrevFrameItemIsCurWeapon != IsEquippedWeapon) {
+			PrevFrameItemIsCurWeapon = IsEquippedWeapon;
 
-	// ---------------------------------- //
-	// Calculate the hotbar size depending on displayed items count
-	declare HotbarSize = <ML::Min(Net_LibInventory_PlayerItems.count, Frame_InventoryItems.count) * HotbarItemSize.X, HotbarItemSize.Y>;
-	
-	// Get the horizontal position of the items
-	declare Position = <0., 0.>;
-	switch (HotbarHorizontalAlign) {
-		case "left"		: Position.X = HotbarItemSize.X / 2;
-		case "center"	: Position.X = -(HotbarSize.X - HotbarItemSize.X) / 2;
-		case "right"	: Position.X = -HotbarSize.X + HotbarItemSize.X / 2;
+			declare Quad_ItemIsCurWeapon <=> (Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad);
+			Quad_ItemIsCurWeapon.Visible = IsEquippedWeapon;
+		}
+
+		// Check if the current item is cooling down
+		declare ItemIsCooling = FrameItemCooldownStart > 0 && GameTime < FrameItemCooldownStart + FrameItemCooldownDuration;
+
+		// ---------------------------------- //
+		// On item amount or cooling state change
+		if (PrevFrameItemAmount != FrameItemAmount || PrevFrameItemIsCooling != ItemIsCooling) {
+			PrevFrameItemAmount = FrameItemAmount;
+			PrevFrameItemIsCooling = ItemIsCooling;
+
+			// Get color depending on the item state
+			declare ModulatedColor = {{{C_LibInventory_UIItemColorDefault}}};
+			if (ItemIsCooling) ModulatedColor = {{{C_LibInventory_UIItemColorCooldown}}};
+			else if (FrameItemAmount == 0) ModulatedColor = {{{C_LibInventory_UIItemColorEmpty}}};
+			
+			// Apply the color to the item icon
+			declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
+			Quad_ItemIcon.ModulateColor = ModulatedColor;
+
+			// Cooling label visibility
+			declare Label_ItemCooldown <=> (Frame.GetFirstChild("Label_ItemCooldown") as CMlLabel);
+			Label_ItemCooldown.Visible = ItemIsCooling;
+		}
+
+		// ---------------------------------- //
+		// Set the cooldown label text
+		if (ItemIsCooling) {
+			declare Label_ItemCooldown <=> (Frame.GetFirstChild("Label_ItemCooldown") as CMlLabel);
+			Label_ItemCooldown.Value = TL::ToText((FrameItemCooldownStart + FrameItemCooldownDuration - GameTime) / 1000 + 1);
+		}
+		else if (CompactCooldownItems.exists(FrameItemId)) {
+			declare Removed = CompactCooldownItems.remove(FrameItemId);
+			UpdateCooldownsVisibility = True;
+		}
 	}
-	
-	// Get the vertical position of the items
-	switch (HotbarVerticalAlign) {
-		case "top"		: Position.Y = -HotbarItemSize.Y / 2;
-		case "bottom"	: Position.Y = HotbarItemSize.Y / 2;
-	}
-	
-	// Set the items position
-	Frame_HotbarItems.RelativePosition_V3 = Position;
 }
 
 // ---------------------------------- //
-// Manage additional functions of items cards
-foreach (I => Frame in Frame_InventoryItems) {
-	if (!Frame.Visible) continue;
+// Compact cooldown visibility
+Frame_CompactCooldownBox.Visible = GUIPlayer != Null && !Persistant_LibInventory_HideCompactCooldown && IsHotbarVisible && CompactCooldownItems.count > 0;
 
+if (Frame_CompactCooldownBox.Visible) {
 	// ---------------------------------- //
-	// Data of the frame's item
-	declare Integer FrameItemAmount for Frame;
-	declare Integer FrameItemWeaponNum for Frame;
-	declare Integer FrameItemCooldownStart for Frame;
-	declare Integer FrameItemCooldownDuration for Frame;
-	declare Boolean FrameItemIsActive for Frame;
+	// Update visible cooldown frames
+	if (UpdateCooldownsVisibility) {
+		UpdateCooldownsVisibility = False;
 
-	// Update
-	declare PrevFrameItemIsCurWeapon for Frame = False;
-	declare PrevFrameItemAmount for Frame = -2;
-	declare PrevFrameItemIsCooling for Frame = False;
+		declare netread Text[Text] Net_LibInventory_PlayerItemIcon for GUIPlayer;
+		Frame_CompactCooldowns_Active.clear();
 
-	// Check if the item is currently equipped weapon
-	declare IsEquippedWeapon = FrameItemWeaponNum > 0 && FrameItemWeaponNum == GUIPlayer.CurWeapon || FrameItemIsActive;
+		foreach (I => Frame in Frame_CompactCooldowns) {
+			Frame.Visible = CompactCooldownItems.existskey(I);
+			if (!Frame.Visible) continue;
 
-	// ---------------------------------- //
-	// On item weapon state change
-	if (PrevFrameItemIsCurWeapon != IsEquippedWeapon) {
-		PrevFrameItemIsCurWeapon = IsEquippedWeapon;
+			declare CooldownItemId = CompactCooldownItems[I];
+			Frame_CompactCooldowns_Active[CooldownItemId] = Frame;
 
-		declare Quad_ItemIsCurWeapon <=> (Frame.GetFirstChild("Quad_ItemIsCurWeapon") as CMlQuad);
-		Quad_ItemIsCurWeapon.Visible = IsEquippedWeapon;
-	}
-
-	// Check if the current item is cooling down
-	declare ItemIsCooling = FrameItemCooldownStart > 0 && GameTime < FrameItemCooldownStart + FrameItemCooldownDuration;
-
-	// ---------------------------------- //
-	// On item amount or cooling state change
-	if (PrevFrameItemAmount != FrameItemAmount || PrevFrameItemIsCooling != ItemIsCooling) {
-		PrevFrameItemAmount = FrameItemAmount;
-		PrevFrameItemIsCooling = ItemIsCooling;
-
-		// Get color depending on the item state
-		declare ModulatedColor = {{{C_LibInventory_UIItemColorDefault}}};
-		if (ItemIsCooling) ModulatedColor = {{{C_LibInventory_UIItemColorCooldown}}};
-		else if (FrameItemAmount == 0) ModulatedColor = {{{C_LibInventory_UIItemColorEmpty}}};
-		
-		// Apply the color to the item icon
-		declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
-		Quad_ItemIcon.ModulateColor = ModulatedColor;
-
-		// Cooling label visibility
-		declare Label_ItemCooldown <=> (Frame.GetFirstChild("Label_ItemCooldown") as CMlLabel);
-		Label_ItemCooldown.Visible = ItemIsCooling;
+			// ---------------------------------- //
+			// Set current item icon image
+			declare Quad_ItemIcon <=> (Frame.GetFirstChild("Quad_ItemIcon") as CMlQuad);
+			declare CurItemIconPath = "";
+			if (Net_LibInventory_PlayerItemIcon.existskey(CooldownItemId)) CurItemIconPath = Net_LibInventory_PlayerItemIcon[CooldownItemId];
+			Quad_ItemIcon.ImageUrl = Net_LibInventory_IconsPathPrefix^CurItemIconPath;
+		}
 	}
 
 	// ---------------------------------- //
-	// Set the cooldown label text
-	if (ItemIsCooling) {
-		declare Label_ItemCooldown <=> (Frame.GetFirstChild("Label_ItemCooldown") as CMlLabel);
-		Label_ItemCooldown.Value = TL::ToText((FrameItemCooldownStart + FrameItemCooldownDuration - GameTime) / 1000 + 1);
+	// Manage progress bars
+	foreach (ItemId => Frame in Frame_CompactCooldowns_Active) {
+		declare Quad_CooldownBarValue <=> (Frame.GetFirstChild("Quad_CooldownBarValue") as CMlQuad);
+		declare Quad_CooldownBarBg <=> (Frame.GetFirstChild("Quad_CooldownBarBg") as CMlQuad);
+
+		declare Ratio = 0.;
+		declare CooldownStart = CompactCooldownStart[ItemId];
+		declare CooldownDuration = CompactCooldownDuration[ItemId];
+		if (CooldownDuration > 0) Ratio = ML::ToReal(GameTime - CooldownStart) / CooldownDuration;
+		Quad_CooldownBarValue.Size.X = ML::Clamp(Ratio, 0., 1.) * Quad_CooldownBarBg.Size.X;
 	}
 }
 ***

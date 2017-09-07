@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-08-22            //
+//  script version: 2017-09-07            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const Version		"2017-08-22"
+#Const Version		"2017-09-07"
 #Const ScriptName	"Libs/domino54/ShootMania/Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -158,7 +158,7 @@ Text Private_CreateManialinkGauges() {
 	
 	<frame posn="-40 -4"><frame id="Frame_ReloadBoost" posn="0 -8">
 		<label posn="3" class="count" id="Label_BoostTimer" />
-		<quad sizen="5 5" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/ReloadBoost.png" id="Quad_BoostIcon" />
+		<quad sizen="5 5" halign="center" valign="center" image="{{{C_ImgBase}}}Icons/Fuel.png" id="Quad_BoostIcon" />
 		<gauge posn="-1" sizen="24 8" halign="right" valign="center" drawbg="0" drawblockbg="0" ratio="1" id="Gauge_ReloadBoost" />
 	</frame></frame>
 </frame>
@@ -184,8 +184,9 @@ Text Private_CreateManialinkGauges() {
 #Const C_GaugeTotalLength	{{{C_LibInterfancy_GaugeTotalLength}}}
 #Const C_GaugeSpacingWidth	{{{C_LibInterfancy_GaugeSpacingWidth}}}
 #Const C_GaugeSoundVolume	{{{C_LibInterfancy_GaugeSoundVolume}}}
-#Const C_GaugePositionFix	4.
-#Const C_StaminaDisplayTime	1500
+#Const C_GaugePositionFix		4.
+#Const C_StaminaDisplayTime		1500
+#Const C_HealPadTimePerArmor	1875
 
 /// Icons of the modules
 #Const C_ModulesIcons [
@@ -346,7 +347,6 @@ declare netread Text[Text] Net_LibInterfancy_CustomGaugesIcons for Teams[0];
 declare Gauges_Display = True;
 declare InterfaceColor = 0.;
 declare StaminaDisplayEndTime = -1;
-declare Integer[Ident] PlayerIsOnTechArmor;
 declare ShowReloadBoost = False;
 
 // Update
@@ -408,14 +408,56 @@ foreach (Event in PendingEvents) {
 // ---------------------------------- //
 // Get for how long players are loading their Armors
 foreach (Player in Players) {
-	if (Player.RequestsSpectate || Player.IsBot || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+	if (Player.RequestsSpectate || Player.IsBot || Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned) continue;
 	
+	// ---------------------------------- //
+	// Heal pads management
+	declare Real PlayerHealPadArmor for Player;
+	declare Boolean PrevPlayerIsOnTechArmor for Player;
+	declare Integer PlayerHealPadStart for Player;
+
+	if (PrevPlayerIsOnTechArmor != Player.IsOnTechArmor) {
+		PrevPlayerIsOnTechArmor = Player.IsOnTechArmor;
+		PlayerHealPadStart = Now;
+	}
 	if (Player.IsOnTechArmor) {
-		if (!PlayerIsOnTechArmor.existskey(Player.Id)) PlayerIsOnTechArmor[Player.Id] = GameTime;
+		PlayerHealPadArmor = ML::Clamp((Now - PlayerHealPadStart) % C_HealPadTimePerArmor / ML::ToReal(C_HealPadTimePerArmor), 0., .99);
 	}
-	else if (PlayerIsOnTechArmor.existskey(Player.Id)) {
-		declare Removed = PlayerIsOnTechArmor.removekey(Player.Id);
+	else if (PlayerHealPadArmor != 0) PlayerHealPadArmor = 0.;
+
+	// ---------------------------------- //
+	// Huge unnecessary mess for replenish gain
+	declare Real PlayerReplenishedArmor for Player;
+	declare Integer PrevReplenishGain for Player;
+	declare Integer PlayerReplenishGainStart for Player;
+
+	if (PrevReplenishGain != Player.ArmorReplenishGain) {
+		PrevReplenishGain = Player.ArmorReplenishGain;
+		PlayerReplenishGainStart = GameTime;
+
+		declare Integer PrevStartTime for Player;
+		declare Integer PrevPlayerArmor for Player;
+		PrevStartTime = Player.StartTime;
+		PrevPlayerArmor = Player.Armor;
 	}
+	if (Player.ArmorReplenishGain > 0) {
+		declare Integer PrevStartTime for Player;
+		declare Integer PrevPlayerArmor for Player;
+		declare GainSpeed = 1000000 / Player.ArmorReplenishGain;
+
+		if (PrevStartTime != Player.StartTime) {
+			PrevStartTime = Player.StartTime;
+			PrevPlayerArmor = Player.Armor;
+			PlayerReplenishGainStart = Player.StartTime - 2500;
+		}
+		if (PrevPlayerArmor != Player.Armor) {
+			if (PrevPlayerArmor > Player.Armor) PlayerReplenishGainStart = GameTime + 500;
+			PrevPlayerArmor = Player.Armor;
+		}
+
+		PlayerReplenishedArmor = ML::Clamp((GameTime - PlayerReplenishGainStart) % GainSpeed / ML::ToReal(GainSpeed), 0., .99);
+	}
+	else if (PlayerReplenishedArmor != 0) PlayerReplenishedArmor = 0.;
 }
 
 // ---------------------------------- //
@@ -536,8 +578,12 @@ if (ModuleVisibility_Armor) {
 	ModuleSlots_Armor = GUIPlayer.ArmorMax / 100;
 
 	// Armor loading on Armor pads
-	if (GUIPlayer.IsOnTechArmor && PlayerIsOnTechArmor.existskey(GUIPlayer.Id))
-		ModuleRatio_Armor += (GameTime - PlayerIsOnTechArmor[GUIPlayer.Id]) % 1875 / 1875.;
+	declare Real PlayerHealPadArmor for GUIPlayer;
+	ModuleRatio_Armor += PlayerHealPadArmor;
+
+	// Replenished Armor
+	declare Real PlayerReplenishedArmor for GUIPlayer;
+	ModuleRatio_Armor += PlayerReplenishedArmor;
 
 	// Clamp the ratio
 	ModuleRatio_Armor = ML::Clamp(ModuleRatio_Armor, 0., ML::ToReal(ModuleSlots_Armor));
@@ -982,13 +1028,13 @@ Text Private_CreateManialinkScoreSummary() {
 
 <framemodel id="FrameModel_SummaryCardL">
 	<label pos="-3 -3" valign="center2" class="font" text="0" halign="right" id="Label_TeamPoints" />
-	<label pos="-3 -7" valign="center2" class="font" textsize="2" halign="right" id="Label_TeamRoundPoints" hidden="1" />
+	<label pos="-3 -7" valign="center2" class="font" textsize="2" halign="right" id="Label_TeamRoundPoints" value="0" hidden="1" />
 	<quad class="bg" image="{{{C_ImgBase}}}UiScoreSummaryLeft.png" halign="right" id="Quad_TeamColorCard" />
 </framemodel>
 
 <framemodel id="FrameModel_SummaryCardR">
 	<label pos="3 -3" valign="center2" class="font" text="0" halign="left" id="Label_TeamPoints" />
-	<label pos="3 -7" valign="center2" class="font" textsize="2" halign="left" id="Label_TeamRoundPoints" hidden="1" />
+	<label pos="3 -7" valign="center2" class="font" textsize="2" halign="left" id="Label_TeamRoundPoints" value="0" hidden="1" />
 	<quad class="bg" image="{{{C_ImgBase}}}UiScoreSummaryRight.png" halign="left" id="Quad_TeamColorCard" />
 </framemodel>
 
@@ -1030,6 +1076,9 @@ for (I, 0, 5) Frame_SummaryCards.add((Page.GetFirstChild("Frame_SummaryCard#"^I)
 // Netcode
 declare netread Integer Net_LibInterfancy_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibInterfancy_Settings for Teams[0];
+declare netread Integer[Integer] Net_LibInterfancy_ClansRoundPoints for Teams[0];
+declare netread Integer[Integer] Net_LibInterfancy_CustomTeamsPoints for Teams[0];
+declare netread Vec3[Integer] Net_LibInterfancy_CustomTeamsColors for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -1037,12 +1086,11 @@ declare ScoreSummary_Display = False;
 declare ShowScoreSummary = False;
 declare ShowRoundPoints = False;
 
+declare NbTeamsTotal = Teams.count;
 declare NbCustomTeams = -1;
 declare UpdateSummaryCards = True;
+declare Frame_SummaryCards_Active = CMlFrame[Integer];
 declare TeamColors = Vec3[Integer];
-declare CustomTeamsColors = Vec3[Integer];
-declare CustomTeamsPoints = Integer[Integer];
-declare ClanRoundScores = [1 => 0, 2 => 0];
 
 declare PrevSettingsUpdate = -1;
 declare PrevShowScoreSummary = False;
@@ -1068,42 +1116,6 @@ if (PrevSettingsUpdate != Net_LibInterfancy_SettingsUpdate) {
 			case "ScoreSummary_Display" : ScoreSummary_Display = SettingValue == "True";
 			case "ScoreSummary_ShowRoundPoints" : ShowRoundPoints = SettingValue == "True";
 			case "NbTeams" : NbCustomTeams = ML::Max(TL::ToInteger(SettingValue), 0);
-			default : {
-				// ---------------------------------- //
-				// Set custom color of a team
-				if (TL::SubText(SettingName, 0, 15) == "CustomTeamColor") {
-					declare Team = TL::ToInteger(TL::Replace(SettingName, "CustomTeamColor", ""));
-					if (Team <= 0) continue;
-					
-					declare ColorText = TL::Split(" ", SettingValue);
-					if (ColorText.count != 3) continue;
-					
-					declare Color = <-1., -1., -1.>;
-					for (I, 0, 2) Color[I] = TL::ToReal(ColorText[I]);
-					
-					// ---------------------------------- //
-					// Update the team color
-					if (!CustomTeamsColors.existskey(Team) || Color != CustomTeamsColors[Team]) {
-						UpdateSummaryCards = True;
-						if (Color == <-1., -1., -1.>) {
-							declare Removed = CustomTeamsColors.removekey(Team);
-						}
-						else CustomTeamsColors[Team] = Color;
-					}
-				}
-				// ---------------------------------- //
-				// Set custom amount of points of a team
-				if (TL::SubText(SettingName, 0, 16) == "CustomTeamPoints") {
-					declare Team = TL::ToInteger(TL::Replace(SettingName, "CustomTeamPoints", ""));
-					if (Team <= 0) continue;
-					
-					declare Points = TL::ToInteger(SettingValue);
-					if (Points < 0) {
-						declare Removed = CustomTeamsPoints.removekey(Team);
-					}
-					else CustomTeamsPoints[Team] = Points;
-				}
-			}
 		}
 	}
 }
@@ -1140,20 +1152,23 @@ if (PrevShowRoundPoints != ShowRoundPoints) {
 	}
 }
 
-ClanRoundScores = [1 => UI.ScoreSummary_RoundPoints1, 2 => UI.ScoreSummary_RoundPoints2];
-
 // ---------------------------------- //
 // Update teams cards on teams number change
 if (PrevNbCustomTeams != NbCustomTeams) {
 	PrevNbCustomTeams = NbCustomTeams;
 	UpdateSummaryCards = True;
+
+	if (NbCustomTeams > 0) NbTeamsTotal = NbCustomTeams;
+	else NbTeamsTotal = Teams.count;
 }
 
 // ---------------------------------- //
 // Update teams cards on default teams colors change
-if (NbCustomTeams <= 0) foreach (TeamId => Team in Teams) {
-	if (PrevTeamsColors[TeamId] == Team.ColorPrimary) continue;
-	PrevTeamsColors[TeamId] = Team.ColorPrimary;
+foreach (I => Team in Teams) {
+	if (NbCustomTeams > 0) break;
+	declare Vec3 PrevTeamColor for Team;
+	if (PrevTeamColor == Team.ColorPrimary) continue;
+	PrevTeamColor = Team.ColorPrimary;
 	UpdateSummaryCards = True;
 }
 
@@ -1161,22 +1176,23 @@ if (NbCustomTeams <= 0) foreach (TeamId => Team in Teams) {
 // Update teams cards
 if (UpdateSummaryCards) {
 	UpdateSummaryCards = False;
+	Frame_SummaryCards_Active.clear();
 	
 	// Get the colors of the teams
 	TeamColors = [1 => Teams[0].ColorPrimary, 2 => Teams[1].ColorPrimary];
-	foreach (Team => Color in CustomTeamsColors) TeamColors[Team] = Color;
+	if (NbCustomTeams > 0) foreach (Team => Color in Net_LibInterfancy_CustomTeamsColors) TeamColors[Team] = Color;
 	
 	// First team card Offset
-	declare NbTeams = 2;
-	if (NbCustomTeams > 0) NbTeams = NbCustomTeams;
-	declare Offset = 2 - ML::Clamp(NbTeams - 2, 1, 6) / 2;
+	declare Offset = 2 - ML::Clamp(NbTeamsTotal - 2, 1, 6) / 2;
 	
 	// ---------------------------------- //
 	// Manage the teams card
 	foreach (I => Frame in Frame_SummaryCards) {
-		Frame.Visible = I >= Offset && I <= Offset + (NbTeams - 1);
+		Frame.Visible = I >= Offset && I <= Offset + (NbTeamsTotal - 1);
 		if (!Frame.Visible) continue;
+
 		declare Clan = I - Offset + 1;
+		Frame_SummaryCards_Active[Clan] <=> Frame;
 		
 		// ---------------------------------- //
 		// Update color of the card
@@ -1192,29 +1208,22 @@ if (UpdateSummaryCards) {
 
 // ---------------------------------- //
 // Update clans scores
-for (Clan, 1, 6) {
+foreach (Clan => Frame in Frame_SummaryCards_Active) {
 	// ---------------------------------- //
 	// Set match scores
-	declare ClanPoints = 0;
-	if (CustomTeamsPoints.existskey(Clan)) ClanPoints = CustomTeamsPoints[Clan];
-	else if (ClanScores.existskey(Clan)) ClanPoints = ClanScores[Clan];
-	
-	if (!PrevClanScores.existskey(Clan) || PrevClanScores[Clan] != ClanPoints) {
-		PrevClanScores[Clan] = ClanPoints;
-		
-		// ---------------------------------- //
-		// Get the target frame
-		declare NbTeams = 2;
-		if (NbCustomTeams > 0) NbTeams = NbCustomTeams;
-		declare TeamCardFrameNum = GetTeamCardNum(Clan, NbTeams);
-		if (!Frame_SummaryCards.existskey(TeamCardFrameNum)) continue;
-		declare Frame = Frame_SummaryCards[TeamCardFrameNum];
+	declare ClanScore = 0;
+	if (Net_LibInterfancy_CustomTeamsPoints.existskey(Clan))
+		ClanScore = Net_LibInterfancy_CustomTeamsPoints[Clan];
+	else if (ClanScores.existskey(Clan)) ClanScore = ClanScores[Clan];
+
+	declare PrevClanScore for Frame = -1;
+	if (PrevClanScore != ClanScore) {
+		PrevClanScore = ClanScore;
 		
 		// Update displayed points
 		declare Label_TeamPoints <=> (Frame.GetFirstChild("Label_TeamPoints") as CMlLabel);
-		Label_TeamPoints.Value = TL::ToText(ClanPoints);
+		Label_TeamPoints.Value = TL::ToText(ClanScore);
 		
-		// ---------------------------------- //
 		// White flash animation
 		declare Quad_TeamColorCard <=> (Frame.GetFirstChild("Quad_TeamColorCard") as CMlQuad);
 		Quad_TeamColorCard.Colorize = <1., 1., 1.>;
@@ -1226,23 +1235,19 @@ for (Clan, 1, 6) {
 	
 	// ---------------------------------- //
 	// Set round scores
-	if (
-		ClanRoundScores.existskey(Clan) &&
-		(!PrevClanRoundScores.existskey(Clan) || PrevClanRoundScores[Clan] != ClanRoundScores[Clan])
-	) {
-		PrevClanRoundScores[Clan] = ClanRoundScores[Clan];
-		
-		// ---------------------------------- //
-		// Get the target frame
-		declare NbTeams = 2;
-		if (NbCustomTeams > 0) NbTeams = NbCustomTeams;
-		declare TeamCardFrameNum = GetTeamCardNum(Clan, NbTeams);
-		if (!Frame_SummaryCards.existskey(TeamCardFrameNum)) continue;
-		declare Frame = Frame_SummaryCards[TeamCardFrameNum];
-		
-		// Update displayed points
-		declare Label_TeamRoundPoints <=> (Frame.GetFirstChild("Label_TeamRoundPoints") as CMlLabel);
-		Label_TeamRoundPoints.Value = TL::ToText(ML::Max(ClanRoundScores[Clan], 0));
+	if (ShowRoundPoints) {
+		declare ClanRoundScore = 0;
+		if (Net_LibInterfancy_ClansRoundPoints.existskey(Clan))
+			ClanRoundScore = Net_LibInterfancy_ClansRoundPoints[Clan];
+
+		declare PrevClanRoundScore for Frame = -1;
+		if (PrevClanRoundScore != ClanRoundScore) {
+			PrevClanRoundScore = ClanRoundScore;
+			
+			// Update displayed points
+			declare Label_TeamRoundPoints <=> (Frame.GetFirstChild("Label_TeamRoundPoints") as CMlLabel);
+			Label_TeamRoundPoints.Value = TL::ToText(ClanRoundScore);
+		}
 	}
 }
 ***
@@ -2260,7 +2265,9 @@ Void SetNbCustomTeams(Integer _NbTeams) {
  *	@param	_Color	The color of a custom team.
  */
 Void SetCustomTeamColor(Integer _Team, Vec3 _Color) {
-	Private_SetModuleSetting("CustomTeamColor"^_Team, _Color.X^" "^_Color.Y^" "^_Color.Z);
+	if (_Team <= 0) return;
+	declare netwrite Vec3[Integer] Net_LibInterfancy_CustomTeamsColors for Teams[0];
+	Net_LibInterfancy_CustomTeamsColors[_Team] = _Color;
 }
 
 // ---------------------------------- //
@@ -2269,7 +2276,17 @@ Void SetCustomTeamColor(Integer _Team, Vec3 _Color) {
  *	@param	_Team	The team to reset its color.
  */
 Void ResetCustomTeamColor(Integer _Team) {
-	SetCustomTeamColor(_Team, <-1., -1., -1.>);
+	if (_Team <= 0) return;
+	declare netwrite Vec3[Integer] Net_LibInterfancy_CustomTeamsColors for Teams[0];
+	if (!Net_LibInterfancy_CustomTeamsColors.existskey(_Team)) return;
+	declare Removed = Net_LibInterfancy_CustomTeamsColors.removekey(_Team);
+}
+
+// ---------------------------------- //
+/// Reset custom teams colors.
+Void ResetCustomTeamColor() {
+	declare netwrite Vec3[Integer] Net_LibInterfancy_CustomTeamsColors for Teams[0];
+	Net_LibInterfancy_CustomTeamsColors.clear();
 }
 
 // ---------------------------------- //
@@ -2279,7 +2296,9 @@ Void ResetCustomTeamColor(Integer _Team) {
  *	@param	_Points		The amount of points of a custom team.
  */
 Void SetCustomTeamPoints(Integer _Team, Integer _Points) {
-	Private_SetModuleSetting("CustomTeamPoints"^_Team, TL::ToText(_Points));
+	if (_Team <= 0) return;
+	declare netwrite Integer[Integer] Net_LibInterfancy_CustomTeamsPoints for Teams[0];
+	Net_LibInterfancy_CustomTeamsPoints[_Team] = _Points;
 }
 
 // ---------------------------------- //
@@ -2288,9 +2307,49 @@ Void SetCustomTeamPoints(Integer _Team, Integer _Points) {
  *	@param	_Team	The team to reset its amount of points.
  */
 Void ResetCustomTeamPoints(Integer _Team) {
-	SetCustomTeamPoints(_Team, -1);
+	if (_Team <= 0) return;
+	declare netwrite Integer[Integer] Net_LibInterfancy_CustomTeamsPoints for Teams[0];
+	if (!Net_LibInterfancy_CustomTeamsPoints.existskey(_Team)) return;
+	declare Removed = Net_LibInterfancy_CustomTeamsPoints.removekey(_Team);
 }
 
+// ---------------------------------- //
+/// Reset custom teams points.
+Void ResetCustomTeamPoints() {
+	declare netwrite Integer[Integer] Net_LibInterfancy_CustomTeamsPoints for Teams[0];
+	Net_LibInterfancy_CustomTeamsPoints.clear();
+}
+
+// ---------------------------------- //
+/** Set the amount of round points of a custom team in the scores summary.
+ *
+ *	@param	_Team		Team to set the point samount.
+ *	@param	_Points		The amount of points of a custom team.
+ */
+Void SetClanRoundPoints(Integer _Team, Integer _Points) {
+	if (_Team <= 0) return;
+	declare netwrite Integer[Integer] Net_LibInterfancy_ClansRoundPoints for Teams[0];
+	Net_LibInterfancy_ClansRoundPoints[_Team] = _Points;
+}
+
+// ---------------------------------- //
+/** Reset the amount of round points of a team in scores summary.
+ *
+ *	@param	_Team	The team to reset its amount of round points.
+ */
+Void ResetClanRoundPoints(Integer _Team) {
+	if (_Team <= 0) return;
+	declare netwrite Integer[Integer] Net_LibInterfancy_ClansRoundPoints for Teams[0];
+	if (!Net_LibInterfancy_ClansRoundPoints.existskey(_Team)) return;
+	declare Removed = Net_LibInterfancy_ClansRoundPoints.removekey(_Team);
+}
+
+// ---------------------------------- //
+/// Reset custom teams points.
+Void ResetClanRoundPoints() {
+	declare netwrite Integer[Integer] Net_LibInterfancy_ClansRoundPoints for Teams[0];
+	Net_LibInterfancy_ClansRoundPoints.clear();
+}
 // ---------------------------------- //
 /** Reset all data sent through network by the library.
  *

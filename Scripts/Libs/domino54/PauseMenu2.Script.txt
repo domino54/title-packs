@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PAUSE MENU 2 by domino54      //
-//  script version: 2017-09-07            //
+//  script version: 2017-10-09            //
 // -------------------------------------- //
 
 /**
@@ -15,17 +15,24 @@
  *	using multiple custom teams.
  */
 
-#Const Version		"2017-09-07"
+#Const Version		"2017-10-09"
 #Const ScriptName	"Libs/domino54/PauseMenu2.Script.txt"
 
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/Bindings.Script.txt" as Bindings
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_LibPauseMenu_ManialinkLayerId	"PauseMenu:Manialink"
+#Const C_LibPauseMenu_ManialinkLayerId		"PauseMenu:Manialink"
+#Const C_LibPauseMenu_MXAPIMapInfoRoute 	"https://api.mania-exchange.com/%1/maps/%2?format=xml"
+#Const C_LibPauseMenu_MXAPIScreenshotRoute	"https://%1.mania-exchange.com/tracks/screenshot/normal/%2?.png"
+#Const C_LibPauseMenu_MXMapShowcaseRoute	"exchange?g=%1&id=%2"
+#Const C_LibPauseMenu_MPWSMapInfoRoute 		"http://v4.live.maniaplanet.com/webservices/maps/"
+#Const C_LibPauseMenu_MPMapShowcaseRoute	"map?"
 
 // ---------------------------------- //
 // Global variables
@@ -38,6 +45,24 @@ declare Text[Text] G_LibPauseMenu_ButtonsScripts;
 
 /// Custom team change requests
 declare Integer[Ident] G_LibPauseMenu_CustomTeamChangeRequests;
+
+/// Title custom settings
+declare CHttpRequest G_LibPauseMenu_TitleSettingsReq;
+declare Integer G_LibPauseMenu_TitleSettingsReqStart;
+declare Text[Text] G_LibPauseMenu_TitleSettingsGroups;
+declare Text[Integer] G_LibPauseMenu_TitleSettingsNames;
+declare Text[Integer] G_LibPauseMenu_TitleSettingsDesc;
+declare Text[Integer] G_LibPauseMenu_TitleSettingsGroup;
+declare Text[Integer] G_LibPauseMenu_TitleSettingsType;
+declare Text[Integer] G_LibPauseMenu_TitleSettingsDefault;
+declare Text[][Integer] G_LibPauseMenu_TitleSettingsEnumVal;
+declare Text[][Integer] G_LibPauseMenu_TitleSettingsEnumName;
+declare Boolean[Integer] G_LibPauseMenu_TitleSettingsInvert;
+
+/// Custom key bindings
+declare Text[Integer] G_LibPauseMenu_KeyBindingsNames;
+declare Text[Integer] G_LibPauseMenu_KeyBindingsDesc;
+declare Text[Integer] G_LibPauseMenu_KeyBindingsDefault;
 
 // ---------------------------------- //
 // Functions
@@ -92,7 +117,92 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 	// List required translations
 	declare Text[] RequiredTranslations;
 	foreach (ButtonId => Label in G_LibPauseMenu_ButtonsLabels) RequiredTranslations.add(Label);
-	
+
+	// ---------------------------------- //
+	// Custom settings
+	declare CustomSettings = "";
+	declare SettingsCategories = "";
+	for (I, 0, 11) CustomSettings ^= "<frameinstance modelid='FrameModel_CustomSetting' id='Frame_CustomSetting#"^I^"' pos='0 "^I*-5.5^"' hidden='1' />";
+	for (I, 0, 6) SettingsCategories ^= "<frameinstance modelid='FrameModel_SettingCat' id='Frame_SettingCat#"^I^"' pos='0 "^I*-8.5^"' hidden='1' />";
+
+	declare SettingsDeclarations = "";
+	declare SettingsGetter = "";
+	declare SettingsSetter = "";
+
+	foreach (I => SettingName in G_LibPauseMenu_TitleSettingsNames) {
+		declare SettingType = "";
+		declare SettingDefault = "";
+		declare SettingDescription = "";
+
+		if (G_LibPauseMenu_TitleSettingsType.existskey(I)) SettingType = G_LibPauseMenu_TitleSettingsType[I];
+		if (G_LibPauseMenu_TitleSettingsDefault.existskey(I)) SettingDefault = G_LibPauseMenu_TitleSettingsDefault[I];
+		if (G_LibPauseMenu_TitleSettingsDesc.existskey(I)) SettingDescription = G_LibPauseMenu_TitleSettingsDesc[I];
+
+		if (SettingType == "Boolean" && (SettingDefault != "False" && SettingDefault != "True")) continue;
+		if (SettingDescription != "") RequiredTranslations.add(SettingDescription);
+
+		declare SetterType = "";
+		switch (SettingType) {
+			case "Boolean" : SetterType = "_SettingValue == \"True\"";
+			case "Integer" : SetterType = "TL::ToInteger(_SettingValue)";
+			case "Real" : SetterType = "TL::ToReal(_SettingValue)";
+			case "Text" : SetterType = "_SettingValue";
+			default : continue;
+		}
+
+		SettingsDeclarations ^= "\tdeclare persistent "^SettingType^" "^SettingName^" for LocalUser = "^SettingDefault^";\n";
+		SettingsGetter ^= "\t\tcase "^I^" : return TL::ToText("^SettingName^");\n";
+		SettingsSetter ^= "\t\tcase "^I^" : "^SettingName^" = "^SetterType^";\n";
+	}
+
+	foreach (GroupId => GroupName in G_LibPauseMenu_TitleSettingsGroups) RequiredTranslations.add(GroupName);
+
+	declare Dump_SettingsGroups	= dump(G_LibPauseMenu_TitleSettingsGroups);
+	declare Dump_SettingsDesc	= dump(G_LibPauseMenu_TitleSettingsDesc);
+	declare Dump_SettingsGroup	= dump(G_LibPauseMenu_TitleSettingsGroup);
+	declare Dump_SettingsType	= dump(G_LibPauseMenu_TitleSettingsType);
+	declare Dump_SettingsInvert	= dump(G_LibPauseMenu_TitleSettingsInvert);
+	declare Dump_SettingsDefault = dump(G_LibPauseMenu_TitleSettingsDefault);
+
+	if (Dump_SettingsGroups == "[]") Dump_SettingsGroups = "Text[Text]";
+	if (Dump_SettingsDesc == "[]") Dump_SettingsDesc = "Text[Integer]";
+	if (Dump_SettingsGroup == "[]") Dump_SettingsGroup = "Text[Integer]";
+	if (Dump_SettingsType == "[]") Dump_SettingsType = "Text[Integer]";
+	if (Dump_SettingsInvert == "[]") Dump_SettingsInvert = "Boolean[Integer]";
+	if (Dump_SettingsDefault == "[]") Dump_SettingsDefault = "Text[Integer]";
+
+	declare Dump_SettingsEnumVal = "Text[][Integer]";
+	if (G_LibPauseMenu_TitleSettingsEnumVal.count > 0) {
+		declare Text[] SettingsEnumVal;
+		foreach (I => Values in G_LibPauseMenu_TitleSettingsEnumVal) {
+			declare ValuesText = dump(Values);
+			if (ValuesText == "[]") ValuesText = "Text[]";
+			SettingsEnumVal.add(I^" => "^ValuesText);
+		}
+		Dump_SettingsEnumVal = "["^TL::Join(", ", SettingsEnumVal)^"]";
+	}
+
+	declare Dump_SettingsEnumName = "Text[][Integer]";
+	if (G_LibPauseMenu_TitleSettingsEnumName.count > 0) {
+		declare Text[] SettingsEnumName;
+		foreach (I => Names in G_LibPauseMenu_TitleSettingsEnumName) {
+			declare NamesText = dump(Names);
+			if (NamesText == "[]") NamesText = "Text[]";
+			SettingsEnumName.add(I^" => "^NamesText);
+		}
+		Dump_SettingsEnumName = "["^TL::Join(", ", SettingsEnumName)^"]";
+	}
+
+	// ---------------------------------- //
+	// Custom key bindings
+	declare Dump_BindingsNames		= dump(G_LibPauseMenu_KeyBindingsNames);
+	declare Dump_BindingsDesc		= dump(G_LibPauseMenu_KeyBindingsDesc);
+	declare Dump_BindingsDefault	= dump(G_LibPauseMenu_KeyBindingsDefault);
+
+	if (Dump_BindingsNames == "[]") Dump_BindingsNames = "Text[Integer]";
+	if (Dump_BindingsDesc == "[]") Dump_BindingsDesc = "Text[Integer]";
+	if (Dump_BindingsDefault == "[]") Dump_BindingsDefault = "Text[Integer]";
+
 	return """
 <manialink version="3" name="{{{C_LibPauseMenu_ManialinkLayerId}}}">
 <stylesheet>
@@ -102,12 +212,43 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 
 <frame id="Frame_PauseMainWindow" pos="-57">
 	<label pos="2 -2" class="FontM" id="Label_MapSelectionTitle" textsize="4" textprefix="$t" text="Pause" translate="1" />
-	<quad pos="0 -6" size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
+	
+	<frame id="Frame_MapInformation" hidden="1">
+		<quad size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
 
-	<frame pos="2 -8">
+		<frame pos="2 -2">
+			<quad size="36 18" keepratio="Clip" id="Quad_CurMapThumbnail" />
+			<quad size="36 18" bgcolor="FFF" opacity=".125" />
+		</frame>
+
+		<frame pos="39 -2">
+			<label pos="2 -3.625" size="69" class="FontM" maxline="1" textsize="2" id="Label_CurMapName" />
+			<label pos="1.625 -7.75" class="FontM" textsize="1" text="👤" />
+			<label pos="5 -7.5" size="66" class="FontM" textsize="1" id="Label_CurMapAuthor" />
+			<quad size="73 10" bgcolor="FFF" opacity=".125" />
+
+			<frame id="Frame_MapButtonMX" pos="0 -11" hidden="1">
+				<quad pos="1.25 -3.5" size="5 5" valign="center2" image="https://mania-exchange.com/Content/images/planet_mx_logo.png" />
+				<label pos="7 -3.5" class="FontM" textsize="1.5" textprefix="$t" text="Mania Exchange" />
+				<quad size="36 7" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_MapButtonMXCard" ScriptEvents="1" />
+				<quad size="36 7" bgcolor="FFF" opacity=".125" />
+			</frame>
+
+			<frame id="Frame_MapButtonMP" pos="37 -11" hidden="1">
+				<label pos="1.75 -3.875" class="FontM" textsize="2" text="" />
+				<label pos="7 -3.5" class="FontM" textsize="1.5" textprefix="$t" text="Details" translate="1" />
+				<quad size="36 7" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_MapButtonMPCard" ScriptEvents="1" />
+				<quad size="36 7" bgcolor="FFF" opacity=".125" />
+			</frame>
+		</frame>
+	</frame>
+
+	<frame id="Frame_PauseMenuTiles">
+		<quad size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
 		<framemodel id="FrameModel_PauseMenuButton">
 			<label pos="18 -14.5" size="35" class="FontM" halign="center" textsize="1.5" textprefix="$t" autonewline="1" linespacing=".875" id="Label_MenuButtonLabel" />
-			<quad pos="33 -3" size="5 5" halign="center" valign="center" style="Icons64x64_1" substyle="Check" autoscale="0" id="Quad_IsSpectatorMode" hidden="1" />
+			<label pos="33 -3.125" halign="center" valign="center2" textsize="1.5" textemboss="1" textcolor="FFF" id="Label_IsSpectatorMode" hidden="1" />
 			<quad pos="18 -7" size="10 10" halign="center" valign="center" autoscale="0" id="Quad_MenuButtonIcon" />
 
 			<frame id="Frame_MenuButtonTeams" pos="18 -7" hidden="1">
@@ -118,10 +259,12 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 			<quad size="36 18" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_MenuButtonCard" ScriptEvents="1" />
 			<quad size="36 18" bgcolor="FFF" opacity=".125" />
 		</framemodel>
-		{{{ButtonsFrames}}}
+		<frame pos="2 -2">
+			{{{ButtonsFrames}}}
+		</frame>
 	</frame>
 
-	<frame id="Frame_BottomButtonsRow" pos="0">
+	<frame id="Frame_BottomButtonsRow">
 		<quad size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
 
 		<!-- Resume button -->
@@ -204,6 +347,99 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 	</frame>
 </frame>
 
+<frame id="Frame_TitleSettingsWindow" pos="-85 43" hidden="1">
+	<label pos="2 -2" class="FontM" id="Label_TitleSettingsTitle" textsize="4" textprefix="$t" text="Title settings" />
+	<quad pos="0 -6" size="170 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<frame pos="2 -8">
+		<framemodel id="FrameModel_SettingCat">
+			<label pos="2 -4" size="50" class="FontM" textsize="2" textprefix="$t" id="Label_GroupName" />
+			<quad size="54 8" bgcolor="FFF" opacity=".25" id="Quad_IsSelected" hidden="1" />
+			<quad size="54 8" bgcolorfocus="FFF2" class="Click" id="Quad_SettingsGroupCard" ScriptEvents="1" />
+			<quad size="54 8" bgcolor="FFF" opacity=".125" />
+		</framemodel>
+		{{{SettingsCategories}}}
+	</frame>
+
+	<frame pos="57 -8">
+		<framemodel id="FrameModel_CustomSetting">
+			<label pos="109 -2.625" halign="right" valign="center2" textsize="1.5" textemboss="1" textcolor="FFF" id="Label_SettingCheck" hidden="1" />
+			<label pos="109 -2.5" size="20" class="FontM" textsize="1.5" halign="right" id="Label_SettingEnumVal" hidden="1" />
+			<label pos="2 -2.5" size="100" class="FontM" textsize="1.5" id="Label_SettingDesc" />
+			<quad size="111 5" bgcolorfocus="FFF2" class="Click" id="Quad_SettingsOptionCard" ScriptEvents="1" />
+			<quad size="111 5" bgcolor="FFF" opacity=".125" />
+		</framemodel>
+		{{{CustomSettings}}}
+	</frame>
+
+	<quad pos="0 -76" size="170 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Return button -->
+	<frame id="Frame_ReturnButton" pos="2 -78">
+		<label pos="2.25 -4.125" class="FontM" text="" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Return" translate="1" />
+
+		<quad size="54 8" bgcolorfocus="FFF2" class="Click" id="Quad_TitleReturnButton" ScriptEvents="1" />
+		<quad size="54 8" bgcolor="FFF" opacity=".125" />
+	</frame>
+
+	<!-- Default button -->
+	<frame id="Frame_DefaultButton" pos="57 -78">
+		<label pos="2.25 -4.125" class="FontM" text="🔁" id="Label_DefaultButtonIcon" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Default" translate="1" id="Label_DefaultButtonText" />
+
+		<quad size="54 8" bgcolorfocus="FFF2" class="Click" id="Quad_DefaultButtonCard" ScriptEvents="1" />
+		<quad size="54 8" bgcolor="FFF" opacity=".125" id="Quad_DefaultButtonBg" />
+	</frame>
+</frame>
+
+<frame id="Frame_KeyBindingWindow" pos="-57 29.5" hidden="1">
+	<label pos="2 -2" class="FontM" id="Label_AwaitingInput" textsize="4" textprefix="$t" text="Select new key" translate="1" />
+	<quad pos="0 -6" size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<label pos="57 -20" size="106" class="FontM" halign="center" textsize="2" id="Label_CurrentKeyDesc" />
+	<label pos="57 -26" class="FontM" halign="center" id="Label_CurrentKeyBind" />
+	<quad pos="2 -8" size="110 30" bgcolor="FFF" opacity=".125" />
+
+	<quad pos="0 -40" size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Default button -->
+	<frame id="Frame_ReturnButton" pos="2 -42">
+		<label pos="2.25 -4.125" class="FontM" text="🔁" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Default" translate="1" />
+
+		<quad size="54.5 8" bgcolorfocus="FFF2" class="Click" id="Quad_KeyBindingDefault" ScriptEvents="1" />
+		<quad size="54.5 8" bgcolor="FFF" opacity=".125" />
+	</frame>
+
+	<!-- Unbind button -->
+	<frame id="Frame_ReturnButton" pos="57.5 -42">
+		<label pos="2.25 -4.125" class="FontM" text="" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Unbind" translate="1" />
+
+		<quad size="54.5 8" bgcolorfocus="FFF2" class="Click" id="Quad_KeyBindingUnbind" ScriptEvents="1" />
+		<quad size="54.5 8" bgcolor="FFF" opacity=".125" />
+	</frame>
+
+	<!-- OK button -->
+	<frame id="Frame_ReturnButton" pos="2 -51">
+		<label pos="2.25 -4.125" class="FontM" text="" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="OK" translate="1" />
+
+		<quad size="54.5 8" bgcolorfocus="FFF2" class="Click" id="Quad_KeyBindingAccept" ScriptEvents="1" />
+		<quad size="54.5 8" bgcolor="FFF" opacity=".125" />
+	</frame>
+
+	<!-- Cancel button -->
+	<frame id="Frame_ReturnButton" pos="57.5 -51">
+		<label pos="2.25 -4.125" class="FontM" text="" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Cancel" translate="1" />
+
+		<quad size="54.5 8" bgcolorfocus="FFF2" class="Click" id="Quad_KeyBindingDeny" ScriptEvents="1" />
+		<quad size="54.5 8" bgcolor="FFF" opacity=".125" />
+	</frame>
+</frame>
+
 <quad size="320 180" halign="center" valign="center" image="file://Media/Images/Effects/Vignette.dds" />
 <quad size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
 <quad size="320 180" halign="center" valign="center" bgcolor="000" opacity=".5" />
@@ -221,10 +457,12 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 #Const C_LibPauseMenu_ContextConfirmQuit	1
 #Const C_LibPauseMenu_ContextSwitchTeam		2
 #Const C_LibPauseMenu_ContextManageServer	3
+#Const C_LibPauseMenu_ContextTitleSettings	4
+#Const C_LibPauseMenu_ContextAwaitingInput	5
 
-#Const C_QuitColorEnabled	<1., 1., 1.>
-#Const C_QuitColorDisabled	<0., 0., 0.>
-#Const C_QuitColorTextOff	<.5, .5, .5>
+#Const C_ButtonColorEnabled		<1., 1., 1.>
+#Const C_ButtonColorDisabled	<0., 0., 0.>
+#Const C_ButtonColorTextOff		<.5, .5, .5>
 
 #Const C_ServerManagerButtons ["Restart", "NextMap", "BalanceTeams", "MapsBrowser", "PlayersManager", "ScriptSettings"]
 #Const C_ServerManagerButtonsText [
@@ -241,15 +479,38 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 // ---------------------------------- //
 ***Main***
 ***
-declare AvailableButtonsIds = {{{Dump_AvailableButtonsIds}}};
-declare ButtonsLabels = {{{Dump_ButtonsLabels}}};
-declare ButtonsIcons = {{{Dump_ButtonsIcons}}};
+declare AvailableButtonsIds	= {{{Dump_AvailableButtonsIds}}};
+declare ButtonsLabels		= {{{Dump_ButtonsLabels}}};
+declare ButtonsIcons		= {{{Dump_ButtonsIcons}}};
+declare SortedSettings		= {{{Dump_SettingsGroup}}};
+declare SettingGroupsNames	= {{{Dump_SettingsGroups}}};
+declare KeyBindingsNames	= {{{Dump_BindingsNames}}};
+declare KeyBindingsDesc		= {{{Dump_BindingsDesc}}};
+declare KeyBindingsDefault	= {{{Dump_BindingsDefault}}};
+
+declare SettingGroups = Text[];
+foreach (GroupId => Name in SettingGroupsNames) SettingGroups.add(GroupId);
+declare KeyBindings = Integer[];
+foreach (BindingId => Name in KeyBindingsNames) KeyBindings.add(BindingId);
+
+if (KeyBindings.count > 0) {
+	SettingGroups.add("bindings");
+	SettingGroupsNames["bindings"] = _("Input settings");
+}
 
 // ---------------------------------- //
 // Load interface elements
 declare Frame_PauseMainWindow <=> (Page.GetFirstChild("Frame_PauseMainWindow") as CMlFrame);
 declare Quad_ResumeButtonCard <=> (Page.GetFirstChild("Quad_ResumeButtonCard") as CMlQuad);
+declare Frame_PauseMenuTiles <=> (Page.GetFirstChild("Frame_PauseMenuTiles") as CMlFrame);
+declare Frame_MapInformation <=> (Page.GetFirstChild("Frame_MapInformation") as CMlFrame);
 declare Frame_BottomButtonsRow <=> (Page.GetFirstChild("Frame_BottomButtonsRow") as CMlFrame);
+declare Quad_CurMapThumbnail <=> (Page.GetFirstChild("Quad_CurMapThumbnail") as CMlQuad);
+declare Label_CurMapName <=> (Page.GetFirstChild("Label_CurMapName") as CMlLabel);
+declare Label_CurMapAuthor <=> (Page.GetFirstChild("Label_CurMapAuthor") as CMlLabel);
+declare Frame_MapButtonMX <=> (Page.GetFirstChild("Frame_MapButtonMX") as CMlFrame);
+declare Frame_MapButtonMP <=> (Page.GetFirstChild("Frame_MapButtonMP") as CMlFrame);
+
 declare Frame_ChangeTeamWindow <=> (Page.GetFirstChild("Frame_ChangeTeamWindow") as CMlFrame);
 declare Quad_TeamWinSeparator1 <=> (Page.GetFirstChild("Quad_TeamWinSeparator1") as CMlQuad);
 declare Quad_TeamWinSeparator2 <=> (Page.GetFirstChild("Quad_TeamWinSeparator2") as CMlQuad);
@@ -275,10 +536,37 @@ declare CMlFrame[] Frame_ServerMgrButtons;
 for (I, 0, 9) Frame_ServerMgrButtons.add((Page.GetFirstChild("Frame_ServerMgrButton#"^I) as CMlFrame));
 
 // ---------------------------------- //
+// Custom mode settings
+declare Frame_TitleSettingsWindow <=> (Page.GetFirstChild("Frame_TitleSettingsWindow") as CMlFrame);
+declare Label_TitleSettingsTitle <=> (Page.GetFirstChild("Label_TitleSettingsTitle") as CMlLabel);
+declare Frame_KeyBindingWindow <=> (Page.GetFirstChild("Frame_KeyBindingWindow") as CMlFrame);
+declare Label_DefaultButtonIcon	<=> (Page.GetFirstChild("Label_DefaultButtonIcon") as CMlLabel);
+declare Label_DefaultButtonText	<=> (Page.GetFirstChild("Label_DefaultButtonText") as CMlLabel);
+declare Quad_DefaultButtonCard	<=> (Page.GetFirstChild("Quad_DefaultButtonCard") as CMlQuad);
+declare Quad_DefaultButtonBg	<=> (Page.GetFirstChild("Quad_DefaultButtonBg") as CMlQuad);
+declare Label_CurrentKeyBind	<=> (Page.GetFirstChild("Label_CurrentKeyBind") as CMlLabel);
+declare Label_CurrentKeyDesc	<=> (Page.GetFirstChild("Label_CurrentKeyDesc") as CMlLabel);
+
+declare CMlFrame[] Frame_SettingsGroups;
+for (I, 0, 6) Frame_SettingsGroups.add((Page.GetFirstChild("Frame_SettingCat#"^I) as CMlFrame));
+
+declare CMlFrame[] Frame_CustomSettings;
+for (I, 0, 11) Frame_CustomSettings.add((Page.GetFirstChild("Frame_CustomSetting#"^I) as CMlFrame));
+
+// Window title text
+if (ButtonsLabels.existskey("LibPM_TitleSettings"))
+	Label_TitleSettingsTitle.Value = Translate(ButtonsLabels["LibPM_TitleSettings"]);
+
+// ---------------------------------- //
+// Persistent settings
+declare persistent Boolean Persistent_LibPauseMenu_HideMapInfo for LocalUser;
+
+// ---------------------------------- //
 // Netcode
 declare netread Boolean Net_LibPauseMenu_DisableQuitButton for Teams[0];
 declare netread Text[] Net_LibPauseMenu_DisabledButtons for Teams[0];
 declare netread Integer Net_LibPauseMenu_LastButtonsUpdate for Teams[0];
+declare netread Boolean Net_LibPauseMenu_HideMapInfo for Teams[0];
 
 declare netread Integer Net_LibPauseMenu_CustomTeamsUpdate for Teams[0];
 declare netread Integer Net_LibPauseMenu_NbCustomTeams for Teams[0];
@@ -294,6 +582,36 @@ declare UpdateWindowButtons = True;
 declare UpdateTeamSelection = True;
 declare UpdateServerMgrButtons = True;
 
+// Current map information
+declare ThumbnailURL_MX = "";
+declare ThumbnailURL_MP = "";
+declare MapInfoURL_MX = "";
+declare MapInfoURL_MP = "";
+declare CHttpRequest CurMapRequestWS;
+declare CHttpRequest CurMapRequestMX;
+declare RequestStartTime = -1;
+
+// Settings groups
+declare UpdateSettingsGroupsList = True;
+declare ActiveSettingsGroup = "";
+declare SettingsGroups_CurPage = 1;
+declare SettingsGroups_NbPages = (SettingGroups.count - 1) / Frame_SettingsGroups.count + 1;
+declare PrevActiveSettingsGroup = "";
+declare PrevDefaultIsAvailable = True;
+if (SettingGroups.existskey(0)) ActiveSettingsGroup = SettingGroups[0];
+
+// Settings list
+declare UpdateSettingsList = True;
+declare SettingsInGroup = Integer[];
+declare Settings_CurPage = 1;
+declare Settings_NbPages = 1;
+
+// Key bindings
+declare CurrentBindingId = "";
+declare CurBindingKeyCurrent = "";
+declare CurBindingKeyNew = "";
+declare CurBindingKeyDefault = "";
+
 // Update
 declare PrevPageIsVisible = False;
 declare PrevActiveContext = -1;
@@ -306,6 +624,22 @@ declare PrevCustomTeamsUpdate = -1;
 declare PrevNbCustomTeams = -1;
 declare PrevTeamsNames = [0 => "", 1 => ""];
 declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
+declare PrevHideMapInfo = False;
+
+// ---------------------------------- //
+// Download information about current map
+declare MXRequestURL = "{{{C_LibPauseMenu_MXAPIMapInfoRoute}}}";
+declare GameCode = "";
+switchtype (This) {
+	case CSmMlScriptIngame : GameCode = "sm";
+	case CTmMlScriptIngame : GameCode = "tm";
+}
+MXRequestURL = TL::Replace(MXRequestURL, "%1", GameCode);
+MXRequestURL = TL::Replace(MXRequestURL, "%2", Map.MapInfo.MapUid);
+
+CurMapRequestMX = Http.CreateGet(MXRequestURL, False);
+CurMapRequestWS = Http.CreateGet("{{{C_LibPauseMenu_MPWSMapInfoRoute}}}"^Map.MapInfo.MapUid, False, "Accept: application/xml");
+RequestStartTime = Now;
 
 // Init
 EnableMenuNavigation(False, False, Null, 0);
@@ -332,6 +666,61 @@ if (PrevPageIsVisible != PageIsVisible) {
 	EnableMenuNavigation(PageIsVisible, False, Null, 1);
 	ClientUI.AltMenuNoCustomScores = PageIsVisible;
 	PrevActiveContext = -1;
+}
+
+// ---------------------------------- //
+// Handle Mania Exchange response
+if (CurMapRequestMX != Null) {
+	declare Destroy = False;
+
+	if (CurMapRequestMX.IsCompleted) {
+		declare Document = Xml.Create(CurMapRequestMX.Result);
+		declare MapId = Private_ParseMXResults(Document);
+		Xml.Destroy(Document);
+
+		if (MapId > 0) {
+			ThumbnailURL_MX = "{{{C_LibPauseMenu_MXAPIScreenshotRoute}}}";
+			ThumbnailURL_MX = TL::Replace(ThumbnailURL_MX, "%1", GameCode);
+			ThumbnailURL_MX = TL::Replace(ThumbnailURL_MX, "%2", TL::ToText(MapId));
+			
+			MapInfoURL_MX = "{{{C_LibPauseMenu_MXMapShowcaseRoute}}}";
+			MapInfoURL_MX = TL::Replace(MapInfoURL_MX, "%1", GameCode);
+			MapInfoURL_MX = TL::Replace(MapInfoURL_MX, "%2", TL::ToText(MapId));
+		}
+
+		UpdateWindowButtons = True;
+		Destroy = True;
+	}
+
+	if (Now > RequestStartTime + 10000) Destroy = True;
+
+	if (Destroy) {
+		Http.Destroy(CurMapRequestMX);
+		CurMapRequestMX = Null;
+	}
+}
+
+// ---------------------------------- //
+// Handle ManiaPlanet WS response
+if (CurMapRequestWS != Null) {
+	declare Destroy = False;
+
+	if (CurMapRequestWS.IsCompleted) {
+		declare Document = Xml.Create(CurMapRequestWS.Result);
+		ThumbnailURL_MP = Private_ParseMPWSResult(Document);
+		if (ThumbnailURL_MP != "") MapInfoURL_MP = "{{{C_LibPauseMenu_MPMapShowcaseRoute}}}"^Map.MapInfo.MapUid;
+		Xml.Destroy(Document);
+
+		UpdateWindowButtons = True;
+		Destroy = True;
+	}
+
+	if (Now > RequestStartTime + 10000) Destroy = True;
+
+	if (Destroy) {
+		Http.Destroy(CurMapRequestWS);
+		CurMapRequestWS = Null;
+	}
 }
 
 if (!PageIsVisible) continue;
@@ -398,6 +787,128 @@ foreach (Event in PendingEvents) {
 {{{MenuButtonsScripts}}}
 			}
 		}
+		// ---------------------------------- //
+		// Return from the title settings
+		else if (Event.ControlId == "Quad_TitleReturnButton")
+			PauseActiveContext = C_LibPauseMenu_ContextDefault;
+
+		// ---------------------------------- //
+		// Change active settings group
+		else if (Event.ControlId == "Quad_SettingsGroupCard") {
+			declare Text SettingsGroupId for Event.Control;
+			ActiveSettingsGroup = SettingsGroupId;
+		}
+		// ---------------------------------- //
+		// Toggle setting
+		else if (Event.ControlId == "Quad_SettingsOptionCard") {
+			// ---------------------------------- //
+			// Bindings
+			if (ActiveSettingsGroup == "bindings") {
+				declare Text QuadBindingName for Event.Control;
+				if (QuadBindingName != "") PauseActiveContext = C_LibPauseMenu_ContextAwaitingInput;
+
+				declare BindingId = KeyBindingsNames.keyof(QuadBindingName);
+				if (KeyBindingsDefault.existskey(BindingId)) CurBindingKeyDefault = KeyBindingsDefault[BindingId];
+
+				declare CurBindingDescription = "";
+				if (KeyBindingsDesc.existskey(BindingId)) CurBindingDescription = KeyBindingsDesc[BindingId];
+
+				CurrentBindingId = QuadBindingName;
+				CurBindingKeyCurrent = Bindings_GetKey(CurrentBindingId, CurBindingKeyDefault);
+				CurBindingKeyNew = CurBindingKeyCurrent;
+
+				declare NewKeyName = GeyKeyName(CurBindingKeyNew);
+				if (CurBindingKeyNew == "") NewKeyName = Translate("<none>");
+
+				Label_CurrentKeyBind.Value = NewKeyName;
+				Label_CurrentKeyDesc.Value = Translate(CurBindingDescription);
+			}
+			// ---------------------------------- //
+			// Settings
+			else {
+				declare Integer QuadSettingId for Event.Control;
+				declare SettingType = GetSettingType(QuadSettingId);
+				declare SettingValue = GetSettingValue(QuadSettingId);
+				declare SettingEnumValues = GetSettingEnumValues(QuadSettingId);
+				declare SettingEnumNames = GetSettingEnumNames(QuadSettingId);
+
+				// ---------------------------------- //
+				// Toggle Boolean
+				if (SettingType == "Boolean") {
+					SetSettingValue(QuadSettingId, TL::ToText(SettingValue != "True"));
+				}
+				// ---------------------------------- //
+				// Toggle enumerator
+				else if (SettingEnumValues.count > 0) {
+					declare OptionId = SettingEnumValues.keyof(SettingValue);
+					OptionId += 1;
+					if (OptionId >= SettingEnumValues.count) OptionId = 0;
+					SetSettingValue(QuadSettingId, SettingEnumValues[OptionId]);
+				}
+
+				UpdateSettingsList = True;
+			}
+		}
+		// ---------------------------------- //
+		// Reset title settings defaults
+		else if (Event.ControlId == "Quad_DefaultButtonCard") {
+			// ---------------------------------- //
+			// Bindings
+			if (ActiveSettingsGroup == "bindings") {
+				foreach (BindingId in KeyBindings) {
+					declare BindingName = TL::ToText(BindingId);
+					declare BindingDefault = "";
+					if (KeyBindingsNames.existskey(BindingId)) BindingName = KeyBindingsNames[BindingId];
+					if (KeyBindingsDefault.existskey(BindingId)) BindingDefault = KeyBindingsDefault[BindingId];
+					Bindings_SetKey(BindingName, BindingDefault, BindingDefault);
+				}
+			}
+			// ---------------------------------- //
+			// Settings
+			else {
+				foreach (SettingId in SettingsInGroup) {
+					declare SettingDefault = GetSettingDefault(SettingId);
+					SetSettingValue(SettingId, SettingDefault);
+				}
+			}
+			UpdateSettingsList = True;
+		}
+		// ---------------------------------- //
+		// Accept key binding change
+		else if (Event.ControlId == "Quad_KeyBindingAccept") {
+			Bindings_SetKey(CurrentBindingId, CurBindingKeyNew, CurBindingKeyDefault);
+			PauseActiveContext = C_LibPauseMenu_ContextTitleSettings;
+			UpdateSettingsList = True;
+		}
+		// ---------------------------------- //
+		// Deny key binding change
+		else if (Event.ControlId == "Quad_KeyBindingDeny") {
+			PauseActiveContext = C_LibPauseMenu_ContextTitleSettings;
+		}
+		// ---------------------------------- //
+		// Set the default key binding
+		else if (Event.ControlId == "Quad_KeyBindingDefault") {
+			CurBindingKeyNew = CurBindingKeyDefault;
+			declare NewKeyName = GeyKeyName(CurBindingKeyNew);
+			if (CurBindingKeyNew == "") NewKeyName = Translate("<none>");
+			Label_CurrentKeyBind.Value = NewKeyName;
+		}
+		// ---------------------------------- //
+		// Unbind an option
+		else if (Event.ControlId == "Quad_KeyBindingUnbind") {
+			CurBindingKeyNew = "";
+			Label_CurrentKeyBind.Value = Translate("<none>");
+		}
+		// ---------------------------------- //
+		// Show map on Mania Exchange manialink
+		else if (Event.ControlId == "Quad_MapButtonMXCard") {
+			OpenLink(MapInfoURL_MX, CMlScript::LinkType::ManialinkBrowser);
+		}
+		// ---------------------------------- //
+		// Show map on ManiaPlanet maps manialink
+		else if (Event.ControlId == "Quad_MapButtonMPCard") {
+			OpenLink(MapInfoURL_MP, CMlScript::LinkType::ManialinkBrowser);
+		}
 
 		// Play sounds
 		if (Event.Control.HasClass("Click"))
@@ -417,6 +928,7 @@ foreach (Event in PendingEvents) {
 		if (Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel) {
 			switch (PauseActiveContext) {
 				case C_LibPauseMenu_ContextDefault : CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
+				case C_LibPauseMenu_ContextAwaitingInput : PauseActiveContext = C_LibPauseMenu_ContextTitleSettings;
 				default : PauseActiveContext = C_LibPauseMenu_ContextDefault;
 			}
 		}
@@ -441,13 +953,210 @@ if (PrevActiveContext != PauseActiveContext) {
 	Frame_PauseMainWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextDefault;
 	Frame_ChangeTeamWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextSwitchTeam;
 	Frame_ManageServerWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextManageServer;
+	Frame_TitleSettingsWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextTitleSettings;
+	Frame_KeyBindingWindow.Visible = PauseActiveContext == C_LibPauseMenu_ContextAwaitingInput;
 }
 
 // ---------------------------------- //
 // Loop depending on active context
 switch (PauseActiveContext) {
-	case C_LibPauseMenu_ContextManageServer : {
+	// ---------------------------------- //
+	// Awaiting new input key
+	case C_LibPauseMenu_ContextAwaitingInput : {
+		// ---------------------------------- //
+		// Change active key
+		foreach (Event in PendingEvents) {
+			if (Event.Type != CMlEvent::Type::KeyPress) continue;
 
+			CurBindingKeyNew = Event.KeyName;
+			Label_CurrentKeyBind.Value = GeyKeyName(CurBindingKeyNew);
+		}
+	}
+	// ---------------------------------- //
+	// Custom game mode settings
+	case C_LibPauseMenu_ContextTitleSettings : {
+		// ---------------------------------- //
+		// Active settings group change
+		if (PrevActiveSettingsGroup != ActiveSettingsGroup) {
+			PrevActiveSettingsGroup = ActiveSettingsGroup;
+			UpdateSettingsGroupsList = True;
+
+			SettingsInGroup.clear();
+			foreach (SettingId => SettingGroup in SortedSettings)
+				if (SettingGroup == ActiveSettingsGroup)
+					SettingsInGroup.add(SettingId);
+
+			UpdateSettingsList = True;
+			Settings_CurPage = 1;
+			Settings_NbPages = (SettingsInGroup.count - 1) / Frame_CustomSettings.count + 1;
+		}
+
+		// ---------------------------------- //
+		// Update settings groups list
+		if (UpdateSettingsGroupsList) {
+			UpdateSettingsGroupsList = False;
+
+			declare GroupsOffset = (SettingsGroups_CurPage - 1) * Frame_SettingsGroups.count;
+
+			foreach (I => Frame in Frame_SettingsGroups) {
+				declare GroupOrder = GroupsOffset + I;
+				Frame.Visible = SettingGroups.existskey(GroupOrder);
+				if (!Frame.Visible) continue;
+				declare GroupId = SettingGroups[GroupOrder];
+
+				// ---------------------------------- //
+				// Group name
+				declare Label_GroupName <=> (Frame.GetFirstChild("Label_GroupName") as CMlLabel);
+				declare GroupName = GroupId;
+				if (SettingGroupsNames.existskey(GroupId)) GroupName = SettingGroupsNames[GroupId];
+				Label_GroupName.Value = GroupName;
+
+				// Highlight active group
+				declare Quad_IsSelected <=> (Frame.GetFirstChild("Quad_IsSelected") as CMlQuad);
+				Quad_IsSelected.Visible = GroupId == ActiveSettingsGroup;
+
+				// ---------------------------------- //
+				// Save group id in the button
+				declare Quad_SettingsGroupCard <=> (Frame.GetFirstChild("Quad_SettingsGroupCard") as CMlQuad);
+				declare Text SettingsGroupId for Quad_SettingsGroupCard;
+				SettingsGroupId = GroupId;
+			}
+		}
+
+		// ---------------------------------- //
+		// Update settings cards
+		if (UpdateSettingsList) {
+			UpdateSettingsList = False;
+
+			declare SettingsOffset = (Settings_CurPage - 1) * Frame_CustomSettings.count;
+
+			foreach (I => Frame in Frame_CustomSettings) {
+				declare SettingOrder = SettingsOffset + I;
+				if (ActiveSettingsGroup == "bindings") Frame.Visible = KeyBindings.existskey(SettingOrder);
+				else Frame.Visible = SettingsInGroup.existskey(SettingOrder);
+				if (!Frame.Visible) continue;
+
+				// ---------------------------------- //
+				// Load frame elements
+				declare Label_SettingDesc <=> (Frame.GetFirstChild("Label_SettingDesc") as CMlLabel);
+				declare Label_SettingCheck <=> (Frame.GetFirstChild("Label_SettingCheck") as CMlLabel);
+				declare Label_SettingEnumVal <=> (Frame.GetFirstChild("Label_SettingEnumVal") as CMlLabel);
+				declare Quad_SettingsOptionCard <=> (Frame.GetFirstChild("Quad_SettingsOptionCard") as CMlQuad);
+
+				// ---------------------------------- //
+				// Key bindings
+				if (ActiveSettingsGroup == "bindings") {
+					declare BindingId = KeyBindings[SettingOrder];
+					Label_SettingCheck.Hide();
+					Label_SettingEnumVal.Show();
+
+					// Binding name
+					declare BindingName = TL::ToText(BindingId);
+					if (KeyBindingsNames.existskey(BindingId)) BindingName = KeyBindingsNames[BindingId];
+
+					// Binding description
+					declare BindingDescription = TL::ToText(BindingId);
+					if (KeyBindingsDesc.existskey(BindingId)) BindingDescription = KeyBindingsDesc[BindingId];
+					Label_SettingDesc.Value = Translate(BindingDescription);
+
+					// Binding value
+					declare BindingDefault = "";
+					if (KeyBindingsDefault.existskey(BindingId)) BindingDefault = KeyBindingsDefault[BindingId];
+					declare BindingCurKey = Bindings_GetKey(BindingName, BindingDefault);
+
+					declare BindKeyName = GeyKeyName(BindingCurKey);
+					if (BindingCurKey == "") BindKeyName = Translate("<none>");
+					Label_SettingEnumVal.Value = BindKeyName;
+
+					// Save binding id
+					declare Text QuadBindingName for Quad_SettingsOptionCard;
+					QuadBindingName = BindingName;
+				}
+				// ---------------------------------- //
+				// Custom settings
+				else {
+					// ---------------------------------- //
+					// Get setting info
+					declare SettingId = SettingsInGroup[SettingOrder];
+					declare SettingDesc = GetSettingDescription(SettingId);
+					declare SettingValue = GetSettingValue(SettingId);
+					declare SettingType = GetSettingType(SettingId);
+					declare SettingDefault = GetSettingDefault(SettingId);
+					declare SettingInverted = IsSettingInverted(SettingId);
+					declare SettingEnumValues = GetSettingEnumValues(SettingId);
+					declare SettingEnumNames = GetSettingEnumNames(SettingId);
+
+					// Setting description
+					Label_SettingDesc.Value = Translate(SettingDesc);
+
+					// ---------------------------------- //
+					// Enumerators
+					Label_SettingEnumVal.Visible = SettingEnumValues.count > 0;
+					if (Label_SettingEnumVal.Visible) {
+						declare OptionId = SettingEnumValues.keyof(SettingValue);
+						declare OptionName = SettingValue;
+						if (SettingEnumNames.existskey(OptionId)) OptionName = SettingEnumNames[OptionId];
+						Label_SettingEnumVal.Value = OptionName;
+					}
+
+					// ---------------------------------- //
+					// Boolean settings check
+					Label_SettingCheck.Visible = SettingType == "Boolean" && !Label_SettingEnumVal.Visible;
+					if (Label_SettingCheck.Visible) {
+						declare IsActive = SettingValue == "True";
+						if (SettingInverted) IsActive = !IsActive;
+						if (IsActive) Label_SettingCheck.Value = "";
+						else Label_SettingCheck.Value = "";
+					}
+
+					// Save setting id in the button
+					declare Integer QuadSettingId for Quad_SettingsOptionCard;
+					QuadSettingId = SettingId;
+				}
+			}
+
+			// ---------------------------------- //
+			// Update the default button availability
+			declare DefaultIsAvailable = False;
+
+			if (ActiveSettingsGroup == "bindings") {
+				foreach (BindingId in KeyBindings) {
+					declare BindingName = TL::ToText(BindingId);
+					declare BindingDefault = "";
+					if (KeyBindingsNames.existskey(BindingId)) BindingName = KeyBindingsNames[BindingId];
+					if (KeyBindingsDefault.existskey(BindingId)) BindingDefault = KeyBindingsDefault[BindingId];
+
+					if (Bindings_GetKey(BindingName, BindingDefault) == BindingDefault) continue;
+					DefaultIsAvailable = True;
+					break;
+				}
+			}
+			else foreach (SettingId in SettingsInGroup) {
+				declare SettingValue = GetSettingValue(SettingId);
+				declare SettingDefault = GetSettingDefault(SettingId);
+				if (SettingValue == SettingDefault) continue;
+				DefaultIsAvailable = True;
+				break;
+			}
+
+			if (PrevDefaultIsAvailable != DefaultIsAvailable) {
+				PrevDefaultIsAvailable = DefaultIsAvailable;
+
+				Quad_DefaultButtonCard.Visible = PrevDefaultIsAvailable;
+
+				declare Color = C_ButtonColorTextOff;
+				if (PrevDefaultIsAvailable) Color = C_ButtonColorEnabled;
+				Label_DefaultButtonIcon.TextColor = Color;
+				Label_DefaultButtonText.TextColor = Color;
+
+				Quad_DefaultButtonBg.BgColor = C_ButtonColorDisabled;
+				if (PrevDefaultIsAvailable) Quad_DefaultButtonBg.BgColor = C_ButtonColorEnabled;
+			}
+		}
+	}
+	// ---------------------------------- //
+	// Server Manager
+	case C_LibPauseMenu_ContextManageServer : {
 		// ---------------------------------- //
 		// Update server manager page buttons
 		if (UpdateServerMgrButtons) {
@@ -613,13 +1322,13 @@ switch (PauseActiveContext) {
 			PrevQuitDisabled = Net_LibPauseMenu_DisableQuitButton;
 			Quad_QuitButtonCard.Visible = !PrevQuitDisabled;
 
-			declare Color = C_QuitColorTextOff;
-			if (!PrevQuitDisabled) Color = C_QuitColorEnabled;
+			declare Color = C_ButtonColorTextOff;
+			if (!PrevQuitDisabled) Color = C_ButtonColorEnabled;
 			Label_QuitButtonIcon.TextColor = Color;
 			Label_QuitButtonText.TextColor = Color;
 
-			Quad_QuitButtonBg.BgColor = C_QuitColorDisabled;
-			if (!PrevQuitDisabled) Quad_QuitButtonBg.BgColor = C_QuitColorEnabled;
+			Quad_QuitButtonBg.BgColor = C_ButtonColorDisabled;
+			if (!PrevQuitDisabled) Quad_QuitButtonBg.BgColor = C_ButtonColorEnabled;
 		}
 
 		// ---------------------------------- //
@@ -641,9 +1350,44 @@ switch (PauseActiveContext) {
 		}
 
 		// ---------------------------------- //
+		// Map info setting change
+		if (PrevHideMapInfo != Persistent_LibPauseMenu_HideMapInfo) {
+			PrevHideMapInfo = Persistent_LibPauseMenu_HideMapInfo;
+			UpdateWindowButtons = True;
+		}
+
+		// ---------------------------------- //
 		// Update the tiles
 		if (UpdateWindowButtons) {
 			UpdateWindowButtons = False;
+			declare TotalHeight = 6.;
+
+			// ---------------------------------- //
+			// Map information
+			Frame_MapInformation.Visible = !Net_LibPauseMenu_HideMapInfo && !Persistent_LibPauseMenu_HideMapInfo;
+			Frame_MapInformation.RelativePosition_V3.Y = -TotalHeight;
+
+			if (Frame_MapInformation.Visible) {
+				TotalHeight += 22.;
+
+				Frame_MapButtonMX.Visible = MapInfoURL_MX != "";
+				Frame_MapButtonMP.Visible = MapInfoURL_MP != "";
+
+				Frame_MapButtonMP.RelativePosition_V3.X = 0.;
+				if (Frame_MapButtonMX.Visible) Frame_MapButtonMP.RelativePosition_V3.X = 37.;
+
+				// ---------------------------------- //
+				// Thumbnail
+				declare ThumbnailURL = "file://Thumbnails/MapUid/"^Map.MapInfo.MapUid;
+				if (ThumbnailURL_MP != "") ThumbnailURL = ThumbnailURL_MP;
+				if (ThumbnailURL_MX != "") ThumbnailURL = ThumbnailURL_MX;
+				Quad_CurMapThumbnail.ImageUrl = ThumbnailURL;
+
+				// ---------------------------------- //
+				// Map details
+				Label_CurMapName.Value = Map.MapName;
+				Label_CurMapAuthor.Value = Map.AuthorLogin;
+			}
 
 			// ---------------------------------- //
 			// Get buttons to display
@@ -656,6 +1400,7 @@ switch (PauseActiveContext) {
 						if (UI.SpectatorObserverMode == CUIConfig::EObserverMode::Forbidden) continue;
 					}
 					case "LibPM_ChangeTeam" : if (IsSpectator || (!UseClans && Net_LibPauseMenu_NbCustomTeams <= 0) || UseForcedClans) continue;
+					case "LibPM_TitleSettings" : if (SettingGroups.count <= 0) continue;
 				}
 				ButtonsIds.add(ButtonId);
 			}
@@ -677,7 +1422,7 @@ switch (PauseActiveContext) {
 				declare Quad_MenuButtonIcon <=> (Frame.GetFirstChild("Quad_MenuButtonIcon") as CMlQuad);
 				declare Quad_MenuButtonCard <=> (Frame.GetFirstChild("Quad_MenuButtonCard") as CMlQuad);
 				declare Frame_MenuButtonTeams <=> (Frame.GetFirstChild("Frame_MenuButtonTeams") as CMlFrame);
-				declare Quad_IsSpectatorMode <=> (Frame.GetFirstChild("Quad_IsSpectatorMode") as CMlQuad);
+				declare Label_IsSpectatorMode <=> (Frame.GetFirstChild("Label_IsSpectatorMode") as CMlLabel);
 
 				// ---------------------------------- //
 				// Set button label text
@@ -696,8 +1441,11 @@ switch (PauseActiveContext) {
 				Frame_MenuButtonTeams.Visible = ButtonId == "LibPM_ChangeTeam" && UseClans;
 
 				// Spectator mode button check
-				Quad_IsSpectatorMode.Visible = ButtonId == "LibPM_Spectator";
-				if (Quad_IsSpectatorMode.Visible) Quad_IsSpectatorMode.StyleSelected = IsSpectator;
+				Label_IsSpectatorMode.Visible = ButtonId == "LibPM_Spectator";
+				if (Label_IsSpectatorMode.Visible) {
+					if (IsSpectator) Label_IsSpectatorMode.Value = "";
+					else Label_IsSpectatorMode.Value = "";
+				}
 
 				// Hide icon for team and character change buttons
 				Quad_MenuButtonIcon.Visible = !Frame_MenuButtonTeams.Visible;
@@ -708,42 +1456,202 @@ switch (PauseActiveContext) {
 
 			// ---------------------------------- //
 			// Adjust window position
-			declare TotalWidth = 9.;
-			Frame_BottomButtonsRow.RelativePosition_V3.Y = -TotalWidth + ((ButtonsIds.count - 1) / 3 + 1) * -19.;
-			TotalWidth = -Frame_BottomButtonsRow.RelativePosition_V3.Y;
-			Frame_PauseMainWindow.RelativePosition_V3.Y = (TotalWidth + 10.) / 2.;
+			Frame_PauseMenuTiles.RelativePosition_V3.Y = -TotalHeight;
+			TotalHeight += 3 + ((ButtonsIds.count - 1) / 3 + 1) * 19.;
+
+			Frame_BottomButtonsRow.RelativePosition_V3.Y = -TotalHeight;
+			TotalHeight += 10.;
+			Frame_PauseMainWindow.RelativePosition_V3.Y = TotalHeight / 2.;
 		}
 	}
 }
 ***
 
 {{{Translations::InjectInManialink(RequiredTranslations)}}}
+{{{ManialinkTools::Functions(["SetQuadStyle"])}}}
+{{{Bindings::Functions()}}}
 
 // ---------------------------------- //
-/** Set the style of a quad.
+/** Get an user-friendly name of a key.
  *
- *	@param	_Quad	The quad to set style.
- *	@param	_Style	The style of the quad.
+ *	@param	_KeyId	Id of the key to get name.
+ *
+ *	@return		Name of the key.
  */
-Void SetQuadStyle(CMlQuad _Quad, Text _Style) {
-	if (_Quad == Null) return;
-	declare Explode = TL::Split("|", _Style);
+Text GeyKeyName(Text _KeyId) {
+	declare KeysNames = [
+		"Capital" => "Caps Lock", "LWin" => "Left Windows", "RWin" => "Right Windows",
+		"Numpad1" => "Num. 1", "Numpad2" => "Num. 2", "Numpad3" => "Num. 3", "Numpad4" => "Num. 4",
+		"Numpad5" => "Num. 5", "Numpad6" => "Num. 6", "Numpad7" => "Num. 7", "Numpad8" => "Num. 8",
+		"Numpad9" => "Num. 9", "Numpad0" => "Num. 0", "NumpadSubstract" => "Num. -",
+		"NumpadDivide" => "Num. /", "NumpadMultiply" => "Num. *", "NumpadAdd" => "Num. +",
+		"Return" => "Enter", "Prior" => "Page up", "Next" => "Page down", "AppMenu" => "Context",
+		"Apostrophe" => "~", "Equals" => "=", "Minus" => "[", "LBracket" => "]",
+		"RBracket" => ";", "Grave" => "'", "Backslash" => "\\", "Comma" => "Period", "Period" => "/"
+	];
+	if (!KeysNames.existskey(_KeyId)) return _KeyId;
+	return KeysNames[_KeyId];
+}
 
-	if (Explode.count == 2) {
-		_Quad.Style = Explode[0];
-		_Quad.Substyle = Explode[1];
-		_Quad.ImageUrl = "";
+// ---------------------------------- //
+/** Get the current value of a setting.
+ *
+ *	@param	_SettingId	Id of the setting.
+ *
+ *	@return		Setting current value.
+ */
+Text GetSettingValue(Integer _SettingId) {
+{{{SettingsDeclarations}}}
+
+	switch (_SettingId) {
+		case -1 : return ""; ///< Security
+{{{SettingsGetter}}}
+		default : return "";
 	}
-	else if (Http.IsValidUrl(_Style)) {
-		_Quad.ImageUrl = _Style;
-		_Quad.Style = "";
-		_Quad.Substyle = "";
+	return "";
+}
+
+// ---------------------------------- //
+/** Set new value of a setting.
+ *
+ *	@param	_SettingId		Id of the setting.
+ *	@param	_SettingValue	New value the setting.
+ */
+Void SetSettingValue(Integer _SettingId, Text _SettingValue) {
+{{{SettingsDeclarations}}}
+
+	switch (_SettingId) {
+		case -1 : return; ///< Security
+{{{SettingsSetter}}}
+		default : return;
 	}
-	else {
-		_Quad.Style = "";
-		_Quad.Substyle = "";
-		_Quad.ImageUrl = "";
+}
+
+// ---------------------------------- //
+/** Get the description of a setting.
+ *
+ *	@param	_SettingId	Id of the setting.
+ *
+ *	@return		Setting description.
+ */
+Text GetSettingDescription(Integer _SettingId) {
+	declare G_LibPauseMenu_TitleSettingsDesc = {{{Dump_SettingsDesc}}};
+	if (!G_LibPauseMenu_TitleSettingsDesc.existskey(_SettingId)) return "";
+	return G_LibPauseMenu_TitleSettingsDesc[_SettingId];
+}
+
+// ---------------------------------- //
+/** Get the group id of a setting.
+ *
+ *	@param	_SettingId	Id of the setting.
+ *
+ *	@return		Setting group id.
+ */
+Text GetSettingGroup(Integer _SettingId) {
+	declare G_LibPauseMenu_TitleSettingsGroup = {{{Dump_SettingsGroup}}};
+	if (!G_LibPauseMenu_TitleSettingsGroup.existskey(_SettingId)) return "";
+	return G_LibPauseMenu_TitleSettingsGroup[_SettingId];
+}
+
+// ---------------------------------- //
+/** Get the variable type of a setting.
+ *
+ *	@param	_SettingId	Id of the setting.
+ *
+ *	@return		Setting variable type.
+ */
+Text GetSettingType(Integer _SettingId) {
+	declare G_LibPauseMenu_TitleSettingsType = {{{Dump_SettingsType}}};
+	if (!G_LibPauseMenu_TitleSettingsType.existskey(_SettingId)) return "";
+	return G_LibPauseMenu_TitleSettingsType[_SettingId];
+}
+
+// ---------------------------------- //
+/** Check if a Boolean setting should appear inverted.
+ *
+ *	@param	_SettingId	Id of the setting.
+ *
+ *	@return		True, if the setting is inverted.
+ */
+Boolean IsSettingInverted(Integer _SettingId) {
+	declare G_LibPauseMenu_TitleSettingsInvert = {{{Dump_SettingsInvert}}};
+	if (!G_LibPauseMenu_TitleSettingsInvert.existskey(_SettingId)) return False;
+	return G_LibPauseMenu_TitleSettingsInvert[_SettingId];
+}
+
+// ---------------------------------- //
+/** Get the default value of a setting.
+ *
+ *	@param	_SettingId	Id of the setting.
+ *
+ *	@return		Setting default value.
+ */
+Text GetSettingDefault(Integer _SettingId) {
+	declare G_LibPauseMenu_TitleSettingsDefault = {{{Dump_SettingsDefault}}};
+	if (!G_LibPauseMenu_TitleSettingsDefault.existskey(_SettingId)) return "";
+	return G_LibPauseMenu_TitleSettingsDefault[_SettingId];
+}
+
+// ---------------------------------- //
+/** Get the possible values of a setting.
+ *
+ *	@param	_SettingId	Id of the setting.
+ *
+ *	@return		Setting enumeration values.
+ */
+Text[] GetSettingEnumValues(Integer _SettingId) {
+	declare G_LibPauseMenu_TitleSettingsEnumVal = {{{Dump_SettingsEnumVal}}};
+	if (!G_LibPauseMenu_TitleSettingsEnumVal.existskey(_SettingId)) return Text[];
+	return G_LibPauseMenu_TitleSettingsEnumVal[_SettingId];
+}
+
+// ---------------------------------- //
+/** Get the names of possible values of a setting.
+ *
+ *	@param	_SettingId	Id of the setting.
+ *
+ *	@return		Setting enumeration names.
+ */
+Text[] GetSettingEnumNames(Integer _SettingId) {
+	declare G_LibPauseMenu_TitleSettingsEnumName = {{{Dump_SettingsEnumName}}};
+	if (!G_LibPauseMenu_TitleSettingsEnumName.existskey(_SettingId)) return Text[];
+	return G_LibPauseMenu_TitleSettingsEnumName[_SettingId];
+}
+
+// ---------------------------------- //
+/** Parse the Mania Exchange API response.
+ *
+ *	@param	_Document	Mania Exchange response XML document.
+ *
+ *	@return		Thumbnail URL.
+ */
+Integer Private_ParseMXResults(CXmlDocument _Document) {
+	if (_Document == Null || _Document.Root == Null) return 0;
+
+	foreach (MapNode in _Document.Root.Children) {
+		foreach (Property in MapNode.Children) {
+			if (Property.Name == "TrackID") return TL::ToInteger(Property.TextContents);
+			if (Property.Name == "MapID") return TL::ToInteger(Property.TextContents);
+		}
 	}
+
+	return 0;
+}
+
+// ---------------------------------- //
+/** Parse the ManiaPlanet WS response.
+ *
+ *	@param	_Document	ManiaPlanet WS response XML document.
+ *
+ *	@return		Thumbnail URL.
+ */
+Text Private_ParseMPWSResult(CXmlDocument _Document) {
+	if (_Document == Null || _Document.Root == Null) return "";
+	foreach (Node in _Document.Root.Children) {
+		if (Node.Name != "thumbnail_url") continue;
+		return Node.TextContents;
+	}
+	return "";
 }
 
 main() {
@@ -756,6 +1664,56 @@ main() {
 --></script>
 </manialink>
 	""";
+}
+
+// ---------------------------------- //
+/** Load settings from XML document.
+ *
+ *	@param	_SettingsXML	The document to load.
+ */
+Void Private_LoadTitleSettings(CXmlDocument _SettingsXML) {
+	if (_SettingsXML == Null || _SettingsXML.Root == Null || _SettingsXML.Root.Name != "titleSettings") return;
+	
+	foreach (Node in _SettingsXML.Root.Children) switch (Node.Name) {
+		// ---------------------------------- //
+		// Settings groups
+		case "groups" : foreach (Group in Node.Children) {
+			declare GroupId 	= Group.GetAttributeText("id", "");
+			declare GroupName 	= Group.GetAttributeText("name", "");
+
+			if (GroupId == "" || GroupName == "") continue;
+			G_LibPauseMenu_TitleSettingsGroups[GroupId] = GroupName;
+		}
+		// ---------------------------------- //
+		// Available settings
+		case "settings" : foreach (I => Setting in Node.Children) {
+			G_LibPauseMenu_TitleSettingsNames[I]	= Setting.GetAttributeText("name", "");
+			G_LibPauseMenu_TitleSettingsDesc[I]		= Setting.GetAttributeText("description", "");
+			G_LibPauseMenu_TitleSettingsGroup[I]	= Setting.GetAttributeText("group", "");
+			G_LibPauseMenu_TitleSettingsType[I]		= Setting.GetAttributeText("type", "");
+			G_LibPauseMenu_TitleSettingsDefault[I]	= Setting.GetAttributeText("default", "");
+			G_LibPauseMenu_TitleSettingsInvert[I]	= Setting.GetAttributeBoolean("inverted", False);
+
+			// ---------------------------------- //
+			// Enumerators
+			if (Setting.Children.count > 0) {
+				G_LibPauseMenu_TitleSettingsEnumVal[I] = Text[];
+				G_LibPauseMenu_TitleSettingsEnumName[I] = Text[];
+
+				foreach (Option in Setting.Children) {
+					G_LibPauseMenu_TitleSettingsEnumVal[I].add(Option.GetAttributeText("value", ""));
+					G_LibPauseMenu_TitleSettingsEnumName[I].add(Option.GetAttributeText("name", ""));
+				}
+			}
+		}
+		// ---------------------------------- //
+		// Available key bindings
+		case "bindings" : foreach (I => Binding in Node.Children) {
+			G_LibPauseMenu_KeyBindingsNames[I]		= Binding.GetAttributeText("name", "");
+			G_LibPauseMenu_KeyBindingsDesc[I]		= Binding.GetAttributeText("description", "");
+			G_LibPauseMenu_KeyBindingsDefault[I]	= Binding.GetAttributeText("default", "");
+		}
+	}
 }
 
 // ---------------------------------- //
@@ -884,6 +1842,7 @@ Void CreateButton(Text _ButtonId, Text _ButtonLabel, Text _ButtonIcon, Real _But
 		case "LibPM_ChangeTeam" : ButtonScript = "PauseActiveContext = C_LibPauseMenu_ContextSwitchTeam;";
 		case "LibPM_ManageServer" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::ServerSettings);";
 		//case "LibPM_ManageServer" : ButtonScript = "PauseActiveContext = C_LibPauseMenu_ContextManageServer;";
+		case "LibPM_TitleSettings" : ButtonScript = "PauseActiveContext = C_LibPauseMenu_ContextTitleSettings;";
 		case "LibPM_Advanced" : ButtonScript = "CloseInGameMenu(::EInGameMenuResult::AdvancedMenu);";
 	}
 	SetButtonScript(_ButtonId, ButtonScript);
@@ -913,7 +1872,8 @@ Void CreateStandardButtons() {
 	CreateButton("LibPM_SaveReplay", _("Save replay"), "Icons64x64_1|MediaVideoDownloading", 2.);
 	CreateButton("LibPM_ChangeTeam", _("Change team"), "Icons128x32_1|RT_Team", 3.);
 	CreateButton("LibPM_ManageServer", _("Manage server"), "Icons64x64_1|IconServers", 4.);
-	CreateButton("LibPM_Advanced", _("Advanced options"), "Icons128x128_1|Options", 5.);
+	CreateButton("LibPM_TitleSettings", _("Title settings"), "Icons128x128_1|ProfileAdvanced", 5.);
+	//CreateButton("LibPM_Advanced", _("Advanced options"), "Icons128x128_1|Options", 5.);
 }
 
 // ---------------------------------- //
@@ -930,6 +1890,16 @@ Void SetSoloMode(Boolean _IsSolo) {
 
 Void SetSoloMode() {
 	SetSoloMode(True);
+}
+
+// ---------------------------------- //
+/** Set the map information visibility.
+ *
+ *	@param	_MapInfoVisible		Visibility of the map information.
+ */
+Void SetMapInfoVisibility(Boolean _MapInfoVisible) {
+	declare netwrite Boolean Net_LibPauseMenu_HideMapInfo for Teams[0];
+	Net_LibPauseMenu_HideMapInfo = !_MapInfoVisible;
 }
 
 // ---------------------------------- //
@@ -998,7 +1968,7 @@ Integer[Ident] CustomTeamChangeRequests() {
 	// ---------------------------------- //
 	// Get the new requests
 	foreach (Player in AllPlayers) {
-		if (Player.IsBot || Player.IsFakePlayer) continue;
+		if (Player.Score == Null || Player.User.IsFakeUser) continue;
 		declare UI <=> UIManager.GetUI(Player);
 		if (UI == Null) continue;
 
@@ -1015,6 +1985,44 @@ Integer[Ident] CustomTeamChangeRequests() {
 }
 
 // ---------------------------------- //
+/** Load custom title pack settings list.
+ *
+ *	@param	_SettingsURL	URL of the settings XML file.
+ */
+Void LoadTitleSettings(Text _SettingsURL) {
+	if (!Http.IsValidUrl(_SettingsURL)) return;
+
+	if (G_LibPauseMenu_TitleSettingsReq != Null) {
+		Http.Destroy(G_LibPauseMenu_TitleSettingsReq);
+		G_LibPauseMenu_TitleSettingsReq = Null;
+	}
+
+	G_LibPauseMenu_TitleSettingsReq <=> Http.CreateGet(_SettingsURL, False);
+	G_LibPauseMenu_TitleSettingsReqStart = Now;
+}
+
+// ---------------------------------- //
+/** Wait for the settings to load.
+ *
+ *	@return		True, if the document is loading.
+ */
+Boolean LoadingLoop() {
+	if (G_LibPauseMenu_TitleSettingsReq == Null) return False;
+	if (Now < G_LibPauseMenu_TitleSettingsReqStart + 5000 && !G_LibPauseMenu_TitleSettingsReq.IsCompleted) return True;
+
+	if (G_LibPauseMenu_TitleSettingsReq.IsCompleted) {
+		declare SettingsXML <=> Xml.Create(G_LibPauseMenu_TitleSettingsReq.Result);
+		Private_LoadTitleSettings(SettingsXML);
+		Xml.Destroy(SettingsXML);
+	}
+	
+	Http.Destroy(G_LibPauseMenu_TitleSettingsReq);
+	G_LibPauseMenu_TitleSettingsReq = Null;
+	G_LibPauseMenu_TitleSettingsReqStart = -1;
+	return False;
+}
+
+// ---------------------------------- //
 /// Unload the library.
 Void Unload() {
 	Layers::Detach(C_LibPauseMenu_ManialinkLayerId);
@@ -1025,13 +2033,30 @@ Void Unload() {
 	G_LibPauseMenu_ButtonsLabels	.clear();
 	G_LibPauseMenu_ButtonsIcons		.clear();
 	G_LibPauseMenu_ButtonsScripts	.clear();
-
+	G_LibPauseMenu_TitleSettingsGroups		.clear();
+	G_LibPauseMenu_TitleSettingsNames		.clear();
+	G_LibPauseMenu_TitleSettingsDesc		.clear();
+	G_LibPauseMenu_TitleSettingsGroup		.clear();
+	G_LibPauseMenu_TitleSettingsType		.clear();
+	G_LibPauseMenu_TitleSettingsDefault		.clear();
+	G_LibPauseMenu_TitleSettingsEnumVal		.clear();
+	G_LibPauseMenu_TitleSettingsEnumName	.clear();
+	G_LibPauseMenu_TitleSettingsInvert		.clear();
+	G_LibPauseMenu_KeyBindingsNames		.clear();
+	G_LibPauseMenu_KeyBindingsDesc		.clear();
+	G_LibPauseMenu_KeyBindingsDefault	.clear();
 	G_LibPauseMenu_CustomTeamChangeRequests.clear();
 
 	declare netwrite Text[] Net_LibPauseMenu_DisabledButtons for Teams[0];
 	declare netwrite Integer Net_LibPauseMenu_LastButtonsUpdate for Teams[0];
 	Net_LibPauseMenu_DisabledButtons.clear();
 	Net_LibPauseMenu_LastButtonsUpdate = -1;
+
+	if (G_LibPauseMenu_TitleSettingsReq != Null) {
+		Http.Destroy(G_LibPauseMenu_TitleSettingsReq);
+		G_LibPauseMenu_TitleSettingsReq = Null;
+		G_LibPauseMenu_TitleSettingsReqStart = -1;
+	}
 }
 
 // ---------------------------------- //
@@ -1039,9 +2064,20 @@ Void Unload() {
 Void Load() {
 	Unload();
 	CreateStandardButtons();
+	SetMapInfoVisibility(True);
 
 	Layers::Create(C_LibPauseMenu_ManialinkLayerId);
 	Layers::SetType(C_LibPauseMenu_ManialinkLayerId, CUILayer::EUILayerType::InGameMenu);
+}
+
+// ---------------------------------- //
+/** Load the library with custom settings.
+ *
+ *	@param	_SettingsURL	URL of the settings XML file.
+ */
+Void Load(Text _SettingsURL) {
+	Load();
+	LoadTitleSettings(_SettingsURL);
 }
 
 // ---------------------------------- //

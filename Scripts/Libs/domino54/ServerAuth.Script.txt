@@ -1,0 +1,269 @@
+// -------------------------------------- //
+//  LIBRARY SERVER AUTH by domino54       //
+//  script version: 2017-10-09            //
+// -------------------------------------- //
+
+#Const Version		"2017-10-09"
+#Const ScriptName	"Libs/domino54/ServerAuth.Script.txt"
+
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/ModeInfo.Script.txt" as ModeInfo
+
+// ---------------------------------- //
+// Constantd
+// ---------------------------------- //
+#Const C_LibServerAuth_InterfaceLayerId		"LibServerAuth:Interface"
+#Const C_LibServerAuth_AuthRequestTimeOut	10000
+
+// Status enumerator
+#Const C_LibServerAuth_StatusId_Disabled	0
+#Const C_LibServerAuth_StatusId_Pending		1
+#Const C_LibServerAuth_StatusId_Authorized	2
+#Const C_LibServerAuth_StatusId_Forbidden	3
+#Const C_LibServerAuth_StatusId_InvalidURL	4
+#Const C_LibServerAuth_StatusId_TimedOut	5
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Boolean G_LibServerAuth_AuthRequired;
+declare Boolean G_LibServerAuth_IsAuthorized;
+declare Text G_LibServerAuth_AuthFileURL;
+declare Text G_LibServerAuth_AuthPassword;
+declare CHttpRequest G_LibServerAuth_AuthRequest;
+declare Integer G_LibServerAuth_RequestStart;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the server auth window.
+ *
+ *	@return		Server auth manialink.
+ */
+Text Private_CreateManialinkServerAuth() {
+	declare Size = <120., 16.>;
+	return """
+<manialink version="3" name="{{{C_LibServerAuth_InterfaceLayerId}}}">
+<stylesheet>
+	<style id="Label_WindowTitle" halign="center" valign="center2" style="TextValueSmallSm" textsize="1" textcolor="FFF" />
+	<style id="Label_WindowDescription" halign="center" valign="center2" textsize="1" textcolor="FFF" autonewline="1" />
+</stylesheet>
+
+<frame id="Frame_ServerAuthWindow" pos="{{{-Size.X/2^" "^Size.Y/2}}}">
+	<label pos="{{{Size.X/2}}} -4" id="Label_WindowTitle" textprefix="$t" text="Server Authorization" />
+	<label pos="{{{Size.X/2^" "^-(Size.Y+4)/2}}}" size="{{{Size.X-4^" "^Size.Y-10}}}" id="Label_WindowDescription" />
+
+	<quad size="{{{Size.X^" "^Size.Y}}}" bgcolor="000" opacity=".75" />
+	<quad size="{{{Size.X^" "^Size.Y}}}" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+	<quad pos="-5 5" size="{{{Size.X+10^" "^Size.Y+10}}}" style="Bgs1InRace" substyle="BgButtonShadow" />
+</frame>
+
+<script><!--
+#Include "TextLib" as TL
+
+main() {
+	declare Label_WindowDescription <=> (Page.GetFirstChild("Label_WindowDescription") as CMlLabel);
+	declare netread Integer Net_LibServerAuth_StatusId for Teams[0];
+	declare PrevStatusId = -1;
+
+	while (True) {
+		wait(PrevStatusId != Net_LibServerAuth_StatusId);
+		PrevStatusId = Net_LibServerAuth_StatusId;
+
+		switch (Net_LibServerAuth_StatusId) {
+			case {{{C_LibServerAuth_StatusId_Disabled}}} : Label_WindowDescription.Value = _("Server authorization not required.");
+			case {{{C_LibServerAuth_StatusId_Pending}}} : Label_WindowDescription.Value = _("Verifying server authorization to run this game mode. Please wait...");
+			case {{{C_LibServerAuth_StatusId_Authorized}}} : Label_WindowDescription.Value = _("Server has been authorized.");
+			case {{{C_LibServerAuth_StatusId_Forbidden}}} : Label_WindowDescription.Value = _("Sorry, this server is not authorized to run this game mode. Please contact game mode creators for further information.");
+			case {{{C_LibServerAuth_StatusId_InvalidURL}}} : Label_WindowDescription.Value = _("Failed to authorize server: invalid whitelist URL. Please contact game mode creators to solve this issue.");
+			case {{{C_LibServerAuth_StatusId_TimedOut}}} : Label_WindowDescription.Value = _("Failed to authorize server: connection timed out. Please contact game mode creators if problem persists.");
+		}
+	}
+}
+
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Set current server authorization status.
+ *
+ *	@param	_StatusId	Authorization status id.
+ */
+Void Private_SetAuthStatus(Integer _StatusId) {
+	declare netwrite Integer Net_LibServerAuth_StatusId for Teams[0];
+	Net_LibServerAuth_StatusId = _StatusId;
+}
+
+// ---------------------------------- //
+/** Check if the server exists in authorized servers list.
+ *
+ *	@param	_Document	XML document generated from auth request result.
+ *
+ *	@return		True, if the server is authorized.
+ */
+Boolean Private_CheckServerAuthorization(CXmlDocument _Document) {
+	if (_Document == Null || _Document.Root == Null || _Document.Root.Name != "servers") return False;
+	declare ModeName = ModeInfo::GetName();
+
+	foreach (Server in _Document.Root.Children) {
+		if (Server.Name != "server") continue;
+		declare NodeLogin = Server.GetAttributeText("login", "");
+		if (NodeLogin != ServerLogin) continue;
+
+		if (Server.Children.count <= 0) return True;
+
+		foreach (GameMode in Server.Children) {
+			if (GameMode.Name != "mode") continue;
+			if (GameMode.TextContents == ModeName) return True;
+		}
+	}
+
+	return False;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Check if the server is authorized to run game mode. 
+ *
+ *	@return		True, if server can run the mode.
+ */
+Boolean IsAuthorized() {
+	if (!G_LibServerAuth_AuthRequired) return True;
+	return G_LibServerAuth_IsAuthorized;
+}
+
+// ---------------------------------- //
+/** Enable authorization in game mode.
+ *
+ *	@param	_AuthURL		URL of the XML file with whitelisted servers logins.
+ *	@param	_AuthPassword	Optional password for manual server authorization.
+ */
+Void EnableAuth(Text _AuthURL, Text _AuthPassword) {
+	if (G_LibServerAuth_AuthRequired) return;
+	G_LibServerAuth_AuthRequired = True;
+	G_LibServerAuth_AuthFileURL = _AuthURL;
+	G_LibServerAuth_AuthPassword = _AuthPassword;
+}
+
+// ---------------------------------- //
+/** Begin server authorization process.
+ *
+ *	@param	_UserPassword	Password entered by server owner.
+ */
+Void CheckAuth(Text _UserPassword) {
+	if (IsAuthorized()) return;
+
+	// Authorize in-game servers
+	foreach (Player in AllPlayers) {
+		if (Player.User.Login != ServerLogin) continue;
+		Private_SetAuthStatus(C_LibServerAuth_StatusId_Authorized);
+		G_LibServerAuth_IsAuthorized = True;
+		return;
+	}
+
+	// Skip online permissions check if server owner entered correct passcode
+	if (_UserPassword != "" && _UserPassword == G_LibServerAuth_AuthPassword) {
+		Private_SetAuthStatus(C_LibServerAuth_StatusId_Authorized);
+		G_LibServerAuth_IsAuthorized = True;
+		return;
+	}
+
+	// Invalid data file URL
+	if (!Http.IsValidUrl(G_LibServerAuth_AuthFileURL)) {
+		Private_SetAuthStatus(C_LibServerAuth_StatusId_InvalidURL);
+		G_LibServerAuth_RequestStart = Now;
+		return;
+	}
+
+	// Start the request
+	Private_SetAuthStatus(C_LibServerAuth_StatusId_Pending);
+	G_LibServerAuth_AuthRequest = Http.CreateGet(G_LibServerAuth_AuthFileURL, False);
+	G_LibServerAuth_RequestStart = Now;
+
+	// Create authorization interface
+	Layers::Create(C_LibServerAuth_InterfaceLayerId, Private_CreateManialinkServerAuth());
+	Layers::Attach(C_LibServerAuth_InterfaceLayerId);
+}
+
+// ---------------------------------- //
+/** Wait for the authorization to be completed.
+ *
+ *	@param	_UserPassword	Password entered by server owner.
+ *
+ *	@return		True, if request is being processed.
+ */
+Boolean AuthLoop(Text _UserPassword) {
+	if (IsAuthorized()) return False;
+	if (G_LibServerAuth_RequestStart <= 0) return False;
+
+	// Server owner entered correct passcode
+	if (_UserPassword != "" && _UserPassword == G_LibServerAuth_AuthPassword) {
+		Private_SetAuthStatus(C_LibServerAuth_StatusId_Authorized);
+		G_LibServerAuth_IsAuthorized = True;
+	}
+
+	// ---------------------------------- //
+	// Handle ongoing request
+	if (G_LibServerAuth_AuthRequest != Null) {
+		declare StopRequest = G_LibServerAuth_IsAuthorized;
+		
+		// Read the result
+		if (!StopRequest && G_LibServerAuth_AuthRequest.IsCompleted) {
+			declare Document = Xml.Create(G_LibServerAuth_AuthRequest.Result);
+			G_LibServerAuth_IsAuthorized = Private_CheckServerAuthorization(Document);
+			if (G_LibServerAuth_IsAuthorized) Private_SetAuthStatus(C_LibServerAuth_StatusId_Authorized);
+			else Private_SetAuthStatus(C_LibServerAuth_StatusId_Forbidden);
+			Xml.Destroy(Document);
+			StopRequest = True;
+		}
+
+		// Request timed out
+		if (Now >= G_LibServerAuth_RequestStart + C_LibServerAuth_AuthRequestTimeOut) {
+			Private_SetAuthStatus(C_LibServerAuth_StatusId_TimedOut);
+			StopRequest = True;
+		}
+
+		// Destroy the request
+		if (StopRequest) {
+			Http.Destroy(G_LibServerAuth_AuthRequest);
+			G_LibServerAuth_AuthRequest = Null;
+			StopRequest = False;
+		}
+	}
+	
+	// Authorization pending
+	if (!IsAuthorized()) return True;
+
+	// Destroy authorization interface
+	Layers::Detach(C_LibServerAuth_InterfaceLayerId);
+	Layers::Destroy(C_LibServerAuth_InterfaceLayerId);
+
+	// Finish authorization
+	G_LibServerAuth_RequestStart = -1;
+	return False;
+}

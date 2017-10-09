@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MANIALINK TOOLS by domino54   //
-//  script version: 2017-07-11            //
+//  script version: 2017-10-09            //
 // -------------------------------------- //
 
 /**
@@ -18,9 +18,10 @@
  *	-	HsvToRgb			Converts color in HSV format to RGB.
  *	-	TimeToText			Converts time Integer into formatted Text.
  *	-	GetEchelonImage		Returns path to an image of Echelon badle of specified level.
+ *	-	SetQuadStyle		Sets the style of a quad - either ingame style or image URL.
  */
 
-#Const Version		"2017-07-11"
+#Const Version		"2017-10-09"
 #Const ScriptName	"Libs/domino54/ManialinkTools.Script.txt"
 
 // ---------------------------------- //
@@ -246,6 +247,36 @@ Text GetEchelonImage(Integer _Echelon) {
 }
 """
 
+/// Code of the SetQuadStyle() function
+#Const C_ManialinkTools_SetQuadStyle """
+// ---------------------------------- //
+/** Set the style of a quad.
+ *
+ *	@param	_Quad	The quad to set style.
+ *	@param	_Style	The style of the quad.
+ */
+Void SetQuadStyle(CMlQuad _Quad, Text _Style) {
+	if (_Quad == Null) return;
+	declare Explode = TL::Split("|", _Style);
+
+	if (Explode.count == 2) {
+		_Quad.Style = Explode[0];
+		_Quad.Substyle = Explode[1];
+		_Quad.ImageUrl = "";
+	}
+	else if (Http.IsValidUrl(_Style)) {
+		_Quad.ImageUrl = _Style;
+		_Quad.Style = "";
+		_Quad.Substyle = "";
+	}
+	else {
+		_Quad.Style = "";
+		_Quad.Substyle = "";
+		_Quad.ImageUrl = "";
+	}
+}
+"""
+
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
@@ -272,6 +303,7 @@ Text Private_GetFunctionCode(Text _FunctionName) {
 		case "HsvToRgb"			: return C_ManialinkTools_HsvToRgb;
 		case "TimeToText"		: return C_ManialinkTools_TimeToText;
 		case "GetEchelonImage"	: return C_ManialinkTools_GetEchelonImage;
+		case "SetQuadStyle"		: return C_ManialinkTools_SetQuadStyle;
 	}
 	return "";
 }

@@ -1,14 +1,15 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2017-09-07            //
+//  script version: 2017-10-09            //
 // -------------------------------------- //
 
-#Const Version		"2017-09-07"
+#Const Version		"2017-10-09"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/Bindings.Script.txt" as Bindings
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
@@ -627,21 +628,11 @@ foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// On key press
 	else if (Event.Type == CMlEvent::Type::KeyPress) {
-		// ---------------------------------- //
-		// Toggle window visibility
-		if (Event.KeyName == "M") {
-			if (Net_LibCharacters_DisplayMode != {{{C_LibCharacters_DisplayModeManual}}}) continue;
-			UserSettingWindowVisible = !UserSettingWindowVisible;
-		}
-		// ---------------------------------- //
-		// Switch character
-		else {
-			if (!WindowVisible) continue;
-			declare Order = TL::ToInteger(Event.KeyName);
-			if (Order < 0) continue;
-			if (Order == 0) Order = 10;
-			CurClickedCharacter = Order - 1;
-		}
+		if (!WindowVisible) continue;
+		declare Order = TL::ToInteger(Event.KeyName);
+		if (Order < 0) continue;
+		if (Order == 0) Order = 10;
+		CurClickedCharacter = Order - 1;
 	}
 	// ---------------------------------- //
 	// On mouse over
@@ -664,18 +655,26 @@ foreach (Event in PendingEvents) {
 }
 
 // ---------------------------------- //
+// Toggle window visibility
+if (Bindings_Listener("LibCharacters_Open", "M")) {
+	if (Net_LibCharacters_DisplayMode != {{{C_LibCharacters_DisplayModeManual}}}) continue;
+	UserSettingWindowVisible = !UserSettingWindowVisible;
+}
+
+// ---------------------------------- //
 // Switch character note
+declare PlayerStartTime = GetPlayerStartTime(GUIPlayer);
 Label_SwitchCharNote.Visible =
 	!IsSpectator && Net_LibCharacters_DisplayMode != {{{C_LibCharacters_DisplayModeHidden}}} &&
 	GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> &&
-	GameTime > GUIPlayer.StartTime - C_SwitchCharNoteFade &&
-	GameTime < GUIPlayer.StartTime + C_SwitchCharNoteTime + C_SwitchCharNoteFade;
+	GameTime > PlayerStartTime - C_SwitchCharNoteFade &&
+	GameTime < PlayerStartTime + C_SwitchCharNoteTime + C_SwitchCharNoteFade;
 
 if (Label_SwitchCharNote.Visible) {
-	if (GameTime < GUIPlayer.StartTime)
-		Label_SwitchCharNote.Opacity = ML::ToReal(GameTime - GUIPlayer.StartTime + C_SwitchCharNoteFade) / C_SwitchCharNoteFade;
-	else if (GameTime > GUIPlayer.StartTime + C_SwitchCharNoteTime)
-		Label_SwitchCharNote.Opacity = 1 - ML::ToReal(GameTime - GUIPlayer.StartTime - C_SwitchCharNoteTime) / C_SwitchCharNoteFade;
+	if (GameTime < PlayerStartTime)
+		Label_SwitchCharNote.Opacity = ML::ToReal(GameTime - PlayerStartTime + C_SwitchCharNoteFade) / C_SwitchCharNoteFade;
+	else if (GameTime > PlayerStartTime + C_SwitchCharNoteTime)
+		Label_SwitchCharNote.Opacity = 1 - ML::ToReal(GameTime - PlayerStartTime - C_SwitchCharNoteTime) / C_SwitchCharNoteFade;
 	else
 		Label_SwitchCharNote.Opacity = 1.;
 
@@ -1198,6 +1197,7 @@ if (UpdateCharacterPreview) {
 
 {{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness", "HsvToRgb", "ComputeWidth"])}}}
 {{{Translations::InjectInManialink(RequiredTranslations)}}}
+{{{Bindings::Functions()}}}
 
 Void SetInterfaceColor(Vec3 _Color) {
 	Page.GetClassChildren("Color", Page.MainFrame, True);
@@ -1217,6 +1217,21 @@ Void SetInterfaceColor(Vec3 _Color) {
 			}
 		}
 	}
+}
+
+Integer GetPlayerStartTime(CPlayer _Player) {
+	if (_Player == Null) return -1;
+	switchtype (_Player) {
+		case CSmPlayer : {
+			declare Player <=> (_Player as CSmPlayer);
+			return Player.StartTime;
+		}
+		case CTmMlPlayer : {
+			declare Player <=> (_Player as CTmMlPlayer);
+			return Player.RaceStartTime;
+		}
+	}
+	return 0;
 }
 
 main() {

@@ -1,14 +1,15 @@
 // -------------------------------------- //
 //  LIBRARY STORAGE PLAYER by domino54    //
-//  script version: 2017-07-29            //
+//  script version: 2017-10-09            //
 // -------------------------------------- //
 
-#Const Version		"2017-07-29"
-#Const ScriptName	"StoragePlayer.Script.txt"
+#Const Version		"2017-10-09"
+#Const ScriptName	"Libs/domino54/StoragePlayer.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/Bindings.Script.txt" as Bindings
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
@@ -392,30 +393,6 @@ foreach (Event in PendingEvents) {
 		if (Event.ControlId == "Quad_TrackNavBarTrigger") Quad_TrackNavBarHover.Hide();
 	}
 	// ---------------------------------- //
-	// On key press
-	else if (Event.Type == CMlEvent::Type::KeyPress) {
-		switch (Event.KeyName) {
-			// ---------------------------------- //
-			// Toggle music widget visibility
-			case "F4" : Persistent_Storage_InGameWindowVisible = !Persistent_Storage_InGameWindowVisible;
-			
-			// ---------------------------------- //
-			// Toggle play / pause
-			case "K" : Persistent_Storage_IsPlaying = !Persistent_Storage_IsPlaying;
-			
-			// ---------------------------------- //
-			// Go to the previous track
-			case "J" : {
-				if (G_CurrentTrack != Null && G_CurrentTrack.PlayCursor > 10)
-					G_CurrentTrack.PlayCursor = 0.;
-				else PrevTrack();
-			}
-			// ---------------------------------- //
-			// Go to the next track
-			case "L" : NextTrack();
-		}
-	}
-	// ---------------------------------- //
 	// On menu navigation
 	else if (Event.Type == CMlEvent::Type::MenuNavigation) {
 		if (Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel) {
@@ -423,6 +400,30 @@ foreach (Event in PendingEvents) {
 		}
 	}
 }
+
+// ---------------------------------- //
+// Toggle music widget visibility
+if (Bindings_Listener("LibStoragePlayer_Open", "F4")) {
+	Persistent_Storage_InGameWindowVisible = !Persistent_Storage_InGameWindowVisible;
+}
+
+// ---------------------------------- //
+// Toggle play / pause
+if (Bindings_Listener("LibStoragePlayer_Play", "K")) {
+	Persistent_Storage_IsPlaying = !Persistent_Storage_IsPlaying;
+}
+
+// ---------------------------------- //
+// Go to the previous track
+if (Bindings_Listener("LibStoragePlayer_Prev", "J")) {
+	if (G_CurrentTrack != Null && G_CurrentTrack.PlayCursor > 10)
+		G_CurrentTrack.PlayCursor = 0.;
+	else PrevTrack();
+}
+
+// ---------------------------------- //
+// Go to the next track
+if (Bindings_Listener("LibStoragePlayer_Next", "L")) NextTrack();
 
 // ---------------------------------- //
 // Toggle show Storage Player
@@ -961,8 +962,8 @@ Void GoToTrack(Integer _TrackIndex) {
  *	@return		The music volume factor.
  */
 Real GetCountdownVolume() {
-	declare persistent Boolean Persistent_LibInterfancy_DisableCountdownTrack for LocalUser;
-	if (Persistent_LibInterfancy_DisableCountdownTrack) return 1.;
+	declare persistent Boolean Persistent_LibInterfancy_DisableCountdownSong for LocalUser;
+	if (Persistent_LibInterfancy_DisableCountdownSong) return 1.;
 	
 	declare netread Integer Net_LibStoragePlayer_EndTime for Teams[0];
 	declare netread Integer Net_LibStoragePlayer_CountdownDuration for Teams[0];
@@ -993,6 +994,7 @@ Real GetCountdownVolume() {
 
 {{{Translations::InsertToManialink(["Storage Music Player", "Custom playlist URL:"])}}}
 {{{ManialinkTools::Function("ComputeWidth")}}}
+{{{Bindings::Functions()}}}
 
 // ---------------------------------- //
 // Main

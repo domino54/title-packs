@@ -1,0 +1,92 @@
+// -------------------------------------- //
+//  LIBRARY BINDINGS by domino54          //
+//  script version: 2017-10-09            //
+// -------------------------------------- //
+
+/**
+ *	A simple library used to let users customize
+ *	keyboard inputs of custom game interfaces.
+ */
+
+#Const Version		"2017-10-09"
+#Const ScriptName	"Libs/domino54/Bindings.Script.txt"
+
+// ---------------------------------- //
+// Functons
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Get the functions of Bindings library.
+ * 
+ *	@return		The library functions.
+ */
+Text Functions() {
+	return """
+// ---------------------------------- //
+/** Get the currently set key for an input.
+ *
+ *	@param	_BindingId		Id of the input to get key.
+ *	@param	_DefaultKey		Default key of the input.
+ *
+ *	@return		Key used by the input.
+ */
+Text Bindings_GetKey(Text _BindingId, Text _DefaultKey) {
+	if (LocalUser == Null || _BindingId == "") return _DefaultKey;
+
+	declare persistent Text[Text] Persistent_LibBindings_UserBindings for LocalUser;
+	if (!Persistent_LibBindings_UserBindings.existskey(_BindingId)) return _DefaultKey;
+	return Persistent_LibBindings_UserBindings[_BindingId];
+}
+
+// ---------------------------------- //
+/** Set a new key for an input.
+ *
+ *	@param	_BindingId		Id of the input to set new key.
+ *	@param	_NewKeyName		Name of the new key to set.
+ *	@param	_DefaultKey		Default key of the input.
+ */
+Void Bindings_SetKey(Text _BindingId, Text _NewKeyName, Text _DefaultKey) {
+	if (LocalUser == Null || _BindingId == "") return;
+
+	declare persistent Text[Text] Persistent_LibBindings_UserBindings for LocalUser;
+	if (_NewKeyName != _DefaultKey) Persistent_LibBindings_UserBindings[_BindingId] = _NewKeyName;
+	else {
+		declare Removed = Persistent_LibBindings_UserBindings.removekey(_BindingId);
+	}
+}
+
+// ---------------------------------- //
+/** Return True, when certain input is used.
+ *
+ *	@param	_BindingId		Id of the input to listen to.
+ *	@param	_DefaultKey		Default key of the input.
+ */
+Boolean Bindings_Listener(Text _BindingId, Text _DefaultKey) {
+	if (LocalUser == Null || IsInGameMenuDisplayed || _BindingId == "" || PendingEvents.count <= 0) return False;
+
+	foreach (Event in PendingEvents) {
+		if (Event.Type != CMlEvent::Type::KeyPress) continue;
+		if (Event.KeyName == Bindings_GetKey(_BindingId, _DefaultKey)) return True;
+	}
+	return False;
+}
+	""";
+}

@@ -1,12 +1,14 @@
 // -------------------------------------- //
 //  OFFZONE PLACING by domino54           //
-//  script version: 2015-12-13            //
+//  script version: 2017-10-09            //
 // -------------------------------------- //
 
 #RequireContext CEditorPlugin
 
-#Const	Version		"2015-12-13"
-#Const	ScriptName	"OffZonePlacing.Script.txt"
+#Const Version		"2017-10-09"
+#Const ScriptName	"OffZonePlacing.Script.txt"
+
+#Include "MathLib" as ML
 
 // ---------------------------------- //
 /** Get layer OffZone button
@@ -15,14 +17,13 @@
  */
 Text GetLayerOffZoneButton() {
 	return """
-<manialink version="2" name="EditorPlugin:OffZonePlacing">
-<quad posn="50 -84 3" sizen="8 8" halign="center" valign="center2" style="UIConstruction_Buttons" substyle="OffZone" id="Quad_BtnSetOffZoneMode" ScriptEvents="1"/>
-<label posn="90 -88 3" halign="center" valign="bottom" style="TrackerText" id="Label_MouseHoverTooltip" hidden="1"/>
+<manialink version="3" name="EditorPlugin:OffZonePlacing">
+<quad pos="38 -84 3" size="8 8" halign="center" valign="center2" style="UIConstruction_Buttons" substyle="OffZone" id="Quad_BtnSetOffZoneMode" tooltip="Edit OffZone [O]" ScriptEvents="1" />
 
-<frame id="Frame_OffZoneToolbar" posn="50 -72">
-	<quad sizen="18 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="BgTools"/>
-	<quad posn="-4 0 1" sizen="8 8" halign="center" valign="center" style="Icons64x64_1" substyle="Close" id="Quad_ClearOffZone" ScriptEvents="1"/>
-	<quad posn="4 0 1" sizen="8 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="CopyPaste" id="Quad_AlwaysDisplay" ScriptEvents="1"/>
+<frame id="Frame_OffZoneToolbar" pos="38 -72">
+	<quad pos="-4" size="8 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="CopyPaste" id="Quad_AlwaysDisplay" tooltip="Always show OffZone selection" ScriptEvents="1" />
+	<quad pos="4" size="8 8" halign="center" valign="center" style="Icons64x64_1" substyle="Close" id="Quad_ClearOffZone" tooltip="Clear OffZone" ScriptEvents="1" />
+	<quad size="20 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="BgTools" />
 </frame>
 
 <script><!--
@@ -30,36 +31,25 @@ Text GetLayerOffZoneButton() {
  *	OffZone Placing by domino54
  */
 
-/// Tooltip messages for specified classes
-#Const C_Tooltips [
-	"Quad_BtnSetOffZoneMode" => _("Edit Offzone [O]"),
-	"Quad_ClearOffZone" => _("Clear OffZone"),
-	"Quad_AlwaysDisplay" => _("Always display OffZone selection")
-]
-
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
 main() {
 	wait (LocalUser != Null);
 	
-	// ---------------------------------- //
 	// Load interface elements
 	declare Frame_OffZoneToolbar	<=> (Page.GetFirstChild("Frame_OffZoneToolbar")		as CMlFrame);
 	declare Quad_BtnSetOffZoneMode	<=> (Page.GetFirstChild("Quad_BtnSetOffZoneMode")	as CMlQuad);
 	declare Quad_AlwaysDisplay		<=> (Page.GetFirstChild("Quad_AlwaysDisplay")		as CMlQuad);
-	declare Label_MouseHoverTooltip	<=> (Page.GetFirstChild("Label_MouseHoverTooltip")	as CMlLabel);
 	
-	// ---------------------------------- //
 	// Persistent settings
-	declare persistent Boolean Persistent_OffZonePlacing_AlwaysShow for LocalUser = False;
+	declare persistent Persistent_OffZonePlacing_AlwaysShow for LocalUser = False;
 	
-	// ---------------------------------- //
 	// Variables
 	declare IsOffZonePlaceMode for Page = False;
 	declare UserSetOffZoneMode for Page = False;
 	declare UserSetClearOffZone for Page = False;
-	
+
 	// ---------------------------------- //
 	// Yield
 	// ---------------------------------- //
@@ -72,36 +62,21 @@ main() {
 			// ---------------------------------- //
 			// Mouse click
 			if (Event.Type == CMlEvent::Type::MouseClick) {
-				if (Event.ControlId == "Quad_BtnSetOffZoneMode") {
-					UserSetOffZoneMode = True;
-				} else if (Event.ControlId == "Quad_AlwaysDisplay") {
+				if (Event.ControlId == "Quad_BtnSetOffZoneMode") UserSetOffZoneMode = True;
+				
+				else if (Event.ControlId == "Quad_AlwaysDisplay")
 					Persistent_OffZonePlacing_AlwaysShow = !Persistent_OffZonePlacing_AlwaysShow;
-				} else if (Event.ControlId == "Quad_ClearOffZone") {
-					UserSetClearOffZone = True;
-				}
+
+				else if (Event.ControlId == "Quad_ClearOffZone") UserSetClearOffZone = True;
 			}
 			// ---------------------------------- //
 			// Key press
 			else if (Event.Type == CMlEvent::Type::KeyPress) {
 				if (Event.KeyName == "O") UserSetOffZoneMode = True;
 			}
-			// ---------------------------------- //
-			// Mouse over
-			else if (Event.Type == CMlEvent::Type::MouseOver) {
-				if (C_Tooltips.existskey(Event.ControlId)) {
-					Label_MouseHoverTooltip.SetText(C_Tooltips[Event.ControlId]);
-					Label_MouseHoverTooltip.Show();
-				}
-			}
-			// ---------------------------------- //
-			// Mouse out
-			else if (Event.Type == CMlEvent::Type::MouseOut) {
-				Label_MouseHoverTooltip.Hide();
-			}
 		}
-		
-		// ---------------------------------- //
-		// Others
+
+		// Other
 		Quad_BtnSetOffZoneMode.StyleSelected = IsOffZonePlaceMode;
 		Frame_OffZoneToolbar.Visible = IsOffZonePlaceMode;
 		Quad_AlwaysDisplay.StyleSelected = Persistent_OffZonePlacing_AlwaysShow;
@@ -115,32 +90,29 @@ main() {
 // Main
 // ---------------------------------- //
 main() {
-	// ---------------------------------- //
 	// Create manialink layer
 	ManialinkText = GetLayerOffZoneButton();
 	
-	// ---------------------------------- //
 	// Persistent settings
-	declare persistent Boolean Persistent_OffZonePlacing_AlwaysShow for LocalUser = False;
+	declare persistent Persistent_OffZonePlacing_AlwaysShow for LocalUser = False;
 	
-	// ---------------------------------- //
 	// Variables
 	declare PrevPlaceMode = ::PlaceMode::Unknown;
 	declare PrevOffZoneCount = -1;
+	declare SelectionDrag_Dragging = False;
+	declare SelectionDrag_Origin = Int3;
+	declare SelectionDrag_Subtract = False;
 	
-	// ---------------------------------- //
 	// Communicate with manialink layer
 	declare IsOffZonePlaceMode for ManialinkPage = False;
 	declare UserSetOffZoneMode for ManialinkPage = False;
 	declare UserSetClearOffZone for ManialinkPage = False;
 	
-	// ---------------------------------- //
 	// Prepare selection
 	if (!Persistent_OffZonePlacing_AlwaysShow) HideCustomSelection();
 	CustomSelectionCoords.clear();
 	CustomSelectionRGB = <.125, 0., .25>;
 	
-	// ---------------------------------- //
 	// Restore saved coords
 	declare metadata Int3[] TMOffZoneLocations for Map;
 	foreach (Position in TMOffZoneLocations) {
@@ -152,7 +124,7 @@ main() {
 	// ---------------------------------- //
 	while (True) {
 		yield;
-		
+
 		// ---------------------------------- //
 		// User enter OffZone placing mode
 		if (UserSetOffZoneMode) {
@@ -160,34 +132,74 @@ main() {
 			PlaceMode = ::PlaceMode::CustomSelection;
 		}
 		
+		// Send information to manialink layer
+		IsOffZonePlaceMode = PlaceMode == ::PlaceMode::CustomSelection;
+		
+		// ---------------------------------- //
+		// Manage events
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// On cursor selection begin
+			if (Event.Type == CEditorPluginEvent::Type::CursorSelectionBegin) {
+				if (!IsOffZonePlaceMode) continue;
+
+				SelectionDrag_Origin = CursorCoord;
+				SelectionDrag_Subtract = !CustomSelectionCoords.exists(CursorCoord);
+				SelectionDrag_Dragging = True;
+			}
+			// ---------------------------------- //
+			// On cursor change
+			else if (Event.Type == CEditorPluginEvent::Type::CursorChange) {
+				if (!SelectionDrag_Dragging) continue;
+
+				CustomSelectionCoords.clear();
+				foreach (Location in TMOffZoneLocations) CustomSelectionCoords.add(Location);
+
+				declare Int3 PosMin;
+				declare Int3 PosMax;
+				for (I, 0, 2) {
+					PosMin[I] = ML::Min(SelectionDrag_Origin[I], CursorCoord[I]);
+					PosMax[I] = ML::Max(SelectionDrag_Origin[I], CursorCoord[I]);
+				}
+
+				for (X, PosMin.X, PosMax.X) for (Y, PosMin.Y, PosMax.Y) for (Z, PosMin.Z, PosMax.Z) {
+					declare Coord = <X, Y, Z>;
+					if (SelectionDrag_Subtract) {
+						if (CustomSelectionCoords.exists(Coord)) {
+							declare Removed = CustomSelectionCoords.remove(Coord);
+						}
+					} else if (!CustomSelectionCoords.exists(Coord)) {
+						CustomSelectionCoords.add(Coord);
+					}
+				}
+			}
+			// ---------------------------------- //
+			// On cursor selection end
+			else if (Event.Type == CEditorPluginEvent::Type::CursorSelectionEnd) {
+				TMOffZoneLocations.clear();
+				foreach (Location in CustomSelectionCoords) TMOffZoneLocations.add(Location);
+				SelectionDrag_Dragging = False;
+			}
+		}
+		
 		// ---------------------------------- //
 		// User clears OffZone
 		if (UserSetClearOffZone) {
 			UserSetClearOffZone = False;
+
 			CustomSelectionCoords.clear();
+			TMOffZoneLocations.clear();
 		}
-		
-		// ---------------------------------- //
-		// Send information to manialink layer
-		IsOffZonePlaceMode = (PlaceMode == ::PlaceMode::CustomSelection);
 		
 		// ---------------------------------- //
 		// Show or hide selection
 		if (PrevPlaceMode != PlaceMode) {
 			PrevPlaceMode = PlaceMode;
-			
+
 			if (IsOffZonePlaceMode) ShowCustomSelection();
-			else if (!Persistent_OffZonePlacing_AlwaysShow) HideCustomSelection();
-		}
-		
-		// ---------------------------------- //
-		// Update OffZone locations
-		if (PrevOffZoneCount != CustomSelectionCoords.count) {
-			PrevOffZoneCount = CustomSelectionCoords.count;
-			TMOffZoneLocations.clear();
-			
-			foreach (Position in CustomSelectionCoords) {
-				if (!TMOffZoneLocations.exists(Position)) TMOffZoneLocations.add(Position);
+			else {
+				SelectionDrag_Dragging = False;
+				if (!Persistent_OffZonePlacing_AlwaysShow) HideCustomSelection();
 			}
 		}
 	}

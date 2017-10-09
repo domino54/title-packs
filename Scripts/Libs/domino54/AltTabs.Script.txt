@@ -1,0 +1,354 @@
+// -------------------------------------- //
+//  LIBRARY ALT TABS by domino54          //
+//  script version: 2017-10-09            //
+// -------------------------------------- //
+
+/**
+ *	Simple way to manage multiple active windows
+ *	available by holding Left Alt key. Add simple
+ *	tabs to switch between pages, like scores, tops.
+ *	Score rankings tab is created automatically.
+ */
+
+#Const Version		"2017-10-09"
+#Const ScriptName	"Libs/domino54/AltTabs.Script.txt"
+
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibAltTabs_UILayerId	"LibAltTabs:Selector"
+#Const C_LibAltTabs_TabIconSize	<20., 12.>
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text G_LibAltTabs_TextFont;
+declare Text[] G_LibAltTabs_CreatedTabs;
+declare Text[Text] G_LibAltTabs_TabsNames;
+declare Text[Text] G_LibAltTabs_TabsIcons;
+declare Vec2[Text] G_LibAltTabs_TabsPos;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the tabs window.
+ *
+ *	@return		The tabs manialink.
+ */
+Text Private_CreateManialinkTabs() {
+	declare TabsFrames = "";
+	foreach (I => TabId in G_LibAltTabs_CreatedTabs)
+		TabsFrames ^= "<frameinstance modelid='FrameModel_Tab' id='Frame_Tab#"^I^"' pos='0 "^-I * (C_LibAltTabs_TabIconSize.Y + 1)^"' />";
+
+	declare Dump_CreatedTabs	= dump(G_LibAltTabs_CreatedTabs);
+	declare Dump_TabsIcons		= dump(G_LibAltTabs_TabsIcons);
+	declare Dump_TabsNames		= dump(G_LibAltTabs_TabsNames);
+	declare Dump_TabsPos		= dump(G_LibAltTabs_TabsPos);
+
+	if (Dump_CreatedTabs == "[]") Dump_CreatedTabs = "Text[]";
+	if (Dump_TabsIcons == "[]") Dump_TabsIcons = "Text[Text]";
+	if (Dump_TabsNames == "[]") Dump_TabsNames = "Text[Text]";
+	if (Dump_TabsPos == "[]") Dump_TabsPos = "Vec2[Text]";
+
+	declare Size = C_LibAltTabs_TabIconSize;
+	return """
+<manialink version="3" name="{{{C_LibAltTabs_UILayerId}}}">
+<stylesheet>
+	<style class="Card" size="{{{Size.X^" "^Size.Y}}}" halign="right" valign="top" />
+	<style id="Quad_TabIcon" pos="{{{Size.X-1^" "^Size.Y-1}}}" size="{{{Size.X-2^" "^Size.Y-2}}}" halign="right" valign="top" />
+	<style id="Quad_IsCurrent" pos=".5 .5" size="{{{Size.X+1^" "^Size.Y+1}}}" halign="right" valign="top" style="Bgs1InRace" substyle="BgColorContour" />
+	<style id="Label_TabName" textsize="1" textemboss="1" textcolor="FFF" textprefix="$t" textfont="{{{TL::MLEncode(G_LibAltTabs_TextFont)}}}" />
+	<style id="Label_TabIcon" textemboss="1" textcolor="FFF" />
+</stylesheet>
+
+<frame id="Frame_TabsList">
+	<framemodel id="FrameModel_Tab">
+		<quad pos="{{{-Size.X/2^" "^-Size.Y/2 + 1.75}}}" size="{{{Size.Y-5^" "^Size.Y-5}}}" halign="center" valign="center" id="Quad_TabIcon" />
+		<label pos="{{{-Size.X/2^" "^-Size.Y/2 + 1.5}}}" halign="center" valign="center2" textsize="4" id="Label_TabIcon" />
+		<label pos="{{{-Size.X/2^" "^-Size.Y+2.5}}}" size="{{{Size.X-2}}}" halign="center" valign="center" id="Label_TabName" />
+		<quad id="Quad_IsCurrent" hidden="1" />
+		<quad class="Card" bgcolorfocus="FFF2" id="Quad_TabCard" ScriptEvents="1" />
+		<quad class="Card" bgcolor="FFF" opacity=".25" />
+		<quad class="Card" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+	</framemodel>
+	{{{TabsFrames}}}
+</frame>
+
+<script><!--
+/**
+ *	{{{C_LibAltTabs_UILayerId}}}
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+declare G_LibAltTabs_CreatedTabs = {{{Dump_CreatedTabs}}};
+declare G_LibAltTabs_TabsNames = {{{Dump_TabsNames}}};
+declare G_LibAltTabs_TabsIcons = {{{Dump_TabsIcons}}};
+declare G_LibAltTabs_TabsPos = {{{Dump_TabsPos}}};
+
+// ---------------------------------- //
+// UI elements
+declare Frame_TabsList <=> (Page.GetFirstChild("Frame_TabsList") as CMlFrame);
+
+declare CMlFrame[] Frame_Tabs;
+for (I, 0, G_LibAltTabs_CreatedTabs.count - 1)
+	Frame_Tabs.add((Page.GetFirstChild("Frame_Tab#"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Peristent settings
+declare persistent Text Persistent_LibAltTabs_ActiveTabId for LocalUser;
+
+declare PrevActiveTabId = "";
+
+if (!G_LibAltTabs_CreatedTabs.exists(Persistent_LibAltTabs_ActiveTabId)) {
+	Persistent_LibAltTabs_ActiveTabId = G_LibAltTabs_CreatedTabs[G_LibAltTabs_CreatedTabs.count-1];
+}
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// Change active tab
+		if (Event.ControlId == "Quad_TabCard") {
+			if (!Frame_Tabs.exists(Event.Control.Parent)) continue;
+			declare I = Frame_Tabs.keyof(Event.Control.Parent);
+			if (!G_LibAltTabs_CreatedTabs.existskey(I)) continue;
+			Persistent_LibAltTabs_ActiveTabId = G_LibAltTabs_CreatedTabs[I];
+		}
+	}
+}
+
+// ---------------------------------- //
+// Active tab change
+if (PrevActiveTabId != Persistent_LibAltTabs_ActiveTabId) {
+	PrevActiveTabId = Persistent_LibAltTabs_ActiveTabId;
+
+	// Tabs menu position
+	if (G_LibAltTabs_TabsPos.existskey(PrevActiveTabId)) {
+		Frame_TabsList.RelativePosition_V3 = G_LibAltTabs_TabsPos[PrevActiveTabId];
+	}
+
+	foreach (I => Frame in Frame_Tabs) {
+		declare TabId = G_LibAltTabs_CreatedTabs[I];
+
+		// ---------------------------------- //
+		// Frame elements
+		declare Label_TabName <=> (Frame.GetFirstChild("Label_TabName") as CMlLabel);
+		declare Label_TabIcon <=> (Frame.GetFirstChild("Label_TabIcon") as CMlLabel);
+		declare Quad_IsCurrent <=> (Frame.GetFirstChild("Quad_IsCurrent") as CMlQuad);
+		declare Quad_TabIcon <=> (Frame.GetFirstChild("Quad_TabIcon") as CMlQuad);
+
+		// Is tab selected
+		Quad_IsCurrent.Visible = PrevActiveTabId == TabId;
+
+		// ---------------------------------- //
+		// Tab name
+		declare TabName = "";
+		if (G_LibAltTabs_TabsNames.existskey(TabId)) TabName = G_LibAltTabs_TabsNames[TabId];
+		Label_TabName.Value = TabName;
+
+		// ---------------------------------- //
+		// Tab icon
+		declare TabIcon = "";
+		if (G_LibAltTabs_TabsIcons.existskey(TabId)) TabIcon = G_LibAltTabs_TabsIcons[TabId];
+
+		Label_TabIcon.Visible = TL::Length(TabIcon) == 1;
+		Quad_TabIcon.Visible = !Label_TabIcon.Visible;
+		if (Label_TabIcon.Visible) Label_TabIcon.Value = TabIcon;
+		else SetQuadStyle(Quad_TabIcon, TabIcon);
+	}
+}
+
+// Scorestable visibility
+ClientUI.AltMenuNoCustomScores = PrevActiveTabId != "LibAltTabs_ScoresTable" || IsInGameMenuDisplayed;
+
+// Hide tabs while browsing pause menu
+Frame_TabsList.Visible = !IsInGameMenuDisplayed;
+***
+
+{{{ManialinkTools::Functions(["SetQuadStyle"])}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	---Main---
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Update interface.
+Void Private_Update() {
+	Layers::Update(C_LibAltTabs_UILayerId, Private_CreateManialinkTabs());
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Insert manialink function for client-side tab switch.
+ *
+ *	@return		
+ */
+Text Insert(Text _TabId) {
+	if (_TabId == "") return "";
+	return """
+// ---------------------------------- //
+/* Check if the tab is active.
+ *
+ *	@param	_Container	The frame to show when active.
+ *
+ *	@return		True, if the tab is currently active.
+ */
+Boolean Tabs_IsActive(CMlControl _Container) {
+	if (_Container == Null) return False;
+
+	declare persistent Text Persistent_LibAltTabs_ActiveTabId for LocalUser;
+	_Container.Visible = Persistent_LibAltTabs_ActiveTabId == "{{{TL::MLEncode(_TabId)}}}" && !IsInGameMenuDisplayed;
+	return _Container.Visible;
+}
+	""";
+}
+
+// ---------------------------------- //
+/** Remove a tab.
+ *
+ *	@param	_TabId	Id of the tab to remove.
+ */
+Void RemoveTab(Text _TabId) {
+	if (!G_LibAltTabs_CreatedTabs.exists(_TabId)) return;
+	declare Boolean Removed;
+	Removed = G_LibAltTabs_CreatedTabs.remove(_TabId);
+	Removed = G_LibAltTabs_TabsIcons.removekey(_TabId);
+	Removed = G_LibAltTabs_TabsPos.removekey(_TabId);
+	Private_Update();
+}
+
+// ---------------------------------- //
+/** Set the name of a tab.
+ *
+ *	@param	_TabId		Id of the tab.
+ *	@param	_TabName	Name of the tab.
+ */
+Void SetTabName(Text _TabId, Text _TabName) {
+	if (!G_LibAltTabs_CreatedTabs.exists(_TabId)) return;
+	G_LibAltTabs_TabsNames[_TabId] = _TabName;
+	Private_Update();
+}
+
+// ---------------------------------- //
+/** Set the icon of a tab.
+ *
+ *	@param	_TabId		Id of the tab.
+ *	@param	_TabIcon	Icon of the tab.
+ */
+Void SetTabIcon(Text _TabId, Text _TabIcon) {
+	if (!G_LibAltTabs_CreatedTabs.exists(_TabId)) return;
+	G_LibAltTabs_TabsIcons[_TabId] = _TabIcon;
+	Private_Update();
+}
+
+// ---------------------------------- //
+/** Set the position of a tab.
+ *
+ *	@param	_TabId		Id of the tab.
+ *	@param	_TabPos		Position of the tab.
+ */
+Void SetTabPos(Text _TabId, Vec2 _TabsPos) {
+	if (!G_LibAltTabs_CreatedTabs.exists(_TabId)) return;
+	G_LibAltTabs_TabsPos[_TabId] = _TabsPos;
+	Private_Update();
+}
+
+// ---------------------------------- //
+/** Create a new tab.
+ *
+ *	@param	_TabId		Id of the tab.
+ *	@param	_TabName	Name of the tab.
+ *	@param	_TabIcon	Icon of the tab.
+ *	@param	_TabPos		Position of the tab.
+ */
+Void AddTab(Text _TabId, Text _TabName, Text _TabIcon, Vec2 _TabsPos) {
+	G_LibAltTabs_CreatedTabs.add(_TabId);
+	SetTabName(_TabId, _TabName);
+	SetTabIcon(_TabId, _TabIcon);
+	SetTabPos(_TabId, _TabsPos);
+}
+
+// ---------------------------------- //
+/** Set the font used in tabs labels.
+ *
+ *	@param	_TextFont	Name of the font.
+ */
+Void SetFont(Text _TextFont) {
+	G_LibAltTabs_TextFont = _TextFont;
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	Layers::Detach(C_LibAltTabs_UILayerId);
+	Layers::Destroy(C_LibAltTabs_UILayerId);
+	SetFont("");
+
+	while (G_LibAltTabs_CreatedTabs.existskey(0)) RemoveTab(G_LibAltTabs_CreatedTabs[0]);
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+
+	// Premade tab for the scores table
+	AddTab("LibAltTabs_ScoresTable", _("Rankings"), "🏆", <-85.5, 41.5>);
+
+	Layers::Create(C_LibAltTabs_UILayerId, Private_CreateManialinkTabs());
+	Layers::SetType(C_LibAltTabs_UILayerId, CUILayer::EUILayerType::AltMenu);
+	Layers::Attach(C_LibAltTabs_UILayerId);
+}

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY TOP SCORES by domino54        //
-//  script version: 2017-09-07            //
+//  script version: 2017-10-09            //
 // -------------------------------------- //
 
 /**
@@ -11,24 +11,27 @@
  *	match.
  */
 
-#Const Version		"2017-09-07"
-#Const ScriptName	"TopScores.Script.txt"
+#Const Version		"2017-10-09"
+#Const ScriptName	"Liba/domino54/TopScores.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/ScoresTable2.Script.txt" as ST2
+#Include "Libs/domino54/AltTabs.Script.txt" as AltTabs
 #Include "Libs/domino54/Translations.Script.txt" as Translations
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
 #Const C_LibTopScores_UILayerId			"LibTopScores:AltMenu"
 #Const C_LibTopScores_PlayerRowHeight	5.5
-#Const G_LibTopScores_DefaultWindowPos	<0., -4.>
-#Const G_LibTopScores_DefaultWindowSize	<166., 90.>
+#Const G_LibTopScores_DefaultWindowPos	<0., -4.5>
+#Const G_LibTopScores_DefaultWindowSize	<166., 92.>
 #Const G_LibTopScores_DefaultSpacing	1.
 #Const G_LibTopScores_DefaultHeaderSize	6.
+#Const G_LibTopScores_DefaultFooterSize	3.	
 
 // ---------------------------------- //
 // Global variables
@@ -46,6 +49,7 @@ declare Vec2 G_LibTopScores_BackgroundSize;		///< Size of the background image.
 declare Vec2 G_LibTopScores_BackgroundOffset;	///< Background image offset from the center.
 declare Integer G_LibTopScores_NbCategoriesX;	///< Amount of categories displayed horizontally.
 declare Integer G_LibTopScores_NbCategoriesY;	///< Amount of categories displayed vertically.
+declare Real G_LibTopScores_FooterHeight;		///< Height of the window footer.
 declare Real G_LibTopScores_CategoriesSpacing;	///< Size of the gap between categories frames.
 declare Real G_LibTopScores_HeaderLineHeight;	///< Height of the categories headers.
 declare Text G_LibTopScores_FontNameMedium;		///< Thin font used in the UI.
@@ -78,13 +82,28 @@ Void Private_SetColValue(CScore _Score, Text _CategoryId, Integer _Points) {
  *	@return		The top scores manialink.
  */
 Text Private_CreateManialinkTopScores() {
+	declare FooterHeightTotal = 0.;
+	declare FooterPos = <0., 0.>;
+	declare FooterSize = <0., 0.>;
+
+	if (G_LibTopScores_FooterHeight > 0) {
+		FooterHeightTotal = G_LibTopScores_FooterHeight + G_LibTopScores_CategoriesSpacing;
+		FooterSize.X = G_LibTopScores_TopsWindowSize.X - G_LibTopScores_CategoriesSpacing * 2;
+		FooterSize.Y = G_LibTopScores_FooterHeight;
+		FooterPos.X = G_LibTopScores_CategoriesSpacing;
+		FooterPos.Y = -G_LibTopScores_TopsWindowSize.Y + FooterSize.Y + G_LibTopScores_CategoriesSpacing;
+	}
+
 	// ---------------------------------- //
 	// Get the size of the tops window
-	declare Size = G_LibTopScores_TopsWindowSize;
-	declare Position = G_LibTopScores_TopsWindowPos + <-Size.X/2, Size.Y/2>;
+	declare Size = G_LibTopScores_TopsWindowSize - <0., FooterHeightTotal>;
+	declare Position = G_LibTopScores_TopsWindowPos + <-G_LibTopScores_TopsWindowSize.X/2, G_LibTopScores_TopsWindowSize.Y/2>;
 	declare BgSize = G_LibTopScores_BackgroundSize;
-	declare BgPos = <Size.X/2, -Size.Y/2> + G_LibTopScores_BackgroundOffset;
+	declare BgPos = <G_LibTopScores_TopsWindowSize.X/2, -G_LibTopScores_TopsWindowSize.Y/2> + G_LibTopScores_BackgroundOffset;
 	declare BgImage = TL::MLEncode(G_LibTopScores_BackgroundPath);
+
+	// Create tab
+	AltTabs::AddTab(C_LibTopScores_UILayerId, _("Best"), "", Position + <-2.5, 0.>);
 
 	// ---------------------------------- //
 	// Get the size of a single category frame
@@ -146,6 +165,8 @@ Text Private_CreateManialinkTopScores() {
 	<style id="Label_PlayerRowPosition" style="TextValueSmallSm" halign="center" valign="center2" textsize="1.25" textcolor="FFF" textfont="{{{TL::MLEncode(FontB)}}}" />
 	<style id="Label_PlayerRowName" valign="center2" textsize="1.5" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(FontM)}}}" />
 	<style id="Label_PlayerRowPoints" halign="right" valign="center2" textsize="1.5" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(FontM)}}}" />
+	<style id="Label_MatchScoresText" style="TextButtonNav" valign="center2" textsize=".5" textcolor="FFF" textfont="{{{TL::MLEncode(FontB)}}}" />
+	<style id="Label_MatchScoresCheck" valign="center2" textsize=".5" textcolor="FFF" />
 </stylesheet>
 
 <frame id="Frame_TopScoresWindow" pos="{{{Position.X^" "^Position.Y}}}" z-index="1">
@@ -168,6 +189,15 @@ Text Private_CreateManialinkTopScores() {
 		</frame>
 	</framemodel>
 	{{{CategoriesFrames}}}
+	<frame id="Frame_WindowFooter" pos="{{{FooterPos.X^" "^FooterPos.Y}}}" hidden="{{{FooterHeightTotal <= 0}}}">
+		<frame id="Frame_ButtonMatchScores">
+			<label pos="1 {{{-FooterSize.Y/2}}}" opacity=".5" id="Label_MatchScoresText" />
+			<label pos="0 {{{-FooterSize.Y/2}}}" opacity=".5" id="Label_MatchScoresCheck" />
+			<quad size="0 {{{FooterSize.Y}}}" bgcolorfocus="FFF2" id="Quad_MatchScoresCard" ScriptEvents="1" />
+			<quad size="0 {{{FooterSize.Y}}}" bgcolor="FFF" opacity=".0625" id="Quad_MatchScoresBg" />
+		</frame>
+		<quad size="{{{FooterSize.X^" "^FooterSize.Y}}}" bgcolor="FFF" opacity=".0625" id="Quad_WindowFooterBg" />
+	</frame>
 	<quad pos="{{{BgPos.X^" "^BgPos.Y}}}" size="{{{BgSize.X^" "^BgSize.Y}}}" halign="center" valign="center" image="{{{BgImage}}}" bgcolor="0007" />
 </frame>
 
@@ -192,6 +222,12 @@ declare G_LibTopScores_TopsIcons = {{{Dump_TopsIcons}}};
 // ---------------------------------- //
 // Load interface elements
 declare Frame_TopScoresWindow <=> (Page.GetFirstChild("Frame_TopScoresWindow") as CMlFrame);
+declare Quad_WindowFooterBg <=> (Page.GetFirstChild("Quad_WindowFooterBg") as CMlQuad);
+declare Frame_ButtonMatchScores <=> (Page.GetFirstChild("Frame_ButtonMatchScores") as CMlFrame);
+declare Quad_MatchScoresBg <=> (Page.GetFirstChild("Quad_MatchScoresBg") as CMlQuad);
+declare Quad_MatchScoresCard <=> (Page.GetFirstChild("Quad_MatchScoresCard") as CMlQuad);
+declare Label_MatchScoresText <=> (Page.GetFirstChild("Label_MatchScoresText") as CMlLabel);
+declare Label_MatchScoresCheck <=> (Page.GetFirstChild("Label_MatchScoresCheck") as CMlLabel);
 
 declare CMlFrame[] Frame_TopCategories;
 for (I, 0, {{{NbTopCategories-1}}}) Frame_TopCategories.add((Page.GetFirstChild("Frame_TopCategory#"^I) as CMlFrame));
@@ -207,14 +243,31 @@ declare netread Integer Net_LibTopScores_LastTopsUpdate for Teams[0];
 declare netread Boolean Net_LibTopScores_UseMatchScores for Teams[0];
 
 // ---------------------------------- //
+// Persistent settings
+declare persistent Boolean Persistent_LibTopScores_ShowMatchScores for LocalUser;
+
+// ---------------------------------- //
 // Variables
 declare UpdateTopCategories = True;
 declare DisplayMatchScores = False;
+declare FooterTotalWidth = Quad_WindowFooterBg.Size.X;
 
 // Update
 declare PrevTopsUpdate = -1;
 declare PrevGUIPlayerId = NullId;
-declare PrevUseMatchScores = False;
+declare PrevUserMatchScores = False;
+declare PrevServerMatchScores = False;
+
+// ---------------------------------- //
+// Init match scores toggle button
+Label_MatchScoresText.Value = Translate("Match scores");
+declare ButtonTotalWidth = ComputeWidth(Label_MatchScoresText) + 2.;
+Label_MatchScoresCheck.RelativePosition_V3.X = ButtonTotalWidth;
+ButtonTotalWidth += 3.;
+Quad_MatchScoresBg.Size.X = ButtonTotalWidth;
+Quad_MatchScoresCard.Size.X = ButtonTotalWidth;
+Frame_ButtonMatchScores.RelativePosition_V3.X = FooterTotalWidth - Quad_MatchScoresBg.Size.X;
+Quad_WindowFooterBg.Size.X = FooterTotalWidth - Quad_MatchScoresBg.Size.X - .5;
 
 // ---------------------------------- //
 // Initialize categories
@@ -242,6 +295,18 @@ foreach (I => Frame in Frame_TopCategories) {
 // ---------------------------------- //
 ***Yield***
 ***
+if (!Tabs_IsActive(Frame_TopScoresWindow)) continue;
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		if (Event.ControlId == "Quad_MatchScoresCard") {
+			Persistent_LibTopScores_ShowMatchScores = !Persistent_LibTopScores_ShowMatchScores;
+		}
+	}
+}
+
 // ---------------------------------- //
 // Server tops update
 if (PrevTopsUpdate != Net_LibTopScores_LastTopsUpdate) {
@@ -250,10 +315,18 @@ if (PrevTopsUpdate != Net_LibTopScores_LastTopsUpdate) {
 }
 
 // ---------------------------------- //
-// Match points visibility change
-if (PrevUseMatchScores != Net_LibTopScores_UseMatchScores) {
-	PrevUseMatchScores = Net_LibTopScores_UseMatchScores;
-	DisplayMatchScores = PrevUseMatchScores;
+// Match points visibility change - user setting
+if (PrevUserMatchScores != Persistent_LibTopScores_ShowMatchScores) {
+	PrevUserMatchScores = Persistent_LibTopScores_ShowMatchScores;
+	DisplayMatchScores = (PrevUserMatchScores || PrevServerMatchScores);
+	UpdateTopCategories = True;
+}
+
+// ---------------------------------- //
+// Match points visibility change - server
+if (PrevServerMatchScores != Net_LibTopScores_UseMatchScores) {
+	PrevServerMatchScores = Net_LibTopScores_UseMatchScores;
+	DisplayMatchScores = (PrevUserMatchScores || PrevServerMatchScores);
 	UpdateTopCategories = True;
 }
 
@@ -279,6 +352,9 @@ if (UpdateTopCategories) {
 	declare CScore LocalScore;
 	if (GUIPlayer != Null && GUIPlayer.Score != Null) LocalScore <=> GUIPlayer.Score;
 	else if (InputPlayer != Null && InputPlayer.Score != Null) LocalScore <=> InputPlayer.Score;
+
+	if (DisplayMatchScores) Label_MatchScoresCheck.Value = "";
+	else Label_MatchScoresCheck.Value = "";
 
 	foreach (FrameOrder => Frame in Frame_TopCategories) {
 		if (!Frame.Visible) continue;
@@ -334,6 +410,8 @@ if (UpdateTopCategories) {
 ***
 
 {{{Translations::InjectInManialink(RequiredTranslations)}}}
+{{{ManialinkTools::Functions(["ComputeWidth"])}}}
+{{{AltTabs::Insert(C_LibTopScores_UILayerId)}}}
 
 // ---------------------------------- //
 /** Get category round points of a player.
@@ -645,6 +723,15 @@ Void SetHeaderHeight(Real _HeaderHeight) {
 }
 
 // ---------------------------------- //
+/** Set the height of the window footer.
+ *
+ *	@param	_FooterHeight	Footer height.
+ */
+Void SetFooterHeight(Real _FooterHeight) {
+	G_LibTopScores_FooterHeight = ML::Max(_FooterHeight, 0.);
+}
+
+// ---------------------------------- //
 /** Set the fonts used for the top scores window.
  *
  *	@param	_FontMedium		Thin interface font.
@@ -674,8 +761,7 @@ Void Unload() {
 
 	Layers::Detach(C_LibTopScores_UILayerId);
 	Layers::Destroy(C_LibTopScores_UILayerId);
-
-	UIManager.UIAll.AltMenuNoCustomScores = False;
+	AltTabs::RemoveTab(C_LibTopScores_UILayerId);
 }
 
 // ---------------------------------- //
@@ -689,6 +775,7 @@ Void Load() {
 	SetBackground("", G_LibTopScores_DefaultWindowSize, Vec2);
 	SetSpacing(G_LibTopScores_DefaultSpacing);
 	SetHeaderHeight(G_LibTopScores_DefaultHeaderSize);
+	SetFooterHeight(G_LibTopScores_DefaultFooterSize);
 	SetFormat(1, 1);
 	SetFont("", "");
 
@@ -696,9 +783,6 @@ Void Load() {
 	Layers::Create(C_LibTopScores_UILayerId);
 	Layers::SetType(C_LibTopScores_UILayerId, CUILayer::EUILayerType::AltMenu);
 	Layers::Attach(C_LibTopScores_UILayerId);
-
-	// Disable scores while holding Alt
-	UIManager.UIAll.AltMenuNoCustomScores = True;
 }
 
 Void Build() {

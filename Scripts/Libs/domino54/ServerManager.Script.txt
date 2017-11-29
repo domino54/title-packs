@@ -1,0 +1,911 @@
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibServerManager_LayerId	"LibServerManager:GUI"
+
+// Permissions levels
+#Const C_LibServerManager_Perms_SuperAdmin	3
+#Const C_LibServerManager_Perms_Admin		2
+#Const C_LibServerManager_Perms_Moderator	1
+#Const C_LibServerManager_Perms_Default		0
+
+// Hardcoded permissions (unchangeable)
+#Const C_LibServerManager_HardcodedPermissions [
+	"domino54" => 3
+]
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+
+// Pending chat messages
+declare Integer G_LibServerManager_LastChatMessageKey;
+declare Integer[] G_LibServerManager_PendingChatMessages;
+declare Text[][Integer] G_LibServerManager_ChatMessagesBody;
+declare Ident[Integer] G_LibServerManager_ChatMessagesRecipient;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// "Private"
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the Server Manager module.
+ *
+ *	@return		Server Manager manialink.
+ */
+Text Private_CreateManialinkServerManager() {
+	declare _ThinTextFont = "Eurostile";
+	declare _ThickTextFont = "Eurostile_Bold";
+
+	declare PlayersListRows = "";
+	for (I, 0, 11) {
+		declare Y = -I * 7.;
+		PlayersListRows ^= "<frameinstance modelid='FrameModel_PlayersListRow' id='Frame_PlayersListRow#"^I^"' pos='0 "^Y^"' hidden='1' />";
+	}
+
+	declare PlayerRowIcons = "";
+	for (I, 0, 3) PlayerRowIcons ^= "<quad pos="^-6*I^" size='5 5' halign='center' valign='center' id='Quad_PlayerRowIcon#"^I^"' hidden='1' />";
+
+	return """
+<manialink version="3" name="{{{C_LibServerManager_LayerId}}}">
+<stylesheet>
+	<style class="FontM" valign="center2" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode(_ThinTextFont)}}}" />
+	<style class="FontB" valign="center2" style="TextValueSmallSm" textcolor="FFF" textfont="{{{TL::MLEncode(_ThickTextFont)}}}" />
+</stylesheet>
+
+<!-- Server manager frame -->
+<frame id="Frame_ServerManager" z-index="10" hidden="1">
+	
+	<!-- Players list -->
+	<frame id="Frame_PlayersList" pos="-81 52">
+		<label pos="2 -2" class="FontM" textsize="4" textprefix="$t" text="Players" />
+		<quad pos="0 -6" size="164 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+		<!-- Close window button -->
+		<quad pos="160.5 -2" size="7 7" halign="center" valign="center" style="Icons64x64_1" substyle="QuitRace" class="click" id="Quad_CloseServerManager" ScriptEvents="1" />
+
+		<framemodel id="FrameModel_PlayersListRow">
+			<label pos="3.5 -3.25" size="6" class="FontB" halign="center" textsize="2" text="1" id="Label_PlayerRowOrder" />
+			<quad pos="7 -.5" size="5.5 5.5" bgcolor="0007" id="Quad_PlayerRowAvatar" />
+			<label pos="14 -3.25" class="FontM" textsize="2" id="Label_PlayerRowName" />
+			<label pos="158 -3.25" class="FontM" halign="right" textsize="1" id="Label_PlayerRowLogin" />
+			<frame pos="156 -3.25">{{{PlayerRowIcons}}}</frame>
+			<quad size="160 6.5" bgcolorfocus="FFF2" class="click" id="Quad_PlayerRowCard" ScriptEvents="1" />
+			<quad size="160 6.5" bgcolor="FFF" opacity=".125" />
+		</framemodel>
+
+		<frame id="Frame_PlayersListRows" pos="2 -8.25">
+			{{{PlayersListRows}}}
+		</frame>
+
+		<frame pos="0 -94">
+			<quad size="164 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+			<!-- Return button -->
+			<frame id="Frame_ReturnButton" pos="2 -2">
+				<label pos="2.25 -4.125" class="FontM" text="" />
+				<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Return" translate="1" />
+
+				<quad size="54 8" bgcolorfocus="FFF2" class="click" id="Quad_PlayersListReturn" ScriptEvents="1" />
+				<quad size="54 8" bgcolor="FFF" opacity=".125" />
+			</frame>
+
+			<!-- Page switch -->
+			<frame id="Frame_PlayersPageSwitch" pos="159.5 -4.5">
+				<label pos="-9.5 .25" halign="right" class="FontB" textsize="2" text="1/1" id="Label_PlayersCurPage" />
+				<frame pos="-6">
+					<label halign="center" valign="center2" textsize="2" text="►" textcolor="FFF" rot="-180" />
+					<label pos=".125 -.125" halign="center" valign="center2" textsize="2" text="►" textcolor="000" rot="-180" />
+					<quad size="5 5" halign="center" valign="center" bgcolor="FFF2" bgcolorfocus="FFF4" class="click" id="Quad_PlayersPagePrev" ScriptEvents="1" hidden="1" />
+				</frame>
+				<frame>
+					<label halign="center" valign="center2" textsize="2" text="►" textcolor="FFF" />
+					<label pos=".125 -.125" halign="center" valign="center2" textsize="2" text="►" textcolor="000" />
+					<quad size="5 5" halign="center" valign="center" bgcolor="FFF2" bgcolorfocus="FFF4" class="click" id="Quad_PlayersPageNext" ScriptEvents="1" hidden="1" />
+				</frame>
+			</frame>
+		</frame>
+	</frame>
+
+	<!-- Background blur -->
+	<quad size="320 180" halign="center" valign="center" image="file://Media/Images/Effects/Vignette.dds" />
+	<quad size="320 180" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+	<quad size="320 180" halign="center" valign="center" bgcolor="000" opacity=".5" />
+</frame>
+
+<script><!--
+/**
+ *	{{{C_LibServerManager_LayerId}}}
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_MenuContext_Overview		0
+#Const C_MenuContext_PlayersList	1
+#Const C_MenuContext_PlayerProfile	2
+
+#Const C_PlayersListMode_Default		0
+#Const C_PlayersListMode_Moderators		1
+#Const C_PlayersListMode_Encountered	2
+
+#Const C_Permissions_SuperAdmin	{{{C_LibServerManager_Perms_SuperAdmin}}}
+#Const C_Permissions_Admin		{{{C_LibServerManager_Perms_Admin}}}
+#Const C_Permissions_Moderator	{{{C_LibServerManager_Perms_Moderator}}}
+#Const C_Permissions_Default	{{{C_LibServerManager_Perms_Default}}}
+
+#Const C_DefaultIcons [
+	"Muted" => "Icons128x32_1|Sound",
+	"Spectator" => "Icons64x64_1|CameraLocal",
+	"SuperAdmin" => "Icons128x128_1|Hard",
+	"Admin" => "Icons128x128_1|Medium",
+	"Moderator" => "Icons128x128_1|Easy"
+]
+
+declare Text[Text] G_AvailableIcons;
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Interface elements
+declare Frame_ServerManager <=> (Page.GetFirstChild("Frame_ServerManager") as CMlFrame);
+
+// Players list
+declare Frame_PlayersList <=> (Page.GetFirstChild("Frame_PlayersList") as CMlFrame);
+declare Quad_PlayersPagePrev <=> (Page.GetFirstChild("Quad_PlayersPagePrev") as CMlQuad);
+declare Quad_PlayersPageNext <=> (Page.GetFirstChild("Quad_PlayersPageNext") as CMlQuad);
+declare Label_PlayersCurPage <=> (Page.GetFirstChild("Label_PlayersCurPage") as CMlLabel);
+
+declare CMlFrame[] Frame_PlayersListRows;
+for (I, 0, 11) Frame_PlayersListRows.add((Page.GetFirstChild("Frame_PlayersListRow#"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Net variables
+declare netread Integer[Text] Net_LibServerManager_PlayersPerms for Teams[0];
+declare netread Integer Net_LibServerManager_PlayersPermsUpdate for Teams[0];
+
+// ---------------------------------- //
+// Persistent settings
+declare persistent Persistent_LibServerManager_IsVisible for LocalUser = False;
+declare persistent Persistent_LibServerManager_Context for LocalUser = C_MenuContext_Overview;
+declare persistent Persistent_LibServerManager_PlayersListMode for LocalUser = C_PlayersListMode_Default;
+declare persistent Persistent_LibServerManager_PlayersEncountered for LocalUser = Text[Text];
+
+declare Boolean LibServerManager_ToggleShowWindow for This;
+
+// ---------------------------------- //
+// Variables
+declare DisplayServerManager = False;
+
+// Players list
+declare UpdatePlayersList = True;
+declare PlayersListCurPage = 1;
+declare PlayersListNbPages = 1;
+
+declare PrevMenuContext = -1;
+declare PrevNbPlayers = -1;
+declare PrevPlayersPermsUpdate = -1;
+
+// Init
+EnableMenuNavigation(Persistent_LibServerManager_IsVisible, False, Null, 0);
+Persistent_LibServerManager_Context = C_MenuContext_PlayersList;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// Toggle open Server Manager
+if (LibServerManager_ToggleShowWindow) {
+	LibServerManager_ToggleShowWindow = False;
+	Persistent_LibServerManager_IsVisible = True;
+}
+
+DisplayServerManager = Persistent_LibServerManager_IsVisible && !IsInGameMenuDisplayed;
+
+// ---------------------------------- //
+// Server Manager visibility change
+if (Frame_ServerManager.Visible != DisplayServerManager) {
+	Frame_ServerManager.Visible = DisplayServerManager;
+
+	if (DisplayServerManager) ClientUI.UISequence = CUIConfig::EUISequence::UIInteraction;
+	else ClientUI.UISequence = CUIConfig::EUISequence::None;
+
+	EnableMenuNavigation(DisplayServerManager, False, Null, 0);
+	PrevMenuContext = -1;
+}
+
+if (!DisplayServerManager) continue;
+
+// ---------------------------------- //
+// Events management
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// Close server manager
+		if (Event.ControlId == "Quad_CloseServerManager") {
+			Persistent_LibServerManager_IsVisible = False;
+		}
+
+		// Previous players page list
+		else if (Event.ControlId == "Quad_PlayersListReturn") {
+			//Persistent_LibServerManager_Context = C_MenuContext_Overview;
+			Persistent_LibServerManager_IsVisible = False;
+		}
+
+		// Previous players page list
+		else if (Event.ControlId == "Quad_PlayersPagePrev") {
+			if (PlayersListCurPage <= 1) continue;
+			PlayersListCurPage -= 1;
+			UpdatePlayersList = True;
+		}
+
+		// Previous players page list
+		else if (Event.ControlId == "Quad_PlayersPageNext") {
+			if (PlayersListCurPage >= PlayersListNbPages) continue;
+			PlayersListCurPage += 1;
+			UpdatePlayersList = True;
+		}
+
+		// Play sounds
+		if (Event.Control.HasClass("click"))
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Valid, 1, 1.);
+	}
+	// ---------------------------------- //
+	// On mouse over
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		if (Event.Control.HasClass("click"))
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, 1, 1.);
+	}
+	// ---------------------------------- //
+	// On menu navigation
+	else if (Event.Type == CMlEvent::Type::MenuNavigation) {
+		// ---------------------------------- //
+		// Back
+		if (
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel ||
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::AppMenu
+		) {
+			switch (Persistent_LibServerManager_Context) {
+				case C_MenuContext_Overview : Persistent_LibServerManager_IsVisible = False;
+				//default : Persistent_LibServerManager_Context = C_MenuContext_Overview;
+				default : Persistent_LibServerManager_IsVisible = False;
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// On context change
+if (PrevMenuContext != Persistent_LibServerManager_Context) {
+	PrevMenuContext = Persistent_LibServerManager_Context;
+
+	Frame_PlayersList.Visible = PrevMenuContext == C_MenuContext_PlayersList;
+}
+
+// Server updated permissions
+if (PrevPlayersPermsUpdate != Net_LibServerManager_PlayersPermsUpdate) {
+	PrevPlayersPermsUpdate = Net_LibServerManager_PlayersPermsUpdate;
+	UpdatePlayersList = True;
+}
+
+switch (Persistent_LibServerManager_Context) {
+	// ---------------------------------- //
+	// Players list
+	case C_MenuContext_PlayersList : {
+		if (PrevNbPlayers != Players.count) {
+			PrevNbPlayers = Players.count;
+			UpdatePlayersList = True;
+		}
+
+		// ---------------------------------- //
+		// Update players list
+		if (UpdatePlayersList) {
+			UpdatePlayersList = False;
+
+			// ---------------------------------- //
+			// Pages amount
+			PlayersListNbPages = (Players.count - 1) / Frame_PlayersListRows.count + 1;
+			PlayersListCurPage = ML::Clamp(PlayersListCurPage, 1, PlayersListNbPages);
+
+			Quad_PlayersPagePrev.Visible = PlayersListCurPage > 1;
+			Quad_PlayersPageNext.Visible = PlayersListCurPage < PlayersListNbPages;
+			Label_PlayersCurPage.Value = PlayersListCurPage^"/"^PlayersListNbPages;
+
+			Persistent_LibServerManager_PlayersListMode = C_PlayersListMode_Moderators;
+
+			// ---------------------------------- //
+			// List the players
+			declare Text[] PlayersLogins;
+
+			switch (Persistent_LibServerManager_PlayersListMode) {
+				// ---------------------------------- //
+				// List all moderators
+				case C_PlayersListMode_Moderators : {
+					declare Text[][Integer] SortedPerms;
+					foreach (Login => Perms in Net_LibServerManager_PlayersPerms) {
+						if (Perms == C_Permissions_Default) continue;
+						if (!SortedPerms.existskey(-Perms)) SortedPerms[-Perms] = Text[];
+						SortedPerms[-Perms].add(Login);
+					}
+
+					foreach (Perms => Logins in SortedPerms.sortkey()) {
+						foreach (Login in Logins.sort()) PlayersLogins.add(Login);
+					}
+				}
+				// ---------------------------------- //
+				// List all players in alphabetical order.
+				default : {
+					PlayersLogins.add(LocalUser.Login);
+
+					declare Text[] OnlinePlayers;
+					foreach (Player in Players) {
+						if (Player.User.Login == "*bot*" || Player.User.Login == LocalUser.Login) continue;
+						OnlinePlayers.add(Player.User.Login);
+					}
+
+					foreach (Login in OnlinePlayers.sort()) PlayersLogins.add(Login);
+				}
+			}
+
+			// ---------------------------------- //
+			// Format frames
+			foreach (I => Frame in Frame_PlayersListRows) {
+				declare Key = I + (PlayersListCurPage - 1) * Frame_PlayersListRows.count;
+				Frame.Visible = PlayersLogins.existskey(Key);
+				if (!Frame.Visible) continue;
+
+				declare Login = PlayersLogins[Key];
+				declare Player <=> GetPlayer(Login);
+				declare PlayerPerms = GetPlayerPerms(Login);
+				declare Text[] PlayerIcons;
+
+				// ---------------------------------- //
+				// Frame elements
+				declare Quad_PlayerRowAvatar <=> (Frame.GetFirstChild("Quad_PlayerRowAvatar") as CMlQuad);
+				declare Label_PlayerRowOrder <=> (Frame.GetFirstChild("Label_PlayerRowOrder") as CMlLabel);
+				declare Label_PlayerRowName <=> (Frame.GetFirstChild("Label_PlayerRowName") as CMlLabel);
+				declare Label_PlayerRowLogin <=> (Frame.GetFirstChild("Label_PlayerRowLogin") as CMlLabel);
+
+				declare CMlQuad[] Quad_PlayerRowIcons;
+				for (I, 0, 3) Quad_PlayerRowIcons.add((Frame.GetFirstChild("Quad_PlayerRowIcon#"^I) as CMlQuad));
+
+				// Card baic information
+				Quad_PlayerRowAvatar.ImageUrl = "file://Avatars/"^Login^"/default";
+				Label_PlayerRowOrder.Value = TL::ToText(Key + 1);
+				Label_PlayerRowName.Value = GetPlayerName(Login);
+				Label_PlayerRowLogin.Value = Login;
+
+				// Permissions badge
+				switch (PlayerPerms) {
+					case C_Permissions_SuperAdmin	: PlayerIcons.add(GetIconImage("SuperAdmin"));
+					case C_Permissions_Admin 		: PlayerIcons.add(GetIconImage("Admin"));
+					case C_Permissions_Moderator	: PlayerIcons.add(GetIconImage("Moderator"));
+				}
+
+				if (Player != Null && Player.RequestsSpectate) PlayerIcons.add(GetIconImage("Spectator"));
+				if (IsMuted(Login)) PlayerIcons.add(GetIconImage("Muted"));
+
+				// Card icons
+				foreach (N => Quad in Quad_PlayerRowIcons) {
+					Quad.Visible = PlayerIcons.existskey(N);
+					if (!Quad.Visible) continue;
+					SetQuadStyle(Quad, PlayerIcons[N]);
+				}
+				Label_PlayerRowLogin.RelativePosition_V3.X = 158. - PlayerIcons.count * 6.;
+			}
+		}
+	}
+}
+***
+
+{{{ManialinkTools::Functions(["SetQuadStyle"])}}}
+
+// ---------------------------------- //
+/** Get a player by their login.
+ *
+ *	@param	_Login	Login of the player to get.
+ *
+ *	@return		The player (if found).
+ */
+CPlayer GetPlayer(Text _Login) {
+	if (_Login == "") return Null;
+	foreach (Player in Players) if (Player.User.Login == _Login) return Player;
+	return Null;
+}
+
+Text GetPlayerName(Text _Login) {
+	declare Player <=> GetPlayer(_Login);
+	if (Player != Null) return Player.User.Name;
+	return _Login;
+}
+
+Text GetIconImage(Text _Name) {
+	if (G_AvailableIcons.existskey(_Name)) return G_AvailableIcons[_Name];
+	if (C_DefaultIcons.existskey(_Name)) return C_DefaultIcons[_Name];
+	return "";
+}
+
+Integer GetPlayerPerms(Text _Login) {
+	declare netread Integer[Text] Net_LibServerManager_PlayersPerms for Teams[0];
+	if (!Net_LibServerManager_PlayersPerms.existskey(_Login)) return C_Permissions_Default;
+	return Net_LibServerManager_PlayersPerms[_Login];
+}
+
+Boolean IsMuted(Text _Login) {
+	declare netread Text[] Net_LibServerManager_MutedPlayers for Teams[0];
+	return Net_LibServerManager_MutedPlayers.exists(_Login);
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Update permissions list for the UI.
+Void Private_UpdatePermissionsList() {
+	declare persistent Integer[Text] Persistent_LibServerManager_PlayersPerms;
+	declare netwrite Integer[Text] Net_LibServerManager_PlayersPerms for Teams[0];
+	declare netwrite Integer Net_LibServerManager_PlayersPermsUpdate for Teams[0];
+
+	Net_LibServerManager_PlayersPerms = Persistent_LibServerManager_PlayersPerms;
+	Net_LibServerManager_PlayersPermsUpdate = Now;
+
+	foreach (Login => Level in C_LibServerManager_HardcodedPermissions) {
+		Net_LibServerManager_PlayersPerms[Login] = Level;
+	}
+}
+
+// ---------------------------------- //
+/// Update muted players list for the UI.
+Void Private_UpdateMutedList() {
+	declare persistent Text[] Persistent_LibServerManager_MutedPlayers;
+	declare netwrite Text[] Net_LibServerManager_MutedPlayers for Teams[0];
+	declare netwrite Integer Net_LibServerManager_MutedPlayersUpdate for Teams[0];
+
+	Net_LibServerManager_MutedPlayers = Persistent_LibServerManager_MutedPlayers;
+	Net_LibServerManager_MutedPlayersUpdate = Now;
+}
+
+Integer Private_GetCommandPerms(Text _Command) {
+	
+	return C_LibServerManager_Perms_Default;
+}
+
+// ---------------------------------- //
+/** Get permissions level of a player.
+ *
+ *	@param	_Login	Login of the player.
+ *
+ *	@return		Permissions level of the player.
+ */
+Integer Private_GetPlayerPerms(Text _Login) {
+	if (_Login == ServerLogin) return C_LibServerManager_Perms_SuperAdmin;
+
+	if (C_LibServerManager_HardcodedPermissions.existskey(_Login)) {
+		return C_LibServerManager_HardcodedPermissions[_Login];
+	}
+
+	declare persistent Integer[Text] Persistent_LibServerManager_PlayersPerms;
+	if (Persistent_LibServerManager_PlayersPerms.existskey(_Login)) {
+		return Persistent_LibServerManager_PlayersPerms[_Login];
+	}
+
+	return C_LibServerManager_Perms_Default;
+}
+
+// ---------------------------------- //
+/** Set player permissions.
+ *
+ *	@param	_Target		Login of the player to change their permissions.
+ *	@param	_Perms		Target permissions level to set.
+ *	@param	_Sender		Login of the player, who is changing someone's permissions.
+ *
+ *	@return		Task result.
+ */
+Integer Private_SetPlayerPerms(Text _Target, Integer _Perms, Text _Sender) {
+	if (_Target == "" || _Perms < 0 || _Sender == "") return 1;
+
+	declare TargetPerms = Private_GetPlayerPerms(_Target);
+	declare SenderPerms = Private_GetPlayerPerms(_Sender);
+
+	// Target and sender are the same
+	if (_Target == _Sender) return 2;
+
+	// Only Administrator (and higher roles) can change permissions
+	if (SenderPerms < C_LibServerManager_Perms_Admin) return 3;
+
+	// Target has higher permissions
+	if (TargetPerms >= SenderPerms) return 4;
+
+	// Trying to set higher or equal permissions
+	if (_Perms >= SenderPerms) return 5;
+
+	// Trying to set the same permissions
+	if (TargetPerms == _Perms) return 6;
+
+	// Update player permissions
+	declare persistent Integer[Text] Persistent_LibServerManager_PlayersPerms;
+
+	if (_Perms != C_LibServerManager_Perms_Default) {
+		Persistent_LibServerManager_PlayersPerms[_Target] = _Perms;
+	} else if (Persistent_LibServerManager_PlayersPerms.existskey(_Target)) {
+		declare Removed = Persistent_LibServerManager_PlayersPerms.removekey(_Target);
+	}
+
+	Private_UpdatePermissionsList();
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get permissions level name.
+ *
+ *	@param	_Perms	Permissions level to get name.
+ *
+ *	@return		Name of the permissions level.
+ */
+Text Private_GetPermsName(Integer _Perms) {
+	switch (_Perms) {
+		case C_LibServerManager_Perms_SuperAdmin	: return "SuperAdmin";
+		case C_LibServerManager_Perms_Admin			: return "Admin";
+		case C_LibServerManager_Perms_Moderator		: return "Moderator";
+	}
+	return "Player";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get the name of a player by part of the login.
+ *
+ *	@param	_Login	Part of the target player's login.
+ *
+ *	@return		Name of the found player or login.
+ */
+Text GetNameByLogin(Text _Login) {
+	if (_Login == "") return _Login;
+	declare Text[] MatchingNames;
+	foreach (Player in AllPlayers) {
+		if (Player.User.Login == _Login) return Player.User.Name;
+		if (
+			TL::Find(_Login, Player.User.Login, False, False) ||
+			TL::Find(_Login, Player.User.Name, False, False)
+		) {
+			MatchingNames.add(Player.User.Name);
+		}
+	}
+	if (MatchingNames.count == 1) return MatchingNames[0];
+	return _Login;
+}
+
+// ---------------------------------- //
+/** Get the login of a player by part of the name or login.
+ *
+ *	@param	_Name	Part of the target player's name or login.
+ *
+ *	@return		Login of the found player.
+ */
+Text GetLoginByName(Text _Name) {
+	if (_Name == "") return _Name;
+	declare Text[] MatchingLogins;
+
+	// Search for connected players
+	foreach (Player in AllPlayers) {
+		if (Player.User.Login == _Name) return Player.User.Login;
+		if (
+			TL::Find(_Name, Player.User.Login, False, False) ||
+			TL::Find(_Name, Player.User.Name, False, False)
+		) {
+			MatchingLogins.add(Player.User.Login);
+		}
+	}
+
+	// Look through permissions list
+	declare persistent Integer[Text] Persistent_LibServerManager_PlayersPerms;
+	foreach (Login => Perms in Persistent_LibServerManager_PlayersPerms) {
+		if (Login == _Name) return Login;
+		if (TL::Find(_Name, Login, False, False) && !MatchingLogins.exists(Login)) MatchingLogins.add(Login);
+	}
+
+	// Look through muted players list
+	declare persistent Text[] Persistent_LibServerManager_MutedPlayers;
+	foreach (Login in Persistent_LibServerManager_MutedPlayers) {
+		if (Login == _Name) return Login;
+		if (TL::Find(_Name, Login, False, False) && !MatchingLogins.exists(Login)) MatchingLogins.add(Login);
+	}
+
+	if (MatchingLogins.count == 1) return MatchingLogins[0];
+	return _Name;
+}
+
+// ---------------------------------- //
+/** Check if a player is muted.
+ *
+ *	@param	_Login	Login of the player to check.
+ *
+ *	@return		True, if the player is muted.
+ */
+Boolean IsMuted(Text _Login) {
+	declare persistent Text[] Persistent_LibServerManager_MutedPlayers;
+	return Persistent_LibServerManager_MutedPlayers.exists(_Login);
+}
+
+// ---------------------------------- //
+/** Get chat setting for parsing links.
+ *
+ *	@return		True, if chat is set to parse links.
+ */
+Boolean ParseLinks() {
+	return True;
+}
+
+// ---------------------------------- //
+/** Get chat setting for parsing badwords.
+ *
+ *	@return		True, if chat is set to parse badwords.
+ */
+Boolean ParseBadwords() {
+	return True;
+}
+
+// ---------------------------------- //
+/** Get chat setting for removing links.
+ *
+ *	@return		True, if chat is set to remove links.
+ */
+Boolean RemoveLinks() {
+	return True;
+}
+
+// ---------------------------------- //
+/** Send a translated chat message to a player.
+ *
+ *	@param	_Player		The player to send the message to.
+ *	@param	_Message	Message to send.
+ */
+Void SendChat(CPlayer _Player, Text[] _Message) {
+	if (!_Message.existskey(0) || _Message[0] == "") return;
+
+	declare RecipientId = NullId;
+	if (_Player != Null) RecipientId = _Player.Id;
+
+	// Increment the key
+	G_LibServerManager_LastChatMessageKey += 1;
+	declare Key = G_LibServerManager_LastChatMessageKey;
+
+	// Save the message
+	G_LibServerManager_PendingChatMessages.add(Key);
+	G_LibServerManager_ChatMessagesBody[Key] = _Message;
+	G_LibServerManager_ChatMessagesRecipient[Key] = RecipientId;
+}
+
+Void SendChat(CPlayer _Player, Text _Message) {
+	SendChat(_Player, [_Message]);
+}
+
+// ---------------------------------- //
+/** Send a translated chat message to a everyone.
+ *
+ *	@param	_Message	Message to send.
+ */
+Void SendChat(Text[] _Message) {
+	SendChat(Null, _Message);
+}
+
+Void SendChat(Text _Message) {
+	SendChat(Null, [_Message]);
+}
+
+// ---------------------------------- //
+/** Check if there are pending chat messages to process.
+ *
+ *	@return		True, if there are messages to send.
+ */
+Boolean PendingChatMessages() {
+	return G_LibServerManager_PendingChatMessages.existskey(0);
+}
+
+// ---------------------------------- //
+/** Get next pending chat message to send.
+ *
+ *	@return		Pendig chat message in format [RecipientId => [MessageBody]].
+ */
+Text[][Ident] PendingMessage() {
+	if (!G_LibServerManager_PendingChatMessages.existskey(0)) return Text[][Ident];
+
+	declare Key = G_LibServerManager_PendingChatMessages[0];
+	declare MessageBody = Text[];
+	declare MessageRecipient = NullId;
+
+	if (G_LibServerManager_ChatMessagesBody.existskey(Key))
+		MessageBody = G_LibServerManager_ChatMessagesBody[Key];
+
+	if (G_LibServerManager_ChatMessagesRecipient.existskey(Key))
+		MessageRecipient = G_LibServerManager_ChatMessagesRecipient[Key];
+
+	// Remove the message
+	declare Boolean Removed;
+	Removed = G_LibServerManager_PendingChatMessages.removekey(0);
+	Removed = G_LibServerManager_ChatMessagesBody.removekey(Key);
+	Removed = G_LibServerManager_ChatMessagesRecipient.removekey(Key);
+
+	// Return the message
+	return [MessageRecipient => MessageBody];
+}
+
+// ---------------------------------- //
+/** Set player permissions through command.
+ *
+ *	@param	_Login		Login of the player to set permissions level.
+ *	@param	_Perms		Target permissions level.
+ *	@param	_Sender		The player, who requested permissions change.
+ */
+Void Private_CommandSetPerms(Text _Login, Integer _Perms, CPlayer _Sender) {
+	if (_Sender == Null || _Login == "") return;
+
+	declare TargetLogin = GetLoginByName(_Login);
+	if (TargetLogin == "") TargetLogin = _Login;
+	declare TaskResult = Private_SetPlayerPerms(TargetLogin, _Perms, _Sender.User.Login);
+
+	declare SenderPermsName = Private_GetPermsName(Private_GetPlayerPerms(_Sender.User.Login));
+	declare TargetPermsName = Private_GetPermsName(Private_GetPlayerPerms(TargetLogin));
+
+	switch (TaskResult) {
+		case 0 : SendChat(["%1 $<$FFF%2$> set $<$FFF%3$> permissions to $<$FFF%4$>!", SenderPermsName, _Sender.User.Name, GetNameByLogin(TargetLogin), TargetPermsName]);
+		case 2 : SendChat(_Sender, ["You can't edit your own permissions!"]);
+		case 3 : SendChat(_Sender, ["Only Administrators can edit permissions!"]);
+		case 4 : SendChat(_Sender, ["Targetted user has greater or equal permissions level as you!"]);
+		case 5 : SendChat(_Sender, ["You cannot grant permissions higher or equal to yours!"]);
+		case 6 : SendChat(_Sender, ["This user already has \"%1\" permissions!", TargetPermsName]);
+	}
+}
+
+// ---------------------------------- //
+/** On chat command received.
+ *
+ *	@param	_Sender			Command sender.
+ *	@param	_CommandName	Name of the command.
+ *	@param	_CommandParams	Command parameters.
+ */
+Void OnChatCommand(CPlayer _Sender, Text _CommandName, Text[] _CommandParams) {
+	if (_Sender == Null || _CommandName == "") return;
+
+	declare SenderPerms = Private_GetPlayerPerms(_Sender.User.Login);
+
+	// Insufficient permissions to perform the command
+	if (Private_GetCommandPerms(_CommandName) > SenderPerms) {
+		SendChat(_Sender, "You don't have permissions to use this command!");
+		return;
+	}
+
+	switch (_CommandName) {
+		// ---------------------------------- //
+		// Set Admin permissions for player
+		case "setadmin" : {
+			if (!_CommandParams.existskey(0)) {
+				SendChat(_Sender, "Usage: /setadmin <login>");
+				return;
+			}
+			
+			Private_CommandSetPerms(_CommandParams[0], C_LibServerManager_Perms_Admin, _Sender);
+		}
+		// ---------------------------------- //
+		// Set Moderator permissions for player
+		case "setmod" : {
+			if (!_CommandParams.existskey(0)) {
+				SendChat(_Sender, "Usage: /setmod <login>");
+				return;
+			}
+			
+			Private_CommandSetPerms(_CommandParams[0], C_LibServerManager_Perms_Moderator, _Sender);
+		}
+		// ---------------------------------- //
+		// Set default permissions for player
+		case "revoke" : {
+			if (!_CommandParams.existskey(0)) {
+				SendChat(_Sender, "Usage: /revoke <login>");
+				return;
+			}
+			
+			Private_CommandSetPerms(_CommandParams[0], C_LibServerManager_Perms_Default, _Sender);
+		}
+		// ---------------------------------- //
+		// Mute player
+		case "mute" : {
+			// Name missing
+			if (_CommandParams.count < 1) {
+				SendChat(_Sender, "Usage: /mute <login>");
+				return;
+			}
+
+			declare TargetLogin = GetLoginByName(_CommandParams[0]);
+			
+			// Player already muted
+			if (IsMuted(TargetLogin)) {
+				SendChat(_Sender, "This player is already muted!");
+				return;
+			}
+
+			// Mute the player
+			declare persistent Text[] Persistent_LibServerManager_MutedPlayers;
+			Persistent_LibServerManager_MutedPlayers.add(TargetLogin);
+			SendChat(["$<%1$> muted $<%2$>!", _Sender.User.Name, GetNameByLogin(TargetLogin)]);
+			Private_UpdateMutedList();
+		}
+		// ---------------------------------- //
+		// Unute player
+		case "unmute" : {
+			// Name missing
+			if (_CommandParams.count < 1) {
+				SendChat(_Sender, "Usage: /unmute <login>");
+				return;
+			}
+
+			declare TargetLogin = GetLoginByName(_CommandParams[0]);
+
+			// Player is not muted
+			if (!IsMuted(TargetLogin)) {
+				SendChat(_Sender, "This player is not muted!");
+				return;
+			}
+
+			// Mute the player
+			declare persistent Text[] Persistent_LibServerManager_MutedPlayers;
+			declare Removed = Persistent_LibServerManager_MutedPlayers.remove(TargetLogin);
+			SendChat(["$<%1$> unmuted $<%2$>!", _Sender.User.Name, GetNameByLogin(TargetLogin)]);
+			Private_UpdateMutedList();
+		}
+	}
+}
+
+// ---------------------------------- //
+// Unload Server Manager.
+Void Unload() {
+	Layers::Detach(C_LibServerManager_LayerId);
+	Layers::Destroy(C_LibServerManager_LayerId);
+}
+
+// ---------------------------------- //
+// Load the Server Manager.
+Void Load() {
+	Unload();
+
+	Layers::Create(C_LibServerManager_LayerId, Private_CreateManialinkServerManager());
+	Layers::Attach(C_LibServerManager_LayerId);
+
+	// Initialize UI
+	Private_UpdatePermissionsList();
+	Private_UpdateMutedList();
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	
+}

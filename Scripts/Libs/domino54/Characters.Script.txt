@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2017-10-09            //
+//  script version: 2017-11-29            //
 // -------------------------------------- //
 
-#Const Version		"2017-10-09"
+#Const Version		"2017-11-29"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
@@ -552,7 +552,7 @@ declare PrevPlayerCharChange = -1;
 declare PrevDisplayMode = -1;
 declare PrevGUIPlayerLinearHue = -1.;
 declare PrevCharacterBaseArmor = -1;
-declare PrevIsSpectator = False;
+declare PrevIsSpectatorClient = False;
 declare PrevNbPlayers = -1;
 declare PrevWindowTitleText = "";
 declare PrevSwitchCharNote = "";
@@ -665,7 +665,7 @@ if (Bindings_Listener("LibCharacters_Open", "M")) {
 // Switch character note
 declare PlayerStartTime = GetPlayerStartTime(GUIPlayer);
 Label_SwitchCharNote.Visible =
-	!IsSpectator && Net_LibCharacters_DisplayMode != {{{C_LibCharacters_DisplayModeHidden}}} &&
+	!IsSpectatorClient && Net_LibCharacters_DisplayMode != {{{C_LibCharacters_DisplayModeHidden}}} &&
 	GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.> &&
 	GameTime > PlayerStartTime - C_SwitchCharNoteFade &&
 	GameTime < PlayerStartTime + C_SwitchCharNoteTime + C_SwitchCharNoteFade;
@@ -784,7 +784,7 @@ if (PrevWindowVisible != WindowVisible) {
 
 	// ---------------------------------- //
 	// Switch to selected char page
-	if (!IsSpectator && WindowVisible && CharactersPageTotal > 1) {
+	if (!IsSpectatorClient && WindowVisible && CharactersPageTotal > 1) {
 		declare DesiredPage = 1 + (G_LibCharacters_Characters.keyof(CurSelectedCharacter)) / (Frame_CharacterButtons.count - 1);
 		if (CharactersPageCurrent != DesiredPage) {
 			CharactersPageCurrent = DesiredPage;
@@ -839,8 +839,8 @@ if (Frame_SelectionEndTime.Visible) {
 
 // ---------------------------------- //
 // Update list on spectator mode change
-if (PrevIsSpectator != IsSpectator) {
-	PrevIsSpectator = IsSpectator;
+if (PrevIsSpectatorClient != IsSpectatorClient) {
+	PrevIsSpectatorClient = IsSpectatorClient;
 	UpdateCharactersList = True;
 }
 
@@ -902,7 +902,7 @@ if (UpdateCharactersList) {
 
 		// Configure the frame
 		Label_CharSelectionHotkey.Value = TL::ToText(Key + 1);
-		Quad_CharIsSelected.Visible = !IsSpectator && CurSelectedCharacter == CharacterId;
+		Quad_CharIsSelected.Visible = !IsSpectatorClient && CurSelectedCharacter == CharacterId;
 		Quad_CharButtonLock.Visible = Net_LibCharacters_DisabledCharacters.exists(CharacterId);
 
 		// ---------------------------------- //
@@ -921,8 +921,8 @@ if (UpdateCharactersList) {
 		// Amount of players using the character
 		declare NbPlayersUsing = 0;
 		foreach (Player in Players) {
-			if (Player.RequestsSpectate) continue;
-			if (!IsSpectator && InputPlayer.CurrentClan > 0 && Player.CurrentClan != InputPlayer.CurrentClan) continue;
+			if (Player.RequestsSpectate || Player.User.Login == "*bot*") continue;
+			if (!IsSpectatorClient && InputPlayer.CurrentClan > 0 && Player.CurrentClan != InputPlayer.CurrentClan) continue;
 			declare netread Integer Net_LibCharacters_ServerCharacter for Player;
 			if (Net_LibCharacters_ServerCharacter != CharacterId) continue;
 			NbPlayersUsing += 1;

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PAUSE MENU 2 by domino54      //
-//  script version: 2017-10-09            //
+//  script version: 2017-11-26            //
 // -------------------------------------- //
 
 /**
@@ -15,7 +15,7 @@
  *	using multiple custom teams.
  */
 
-#Const Version		"2017-10-09"
+#Const Version		"2017-11-26"
 #Const ScriptName	"Libs/domino54/PauseMenu2.Script.txt"
 
 #Include "TextLib" as TL
@@ -248,7 +248,7 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 
 		<framemodel id="FrameModel_PauseMenuButton">
 			<label pos="18 -14.5" size="35" class="FontM" halign="center" textsize="1.5" textprefix="$t" autonewline="1" linespacing=".875" id="Label_MenuButtonLabel" />
-			<label pos="33 -3.125" halign="center" valign="center2" textsize="1.5" textemboss="1" textcolor="FFF" id="Label_IsSpectatorMode" hidden="1" />
+			<label pos="33 -3.125" halign="center" valign="center2" textsize="1.5" textemboss="1" textcolor="FFF" id="Label_IsSpectatorClientMode" hidden="1" />
 			<quad pos="18 -7" size="10 10" halign="center" valign="center" autoscale="0" id="Quad_MenuButtonIcon" />
 
 			<frame id="Frame_MenuButtonTeams" pos="18 -7" hidden="1">
@@ -617,7 +617,7 @@ declare PrevPageIsVisible = False;
 declare PrevActiveContext = -1;
 declare PrevQuitDisabled = False;
 declare PrevButtonsUpdate = -1;
-declare PrevIsSpectator = False;
+declare PrevIsSpectatorClient = False;
 declare PrevObserverMode = UI.SpectatorObserverMode;
 declare PrevNbPlayers = -1;
 declare PrevCustomTeamsUpdate = -1;
@@ -925,7 +925,10 @@ foreach (Event in PendingEvents) {
 	else if (Event.Type == CMlEvent::Type::MenuNavigation) {
 		// ---------------------------------- //
 		// Back
-		if (Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel) {
+		if (
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel ||
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::AppMenu
+		) {
 			switch (PauseActiveContext) {
 				case C_LibPauseMenu_ContextDefault : CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
 				case C_LibPauseMenu_ContextAwaitingInput : PauseActiveContext = C_LibPauseMenu_ContextTitleSettings;
@@ -1340,8 +1343,8 @@ switch (PauseActiveContext) {
 
 		// ---------------------------------- //
 		// Update on spectator mode change
-		if (PrevIsSpectator != IsSpectator) {
-			PrevIsSpectator = IsSpectator;
+		if (PrevIsSpectatorClient != IsSpectatorClient) {
+			PrevIsSpectatorClient = IsSpectatorClient;
 			UpdateWindowButtons = True;
 		}
 		if (PrevObserverMode != UI.SpectatorObserverMode) {
@@ -1399,7 +1402,7 @@ switch (PauseActiveContext) {
 						if (UI.SpectatorObserverMode == CUIConfig::EObserverMode::Forced || UI.ForceSpectator) continue;
 						if (UI.SpectatorObserverMode == CUIConfig::EObserverMode::Forbidden) continue;
 					}
-					case "LibPM_ChangeTeam" : if (IsSpectator || (!UseClans && Net_LibPauseMenu_NbCustomTeams <= 0) || UseForcedClans) continue;
+					case "LibPM_ChangeTeam" : if (IsSpectatorClient || (!UseClans && Net_LibPauseMenu_NbCustomTeams <= 0) || UseForcedClans) continue;
 					case "LibPM_TitleSettings" : if (SettingGroups.count <= 0) continue;
 				}
 				ButtonsIds.add(ButtonId);
@@ -1422,7 +1425,7 @@ switch (PauseActiveContext) {
 				declare Quad_MenuButtonIcon <=> (Frame.GetFirstChild("Quad_MenuButtonIcon") as CMlQuad);
 				declare Quad_MenuButtonCard <=> (Frame.GetFirstChild("Quad_MenuButtonCard") as CMlQuad);
 				declare Frame_MenuButtonTeams <=> (Frame.GetFirstChild("Frame_MenuButtonTeams") as CMlFrame);
-				declare Label_IsSpectatorMode <=> (Frame.GetFirstChild("Label_IsSpectatorMode") as CMlLabel);
+				declare Label_IsSpectatorClientMode <=> (Frame.GetFirstChild("Label_IsSpectatorClientMode") as CMlLabel);
 
 				// ---------------------------------- //
 				// Set button label text
@@ -1441,10 +1444,10 @@ switch (PauseActiveContext) {
 				Frame_MenuButtonTeams.Visible = ButtonId == "LibPM_ChangeTeam" && UseClans;
 
 				// Spectator mode button check
-				Label_IsSpectatorMode.Visible = ButtonId == "LibPM_Spectator";
-				if (Label_IsSpectatorMode.Visible) {
-					if (IsSpectator) Label_IsSpectatorMode.Value = "";
-					else Label_IsSpectatorMode.Value = "";
+				Label_IsSpectatorClientMode.Visible = ButtonId == "LibPM_Spectator";
+				if (Label_IsSpectatorClientMode.Visible) {
+					if (IsSpectatorClient) Label_IsSpectatorClientMode.Value = "";
+					else Label_IsSpectatorClientMode.Value = "";
 				}
 
 				// Hide icon for team and character change buttons

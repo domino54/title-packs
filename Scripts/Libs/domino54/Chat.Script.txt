@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY CHAT by domino54              //
-//  script version: 2017-10-09            //
+//  script version: 2017-11-26            //
 // -------------------------------------- //
 
 /**
@@ -9,13 +9,16 @@
  *	and allows to send longer messages.
  */
 
-#Const Version		"2017-10-09"
+#Const Version		"2017-11-26"
 #Const ScriptName	"Libs/domino54/Chat.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/domino54/Bindings.Script.txt" as Bindings
+#Include "Libs/domino54/MultiClans.Script.txt" as Clans
+#Include "Libs/domino54/ServerManager.Script.txt" as ServerManager
+#Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
 // Constants
@@ -31,6 +34,7 @@
 // Messages formatting
 #Const C_LibChat_MessageFormat_Error	"$F00%1"
 #Const C_LibChat_MessageFormat_Global	"$FF0[$<%1$>] %2"
+#Const C_LibChat_MessageFormat_Global2	"$FF0%2"
 #Const C_LibChat_MessageFormat_Team		"$FF0<$<%1$>> %2"
 #Const C_LibChat_MessageFormat_MeCmd	"$6BF$<%1$> %2"
 #Const C_LibChat_MessageFormat_Incoming	"$6BF[➘ $<%1$>] %2"
@@ -45,12 +49,18 @@
 	"gl" => "Good luck", "hf" => "Have fun", "glhf" => "Goold luck and have fun",
 	"wp" => "Well played", "ggwp" => "Good game, well played",
 	"gr8" => "Great", "w8" => "Wait", "lol" => "Loo0ool", "lool" => "Looo00oool",
-	"54" => "I <3 Dommy", "gu" => "Guerried", "grt" => "Guerritos",
-	"flo" => "Florenziusted", "nu" => "Nurpsen", "owz" => "Owzom", "wow" => "WOOW"
+	"gu" => "Guerried", "grt" => "Guerritos", "flo" => "Florenziusted",
+	"nu" => "Nurpsen", "owz" => "Owzom", "wow" => "WOOW"
 ]
 #Const C_LibChat_PremadeWithRecipient [
 	"hi", "bb", "wb", "flo", "gg", "gj", "n1", "ns", "nt", "ty", "lol", "lool",
 	"gl", "hf", "glhf", "wp", "ggwp", "gu", "gr8", "w8", "owz", "wow"
+]
+
+// Badwords to filter
+#Const C_LibChat_ForbiddenWords [
+	"fuck", "shit", "bitch", "slut", "twat", "prick", "sucker", "cock", "whore", "faggot", "asshole", "dick",
+	"merde", "putain", "salope", "kurw", "kurv" 
 ]
 
 // ---------------------------------- //
@@ -83,25 +93,29 @@ Text Private_CreateManialinkChat() {
 
 	declare Font = TL::MLEncode(G_LibChat_InterfaceFont);
 	return """
-<manialink version="3">
+<manialink version="3" name="{{{C_LibChat_InterfaceLayerId}}}">
 <stylesheet>
 	<style class="Message" valign="center2" textsize="{{{C_LibChat_ChatTextSize}}}" textemboss="1" textcolor="FFF" textfont="{{{Font}}}" />
 	<style id="Entry_ChatInput" valign="center2" textsize="{{{C_LibChat_ChatTextSize}}}" textemboss="1" textcolor="FFF" textfont="{{{Font}}}" />
-	<style id="Label_ChatKeyHint" style="TextButtonNav" valign="center2" textsize="0" textcolor="FFF" opacity=".5" />
+	<style id="Label_ChatKeyHint" style="TextButtonNav" valign="center2" textsize=".375" textcolor="FFF" opacity=".5" />
 </stylesheet>
 
-<frame id="Frame_ChatWindow" pos="-160 -90">
+<frame id="Frame_ChatWindow" pos="-160 -90" z-index="10">
 	<frame pos="1 {{{C_LibChat_ChatLineHeight*2-1.5}}}">
 		<frame id="Frame_LabelsAnim">{{{ChatMessagesLabels}}}</frame>
 	</frame>
 	<frame pos="1 {{{C_LibChat_ChatLineHeight/2+.5}}}" z-index="1">
 		<entry size="100 {{{C_LibChat_ChatLineHeight-.5}}}" focusareacolor1="0004" focusareacolor2="0007" id="Entry_ChatInput" ScriptEvents="1" hidden="1" />
-		<label text="Press 'T' to chat" id="Label_ChatKeyHint" />
+		<label id="Label_ChatKeyHint" textfont="Eurostile_Bold" />
 	</frame>
 </frame>
 <script><!--
+/**
+ *	{{{C_LibChat_InterfaceLayerId}}}
+ */
 
 #Include "MathLib" as ML
+#Include "TextLib" as TL
 
 // ---------------------------------- //
 // Main
@@ -115,17 +129,22 @@ declare Frame_LabelsAnim <=> (Page.GetFirstChild("Frame_LabelsAnim") as CMlFrame
 declare Entry_ChatInput <=> (Page.GetFirstChild("Entry_ChatInput") as CMlEntry);
 declare Label_ChatKeyHint <=> (Page.GetFirstChild("Label_ChatKeyHint") as CMlLabel);
 
-Label_ChatKeyHint.Value = "Press 'T' to chat";
-
 declare CMlLabel[] Label_ChatMessages;
 for (I, 0, {{{C_LibChat_MaxNbMessagesLarge+1}}})
 	Label_ChatMessages.add((Page.GetFirstChild("Label_ChatMessage#"^I) as CMlLabel));
 
 // ---------------------------------- //
+// Persistent settings
+declare persistent Text[] Persistent_LibServerManager_PrivateMutedUsers for LocalUser;
+declare persistent Integer Persistent_LibServerManager_PrivateMuteUpdate for LocalUser;
+
+// ---------------------------------- //
 // Net variables
 declare netread Boolean Net_LibChat_UseCustomChat for Teams[0];
 declare netread Text[Integer] Net_LibChat_GlobalChatMessages for Teams[0];
+declare netread Text[Integer] Net_LibChat_GlobalChatSenders for Teams[0];
 declare netread Text[Integer] Net_LibChat_UserChatMessages for InputPlayer;
+declare netread Text[Integer] Net_LibChat_UserChatSenders for InputPlayer;
 declare netread Integer Net_LibChat_GlobalLastMessage for Teams[0];
 declare netread Integer Net_LibChat_UserLastMessage for InputPlayer;
 
@@ -135,6 +154,9 @@ declare UpdateMessagesList = True;
 declare MaxNbMessagesDisplayed = 7;
 declare SlideNewMessage = False;
 declare IsFirstLaunch = True;
+declare UpdateTooltip = True;
+declare PrevMessageKey = -1;
+declare FormatLabels = True;
 
 // Update
 declare PrevGlobalLastMessage = -1;
@@ -167,15 +189,16 @@ foreach (Event in PendingEvents) {
 // ---------------------------------- //
 // Start typing a message
 if (Bindings_Listener("LibChat_BeginTyping", "T")) {
-	Entry_ChatInput.Show();
+	Entry_ChatInput.Visible = True;
 	Entry_ChatInput.StartEdition();
+	UpdateTooltip = True;
 }
 
 // ---------------------------------- //
 // Start typing a team message
-if (Bindings_Listener("LibChat_TeamMessage", "Return")) {
-	Entry_ChatInput.Show();
-	Entry_ChatInput.Value = "/t "^Entry_ChatInput.Value;
+if (Bindings_Listener("LibChat_TeamMessage", "Y")) {
+	Entry_ChatInput.Visible = True;
+	Entry_ChatInput.Value = "/t ";
 	Entry_ChatInput.StartEdition();
 }
 
@@ -193,7 +216,6 @@ Label_ChatKeyHint.Visible = !Entry_ChatInput.Visible;
 if (PrevGlobalLastMessage != Net_LibChat_GlobalLastMessage) {
 	PrevGlobalLastMessage = Net_LibChat_GlobalLastMessage;
 	UpdateMessagesList = True;
-	if (!IsFirstLaunch) SlideNewMessage = True;
 }
 
 // ---------------------------------- //
@@ -201,7 +223,6 @@ if (PrevGlobalLastMessage != Net_LibChat_GlobalLastMessage) {
 if (PrevUserLastMessage != Net_LibChat_UserLastMessage) {
 	PrevUserLastMessage = Net_LibChat_UserLastMessage;
 	UpdateMessagesList = True;
-	if (!IsFirstLaunch) SlideNewMessage = True;
 }
 
 // ---------------------------------- //
@@ -220,10 +241,27 @@ if (UpdateMessagesList) {
 	// Get messages to display
 	declare Text[] DisplayedChatMessages;
 	declare Text[Integer] ChatMessages;
+	declare MessageKey = PrevMessageKey;
+
 	foreach (Key => Message in Net_LibChat_GlobalChatMessages) ChatMessages[Key] = Message;
 	foreach (Key => Message in Net_LibChat_UserChatMessages) ChatMessages[Key] = Message;
 	ChatMessages = ChatMessages.sortkey();
-	foreach (Message in ChatMessages) DisplayedChatMessages.add(Message);
+
+	foreach (Key => Message in ChatMessages) {
+		declare MessageSender = "";
+		if (Net_LibChat_GlobalChatSenders.existskey(Key)) MessageSender = Net_LibChat_GlobalChatSenders[Key];
+		else if (Net_LibChat_UserChatSenders.existskey(Key)) MessageSender = Net_LibChat_UserChatSenders[Key];
+		if (MessageSender != "" && Persistent_LibServerManager_PrivateMutedUsers.exists(MessageSender)) continue;
+
+		DisplayedChatMessages.add(Message);
+		MessageKey = Key;
+	}
+
+	// Trigger animation for new messages
+	if (PrevMessageKey != MessageKey) {
+		PrevMessageKey = MessageKey;
+		if (!IsFirstLaunch) SlideNewMessage = True;
+	}
 
 	// ---------------------------------- //
 	// Format labels
@@ -258,6 +296,12 @@ if (UpdateMessagesList) {
 	IsFirstLaunch = False;
 }
 
+// Update tooltip text
+if (UpdateTooltip) {
+	UpdateTooltip = False;
+	Label_ChatKeyHint.Value = Translate(["Press '%1' to chat", Bindings_GetKey("LibChat_BeginTyping", "T")]);
+}
+
 // ---------------------------------- //
 // Hide transparent messages
 foreach (I => Label in Label_ChatMessages) {
@@ -267,6 +311,7 @@ foreach (I => Label in Label_ChatMessages) {
 }
 ***
 
+{{{Translations::InjectInManialink(["Press '%1' to chat"])}}}
 {{{Bindings::Functions()}}}
 
 main() {
@@ -286,10 +331,12 @@ main() {
 /** Send a message to everyone.
  *
  *	@param	_Message	Message to send.
+ *	@param	_Sender		The message sender.
  */
-Void Private_SendMessage(Text _Message) {
+Void Private_SendMessage(Text _Message, CPlayer _Sender) {
 	if (_Message == "") return;
 	declare netwrite Text[Integer] Net_LibChat_GlobalChatMessages for Teams[0];
+	declare netwrite Text[Integer] Net_LibChat_GlobalChatSenders for Teams[0];
 	declare netwrite Integer Net_LibChat_GlobalLastMessage for Teams[0];
 	Net_LibChat_GlobalLastMessage = Now;
 	
@@ -297,10 +344,18 @@ Void Private_SendMessage(Text _Message) {
 	while (Net_LibChat_GlobalChatMessages.existskey(Key)) Key += 1;
 	Net_LibChat_GlobalChatMessages[Key] = _Message;
 
+	if (_Sender != Null)
+		Net_LibChat_GlobalChatSenders[Key] = _Sender.User.Login;
+	else
+		Net_LibChat_GlobalChatSenders[Key] = "";
+	
 	while (Net_LibChat_GlobalChatMessages.count > C_LibChat_MaxNbMessagesLarge+1) {
 		declare KeyToRemove = 0;
 		foreach (Key => Message in Net_LibChat_GlobalChatMessages) { KeyToRemove = Key; break; }
-		declare Removed = Net_LibChat_GlobalChatMessages.removekey(KeyToRemove);
+
+		declare Boolean Removed;
+		Removed = Net_LibChat_GlobalChatMessages.removekey(KeyToRemove);
+		Removed = Net_LibChat_GlobalChatSenders.removekey(KeyToRemove);
 	}
 }
 
@@ -309,8 +364,9 @@ Void Private_SendMessage(Text _Message) {
  *
  *	@param	_Player		Player to send the message.
  *	@param	_Message	Message to send.
+ *	@param	_Sender		The message sender.
  */
-Void Private_SendMessage(CPlayer _Player, Text _Message) {
+Void Private_SendMessage(CPlayer _Player, Text _Message, CPlayer _Sender) {
 	if (_Player == Null || _Message == "") return;
 	declare netwrite Text[Integer] Net_LibChat_GlobalChatMessages for Teams[0];
 	declare netwrite Text[Integer] Net_LibChat_UserChatMessages for _Player;
@@ -392,34 +448,15 @@ Void Private_RegisterCommand(Text _Sender, Text _Name, Text[] _Params) {
  */
 Integer Private_GetClan(CPlayer _Player) {
 	if (_Player == Null) return 0;
+
+	declare CustomClan = Clans::GetPlayerClan(_Player);
+	if (CustomClan > 0) return CustomClan;
+
 	switchtype (_Player) {
 		case CTmPlayer : return cast(CTmPlayer, _Player).CurrentClan;
 		case CSmPlayer : return cast(CSmPlayer, _Player).CurrentClan;
 	}
 	return 0;
-}
-
-// ---------------------------------- //
-/** Get the name of a player by part of the login.
- *
- *	@param	_Login	Part of the target player's login.
- *
- *	@return		Name of the found player or login.
- */
-Text Private_GetNameByLogin(Text _Login) {
-	if (_Login == "") return _Login;
-	declare Text[] MatchingNames;
-	foreach (Player in AllPlayers) {
-		if (Player.User.Login == _Login) return Player.User.Name;
-		if (
-			TL::Find(_Login, Player.User.Login, False, False) ||
-			TL::Find(_Login, Player.User.Name, False, False)
-		) {
-			MatchingNames.add(Player.User.Name);
-		}
-	}
-	if (MatchingNames.count == 1) return MatchingNames[0];
-	return _Login;
 }
 
 // ---------------------------------- //
@@ -432,6 +469,7 @@ Text Private_GetNameByLogin(Text _Login) {
 Text[] Private_ParseLinks(Text[] _Segments) {
 	declare Text[] OutputSegments;
 	if (_Segments.count <= 0) return OutputSegments;
+	declare RemoveLinks = ServerManager::RemoveLinks();
 
 	foreach (_Segment in _Segments) {
 		declare Segment = TL::StripFormatting(_Segment);
@@ -443,8 +481,7 @@ Text[] Private_ParseLinks(Text[] _Segments) {
 			TL::SubString(Segment, 0, 8) == "https://" ||
 			TL::SubString(Segment, 0, 4) == "www."
 		) {
-			OutputSegments.add("$<$FA3$l"^Segment^"$>");
-			log(OutputSegments);
+			if (!RemoveLinks) OutputSegments.add("$<$FA3$l"^Segment^"$>");
 			continue;
 		}
 
@@ -456,24 +493,49 @@ Text[] Private_ParseLinks(Text[] _Segments) {
 		) {
 			Segment = TL::Replace(Segment, "maniaplanet:///:", "");
 			Segment = TL::Replace(Segment, "maniaplanet://", "");
-			OutputSegments.add("$<$6BF$h"^Segment^"$>");
+			if (!RemoveLinks) OutputSegments.add("$<$6BF$h"^Segment^"$>");
 			continue;
 		}
 
 		// Normal segments
 		OutputSegments.add(_Segment);
 	}
+	
 	return OutputSegments;
 }
 
-Text Private_ParseBadWords(Text _Message) {
-	declare OutputMessage = _Message;
+// ---------------------------------- //
+/** Parse badwords in a message.
+ *
+ *	@param	_Segments	Segments of the message to format.
+ *
+ *	@return		All segments with formatted badwords in them.
+ */
+Text[] Private_ParseBadWords(Text[] _Segments) {
+	declare Text[] OutputSegments;
+	if (_Segments.count <= 0) return OutputSegments;
 
-	//foreach (BadWord in C_LibChat_ForbiddenWords) {
-		//if (!TL::Find())
-	//}
+	foreach (_Segment in _Segments) {
+		declare Segment = TL::StripFormatting(_Segment);
+		declare FoundBadWords = False;
 
-	return OutputMessage;
+		foreach (BadWord in C_LibChat_ForbiddenWords) {
+			if (!TL::Find(BadWord, Segment, False, False)) continue;
+			FoundBadWords = True;
+			break;
+		}
+
+		if (!FoundBadWords) {
+			OutputSegments.add(_Segment);
+			continue;
+		}
+
+		declare Stars = "";
+		for (I, 1, TL::Length(Segment)) Stars ^= "*";
+		OutputSegments.add(Stars);
+	}
+
+	return OutputSegments;
 }
 
 // ---------------------------------- //
@@ -487,10 +549,11 @@ Text Private_ParseMessage(Text _Message) {
 	if (TL::Length(_Message) <= 1) return _Message;
 	declare Message = TL::Replace(_Message, "\n", " "); // Line breaking removal
 	declare SplitMessage = TL::Split(" ", Message);
-	SplitMessage = Private_ParseLinks(SplitMessage); // Parse links
-	Message = TL::Join(" ", SplitMessage); // Remove spaces
-	Message = Private_ParseBadWords(Message); // Parse badwords
-	return Message;
+
+	if (ServerManager::ParseBadwords())	SplitMessage = Private_ParseBadWords(SplitMessage);	// Parse badwords
+	if (ServerManager::ParseLinks())	SplitMessage = Private_ParseLinks(SplitMessage);	// Parse links
+
+	return TL::Join(" ", SplitMessage); // Remove spaces
 }
 
 // ---------------------------------- //
@@ -553,7 +616,7 @@ Void Load() {
  *	@param	_Message	Message to send.
  */
 Void SendMessage(Text _Message) {
-	Private_SendMessage(_Message);
+	Private_SendMessage(_Message, Null);
 }
 
 // ---------------------------------- //
@@ -564,7 +627,7 @@ Void SendMessage(Text _Message) {
  */
 Void SendMessage(CPlayer _Player, Text _Message) {
 	if (_Player == Null) return;
-	Private_SendMessage(_Player, _Message);
+	Private_SendMessage(_Player, _Message, Null);
 }
 
 // ---------------------------------- //
@@ -574,7 +637,51 @@ Void SendMessage(CPlayer _Player, Text _Message) {
  *	@param	_Message	Message to send.
  */
 Void SendMessage(Integer _Clan, Text _Message) {
-	foreach (Player in Players) if (Player.CurrentClan == _Clan) SendMessage(Player, _Message);
+	foreach (Player in Players) if (Private_GetClan(Player) == _Clan) SendMessage(Player, _Message);
+}
+
+// ---------------------------------- //
+/** Send a message to everyone.
+ *
+ *	@param	_Message	Message to send.
+ *	@param	_Sender		The message sender.
+ */
+Void SendMessage(Text _Message, CPlayer _Sender) {
+	Private_SendMessage(_Message, _Sender);
+}
+
+// ---------------------------------- //
+/** Send a message to a player.
+ *
+ *	@param	_Player		Player to send the message.
+ *	@param	_Message	Message to send.
+ *	@param	_Sender		The message sender.
+ */
+Void SendMessage(CPlayer _Player, Text _Message, CPlayer _Sender) {
+	if (_Player == Null) return;
+	Private_SendMessage(_Player, _Message, _Sender);
+}
+
+// ---------------------------------- //
+/** Send a message to a team.
+ *
+ *	@param	_Clan		Clan to send the message.
+ *	@param	_Message	Message to send.
+ *	@param	_Sender		The message sender.
+ */
+Void SendMessage(Integer _Clan, Text _Message, CPlayer _Sender) {
+	foreach (Player in Players) if (Private_GetClan(Player) == _Clan) SendMessage(Player, _Message, _Sender);
+}
+
+Void SendTranslated(CPlayer _Player, Text[] _Message) {
+	if (_Player == Null || _Player.User.IsFakeUser || !_Message.existskey(0) || _Message[0] == "") return;
+	declare Translated = Translations::Translate(_Player.User.Language, _Message);
+	SendMessage(_Player, Translated);
+}
+
+Void SendTranslated(Text[] _Message) {
+	if (!_Message.existskey(0) || _Message[0] == "") return;
+	foreach (Player in AllPlayers) SendTranslated(Player, _Message);
 }
 
 // ---------------------------------- //
@@ -677,7 +784,7 @@ Void Loop(Boolean _UseCustomChat) {
 				
 				// ---------------------------------- //
 				// Send global message
-				else {
+				else if (!ServerManager::IsMuted(Sender.User.Login)) {
 					declare SplitMessage = TL::Split(" ", Message);
 					declare PremadeMsgCode = SplitMessage[0];
 
@@ -686,7 +793,7 @@ Void Loop(Boolean _UseCustomChat) {
 					if (SplitMessage.count <= 2 && C_LibChat_PremadeMessages.existskey(PremadeMsgCode)) {
 						Message = "$i"^C_LibChat_PremadeMessages[PremadeMsgCode];
 						if (SplitMessage.existskey(1) && C_LibChat_PremadeWithRecipient.exists(PremadeMsgCode)) {
-							declare TargetName = Private_GetNameByLogin(SplitMessage[1]);
+							declare TargetName = ServerManager::GetNameByLogin(SplitMessage[1]);
 							Message ^= " $<"^TargetName^"$>";
 						}
 						Message ^= "!";
@@ -719,11 +826,12 @@ Void Loop(Boolean _UseCustomChat) {
 
 					// ---------------------------------- //
 					// Send chat message
-					foreach (Segment in Messages) {
+					foreach (I => Segment in Messages) {
 						declare TargetMessage = C_LibChat_MessageFormat_Global;
+						if (I > 0) TargetMessage = C_LibChat_MessageFormat_Global2;
 						TargetMessage = TL::Replace(TargetMessage, "%1", Sender.User.Name);
 						TargetMessage = TL::Replace(TargetMessage, "%2", Segment);
-						SendMessage(TargetMessage);
+						SendMessage(TargetMessage, Sender);
 					}
 				}
 			}
@@ -743,26 +851,34 @@ Void Loop(Boolean _UseCustomChat) {
 			// Send team message
 			case "t" : {
 				declare PlayerClan = Private_GetClan(CommandPlayer);
-				if (PlayerClan <= 0 || !CommandParams.existskey(0)) continue;
+				if (!CommandParams.existskey(0)) continue;
 
-				declare Message = C_LibChat_MessageFormat_Team;
+				declare Message = C_LibChat_MessageFormat_Global;
+				if (PlayerClan > 0) Message = C_LibChat_MessageFormat_Team;
+
 				Message = TL::Replace(Message, "%1", CommandPlayer.User.Name);
 				Message = TL::Replace(Message, "%2", TL::Join(" ", CommandParams));
-				SendMessage(PlayerClan, Message);
+				
+				if (PlayerClan > 0) SendMessage(PlayerClan, Message, CommandPlayer);
+				else SendMessage(Message, CommandPlayer);
 			}
 			// ---------------------------------- //
 			// Me command
 			case "me" : {
+				if (ServerManager::IsMuted(CommandPlayer.User.Login)) continue;
 				if (!CommandParams.existskey(0)) continue;
 
 				declare Message = C_LibChat_MessageFormat_MeCmd;
 				Message = TL::Replace(Message, "%1", CommandPlayer.User.Name);
 				Message = TL::Replace(Message, "%2", TL::Join(" ", CommandParams));
+				Message = Private_ParseMessage(Message);
 				SendMessage(Message);
 			}
 			// ---------------------------------- //
 			// Private message
 			case "pm" : {
+				if (ServerManager::IsMuted(CommandPlayer.User.Login)) continue;
+
 				// Recipient or message missing
 				if (CommandParams.count < 2) {
 					declare ErrorMessage = C_LibChat_MessageFormat_Error;
@@ -813,6 +929,8 @@ Void Loop(Boolean _UseCustomChat) {
 			// ---------------------------------- //
 			// Private message reply
 			case "pmr" : {
+				if (ServerManager::IsMuted(CommandPlayer.User.Login)) continue;
+
 				// Message missing
 				if (CommandParams.count < 1) {
 					declare ErrorMessage = C_LibChat_MessageFormat_Error;
@@ -834,6 +952,28 @@ Void Loop(Boolean _UseCustomChat) {
 				foreach (Param in CommandParams) NewCommandParams.add(Param);
 				Private_RegisterCommand(CommandPlayer.User.Login, "pm", NewCommandParams);
 			}
+			
+
+			default : {
+				ServerManager::OnChatCommand(CommandPlayer, CommandName, CommandParams);
+			}
+		}
+	}
+
+	// ---------------------------------- //
+	// Server manager custom messages
+	while (ServerManager::PendingChatMessages()) {
+		foreach (RecipientId => MessageBody in ServerManager::PendingMessage()) {
+			if (!MessageBody.existskey(0) || MessageBody[0] == "") break;
+			declare CPlayer Recipient;
+
+			if (RecipientId != NullId) {
+				if (!AllPlayers.existskey(RecipientId)) break;
+				Recipient = AllPlayers[RecipientId];
+			}
+
+			if (Recipient != Null) SendTranslated(Recipient, MessageBody);
+			else SendTranslated(MessageBody);
 		}
 	}
 }

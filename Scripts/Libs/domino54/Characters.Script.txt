@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2017-11-29            //
+//  script version: 2017-12-15            //
 // -------------------------------------- //
 
-#Const Version		"2017-11-29"
+#Const Version		"2017-12-15"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
@@ -483,6 +483,7 @@ declare Label_CurCharacterDesc		<=> (Page.GetFirstChild("Label_CurCharacterDesc"
 declare Quad_CurCharacterDesc		<=> (Page.GetFirstChild("Quad_CurCharacterDesc") as CMlQuad);
 
 declare Frame_SpecialAbilityBox		<=> (Page.GetFirstChild("Frame_SpecialAbilityBox") as CMlFrame);
+declare Label_SpecialAbilityHeader	<=> (Page.GetFirstChild("Label_SpecialAbilityHeader") as CMlLabel);
 declare Label_SpecialAbilityName	<=> (Page.GetFirstChild("Label_SpecialAbilityName") as CMlLabel);
 declare Label_SpecialAbilityDesc	<=> (Page.GetFirstChild("Label_SpecialAbilityDesc") as CMlLabel);
 declare Quad_SpecialAbilityIcon		<=> (Page.GetFirstChild("Quad_SpecialAbilityIcon") as CMlQuad);
@@ -566,7 +567,7 @@ ClientUI.AltMenuNoCustomScores = False;
 ClientUI.UISequence = CUIConfig::EUISequence::None;
 
 /// Translations
-Translate("Label_SpecialAbilityHeader", "Special ability");
+Label_SpecialAbilityHeader.Value = ReplaceChars(Translate("Special ability"));
 Translate("Label_CurCharProsAndCons", "Pros & Cons");
 Translate("Label_CurCharWeapons", "Weapons");
 
@@ -659,6 +660,7 @@ foreach (Event in PendingEvents) {
 if (Bindings_Listener("LibCharacters_Open", "M")) {
 	if (Net_LibCharacters_DisplayMode != {{{C_LibCharacters_DisplayModeManual}}}) continue;
 	UserSettingWindowVisible = !UserSettingWindowVisible;
+	PrevSwitchCharNote = "";
 }
 
 // ---------------------------------- //
@@ -684,7 +686,7 @@ if (Label_SwitchCharNote.Visible) {
 	// Update window title text
 	if (PrevSwitchCharNote != Net_LibCharacters_SwitchCharNote) {
 		PrevSwitchCharNote = Net_LibCharacters_SwitchCharNote;
-		Label_SwitchCharNote.Value = TL::ToUpperCase(Translate(PrevSwitchCharNote));
+		Label_SwitchCharNote.Value = ReplaceChars(TL::ToUpperCase(Translate([PrevSwitchCharNote, Bindings_GetKey("LibCharacters_Open", "M")])));
 	}
 }
 
@@ -987,7 +989,7 @@ if (UpdateCharacterPreview) {
 	// Character name
 	declare CurCharacterName = "Unknown character";
 	if (G_LibCharacters_CharactersNames.existskey(CharId)) CurCharacterName = G_LibCharacters_CharactersNames[CharId];
-	Label_CurCharacterName.Value = Translate(CurCharacterName);
+	Label_CurCharacterName.Value = ReplaceChars(Translate(CurCharacterName));
 
 	// ---------------------------------- //
 	// Character image
@@ -1016,7 +1018,7 @@ if (UpdateCharacterPreview) {
 	Frame_SpecialAbilityBox.Visible = G_LibCharacters_AbilityName.existskey(CharId);
 	if (Frame_SpecialAbilityBox.Visible) {
 		Frame_SpecialAbilityBox.RelativePosition_V3.Y = -ColHeightMiddle;
-		Label_SpecialAbilityName.Value = Translate(G_LibCharacters_AbilityName[CharId]);
+		Label_SpecialAbilityName.Value = ReplaceChars(Translate(G_LibCharacters_AbilityName[CharId]));
 
 		// Ability icon
 		declare AbilityIcon = "";
@@ -1101,7 +1103,7 @@ if (UpdateCharacterPreview) {
 			// Statictic name
 			declare CurStatName = "Unknown attibute";
 			if (G_LibCharacters_StatsNames.existskey(StatId)) CurStatName = G_LibCharacters_StatsNames[StatId];
-			Label_CharStatisticName.Value = Translate(CurStatName);
+			Label_CharStatisticName.Value = ReplaceChars(Translate(CurStatName));
 
 			// ---------------------------------- //
 			// Statictic value gauge
@@ -1195,7 +1197,7 @@ if (UpdateCharacterPreview) {
 }
 ***
 
-{{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness", "HsvToRgb", "ComputeWidth"])}}}
+{{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness", "HsvToRgb", "ComputeWidth", "ReplaceChars"])}}}
 {{{Translations::InjectInManialink(RequiredTranslations)}}}
 {{{Bindings::Functions()}}}
 
@@ -1762,11 +1764,11 @@ Void Load() {
 	switchtype (This) {
 		case CSmMode : {
 			SetWindowTitle("Choose your character");
-			SetCharSwitchNote("Press 'M' to change character");
+			SetCharSwitchNote("Press '%1' to change character");
 		}
 		case CTmMode : {
 			SetWindowTitle("Choose your vehicle");
-			SetCharSwitchNote("Press 'M' to change vehicle");
+			SetCharSwitchNote("Press '%1' to change vehicle");
 		}
 	}
 

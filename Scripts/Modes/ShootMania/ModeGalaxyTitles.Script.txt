@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-09-07            //
+//  script version: 2017-12-15            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-09-07"
+#Const GTVersion	"2017-12-15"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -17,13 +17,14 @@
 #Include "Libs/Nadeo/ScoresTable2.Script.txt" as ST2
 #Include "Libs/Nadeo/ShootMania/WarmUp3.Script.txt" as WarmUp
 // Custom libraries
+#Include "Libs/domino54/AltTabs.Script.txt" as AltTabs
 #Include "Libs/domino54/Blacklist.Script.txt" as Blacklist
 #Include "Libs/domino54/Characters.Script.txt" as Characters
+#Include "Libs/domino54/Chat.Script.txt" as Chat
 #Include "Libs/domino54/CupAdmin.Script.txt" as CupAdmin
 #Include "Libs/domino54/CustomNames.Script.txt" as Names
 #Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
-#Include "Libs/domino54/GTST.Script.txt" as GTST
 #Include "Libs/domino54/Killfeed.Script.txt" as Killfeed
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/MapSelection.Script.txt" as MapSelection
@@ -58,6 +59,7 @@
 #Setting S_MaximumNbReplies		3		as _("Max. amount of Replies held")
 #Setting S_ObjectsRespawnTime	15		as _("Items respawn time (0 = don't spawn)")
 #Setting S_ToadsRespawnTime		60		as _("Toads respawn time (0 = don't spawn)")
+#Setting S_UseCustomChat		False	as _("Enable custom chat")
 #Setting S_ToadsSpawnRatio		.5		as "<hidden>" //_("Percentage amount of Toads to spawn on landmarks")
 #Setting S_WeaponsDropLifetime	0		as "<hidden>" ///< Duration before bropped weapons reappear on landmarks
 #Setting S_RespawnTime			3000	as "<hidden>" ///< Time before respawn
@@ -70,7 +72,7 @@
 #Setting S_WebhookURL			""		as "<hidden>" ///< URL of the webhook to send notifications
 #Setting S_AutoManageAFK		True
 
-#Setting S_ScriptEnvironment /* "production" */ "development"
+#Setting S_ScriptEnvironment "production"
 
 /// Competition settings
 #Setting S_AdminEnableCupMode		False	as "<hidden>"
@@ -143,8 +145,8 @@ declare Boolean GT_AutoManageOnObjectTouch;	///< Automatically manage OnPlayerTo
 declare Boolean GT_AutoRespawnOnCharChange;	///< Automatically respawn players changing their character
 declare Boolean GT_DisableOffZoneDamage;	///< Disable OffZone eliminations (Tornado may stil leliminate players)
 declare Boolean GT_DisableTornadoDamage;	///< Disable Tornado eliminations (only if OffZone is disabled)
-declare Real G_NearMissMaxDistLaser;		///< Maximum miss distance using Laser weapon.
-declare Real G_NearMissMaxDistRocket;		///< Maximum miss distance using Rocket weapon.
+declare Real GT_NearMissMaxDistLaser;		///< Maximum miss distance using Laser weapon.
+declare Real GT_NearMissMaxDistRocket;		///< Maximum miss distance using Rocket weapon.
 declare Text[] GT_KillfeedTranslations;		///< Translations to be loaded with the Killfeed library
 declare Text GT_CharactersDataFileURL;		///< URL to the file containing data of characters to load.
 
@@ -156,8 +158,10 @@ declare Text GT_CharactersDataFileURL;		///< URL to the file containing data of 
 Log::RegisterScript(GTScriptName, GTVersion);
 Log::RegisterScript(WarmUp::GetScriptName(), WarmUp::GetScriptVersion());
 Log::RegisterScript(Scores::GetScriptName(), Scores::GetScriptVersion());
+Log::RegisterScript(AltTabs::GetScriptName(), AltTabs::GetScriptVersion());
 Log::RegisterScript(Blacklist::GetScriptName(), Blacklist::GetScriptVersion());
 Log::RegisterScript(Characters::GetScriptName(), Characters::GetScriptVersion());
+Log::RegisterScript(Chat::GetScriptName(), Chat::GetScriptVersion());
 Log::RegisterScript(CupAdmin::GetScriptName(), CupAdmin::GetScriptVersion());
 Log::RegisterScript(FakeUsers::GetScriptName(), FakeUsers::GetScriptVersion());
 Log::RegisterScript(FancyMessages::GetScriptName(), FancyMessages::GetScriptVersion());
@@ -220,7 +224,7 @@ ST2::DestroyCol("LibST_Tags");
 // Custom
 TopScores::AddCategory("Hit", "Most damage", "", 1., "", 2.25, 80.);
 TopScores::AddCategory("Support", "Best Support", "", 1., "", 2.25, 70.);
-TopScores::SetBackground("file://Media/Manialinks/ShootMania/Common/topsBg.dds", <182., 182.>, <0., 12.>);
+TopScores::SetBackground("file://Media/Manialinks/ShootMania/Common/topsBg.dds", <182., 182.>, <0., 12.5>);
 TopScores::SetFont("Eurostile", "Eurostile_Bold");
 TopScores::SetFormat(2, 1);
 Names::InitST2();
@@ -258,8 +262,8 @@ GT_AutoManageOnNearMiss = True;
 GT_AutoManageOnRespawn = True;
 GT_AutoManageOnObjectTouch = True;
 GT_AutoRespawnOnCharChange = True;
-G_NearMissMaxDistLaser = 1.;
-G_NearMissMaxDistRocket = 0.;
+GT_NearMissMaxDistLaser = 1.;
+GT_NearMissMaxDistRocket = 0.;
 GT_CharactersDataFileURL = C_DefaultCharactersURL;
 ***
 
@@ -274,6 +278,8 @@ PauseMenu::SetButtonIcon("LibPM_SaveReplay", C_ImgBase^"Icons/Recording.png");
 PauseMenu::SetButtonIcon("LibPM_ChangeTeam", C_ImgBase^"Icons/Versus.png");
 PauseMenu::SetButtonIcon("LibPM_ManageServer", C_ImgBase^"Icons/Server.png");
 PauseMenu::SetButtonIcon("LibPM_Advanced", C_ImgBase^"Icons/AdvancedSettings.png");
+PauseMenu::SetButtonIcon("LibPM_TitleSettings", C_ImgBase^"Icons/AdvancedSettings.png");
+PauseMenu::SetButtonLabel("LibPM_TitleSettings", "Galaxy settings");
 
 // Storage Music Player button
 PauseMenu::CreateButton("GT_StoragePlayer", "Storage Player", C_ImgBase^"Icons/Headphones.png", 6.);
@@ -307,7 +313,7 @@ OpenLink("", CMlScript::LinkType::ExternalBrowser);
 
 PauseMenu::SetButtonVisibility("GT_CharSelection", False);
 PauseMenu::SetButtonVisibility("GT_LeaveFeedback", False);
-//PauseMenu::SetButtonVisibility("LibPM_Advanced", False);
+PauseMenu::SetButtonVisibility("LibPM_Advanced", False);
 ***
 
 // ---------------------------------- //
@@ -327,7 +333,7 @@ UseSameWallJump = True; ///< Enable multiple wall-jumps.
 
 // ---------------------------------- //
 // Download translations
-Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
+Translations::Load([C_OfflineTranslationsURL/*, C_OnlineTranslationsURL*/]);
 while (!Translations::LoadingLoop()) MB_Yield();
 
 // ---------------------------------- //
@@ -367,7 +373,8 @@ Markers::Load();
 
 // ---------------------------------- //
 // Pause menu
-PauseMenu::Load();
+PauseMenu::Load("file://Media/Settings/Galaxy.xml");
+while (PauseMenu::LoadingLoop()) MB_Yield();
 +++GalaxyTitles_PauseMenu+++
 PauseMenu::Build("Eurostile");
 
@@ -376,6 +383,9 @@ UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVis
 UIManager.UIAll.NoticesFilter_LevelToShowAsBigMessage = CUIConfig::ENoticeLevel::MatchWarning;
 // UIManager.UIAll.NoticesFilter_HidePlayerInfo = True;
 // UIManager.UIAll.NoticesFilter_HidePlayerWarning = True;
+
+// Cuatom chat
+Chat::Load("Eurostile");
 
 // Load the Storage Music Player
 StoragePlayer::Load(C_ImgBase, "Eurostile", "Eurostile_Bold");
@@ -440,6 +450,8 @@ Killfeed::Build();
 // Create the scores table
 ST2::Load();
 TopScores::Load();
+AltTabs::Load();
+AltTabs::SetFont("Eurostile");
 ST2::SetStyle("LibST_SMBaseSolo");
 ST2::SetStyle("LibST_SMBasePoints");
 +++ScoresTable+++
@@ -569,6 +581,7 @@ if (!UsePvPCollisions) GT_NoCollisionsEndTime = StartTime + C_NoCollisionsDurati
 ***
 Blacklist::Loop(S_CustomBlacklistURL);
 Characters::Loop();
+Chat::Loop(S_UseCustomChat);
 CupAdmin::Loop(S_AdminEnableCupMode, S_AdminPauseCompetition, S_AdminCupModeNbMaps, S_AdminCupName);
 FakeUsers::Loop(S_NbFakeUsers);
 FancyMessages::Loop();
@@ -1131,8 +1144,8 @@ foreach (Event in PendingEvents) {
 			GT_AutoManageOnNearMiss && !Event.Shooter.IsBot && Event.Victim != Null &&
 			(Event.Shooter.CurrentClan == 0 || Event.Shooter.CurrentClan != Event.Victim.CurrentClan)
 		) {
-			if (Event.WeaponNum == 1 && Event.MissDist >= G_NearMissMaxDistLaser) continue;
-			if (Event.WeaponNum == 2 && Event.MissDist >= G_NearMissMaxDistRocket) continue;
+			if (Event.WeaponNum == 1 && Event.MissDist >= GT_NearMissMaxDistLaser) continue;
+			if (Event.WeaponNum == 2 && Event.MissDist >= GT_NearMissMaxDistRocket) continue;
 			Interfancy::DisplayNearMiss(Event.Shooter, Event.MissDist);
 		}
 		Statistics::OnNearMiss(Event);

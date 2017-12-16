@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PURSUIT MODE BASE by domino54         //
-//  script version: 2017-10-09            //
+//  script version: 2017-12-15            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
 #Const CompatibleMapTypes	"PursuitArena"
-#Const PUR_Version		"2017-10-09"
+#Const PUR_Version		"2017-12-15"
 #Const PUR_ScriptName	"Modes/TrackMania/ModePursuit.Script.txt"
 
 #Include "MathLib" as ML
@@ -28,6 +28,7 @@
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
 #Include "Libs/domino54/PauseMenu2.Script.txt" as PauseMenu
 #Include "Libs/domino54/ServerAuth.Script.txt" as ServerAuth
+#Include "Libs/domino54/ServerManager.Script.txt" as ServerManager
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
 #Include "Libs/domino54/Translations.Script.txt" as Translations
@@ -42,7 +43,7 @@
 // ---------------------------------- //
 #Setting S_EnableCharSelection	True	as _("Allow players to choose their vehicle")
 #Setting S_CharSelectionTime	10		as _("Vehicle selection display duration (s)")
-#Setting S_AllowLagoonCar		True	as _("Allow Lagoon Car on environments other than Lagoon")
+#Setting S_AllowLagoonCar		False	as _("Allow Lagoon Car on environments other than Lagoon")
 #Setting S_EnableCollisions		True	as _("Enable collisions")
 #Setting S_ResetScoreLeavers	True	as _("Reset scores of players that left the game at the match end")
 #Setting S_UseLegacyHitbox		False	as _("Use old hit detection system")
@@ -84,8 +85,8 @@
 #Const C_SoundsBaseVolume		-5.
 
 /// Server authorization
-#Const C_ServerAuthListURL	"" ///< HIDDEN FROM PUBLIC
-#Const C_ServerAuthPassword	"" ///< HIDDEN FROM PUBLIC
+#Const C_ServerAuthListURL	""
+#Const C_ServerAuthPassword	""
 
 // ---------------------------------- //
 // Extends
@@ -110,6 +111,7 @@ Log::RegisterScript(OffZone::GetScriptName(), OffZone::GetScriptVersion());
 Log::RegisterScript(PauseMenu::GetScriptName(), PauseMenu::GetScriptVersion());
 Log::RegisterScript(PursuitUI::GetScriptName(), PursuitUI::GetScriptVersion());
 Log::RegisterScript(ServerAuth::GetScriptName(), ServerAuth::GetScriptVersion());
+Log::RegisterScript(ServerManager::GetScriptName(), ServerManager::GetScriptVersion());
 Log::RegisterScript(StoragePlayer::GetScriptName(), StoragePlayer::GetScriptVersion());
 Log::RegisterScript(TopScores::GetScriptName(), TopScores::GetScriptVersion());
 Log::RegisterScript(Translations::GetScriptName(), Translations::GetScriptVersion());
@@ -172,7 +174,15 @@ PauseMenu::SetButtonIcon("LibPM_SaveReplay", C_ImgBase^"Icons/Recording.png");
 PauseMenu::SetButtonIcon("LibPM_ChangeTeam", C_ImgBase^"Icons/Versus.png");
 PauseMenu::SetButtonIcon("LibPM_ManageServer", C_ImgBase^"Icons/Server.png");
 PauseMenu::SetButtonIcon("LibPM_TitleSettings", C_ImgBase^"Icons/AdvancedSettings.png");
-PauseMenu::SetButtonLabel("LibPM_TitleSettings", "Pursuit settings");
+PauseMenu::SetButtonLabel("LibPM_TitleSettings", "Pursuit Settings");
+
+// Custom server manager window
+PauseMenu::CreateButton("PUR_ServerManager", "Players List (ALPHA)", C_ImgBase^"Icons/MatesHealed.png", 4.5);
+PauseMenu::SetButtonScript("PUR_ServerManager", """
+CloseInGameMenu(::EInGameMenuResult::Resume);
+declare Boolean LibServerManager_ToggleShowWindow for This;
+LibServerManager_ToggleShowWindow = True;
+""");
 
 // Storage Music Player button
 PauseMenu::CreateButton("PUR_StoragePlayer", "Storage Player", C_ImgBase^"Icons/Headphones.png", 6.);
@@ -224,7 +234,7 @@ Models::Load();
 
 // ---------------------------------- //
 // Download translations
-Translations::Load([C_OfflineTranslationsURL, C_OnlineTranslationsURL]);
+Translations::Load([C_OfflineTranslationsURL/*, C_OnlineTranslationsURL*/]);
 while (!Translations::LoadingLoop()) MB_Yield();
 
 // ---------------------------------- //
@@ -236,6 +246,7 @@ UIManager.UIAll.OverlayHideCheckPointTime = True;
 UIManager.UIAll.OverlayHideRoundScores = True;
 UIManager.UIAll.OverlayHidePosition = True;
 UIManager.UIAll.OverlayHideChrono = True;
+UiDisableHelpMessage = True;
 
 // ---------------------------------- //
 // Load characters
@@ -247,6 +258,7 @@ Characters::Build(C_InterfaceFont_Medium, C_InterfaceFont_Bold);
 // Create custom interfaces
 PursuitUI::Load(["Countdown", "Speedometer", "Background", "SafeTime", "RespawnTimer", "SpecInfo", "321Go"]);
 PursuitUI::SetSafeTimeDuration(C_NoInteractionDuration);
+//PursuitUI::SetModuleVisibility("321Go", !S_UseInstantRespawn);
 MapSelection::Load(C_InterfaceFont_Medium, C_InterfaceFont_Bold);
 
 // Custom teams
@@ -258,6 +270,8 @@ PauseMenu::Load("file://Media/Settings/Pursuit.xml");
 while (PauseMenu::LoadingLoop()) MB_Yield();
 +++Pursuit_PauseMenu+++
 PauseMenu::Build(C_InterfaceFont_Medium);
+
+ServerManager::Load();
 
 // ---------------------------------- //
 // Load custom tabs
@@ -323,20 +337,10 @@ FancyMessages::ResetData();
 MapSelection::StartMap();
 PUR_DisableTimeLimit();
 
-// ---------------------------------- //
-// Init characters menu
 declare PrevEnableCharSelection = S_EnableCharSelection;
-declare ForcedStadiumCar = Map.CollectionName == "Stadium";
-declare LagoonCarAllowed = S_AllowLagoonCar || Map.CollectionName == "Lagoon";
-declare PrevAllowLagoonCar = S_AllowLagoonCar;
-
-Characters::SetCharAvailable(1, !ForcedStadiumCar);
-Characters::SetCharAvailable(3, !ForcedStadiumCar);
-Characters::SetCharAvailable(4, !ForcedStadiumCar && LagoonCarAllowed);
-
-PauseMenu::SetButtonVisibility("PUR_CharSelection", S_EnableCharSelection);
-if (S_EnableCharSelection) Characters::Manual();
-else Characters::Hide();
+declare PrevAllowLagoonCar = !S_AllowLagoonCar;
+declare ForcedStadiumCar = False;
+declare LagoonCarAllowed = False;
 
 // ---------------------------------- //
 // Wait for server to be authorized
@@ -344,6 +348,22 @@ if (!ServerAuth::IsAuthorized()) {
 	ServerAuth::CheckAuth(S_ServerAuthPassword);
 	while (ServerAuth::AuthLoop(S_ServerAuthPassword)) MB_Yield();
 }
+***
+
+***Match_StartMap***
+***
+// ---------------------------------- //
+// Init characters menu
+ForcedStadiumCar = Map.CollectionName == "Stadium";
+LagoonCarAllowed = S_AllowLagoonCar || Map.CollectionName == "Lagoon";
+
+Characters::SetCharAvailable(0, !ForcedStadiumCar);
+Characters::SetCharAvailable(2, !ForcedStadiumCar);
+Characters::SetCharAvailable(3, !ForcedStadiumCar && LagoonCarAllowed);
+
+PauseMenu::SetButtonVisibility("PUR_CharSelection", S_EnableCharSelection);
+if (S_EnableCharSelection) Characters::Manual();
+else Characters::Hide();
 ***
 
 // ---------------------------------- //
@@ -369,6 +389,7 @@ FakeUsers::UpdateAmount(S_NbFakeUsers);
 Killfeed::Loop();
 Message::Loop();
 PursuitUI::Loop();
+ServerManager::Loop();
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
 Webhook::Loop(S_WebhookURL);
 WebLayers::Update(S_CustomLayersURLs);
@@ -394,7 +415,7 @@ if (PrevEnableCharSelection != S_EnableCharSelection) {
 if (PrevAllowLagoonCar != S_AllowLagoonCar) {
 	PrevAllowLagoonCar = S_AllowLagoonCar;
 	LagoonCarAllowed = S_AllowLagoonCar || Map.CollectionName == "Lagoon";
-	Characters::SetCharAvailable(4, !ForcedStadiumCar && LagoonCarAllowed);
+	Characters::SetCharAvailable(3, !ForcedStadiumCar && LagoonCarAllowed);
 }
 ***
 
@@ -675,10 +696,10 @@ Void PUR_SpawnPlayer(CTmPlayer _Player) {
 	Characters::SendPlayerCharInfo(_Player, PlayerCharacterId);
 
 	switch (PlayerCharacterId) {
-		case 1 : Models::SetCanyonCar(_Player);
-		case 2 : Models::SetStadiumCar(_Player);
-		case 3 : Models::SetValleyCar(_Player);
-		case 4 : Models::SetLagoonCar(_Player);
+		case 0 : Models::SetCanyonCar(_Player);
+		case 1 : Models::SetStadiumCar(_Player);
+		case 2 : Models::SetValleyCar(_Player);
+		case 3 : Models::SetLagoonCar(_Player);
 		default : Models::SetDefault(_Player);
 	}
 
@@ -687,7 +708,7 @@ Void PUR_SpawnPlayer(CTmPlayer _Player) {
 	declare EngineMaxRPM = 10000.;
 	switch (PlayerCharacterId) {
 		case 0 : if (MapPlayerModelName == "StadiumCar") EngineMaxRPM = 11000.;
-		case 2 : EngineMaxRPM = 11000.;
+		case 1 : EngineMaxRPM = 11000.;
 		default : EngineMaxRPM = 10000.;
 	}
 	PursuitUI::SetPlayerEngineMaxRPM(_Player, EngineMaxRPM);
@@ -701,10 +722,11 @@ Void PUR_SpawnPlayer(CTmPlayer _Player) {
 // ---------------------------------- //
 /** Play a sound for everyone.
  *
+ *	@param	_Player		Player to play the sound (everyone if null).
  *	@param	_Sound		Name of the sound.
  *	@param	_Variant	Variant of the sound.
  */
-Void PUR_PlaySound(CUIConfig::EUISound _Sound, Integer _Variant) {
+Void PUR_PlaySound(CTmPlayer _Player, CUIConfig::EUISound _Sound, Integer _Variant) {
 	declare SoundName = "";
 	switch (_Sound) {
 		case CUIConfig::EUISound::Default		: SoundName = "UIPhaseChange.wav";
@@ -712,9 +734,36 @@ Void PUR_PlaySound(CUIConfig::EUISound _Sound, Integer _Variant) {
 		case CUIConfig::EUISound::StartRound	: SoundName = "UISound_StartRound.wav";
 		case CUIConfig::EUISound::VictoryPoint	: SoundName = "UISound_Victory.wav";
 		case CUIConfig::EUISound::TimeOut		: SoundName = "UITimeOut.wav";
-		case CUIConfig::EUISound::TieBreakPoint	: SoundName = "UISound_Break01.wav";
-	}
+		case CUIConfig::EUISound::PhaseChange	: switch (_Variant) {
+			case 1 : SoundName = "UITakeTheLead.wav";
+			default : SoundName = "UIPhaseChange.wav";
+		}
+		case CUIConfig::EUISound::TieBreakPoint	: switch (_Variant) {
+			case 1 : SoundName = "UISound_Break02.wav";
+			case 2 : SoundName = "UISound_Break03.wav";
+			case 3 : SoundName = "UISound_Break04.wav";
+			case 4 : SoundName = "UISound_Break05.wav";
+			default : SoundName = "UISound_Break01.wav";
 
+		}
+		case CUIConfig::EUISound::Checkpoint	: switch (_Variant) {
+			case 1 : SoundName = "UICheckPointLate.wav";
+			default : SoundName = "UICheckPointAhead.wav";
+		}
+		case CUIConfig::EUISound::ScoreProgress	: switch (_Variant) {
+			case 1 : SoundName = "UIEvent_ScoreProgress2.wav";
+			case 2 : SoundName = "UIEvent_ScoreProgress3.wav";
+			case 3 : SoundName = "UIEvent_ScoreProgress4.wav";
+			default : SoundName = "UIEvent_ScoreProgress1.wav";
+		}
+	}
 	if (SoundName == "") return;
-	Sound::PlaySound(C_ImgBase^"Sounds/"^SoundName, C_SoundsBaseVolume);
+	SoundName = C_ImgBase^"Sounds/"^SoundName;
+
+	if (_Player != Null) Sound::PlaySound(SoundName, C_SoundsBaseVolume, _Player);
+	else Sound::PlaySound(SoundName, C_SoundsBaseVolume);
+}
+
+Void PUR_PlaySound(CUIConfig::EUISound _Sound, Integer _Variant) {
+	PUR_PlaySound(Null, _Sound, _Variant);
 }

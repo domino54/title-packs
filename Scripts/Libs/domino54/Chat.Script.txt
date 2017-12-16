@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY CHAT by domino54              //
-//  script version: 2017-11-26            //
+//  script version: 2017-12-15            //
 // -------------------------------------- //
 
 /**
@@ -9,13 +9,14 @@
  *	and allows to send longer messages.
  */
 
-#Const Version		"2017-11-26"
+#Const Version		"2017-12-15"
 #Const ScriptName	"Libs/domino54/Chat.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/domino54/Bindings.Script.txt" as Bindings
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
 #Include "Libs/domino54/ServerManager.Script.txt" as ServerManager
 #Include "Libs/domino54/Translations.Script.txt" as Translations
@@ -30,8 +31,11 @@
 #Const C_LibChat_MaxCachedCommands	10		///< Amount of cached chat commands.
 #Const C_LibChat_ChatTextSize		1.5		///< Size of the chat message text.
 #Const C_LibChat_ChatLineHeight		4.		///< Height of the chat line.
+#Const C_LibChat_EmojisSpacing		0.		///< Space between emoji and text.
 
 // Messages formatting
+#Const C_LibChat_ChatLineColor_Default	<1., 1., 1.>
+#Const C_LibChat_ChatLineColor_FromUser	<1., 1., 0.>
 #Const C_LibChat_MessageFormat_Error	"$F00%1"
 #Const C_LibChat_MessageFormat_Global	"$FF0[$<%1$>] %2"
 #Const C_LibChat_MessageFormat_Global2	"$FF0%2"
@@ -48,13 +52,11 @@
 	"n1" => "Nice one", "ns" => "Nice shoot", "nt" => "Nice time", "ty" => "Thank you",
 	"gl" => "Good luck", "hf" => "Have fun", "glhf" => "Goold luck and have fun",
 	"wp" => "Well played", "ggwp" => "Good game, well played",
-	"gr8" => "Great", "w8" => "Wait", "lol" => "Loo0ool", "lool" => "Looo00oool",
-	"gu" => "Guerried", "grt" => "Guerritos", "flo" => "Florenziusted",
-	"nu" => "Nurpsen", "owz" => "Owzom", "wow" => "WOOW"
+	"gr8" => "Great", "w8" => "Wait", "flo" => "Florenziusted"
 ]
 #Const C_LibChat_PremadeWithRecipient [
 	"hi", "bb", "wb", "flo", "gg", "gj", "n1", "ns", "nt", "ty", "lol", "lool",
-	"gl", "hf", "glhf", "wp", "ggwp", "gu", "gr8", "w8", "owz", "wow"
+	"gl", "hf", "glhf", "wp", "ggwp", "gr8", "w8", "flo"
 ]
 
 // Badwords to filter
@@ -89,24 +91,80 @@ declare Text[][Integer] G_LibChat_CommandParams;
 Text Private_CreateManialinkChat() {
 	declare ChatMessagesLabels = "";
 	for (I, 0, C_LibChat_MaxNbMessagesLarge+1)
-		ChatMessagesLabels ^= "<label pos='0 "^I*C_LibChat_ChatLineHeight^"' size='140' class='Message' id='Label_ChatMessage#"^I^"' />";
+		ChatMessagesLabels ^= "<frameinstance pos='0 "^I*C_LibChat_ChatLineHeight^"' modelid='FrameModel_ChatLine' id='Frame_ChatMessage#"^I^"' hidden='1' />";
+
+	declare ChatMessageLine = "";
+	for (I, 0, 4) {
+		ChatMessageLine ^= "<label id='Label_LineLabel#"^I^"' class='Message' size='90' />";
+		ChatMessageLine ^= "<quad id='Quad_LineEmoji#"^I^"' class='Emoji' ScriptEvents='1' />";
+	}
+
+	declare PickerEmojis = "";
+	for (I, 0, 47) {
+		declare X = I % 8;
+		declare Y = I / 8;
+		PickerEmojis ^= "<quad pos='"^X * 6^" "^Y * -6^"' size='4.5 4.5' class='Picker' id='Quad_PickerMoji#"^I^"' ScriptEvents='1' />";
+	}
 
 	declare Font = TL::MLEncode(G_LibChat_InterfaceFont);
 	return """
 <manialink version="3" name="{{{C_LibChat_InterfaceLayerId}}}">
 <stylesheet>
 	<style class="Message" valign="center2" textsize="{{{C_LibChat_ChatTextSize}}}" textemboss="1" textcolor="FFF" textfont="{{{Font}}}" />
+	<style class="Emoji" halign="center" valign="center2" size="3.75 3.75" keepratio="Fit" />
 	<style id="Entry_ChatInput" valign="center2" textsize="{{{C_LibChat_ChatTextSize}}}" textemboss="1" textcolor="FFF" textfont="{{{Font}}}" />
 	<style id="Label_ChatKeyHint" style="TextButtonNav" valign="center2" textsize=".375" textcolor="FFF" opacity=".5" />
 </stylesheet>
 
+<frame id="Frame_EmojiTooltip" z-index="11" hidden="1">
+	<label halign="center" valign="center2" textsize="1" textcolor="FFF" textfont="{{{Font}}}" id="Label_EmojiTooltip" />
+	<quad size="0 5" halign="center" valign="center" bgcolor="000" opacity=".875" id="Quad_EmojiTooltip" />
+</frame>
+
+<frame id="Frame_PlayerProfile" z-index="11" hidden="1">
+	<quad pos=".5 9.5" size="9 9" id="Quad_PlayerAvatar" />
+	<label pos="11 5" class="Message" textsize="2" id="Label_PlayerNickname" />
+
+	<quad pos="0 10" size="2.5 10" halign="right" id="Quad_PlayerEchelon" />
+	<quad pos="0 10" size="10 10" bgcolor="000" opacity=".875" id="Quad_PlayerProfileBg" />
+</frame>
+
 <frame id="Frame_ChatWindow" pos="-160 -90" z-index="10">
-	<frame pos="1 {{{C_LibChat_ChatLineHeight*2-1.5}}}">
+	<frame id="Frame_EmojiPicker" pos="1 50" hidden="1">
+		<frame>
+			<label pos="3 -3" halign="center" valign="center2" textsize="1" textcolor="FFF" rot="180" text="►" id="Label_EmojiPickerPrev" />
+			<quad size="6 6" bgcolorfocus="FFF" opacity=".125" id="Quad_EmojiPickerPrev" ScriptEvents="1" />
+		</frame>
+		<frame pos="46">
+			<label pos="3 -3" halign="center" valign="center2" textsize="1" textcolor="FFF" text="►" id="Label_EmojiPickerNext" />
+			<quad size="6 6" bgcolorfocus="FFF" opacity=".125" id="Quad_EmojiPickerNext" ScriptEvents="1" />
+		</frame>
+
+		<label pos="26 -3" size="32" halign="center" valign="center2" textsize="1" textcolor="FFF" textfont="{{{Font}}}" id="Label_PickerEmojiName" />
+		<quad size="52 6" bgcolor="000" opacity=".5" />
+
+		<frame pos="3 -8.5">{{{PickerEmojis}}}</frame>
+
+		<quad size="52 45.5" bgcolor="000" opacity=".625" ScriptEvents="1" />
+		<quad size="52 45.5" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+	</frame>
+
+	<frame pos="1 {{{C_LibChat_ChatLineHeight*2-1.5}}}" id="Frame_ChatMessagesBox">
+		<framemodel id="FrameModel_ChatLine">
+			<frame id="Frame_MessageSender" hidden="1">
+				<label size="32" class="Message" id="Label_SenderName" />
+				<label halign="center" valign="center2" textsize=".5" textcolor="FFF" opacity=".5" text="⏵" id="Label_SenderArrow" />
+				<quad pos="-.5" size="0 {{{C_LibChat_ChatLineHeight}}}" valign="center" bgcolorfocus="000" opacity=".5" id="Quad_MessageSender" ScriptEvents="1" />
+			</frame>
+			{{{ChatMessageLine}}}
+		</framemodel>
 		<frame id="Frame_LabelsAnim">{{{ChatMessagesLabels}}}</frame>
 	</frame>
+
 	<frame pos="1 {{{C_LibChat_ChatLineHeight/2+.5}}}" z-index="1">
-		<entry size="100 {{{C_LibChat_ChatLineHeight-.5}}}" focusareacolor1="0004" focusareacolor2="0007" id="Entry_ChatInput" ScriptEvents="1" hidden="1" />
-		<label id="Label_ChatKeyHint" textfont="Eurostile_Bold" />
+		<entry pos="3" size="100 {{{C_LibChat_ChatLineHeight-.5}}}" focusareacolor1="0004" focusareacolor2="0007" id="Entry_ChatInput" ScriptEvents="1" hidden="1" />
+		<label pos="3" id="Label_ChatKeyHint" textfont="Eurostile_Bold" />
+		<quad pos="-.375" size="3 3" valign="center" image="file://Media/Emoji/emoji.png" opacity=".5" id="Quad_EmojiPickerToggle" ScriptEvents="1" />
 	</frame>
 </frame>
 <script><!--
@@ -116,6 +174,76 @@ Text Private_CreateManialinkChat() {
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
+
+#Const C_DefaultEmoji [
+	// Codes
+	":100:" => "file://Media/Emoji/hundred.png",
+	":angry:" => "file://Media/Emoji/angry.png",
+	":blush:" => "file://Media/Emoji/blush.png",
+	":clap:" => "file://Media/Emoji/clap.png",
+	":cry:" => "file://Media/Emoji/cry.png",
+	":fire:" => "file://Media/Emoji/fire.png",
+	":fist:" => "file://Media/Emoji/fist.png",
+	":frowning:" => "file://Media/Emoji/frowning.png",
+	":heart:" => "file://Media/Emoji/heart.png",
+	":heart_eyes:" => "file://Media/Emoji/heart_eyes.png",
+	":hundred:" => "file://Media/Emoji/hundred.png",
+	":joy:" => "file://Media/Emoji/joy.png",
+	":kissing_heart:" => "file://Media/Emoji/kiss.png",
+	":laughing:" => "file://Media/Emoji/laughing.png",
+	":nerd:" => "file://Media/Emoji/nerd.png",
+	":neutral_face:" => "file://Media/Emoji/neutral.png",
+	":ok:" => "file://Media/Emoji/ok.png",
+	":open_mouth:" => "file://Media/Emoji/open_mouth.png",
+	":poop:" => "file://Media/Emoji/poop.png",
+	":punch:" => "file://Media/Emoji/punch.png",
+	":rage:" => "file://Media/Emoji/rage.png",
+	":rolling_eyes:" => "file://Media/Emoji/rolling_eyes.png",
+	":scream:" => "file://Media/Emoji/scream.png",
+	":shrug:" => "file://Media/Emoji/shrug.png",
+	":slight_smile:" => "file://Media/Emoji/slight_smile.png",
+	":smile:" => "file://Media/Emoji/smile.png",
+	":smiley:" => "file://Media/Emoji/smiley.png",
+	":smirk:" => "file://Media/Emoji/smirk.png",
+	":sob:" => "file://Media/Emoji/sob.png",
+	":stuck_out_tongue:" => "file://Media/Emoji/stuck_out_tongue.png",
+	":thinking:" => "file://Media/Emoji/thinking.png",
+	":thumbsdown:" => "file://Media/Emoji/thumbsdown.png",
+	":thumbsup:" => "file://Media/Emoji/thumbsup.png",
+	":v:" => "file://Media/Emoji/v.png",
+	":wave:" => "file://Media/Emoji/wave.png",
+	":wink:" => "file://Media/Emoji/wink.png",
+	// Extras
+	":dommy:" => "file://Media/Emoji/dommy.png",
+	":facepalm:" => "file://Media/Emoji/facepalm.png",
+	":feelsbadman:" => "file://Media/Emoji/feelsbadman.png",
+	":hang:" => "file://Media/Emoji/hang.png",
+	":kappa:" => "file://Media/Emoji/kappa.png",
+	":kreygasm:" => "file://Media/Emoji/kreygasm.png",
+	":lul:" => "file://Media/Emoji/lul.png",
+	":miss:" => "file://Media/Emoji/miss.png",
+	":pogchamp:" => "file://Media/Emoji/pogchamp.png",
+	":seemsgood:" => "file://Media/Emoji/seemsgood.png",
+	":tomkek:" => "file://Media/Emoji/tomkek.png",
+	// ManiaPlanet
+	":mp:" => "Icons128x32_1|ManiaPlanet",
+	":lp:" => "Icons128x128_1|LadderPoints",
+	":planets:" => "ManiaPlanetLogos|IconPlanetsSmall",
+	// Standard
+	":)" => "file://Media/Emoji/smiley.png",
+	";)" => "file://Media/Emoji/wink.png",
+	":(" => "file://Media/Emoji/frowning.png",
+	":D" => "file://Media/Emoji/smile.png",
+	":P" => "file://Media/Emoji/stuck_out_tongue.png",
+	":o" => "file://Media/Emoji/open_mouth.png",
+	":O" => "file://Media/Emoji/open_mouth.png",
+	":|" => "file://Media/Emoji/neutral.png",
+	"xD" => "file://Media/Emoji/laughing.png",
+	"XD" => "file://Media/Emoji/laughing.png",
+	"<3" => "file://Media/Emoji/heart.png"
+]
+
+declare Text[Text] G_AvailableEmoji;
 
 // ---------------------------------- //
 // Main
@@ -128,15 +256,39 @@ declare Frame_ChatWindow <=> (Page.GetFirstChild("Frame_ChatWindow") as CMlFrame
 declare Frame_LabelsAnim <=> (Page.GetFirstChild("Frame_LabelsAnim") as CMlFrame);
 declare Entry_ChatInput <=> (Page.GetFirstChild("Entry_ChatInput") as CMlEntry);
 declare Label_ChatKeyHint <=> (Page.GetFirstChild("Label_ChatKeyHint") as CMlLabel);
+declare Frame_ChatMessagesBox <=> (Page.GetFirstChild("Frame_ChatMessagesBox") as CMlFrame);
 
-declare CMlLabel[] Label_ChatMessages;
+// Emoji picker
+declare Frame_EmojiPicker <=> (Page.GetFirstChild("Frame_EmojiPicker") as CMlFrame);
+declare Quad_EmojiPickerToggle <=> (Page.GetFirstChild("Quad_EmojiPickerToggle") as CMlQuad);
+declare Label_PickerEmojiName <=> (Page.GetFirstChild("Label_PickerEmojiName") as CMlLabel);
+declare Quad_EmojiPickerPrev <=> (Page.GetFirstChild("Quad_EmojiPickerPrev") as CMlQuad);
+declare Quad_EmojiPickerNext <=> (Page.GetFirstChild("Quad_EmojiPickerNext") as CMlQuad);
+declare Label_EmojiPickerPrev <=> (Page.GetFirstChild("Label_EmojiPickerPrev") as CMlLabel);
+declare Label_EmojiPickerNext <=> (Page.GetFirstChild("Label_EmojiPickerNext") as CMlLabel);
+
+declare CMlFrame[] Frame_ChatMessages;
 for (I, 0, {{{C_LibChat_MaxNbMessagesLarge+1}}})
-	Label_ChatMessages.add((Page.GetFirstChild("Label_ChatMessage#"^I) as CMlLabel));
+	Frame_ChatMessages.add((Page.GetFirstChild("Frame_ChatMessage#"^I) as CMlFrame));
+
+declare Frame_EmojiTooltip <=> (Page.GetFirstChild("Frame_EmojiTooltip") as CMlFrame);
+declare Label_EmojiTooltip <=> (Page.GetFirstChild("Label_EmojiTooltip") as CMlLabel);
+declare Quad_EmojiTooltip <=> (Page.GetFirstChild("Quad_EmojiTooltip") as CMlQuad);
+
+declare CMlQuad[] Quad_PickerMoji;
+for (I, 0, 47) Quad_PickerMoji.add((Page.GetFirstChild("Quad_PickerMoji#"^I) as CMlQuad));
+
+declare Frame_PlayerProfile <=> (Page.GetFirstChild("Frame_PlayerProfile") as CMlFrame);
+declare Quad_PlayerProfileBg <=> (Page.GetFirstChild("Quad_PlayerProfileBg") as CMlQuad);
+declare Quad_PlayerAvatar <=> (Page.GetFirstChild("Quad_PlayerAvatar") as CMlQuad);
+declare Quad_PlayerEchelon <=> (Page.GetFirstChild("Quad_PlayerEchelon") as CMlQuad);
+declare Label_PlayerNickname <=> (Page.GetFirstChild("Label_PlayerNickname") as CMlLabel);
 
 // ---------------------------------- //
 // Persistent settings
 declare persistent Text[] Persistent_LibServerManager_PrivateMutedUsers for LocalUser;
 declare persistent Integer Persistent_LibServerManager_PrivateMuteUpdate for LocalUser;
+declare persistent Persistent_LibChat_EnableEmojiParser for LocalUser = True;
 
 // ---------------------------------- //
 // Net variables
@@ -147,6 +299,7 @@ declare netread Text[Integer] Net_LibChat_UserChatMessages for InputPlayer;
 declare netread Text[Integer] Net_LibChat_UserChatSenders for InputPlayer;
 declare netread Integer Net_LibChat_GlobalLastMessage for Teams[0];
 declare netread Integer Net_LibChat_UserLastMessage for InputPlayer;
+declare netread Text[Text] Net_LibChat_ServerEmoji for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -157,11 +310,33 @@ declare IsFirstLaunch = True;
 declare UpdateTooltip = True;
 declare PrevMessageKey = -1;
 declare FormatLabels = True;
+declare UpdateProfileCard = "";
+
+declare MessagesList = Integer[];
+declare MessagesBody = Text[][Integer];
+declare MessagesSender = Text[Integer];
+
+declare UpdatePickerMoji = True;
+declare PickerMojiCurPage = 1;
+declare PickerMojiNbPages = 1;
+declare PickerEmojiURL = Text[];
+declare PickerEmojiName = Text[];
 
 // Update
 declare PrevGlobalLastMessage = -1;
 declare PrevUserLastMessage = -1;
 declare PrevMaxNbMessagesDisplayed = -1;
+declare PrevEnableEmojiParser = !Persistent_LibChat_EnableEmojiParser;
+
+G_AvailableEmoji = C_DefaultEmoji;
+foreach (Code => URL in Net_LibChat_ServerEmoji) G_AvailableEmoji[Code] = URL;
+
+foreach (Name => URL in G_AvailableEmoji.sortkey()) {
+	if (TL::Length(Name) < 3) continue;
+	if (PickerEmojiURL.exists(URL)) continue;
+	PickerEmojiURL.add(URL);
+	PickerEmojiName.add(Name);
+}
 ***
 
 // ---------------------------------- //
@@ -182,6 +357,116 @@ foreach (Event in PendingEvents) {
 			Entry_ChatInput.Hide();
 			SendCustomEvent("LibChat_MessageSent", [Entry_ChatInput.Value]);
 			Entry_ChatInput.Value = "";
+		}
+	}
+	// ---------------------------------- //
+	// Mouse over
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		// ---------------------------------- //
+		// Emoji name tooltip
+		if (Event.Control.HasClass("Emoji")) {
+			declare Text EmojiCode for Event.Control;
+
+			Frame_EmojiTooltip.Visible = EmojiCode != "";
+			if (!Frame_EmojiTooltip.Visible) continue;
+			Frame_EmojiTooltip.RelativePosition_V3 = Event.Control.AbsolutePosition_V3 + <0., 5.>;
+
+			Label_EmojiTooltip.Value = EmojiCode;
+			Quad_EmojiTooltip.Size.X = ComputeWidth(Label_EmojiTooltip) + 2.;
+		}
+
+		// Emoji picker toggle button
+		else if (Event.ControlId == "Quad_EmojiPickerToggle") {
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, 1, 0.);
+			(Event.Control as CMlQuad).Opacity = 1.;
+		}
+
+		// Emoji picker emoji
+		else if (Event.Control.HasClass("Picker")) {
+			declare Text EmojiCode for Event.Control;
+			Label_PickerEmojiName.Value = EmojiCode;
+		}
+
+		// ---------------------------------- //
+		// Message sender profile
+		else if (Event.ControlId == "Quad_MessageSender") {
+			declare Text UserLogin for Event.Control;
+			declare User <=> GetUser(UserLogin);
+
+			Frame_PlayerProfile.Visible = User != Null;
+			if (!Frame_PlayerProfile.Visible) continue;
+
+			UpdateProfileCard = UserLogin;
+			Frame_PlayerProfile.RelativePosition_V3 = Input.MousePos;
+		}
+	}
+	// ---------------------------------- //
+	// Mouse out
+	else if (Event.Type == CMlEvent::Type::MouseOut) {
+		// Hide emoji tooltip
+		if (Event.Control.HasClass("Emoji")) {
+			Frame_EmojiTooltip.Hide();
+		}
+
+		// Emoji picker button
+		else if (Event.ControlId == "Quad_EmojiPickerToggle") {
+			(Event.Control as CMlQuad).Opacity = .5;
+		}
+
+		// Current picker page
+		else if (Event.Control.HasClass("Picker")) {
+			Label_PickerEmojiName.Value = PickerMojiCurPage^" / "^PickerMojiNbPages;
+		}
+
+		// Hide player profile
+		else if (Event.ControlId == "Quad_MessageSender") {
+			Frame_PlayerProfile.Hide();
+		}
+	}
+	// ---------------------------------- //
+	// On mouse click
+	else if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// Show emoji picker
+		if (Event.ControlId == "Quad_EmojiPickerToggle") {
+			Frame_EmojiPicker.Visible = !Frame_EmojiPicker.Visible;
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Valid, 0, 0.);
+		}
+
+		// ---------------------------------- //
+		// Select an emoji
+		else if (Event.Control.HasClass("Picker")) {
+			declare Text EmojiCode for Event.Control;
+
+			Entry_ChatInput.Visible = True;
+			Entry_ChatInput.Value ^= " "^EmojiCode^" ";
+			Entry_ChatInput.StartEdition();
+			Frame_EmojiPicker.Hide();
+		}
+
+		// ---------------------------------- //
+		// Emoji picker prev page
+		else if (Event.ControlId == "Quad_EmojiPickerPrev") {
+			if (PickerMojiCurPage <= 1) continue;
+			PickerMojiCurPage -= 1;
+			UpdatePickerMoji = True;
+		}
+
+		// ---------------------------------- //
+		// Emoji picker next page
+		else if (Event.ControlId == "Quad_EmojiPickerNext") {
+			if (PickerMojiCurPage >= PickerMojiNbPages) continue;
+			PickerMojiCurPage += 1;
+			UpdatePickerMoji = True;
+		}
+
+		// ---------------------------------- //
+		// Message sender profile
+		else if (Event.ControlId == "Quad_MessageSender") {
+			declare Text UserLogin for Event.Control;
+			declare User <=> GetUser(UserLogin);
+			if (User == Null) continue;
+			ShowProfile(UserLogin);
 		}
 	}
 }
@@ -232,29 +517,93 @@ if (PrevMaxNbMessagesDisplayed != MaxNbMessagesDisplayed) {
 	UpdateMessagesList = True;
 }
 
+// Emoji parsing setting change
+if (PrevEnableEmojiParser != Persistent_LibChat_EnableEmojiParser) {
+	PrevEnableEmojiParser = Persistent_LibChat_EnableEmojiParser;
+
+	UpdateMessagesList = True;
+	MessagesList.clear();
+	MessagesBody.clear();
+	MessagesSender.clear();
+	PrevMessageKey = 0;
+
+	Quad_EmojiPickerToggle.Visible = PrevEnableEmojiParser;
+	Label_ChatKeyHint.RelativePosition_V3.X = 0.;
+	Entry_ChatInput.RelativePosition_V3.X = 0.;
+
+	if (Quad_EmojiPickerToggle.Visible) {
+		Label_ChatKeyHint.RelativePosition_V3.X += 3.;
+		Entry_ChatInput.RelativePosition_V3.X += 3.;
+	}
+}
+
+Frame_ChatMessagesBox.Visible = !Frame_EmojiPicker.Visible;
+
+if (Frame_EmojiPicker.Visible) {
+	// ---------------------------------- //
+	// Update emoji picker
+	if (UpdatePickerMoji) {
+		UpdatePickerMoji = False;
+
+		// Page switch
+		PickerMojiNbPages = (PickerEmojiURL.count - 1) / Quad_PickerMoji.count + 1;
+		PickerMojiCurPage = ML::Clamp(PickerMojiCurPage, 1, PickerMojiNbPages);
+		Label_PickerEmojiName.Value = PickerMojiCurPage^" / "^PickerMojiNbPages;
+
+		Quad_EmojiPickerPrev.Visible = PickerMojiCurPage > 1;
+		Quad_EmojiPickerNext.Visible = PickerMojiCurPage < PickerMojiNbPages;
+
+		Label_EmojiPickerPrev.Opacity = .5;
+		Label_EmojiPickerNext.Opacity = .5;
+		if (Quad_EmojiPickerPrev.Visible) Label_EmojiPickerPrev.Opacity = 1.;
+		if (Quad_EmojiPickerNext.Visible) Label_EmojiPickerNext.Opacity = 1.;
+
+		foreach (I => Quad in Quad_PickerMoji) {
+			declare Key = (PickerMojiCurPage - 1) * Quad_PickerMoji.count + I;
+			Quad.Visible = PickerEmojiURL.existskey(Key);
+			if (!Quad.Visible) continue;
+
+			SetQuadStyle(Quad, PickerEmojiURL[Key]);
+
+			declare Text EmojiCode for Quad;
+			EmojiCode = PickerEmojiName[Key];
+		}
+	}
+}
+
 // ---------------------------------- //
 // Update the chat messages list
 if (UpdateMessagesList) {
 	UpdateMessagesList = False;
 
-	// ---------------------------------- //
-	// Get messages to display
-	declare Text[] DisplayedChatMessages;
-	declare Text[Integer] ChatMessages;
+	// List all messages sent by the server
 	declare MessageKey = PrevMessageKey;
-
+	declare Text[Integer] ChatMessages;
 	foreach (Key => Message in Net_LibChat_GlobalChatMessages) ChatMessages[Key] = Message;
 	foreach (Key => Message in Net_LibChat_UserChatMessages) ChatMessages[Key] = Message;
 	ChatMessages = ChatMessages.sortkey();
 
+	// Filter out and format new messages
 	foreach (Key => Message in ChatMessages) {
+		if (MessagesList.exists(Key) || Key <= MessageKey) continue;
+
 		declare MessageSender = "";
 		if (Net_LibChat_GlobalChatSenders.existskey(Key)) MessageSender = Net_LibChat_GlobalChatSenders[Key];
 		else if (Net_LibChat_UserChatSenders.existskey(Key)) MessageSender = Net_LibChat_UserChatSenders[Key];
 		if (MessageSender != "" && Persistent_LibServerManager_PrivateMutedUsers.exists(MessageSender)) continue;
 
-		DisplayedChatMessages.add(Message);
+		MessagesList.add(Key);
+		MessagesBody[Key] = ParseMessage(Message, MessageSender != "" && PrevEnableEmojiParser);
+		MessagesSender[Key] = MessageSender;
 		MessageKey = Key;
+	}
+
+	// Remove messages if there are too many
+	while (MessagesList.count > Frame_ChatMessages.count) {
+		declare Boolean Removed;
+		Removed = MessagesList.removekey(0);
+		Removed = MessagesBody.removekey(0);
+		Removed = MessagesSender.removekey(0);
 	}
 
 	// Trigger animation for new messages
@@ -263,33 +612,33 @@ if (UpdateMessagesList) {
 		if (!IsFirstLaunch) SlideNewMessage = True;
 	}
 
-	// ---------------------------------- //
-	// Format labels
-	foreach (I => Label in Label_ChatMessages) {
-		declare MessageId = DisplayedChatMessages.count - I - 1;
-		if (DisplayedChatMessages.existskey(MessageId)) Label.Value = DisplayedChatMessages[MessageId];
+	if (SlideNewMessage) {
+		Frame_LabelsAnim.RelativePosition_V3.Y -= {{{C_LibChat_ChatLineHeight}}};
+		AnimMgr.Add(Frame_LabelsAnim, "<frame pos='0 0' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+	}
 
-		if (I <= MaxNbMessagesDisplayed) {
-			Label.Visible = True;
-			Label.Opacity = 1.;
-		}
+	// Format messages frames
+	foreach (I => Frame in Frame_ChatMessages) {
+		declare Key = MessagesList.count - I - 1;
+		Frame.Visible = MessagesList.existskey(Key);
+		if (!Frame.Visible) continue;
 
-		// ---------------------------------- //
-		// Do new message animation
-		if (SlideNewMessage) {
-			if (I == 0) {
-				Label.Opacity = .125;
-				Frame_LabelsAnim.RelativePosition_V3.Y -= {{{C_LibChat_ChatLineHeight}}};
+		declare MessageId = MessagesList[Key];
+		declare MessageBody = Text[];
+		declare MessageSender = "";
 
-				AnimMgr.Add(Label, "<label opacity='1' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
-				AnimMgr.Add(Frame_LabelsAnim, "<frame pos='0 0' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
-			}
+		if (MessagesBody.existskey(MessageId)) MessageBody = MessagesBody[MessageId];
+		if (MessagesSender.existskey(MessageId)) MessageSender = MessagesSender[MessageId];
+		
+		Frame.Visible = I <= MaxNbMessagesDisplayed;
+		if (!Frame.Visible) continue;
 
-			if (I == MaxNbMessagesDisplayed) {
-				Label.Opacity = 1.;
-				AnimMgr.Add(Label, "<label opacity='0' />", 125, CAnimManager::EAnimManagerEasing::Linear);
-			}
-		}
+		declare PrevSenderIsSame = False;
+		/*if (MessagesList.existskey(Key-1) && MessagesSender.existskey(MessagesList[Key-1])) {
+			PrevSenderIsSame = MessageSender == MessagesSender[MessagesList[Key-1]];
+		}*/
+
+		FormatChatLine(Frame, MessageBody, MessageSender, SlideNewMessage && I == 0, !PrevSenderIsSame);
 	}
 
 	SlideNewMessage = False;
@@ -299,20 +648,265 @@ if (UpdateMessagesList) {
 // Update tooltip text
 if (UpdateTooltip) {
 	UpdateTooltip = False;
-	Label_ChatKeyHint.Value = Translate(["Press '%1' to chat", Bindings_GetKey("LibChat_BeginTyping", "T")]);
+	Label_ChatKeyHint.Value = ReplaceChars(Translate(["Press '%1' to chat", Bindings_GetKey("LibChat_BeginTyping", "T")]));
+}
+
+// ---------------------------------- //
+// Update profile card by login
+if (UpdateProfileCard != "") {
+	declare User <=> GetUser(UpdateProfileCard);
+	UpdateProfileCard = "";
+
+	declare PlayerEchelon = ML::Clamp(ML::FloorInteger(User.LadderPoints) / 10000, 0, 9);
+	Quad_PlayerEchelon.Visible = PlayerEchelon > 0;
+	if (Quad_PlayerEchelon.Visible) Quad_PlayerEchelon.ImageUrl = "file://Media/Manialinks/Common/Echelons/small_echelon"^PlayerEchelon^".dds";
+	
+	Label_PlayerNickname.Value = User.Name;
+	Quad_PlayerAvatar.ImageUrl = "file://Avatars/"^User.Login^"/default";
+
+	Quad_PlayerProfileBg.Size.X = 12 + ComputeWidth(Label_PlayerNickname);
 }
 
 // ---------------------------------- //
 // Hide transparent messages
-foreach (I => Label in Label_ChatMessages) {
-	if (!Label.Visible) continue;
-	if (Label.Opacity <= 0) Label.Visible = False;
-	if (I > MaxNbMessagesDisplayed) Label.Visible = False;
+foreach (I => Frame in Frame_ChatMessages) {
+	if (!Frame.Visible) continue;
+	if (I > MaxNbMessagesDisplayed) Frame.Visible = False;
+	declare Label <=> (Frame.GetFirstChild("Label_LineLabel#0") as CMlLabel);
+	if (Label.Opacity <= 0) Frame.Visible = False;
 }
 ***
 
 {{{Translations::InjectInManialink(["Press '%1' to chat"])}}}
 {{{Bindings::Functions()}}}
+{{{ManialinkTools::Functions(["ComputeWidth", "SetQuadStyle", "ReplaceChars"])}}}
+
+// ---------------------------------- //
+/** Get player by login.
+ *
+ *	@param	_Login	The login of the player.
+ *
+ *	@return		The found player.
+ */
+CUser GetUser(Text _Login) {
+	foreach (Score in Scores) if (Score.User.Login == _Login) return Score.User;
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get name of a player by login.
+ *
+ *	@param	_Login	The login of the player.
+ *
+ *	@return		The found player's name.
+ */
+Text GetPlayerName(Text _Login) {
+	declare User <=> GetUser(_Login);
+	if (User != Null) return User.Name;
+	return _Login;
+}
+
+// ---------------------------------- //
+/** Check, if the text starts with something.
+ *
+ *	@param	_Text		Text to check.
+ *	@param	_Phrase		Phrase to check.
+ *
+ *	@return		True, if the test starts with phrase.
+ */
+Boolean StartsWith(Text _Text, Text _Phrase) {
+	return TL::SubString(_Text, 0, TL::Length(_Phrase)) == _Phrase;
+}
+
+// ---------------------------------- //
+/** Check, if the text ends with something.
+ *
+ *	@param	_Text		Text to check.
+ *	@param	_Phrase		Phrase to check.
+ *
+ *	@return		True, if the test ends with phrase.
+ */
+Boolean EndsWith(Text _Text, Text _Phrase) {
+	return TL::SubString(_Text, TL::Length(_Text) - TL::Length(_Phrase), TL::Length(_Phrase)) == _Phrase;
+}
+
+// ---------------------------------- //
+/** Find and format emojis.
+ *
+ *	@param	_Message	The message to format.
+ *	@param	_FindEmoji	Wherer should look for emoji or not.
+ *
+ *	@return		The message components.
+ */
+Text[] ParseMessage(Text _Message, Boolean _FindEmoji) {
+	if (!_FindEmoji) return [_Message];
+
+	declare SplitMessage = TL::Split(" ", _Message);
+	declare Text[] OutputSegments;
+	declare Text[] OutputEmojis;
+
+	declare CurSegmentText = "";
+	declare CurSegmentCount = 0;
+	declare ToNextSegment = ""; // Copied text behind to next segment
+
+	// ---------------------------------- //
+	// Fetch message words
+	foreach (I => _Segment in SplitMessage) {
+		declare Segment = ToNextSegment;
+		ToNextSegment = "";
+		Segment ^= _Segment;
+		declare SegmentEnd = I >= SplitMessage.count - 1;
+
+		// ---------------------------------- //
+		// Look for emojis inside segment
+		if (
+			!TL::Find("$l", Segment, True, False) &&
+			!TL::Find("$h", Segment, True, False) &&
+			!TL::Find("$p", Segment, True, False)
+		) {
+			foreach (Code => URL in G_AvailableEmoji) {
+				if (OutputEmojis.count >= 4) break; 
+				if (!TL::Find(Code, Segment, False, True)) continue;
+				OutputEmojis.add(URL);
+
+				declare Explode = TL::Split(Code, Segment);
+				if (Explode.existskey(0)) Segment = Explode[0];
+				if (Explode.existskey(1)) ToNextSegment = Explode[1]^" ";
+				
+				SegmentEnd = True;
+				break;
+			}
+		}
+		
+		// Extend segment by a word
+		if (Segment != "") {
+			if (CurSegmentCount > 0) CurSegmentText ^= " ";
+			CurSegmentText ^= Segment;
+			CurSegmentCount += 1;
+		}
+
+		// End a segment
+		if (SegmentEnd) {
+			if (CurSegmentText == "") {
+				if (OutputSegments.count > 0) CurSegmentText = " "; //< Separates emoji
+			} else {
+				if (!StartsWith(CurSegmentText, " ") && OutputSegments.count > 0) CurSegmentText = " "^CurSegmentText;
+				if (!EndsWith(CurSegmentText, " ")) CurSegmentText ^= " ";
+			}
+
+			OutputSegments.add(CurSegmentText);
+			CurSegmentText = "";
+			CurSegmentCount = 0;
+		}
+	}
+
+	if (ToNextSegment != "") {
+		if (!StartsWith(ToNextSegment, " ") && OutputSegments.count > 0) ToNextSegment = " "^ToNextSegment;
+		OutputSegments.add(ToNextSegment);
+	}
+
+	// Create output
+	declare Text[] OutputArray;
+	foreach (I => Segment in OutputSegments) {
+		OutputArray.add(Segment);
+		if (OutputEmojis.existskey(I)) OutputArray.add(OutputEmojis[I]);
+	}
+	return OutputArray;
+}
+
+// ---------------------------------- //
+/** Format message frame.
+ *
+ *	@param	_Frame		The frame to format.
+ *	@param	_Message	Message data to put into the model.
+ *	@param	_Sender		Login of the message sender.
+ *	@param	_AnimIn		Show fade-in animation.
+ *	@param	_ShowSender	Show name of the message sender.
+ */
+Void FormatChatLine(CMlFrame _Frame, Text[] _Message, Text _Sender, Boolean _AnimIn, Boolean _ShowSender) {
+	if (_Frame == Null || !_Frame.Visible) return;
+
+	declare TotalLineLength = 0.;
+
+	// Chat line components
+	declare Frame_MessageSender <=> (_Frame.GetFirstChild("Frame_MessageSender") as CMlFrame);
+	declare CMlLabel[] Label_LineLabels;
+	declare CMlQuad[] Quad_LineEmojis;
+
+	for (I, 0, 4) {
+		Label_LineLabels.add((_Frame.GetFirstChild("Label_LineLabel#"^I) as CMlLabel));
+		Quad_LineEmojis.add((_Frame.GetFirstChild("Quad_LineEmoji#"^I) as CMlQuad));
+	}
+
+	// Line color
+	declare LineColor = {{{C_LibChat_ChatLineColor_Default}}};
+	if (_Sender != "") LineColor = {{{C_LibChat_ChatLineColor_FromUser}}};
+
+	Frame_MessageSender.Visible = _Sender != "" && _ShowSender;
+	if (Frame_MessageSender.Visible) {
+		declare Label_SenderName <=> (_Frame.GetFirstChild("Label_SenderName") as CMlLabel);
+		declare Label_SenderArrow <=> (_Frame.GetFirstChild("Label_SenderArrow") as CMlLabel);
+		declare Quad_MessageSender <=> (_Frame.GetFirstChild("Quad_MessageSender") as CMlQuad);
+
+		Label_SenderName.Value = GetPlayerName(_Sender);
+		Quad_MessageSender.Size.X = ML::Min(ComputeWidth(Label_SenderName), Label_SenderName.Size.X) + 1;
+		Label_SenderArrow.RelativePosition_V3.X = Quad_MessageSender.Size.X + .5;
+		TotalLineLength += Quad_MessageSender.Size.X + 2;
+
+		declare Text UserLogin for Quad_MessageSender;
+		UserLogin = _Sender;
+	}
+
+	// ---------------------------------- //
+	// Format the labels
+	foreach (I => Label in Label_LineLabels) {
+		declare Quad = Quad_LineEmojis[I];
+		Label.Visible = _Message.existskey(I*2);
+		Label.Opacity = 1.;
+		
+		if (Label.Visible) {
+			Label.RelativePosition_V3.X = TotalLineLength;
+			Label.Opacity = 1.;
+
+			// Value
+			Label.Value = _Message[I*2];
+			Label.TextColor = LineColor;
+
+			// Length
+			TotalLineLength += ComputeWidth(Label) + {{{C_LibChat_EmojisSpacing}}};
+			Quad.RelativePosition_V3.X = TotalLineLength + Quad.Size.X / 2;
+			TotalLineLength += Quad.Size.X + {{{C_LibChat_EmojisSpacing}}};
+
+			// Anim
+			if (_AnimIn) {
+				Label.Opacity = .125;
+				AnimMgr.Add(Label, "<label opacity='1' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+			}
+		}
+
+		// Emojis
+		Quad.Visible = _Message.existskey(I*2 + 1);
+		Quad.Opacity = 1.;
+
+		if (Quad.Visible) {
+			declare URL = _Message[I*2 + 1];
+			declare Text EmojiCode for Quad;
+			SetQuadStyle(Quad, URL);
+			Quad.Opacity = 1.;
+
+			if (G_AvailableEmoji.exists(URL))
+				EmojiCode = G_AvailableEmoji.keyof(URL);
+			else
+				EmojiCode = "";
+
+			// Anim
+			if (_AnimIn) {
+				Quad.Opacity = .125;
+				AnimMgr.Add(Quad, "<quad opacity='1' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+			}
+		}
+	}
+}
 
 main() {
 	wait(InputPlayer != Null);
@@ -460,6 +1054,35 @@ Integer Private_GetClan(CPlayer _Player) {
 }
 
 // ---------------------------------- //
+/** Remove links in a message.
+ *
+ *	@param	_Segments	Segments of the message to format.
+ *
+ *	@return		All segments without links in them.
+ */
+Text[] Private_RemoveLinks(Text[] _Segments) {
+	if (_Segments.count <= 0) return _Segments;
+	declare Text[] OutputSegments;
+
+	foreach (Segment in _Segments) {
+		if (
+			TL::Find("$l", Segment, True, False) ||
+			TL::Find("$h", Segment, True, False) ||
+			TL::Find("$p", Segment, True, False) ||
+			TL::Find("http://", Segment, False, False) ||
+			TL::Find("https://", Segment, False, False) ||
+			TL::Find("maniaplanet://", Segment, False, False) ||
+			TL::Find("www.", Segment, False, False)
+		) {
+			continue;
+		}
+		OutputSegments.add(Segment);
+	}
+
+	return OutputSegments;
+}
+
+// ---------------------------------- //
 /** Parse links in a message.
  *
  *	@param	_Segments	Segments of the message to format.
@@ -467,9 +1090,8 @@ Integer Private_GetClan(CPlayer _Player) {
  *	@return		All segments with formatted links in them.
  */
 Text[] Private_ParseLinks(Text[] _Segments) {
+	if (_Segments.count <= 0) return _Segments;
 	declare Text[] OutputSegments;
-	if (_Segments.count <= 0) return OutputSegments;
-	declare RemoveLinks = ServerManager::RemoveLinks();
 
 	foreach (_Segment in _Segments) {
 		declare Segment = TL::StripFormatting(_Segment);
@@ -481,7 +1103,7 @@ Text[] Private_ParseLinks(Text[] _Segments) {
 			TL::SubString(Segment, 0, 8) == "https://" ||
 			TL::SubString(Segment, 0, 4) == "www."
 		) {
-			if (!RemoveLinks) OutputSegments.add("$<$FA3$l"^Segment^"$>");
+			OutputSegments.add("$<$FA3$l"^Segment^"$>");
 			continue;
 		}
 
@@ -493,7 +1115,7 @@ Text[] Private_ParseLinks(Text[] _Segments) {
 		) {
 			Segment = TL::Replace(Segment, "maniaplanet:///:", "");
 			Segment = TL::Replace(Segment, "maniaplanet://", "");
-			if (!RemoveLinks) OutputSegments.add("$<$6BF$h"^Segment^"$>");
+			OutputSegments.add("$<$6BF$h"^Segment^"$>");
 			continue;
 		}
 
@@ -512,8 +1134,8 @@ Text[] Private_ParseLinks(Text[] _Segments) {
  *	@return		All segments with formatted badwords in them.
  */
 Text[] Private_ParseBadWords(Text[] _Segments) {
+	if (_Segments.count <= 0) return _Segments;
 	declare Text[] OutputSegments;
-	if (_Segments.count <= 0) return OutputSegments;
 
 	foreach (_Segment in _Segments) {
 		declare Segment = TL::StripFormatting(_Segment);
@@ -542,16 +1164,18 @@ Text[] Private_ParseBadWords(Text[] _Segments) {
 /** Parse the chat message.
  *
  *	@param	_Message	The message to format.
+ *	@param	_Sender		Login of the message sender.
  *
  *	@return		The formatted message.
  */
-Text Private_ParseMessage(Text _Message) {
+Text Private_ParseMessage(Text _Message, Text _Sender) {
 	if (TL::Length(_Message) <= 1) return _Message;
 	declare Message = TL::Replace(_Message, "\n", " "); // Line breaking removal
 	declare SplitMessage = TL::Split(" ", Message);
 
-	if (ServerManager::ParseBadwords())	SplitMessage = Private_ParseBadWords(SplitMessage);	// Parse badwords
-	if (ServerManager::ParseLinks())	SplitMessage = Private_ParseLinks(SplitMessage);	// Parse links
+	if (ServerManager::ParseBadwords(_Sender))	SplitMessage = Private_ParseBadWords(SplitMessage);	// Parse badwords
+	if (ServerManager::RemoveLinks(_Sender))	SplitMessage = Private_RemoveLinks(SplitMessage);	// Remove links
+	else if (ServerManager::ParseLinks())		SplitMessage = Private_ParseLinks(SplitMessage);	// Parse links
 
 	return TL::Join(" ", SplitMessage); // Remove spaces
 }
@@ -794,14 +1418,15 @@ Void Loop(Boolean _UseCustomChat) {
 						Message = "$i"^C_LibChat_PremadeMessages[PremadeMsgCode];
 						if (SplitMessage.existskey(1) && C_LibChat_PremadeWithRecipient.exists(PremadeMsgCode)) {
 							declare TargetName = ServerManager::GetNameByLogin(SplitMessage[1]);
+							if (SplitMessage[1] == "all") TargetName = "all";
 							Message ^= " $<"^TargetName^"$>";
 						}
 						Message ^= "!";
 					}
 
 					else Message = TL::Join(" ", SplitMessage); // Spaces removal
+					Message = Private_ParseMessage(Message, Sender.User.Login);
 					if (Message == "") continue;
-					Message = Private_ParseMessage(Message);
 					declare Messages = Text[];
 
 					// ---------------------------------- //
@@ -831,7 +1456,7 @@ Void Loop(Boolean _UseCustomChat) {
 						if (I > 0) TargetMessage = C_LibChat_MessageFormat_Global2;
 						TargetMessage = TL::Replace(TargetMessage, "%1", Sender.User.Name);
 						TargetMessage = TL::Replace(TargetMessage, "%2", Segment);
-						SendMessage(TargetMessage, Sender);
+						SendMessage(Segment, Sender);
 					}
 				}
 			}
@@ -871,7 +1496,7 @@ Void Loop(Boolean _UseCustomChat) {
 				declare Message = C_LibChat_MessageFormat_MeCmd;
 				Message = TL::Replace(Message, "%1", CommandPlayer.User.Name);
 				Message = TL::Replace(Message, "%2", TL::Join(" ", CommandParams));
-				Message = Private_ParseMessage(Message);
+				Message = Private_ParseMessage(Message, CommandPlayer.User.Login);
 				SendMessage(Message);
 			}
 			// ---------------------------------- //

@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PAYLOAD by domino54                   //
-//  script version: 2017-09-07            //
+//  script version: 2017-12-15            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes	"PayloadArena, PayloadRaceArena"
-#Const Version		"2017-09-07"
+#Const Version		"2017-12-15"
 #Const ScriptName	"Modes/ShootMania/Payload.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -99,14 +99,6 @@ ModeInfo::SetName("Payload");
 ModeInfo::SetType(ModeInfo::C_Type_Teams);
 ModeInfo::SetRules("1. Attackers goal is to push the Payload to the end of its route, while defenders try to stop them.\n2. Attacking team will get 1 point for every Checkpoint reached.\n3. If attackers leave Payload for enough time, it will start to slowly go backwards.\n4. After both teams have finished their attack round, the team with more points wins.\n5. If teams end up with the same score, Sudden Death mode is played to decide the winner.");
 ModeInfo::SetStatusMessage(Description);
-***
-
-// ---------------------------------- //
-// Galaxy settings
-// ---------------------------------- //
-***GalaxyTitles_Settings***
-***
-GT_UseNoCollisionsStart = False;
 ***
 
 // ---------------------------------- //
@@ -485,6 +477,7 @@ GalaxyTitles::SetObjectsSpawnTier(ObjectsTier);
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 StartTime = Now + S_RespawnTime;
 IsPreparationPhase = !G_IsPayloadRace;
+GT_UseNoCollisionsStart = G_IsPayloadRace;
 declare RoundText = "";
 
 // ---------------------------------- //
@@ -498,6 +491,9 @@ if (G_IsPayloadRace) {
 		LastPayloadInteractionTime[Clan] = StartTime;
 		if (S_AllowPayloadReversing) UISetLastPushTime(LastPayloadInteractionTime[Clan], Clan);
 	}
+
+	// Enable PvP
+	UsePvPWeapons = True;
 
 	// Announce round start
 	RoundText = TL::Compose("%1 #"^MB_GetRoundCount(), _("Round"));
@@ -1847,7 +1843,7 @@ main() {
 
 		if (PrevCheckpointNb != CurCheckpointNb) {
 			PrevCheckpointNb = CurCheckpointNb;
-			Label_MarkerCheckpointName.Value = TL::Compose("%1 #"^CurCheckpointNb, ("Checkpoint"));
+			Label_MarkerCheckpointName.Value = TL::Compose("%1 #"^CurCheckpointNb, _("|BlockInfo|Checkpoint"));
 		}
 
 		// ---------------------------------- //

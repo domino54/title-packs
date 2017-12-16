@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY TRANSLATIONS by domino54      //
-//  script version: 2017-06-28            //
+//  script version: 2017-12-15            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Chat messages MUST be prefixed.
  */
 
-#Const Version		"2017-06-28"
+#Const Version		"2017-12-15"
 #Const ScriptName	"Libs/domino54/Translations.Script.txt"
 
 #Include "TextLib" as TL
@@ -31,12 +31,12 @@
 ]
 
 /// List of available ManiaPlanet languages
-#Const G_LibTranslations_LanguagesList ["cz", "da", "de", "en_GB", "es", "fr", "hu", "it", "jp", "kr", "nb", "nl", "pl", "pt", "pt_BR", "ro", "ru", "sk", "tr", "zh"]
+#Const G_LibTranslations_LanguagesList ["cs", "da", "de", "en_GB", "es", "fi", "fr", "hu", "it", "ja", "ko", "nb", "nl", "pl", "pt", "pt_BR", "ro", "ru", "sk", "sv", "tr", "zh_CH"]
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Integer G_LibTranslations_LatestIndex;	///< Last added phrase index
+declare Integer G_LibTranslations_LatestIndex;	///< Last added segment index
 declare Text G_LibTranslations_ChatPrefix;		///< Custom chat message prefix
 
 /// Translations requests
@@ -49,17 +49,18 @@ declare Integer[Text] G_LibTranslations_RequestStartTime;	///< Start times of th
  *	Every language stored as separate array to prevent lags caused
  *	by using single, three-dimensional array.
  */
-declare Text[Integer] G_LibTranslations_CZ; ///< Czech
+declare Text[Integer] G_LibTranslations_CS; ///< Czech
 declare Text[Integer] G_LibTranslations_DA; ///< Danish
 declare Text[Integer] G_LibTranslations_DE; ///< German
 declare Text[Integer] G_LibTranslations_EN; ///< English (primary, index)
 declare Text[Integer] G_LibTranslations_ENGB; ///< British English
 declare Text[Integer] G_LibTranslations_ES; ///< Spanish
+declare Text[Integer] G_LibTranslations_FI; ///< Finnish
 declare Text[Integer] G_LibTranslations_FR; ///< French
 declare Text[Integer] G_LibTranslations_HU; ///< Hungarian
 declare Text[Integer] G_LibTranslations_IT; ///< Italian
-declare Text[Integer] G_LibTranslations_JP; ///< Japanese
-declare Text[Integer] G_LibTranslations_KR; ///< Korean
+declare Text[Integer] G_LibTranslations_JA; ///< Japanese
+declare Text[Integer] G_LibTranslations_KO; ///< Korean
 declare Text[Integer] G_LibTranslations_NB; ///< Norwegian
 declare Text[Integer] G_LibTranslations_NL; ///< Dutch
 declare Text[Integer] G_LibTranslations_PL; ///< Polish
@@ -68,8 +69,9 @@ declare Text[Integer] G_LibTranslations_PTBR; ///< Brazilian Portuguese
 declare Text[Integer] G_LibTranslations_RO; ///< Romanian
 declare Text[Integer] G_LibTranslations_RU; ///< Russian
 declare Text[Integer] G_LibTranslations_SK; ///< Slovak
+declare Text[Integer] G_LibTranslations_SV; ///< Swedish
 declare Text[Integer] G_LibTranslations_TR; ///< Turkish
-declare Text[Integer] G_LibTranslations_ZH; ///< Chinese
+declare Text[Integer] G_LibTranslations_ZHCN; ///< Chinese
 
 // ---------------------------------- //
 // Functions
@@ -111,64 +113,64 @@ Text Private_MSEscape(Text _String) {
 // ---------------------------------- //
 /** Load translations from an XML document
  *
- *	@param	_Document	The document containing phrases translations
+ *	@param	_Document	The document containing segments translations
  */
 Void Private_LoadTranslations(CXmlDocument _Document) {
-	if (_Document == Null || _Document.Root == Null || _Document.Root.Name != "translations") return;
+	if (_Document == Null || _Document.Root == Null || _Document.Root.Name != "resources") return;
 	
 	foreach (Node in _Document.Root.Children) {
 		// ---------------------------------- //
-		// Load phrases translations
-		if (Node.Name == "phrases") foreach (Phrase in Node.Children) {
-			if (Phrase.Name != "phrase") continue;
-			
-			declare English = "";
-			declare Translations = Text[Text];
-			
-			// ---------------------------------- //
-			// Find English base and translations
-			foreach (Language in Phrase.Children) {
-				declare LanguageName = TL::ToLowerCase(Language.Name);
-				if (LanguageName == "en") English = Language.TextContents;
-				else Translations[LanguageName] = Language.TextContents;
-			}
-			
-			// Skip invalid phrase
-			if (English == "" || Translations.count <= 0) continue;
-			
-			// ---------------------------------- //
-			// Get the index of the phrase
-			declare Index = G_LibTranslations_LatestIndex;
-			if (G_LibTranslations_EN.exists(English)) Index = G_LibTranslations_EN.keyof(English);
-			else G_LibTranslations_LatestIndex += 1;
-			
-			// Save new phrase index
-			G_LibTranslations_EN[Index] = English;
-			
-			// ---------------------------------- //
-			// Save new phrasse translations
-			foreach (Language => Translation in Translations) if (Translation != "") switch (Language) {
-				case "cz" : G_LibTranslations_CZ[Index] = Translation;
-				case "da" : G_LibTranslations_DA[Index] = Translation;
-				case "de" : G_LibTranslations_DE[Index] = Translation;
-				case "en_GB" : G_LibTranslations_ENGB[Index] = Translation;
-				case "es" : G_LibTranslations_ES[Index] = Translation;
-				case "fr" : G_LibTranslations_FR[Index] = Translation;
-				case "hu" : G_LibTranslations_HU[Index] = Translation;
-				case "it" : G_LibTranslations_IT[Index] = Translation;
-				case "jp" : G_LibTranslations_JP[Index] = Translation;
-				case "kr" : G_LibTranslations_KR[Index] = Translation;
-				case "nb" : G_LibTranslations_NB[Index] = Translation;
-				case "nl" : G_LibTranslations_NL[Index] = Translation;
-				case "pl" : G_LibTranslations_PL[Index] = Translation;
-				case "pt" : G_LibTranslations_PT[Index] = Translation;
-				case "pt_BR" : G_LibTranslations_PTBR[Index] = Translation;
-				case "ro" : G_LibTranslations_RO[Index] = Translation;
-				case "ru" : G_LibTranslations_RU[Index] = Translation;
-				case "sk" : G_LibTranslations_SK[Index] = Translation;
-				case "tr" : G_LibTranslations_TR[Index] = Translation;
-				case "zh" : G_LibTranslations_ZH[Index] = Translation;
-			}
+		// Load segments translations
+		if (Node.Name != "segment") continue;
+		
+		declare English = "";
+		declare Translations = Text[Text];
+		
+		// ---------------------------------- //
+		// Find English base and translations
+		foreach (Language in Node.Children) {
+			declare LanguageName = TL::ToLowerCase(Language.Name);
+			if (LanguageName == "en") English = Language.TextContents;
+			else Translations[LanguageName] = Language.TextContents;
+		}
+		
+		// Skip invalid segment
+		if (English == "" || Translations.count <= 0) continue;
+		
+		// ---------------------------------- //
+		// Get the index of the segment
+		declare Index = G_LibTranslations_LatestIndex;
+		if (G_LibTranslations_EN.exists(English)) Index = G_LibTranslations_EN.keyof(English);
+		else G_LibTranslations_LatestIndex += 1;
+		
+		// Save new segment index
+		G_LibTranslations_EN[Index] = English;
+		
+		// ---------------------------------- //
+		// Save new phrasse translations
+		foreach (Language => Translation in Translations) if (Translation != "") switch (Language) {
+			case "cs" : G_LibTranslations_CS[Index] = Translation;
+			case "da" : G_LibTranslations_DA[Index] = Translation;
+			case "de" : G_LibTranslations_DE[Index] = Translation;
+			case "en_GB" : G_LibTranslations_ENGB[Index] = Translation;
+			case "es" : G_LibTranslations_ES[Index] = Translation;
+			case "fi" : G_LibTranslations_FI[Index] = Translation;
+			case "fr" : G_LibTranslations_FR[Index] = Translation;
+			case "hu" : G_LibTranslations_HU[Index] = Translation;
+			case "it" : G_LibTranslations_IT[Index] = Translation;
+			case "ja" : G_LibTranslations_JA[Index] = Translation;
+			case "ko" : G_LibTranslations_KO[Index] = Translation;
+			case "nb" : G_LibTranslations_NB[Index] = Translation;
+			case "nl" : G_LibTranslations_NL[Index] = Translation;
+			case "pl" : G_LibTranslations_PL[Index] = Translation;
+			case "pt" : G_LibTranslations_PT[Index] = Translation;
+			case "pt_BR" : G_LibTranslations_PTBR[Index] = Translation;
+			case "ro" : G_LibTranslations_RO[Index] = Translation;
+			case "ru" : G_LibTranslations_RU[Index] = Translation;
+			case "sk" : G_LibTranslations_SK[Index] = Translation;
+			case "sv" : G_LibTranslations_SV[Index] = Translation;
+			case "tr" : G_LibTranslations_TR[Index] = Translation;
+			case "zh_CN" : G_LibTranslations_ZHCN[Index] = Translation;
 		}
 	}
 }
@@ -194,15 +196,15 @@ Text GetScriptName() { return ScriptName; }
 // ---------------------------------- //
 /** Return translation depending on selected language
  *
- *	@param	_Language	The language the phrase will be translated to
- *	@param	_Phrase		The phrase to translate
+ *	@param	_Language	The language the segment will be translated to
+ *	@param	_Phrase		The segment to translate
  *
- *	@return		Translated phrase
+ *	@return		Translated segment
  */
 Text Translate(Text _Language, Text _Phrase) {
 	if (_Phrase == "" || _Language == "" || _Language == "en") return _Phrase;
 	
-	// Get phrase index
+	// Get segment index
 	if (!G_LibTranslations_EN.exists(_Phrase)) return _Phrase;
 	declare PhraseIndex = G_LibTranslations_EN.keyof(_Phrase);
 	
@@ -210,16 +212,17 @@ Text Translate(Text _Language, Text _Phrase) {
 	// Get the target language translations
 	declare Text[Integer] LanguageTranslations;
 	switch (_Language) {
-		case "cz" : LanguageTranslations = G_LibTranslations_CZ;
+		case "cs" : LanguageTranslations = G_LibTranslations_CS;
 		case "da" : LanguageTranslations = G_LibTranslations_DA;
 		case "de" : LanguageTranslations = G_LibTranslations_DE;
 		case "en_GB" : LanguageTranslations = G_LibTranslations_ENGB;
 		case "es" : LanguageTranslations = G_LibTranslations_ES;
+		case "fi" : LanguageTranslations = G_LibTranslations_FI;
 		case "fr" : LanguageTranslations = G_LibTranslations_FR;
 		case "hu" : LanguageTranslations = G_LibTranslations_HU;
 		case "it" : LanguageTranslations = G_LibTranslations_IT;
-		case "jp" : LanguageTranslations = G_LibTranslations_JP;
-		case "kr" : LanguageTranslations = G_LibTranslations_KR;
+		case "ja" : LanguageTranslations = G_LibTranslations_JA;
+		case "ko" : LanguageTranslations = G_LibTranslations_KO;
 		case "nb" : LanguageTranslations = G_LibTranslations_NB;
 		case "nl" : LanguageTranslations = G_LibTranslations_NL;
 		case "pl" : LanguageTranslations = G_LibTranslations_PL;
@@ -228,11 +231,12 @@ Text Translate(Text _Language, Text _Phrase) {
 		case "ro" : LanguageTranslations = G_LibTranslations_RO;
 		case "ru" : LanguageTranslations = G_LibTranslations_RU;
 		case "sk" : LanguageTranslations = G_LibTranslations_SK;
+		case "sv" : LanguageTranslations = G_LibTranslations_SV;
 		case "tr" : LanguageTranslations = G_LibTranslations_TR;
-		case "zh" : LanguageTranslations = G_LibTranslations_ZH;
+		case "zh_CN" : LanguageTranslations = G_LibTranslations_ZHCN;
 	}
 	
-	// Return the translation or original phrase if not found
+	// Return the translation or original segment if not found
 	if (LanguageTranslations.existskey(PhraseIndex)) return LanguageTranslations[PhraseIndex];
 	return _Phrase;
 }
@@ -240,10 +244,10 @@ Text Translate(Text _Language, Text _Phrase) {
 // ---------------------------------- //
 /** Return translation using custom Compose function
  *
- *	@param	_Language		The language phrases will be translated to
+ *	@param	_Language		The language segments will be translated to
  *	@param	_Arguments		The arguments for the compose function
  *
- *	@return		Translated phrase
+ *	@return		Translated segment
  */
 Text Translate(Text _Language, Text[] _Arguments) {
 	if (_Arguments.count <= 0) return "";
@@ -262,12 +266,12 @@ Text Translate(Text _Language, Text[] _Arguments) {
  *
  *	@deprecated		Use Translate() function instead
  *
- *	@param	_Language		The language phrases will be translated to
+ *	@param	_Language		The language segments will be translated to
  *	@param	_Prefix			Text to attach before basic argument
  *	@param	_Arguments		The arguments for the compose function
  *	@param	_Suffix			Text to attach after basic argument
  *
- *	@return		Translated phrase
+ *	@return		Translated segment
  */
 Text Compose(Text _Language, Text _Prefix, Text[] _Arguments, Text _Suffix) {
 	if (_Arguments.count <= 0) return _Prefix^_Suffix;
@@ -572,17 +576,18 @@ Void Unload() {
 	ResetMessages();
 
 	G_LibTranslations_LatestIndex = 0;
-	G_LibTranslations_CZ.clear();
+	G_LibTranslations_CS.clear();
 	G_LibTranslations_DA.clear();
 	G_LibTranslations_DE.clear();
 	G_LibTranslations_EN.clear();
 	G_LibTranslations_ENGB.clear();
 	G_LibTranslations_ES.clear();
+	G_LibTranslations_FI.clear();
 	G_LibTranslations_FR.clear();
 	G_LibTranslations_HU.clear();
 	G_LibTranslations_IT.clear();
-	G_LibTranslations_JP.clear();
-	G_LibTranslations_KR.clear();
+	G_LibTranslations_JA.clear();
+	G_LibTranslations_KO.clear();
 	G_LibTranslations_NB.clear();
 	G_LibTranslations_NL.clear();
 	G_LibTranslations_PL.clear();
@@ -591,8 +596,9 @@ Void Unload() {
 	G_LibTranslations_RO.clear();
 	G_LibTranslations_RU.clear();
 	G_LibTranslations_SK.clear();
+	G_LibTranslations_SV.clear();
 	G_LibTranslations_TR.clear();
-	G_LibTranslations_ZH.clear();
+	G_LibTranslations_ZHCN.clear();
 	
 	// ---------------------------------- //
 	// Destroy ongoing requests
@@ -678,18 +684,18 @@ Boolean LoadingLoop() {
 // ---------------------------------- //
 /** Insert library functions inside a manialink
  *
- *	@param	_Phrases		List of phrases to include in manialink
+ *	@param	_Segments		List of segments to include in manialink
  *
  *	@return		Text containing generated functions
  */
-Text InsertToManialink(Text[] _Phrases) {
+Text InsertToManialink(Text[] _Segments) {
 	// ---------------------------------- //
-	// Create array of phrases indexes
+	// Create array of segments indexes
 	declare IndexList = "Text[Integer]";
 	declare Integer[] FoundIndexes;
 	declare Text[] IndexObjects;
 	
-	foreach (Phrase in _Phrases) {
+	foreach (Phrase in _Segments) {
 		if (!G_LibTranslations_EN.exists(Phrase)) continue;
 		declare Index = G_LibTranslations_EN.keyof(Phrase);
 		IndexObjects.add(Index^" => \""^Private_MSEscape(Phrase)^"\"");
@@ -698,7 +704,7 @@ Text InsertToManialink(Text[] _Phrases) {
 	if (IndexObjects.count > 0) IndexList = "["^TL::Join(", ", IndexObjects)^"]";
 	
 	// ---------------------------------- //
-	// Create array of phrases translations
+	// Create array of segments translations
 	declare LanguagesList = "Text[Integer][Text]";
 	declare Text[] LanguageObjects;
 	
@@ -707,16 +713,17 @@ Text InsertToManialink(Text[] _Phrases) {
 		// Get the target language translations
 		declare Text[Integer] LanguageTranslations;
 		switch (Language) {
-			case "cz" : LanguageTranslations = G_LibTranslations_CZ;
+			case "cs" : LanguageTranslations = G_LibTranslations_CS;
 			case "da" : LanguageTranslations = G_LibTranslations_DA;
 			case "de" : LanguageTranslations = G_LibTranslations_DE;
 			case "en_GB" : LanguageTranslations = G_LibTranslations_ENGB;
 			case "es" : LanguageTranslations = G_LibTranslations_ES;
+			case "fi" : LanguageTranslations = G_LibTranslations_FI;
 			case "fr" : LanguageTranslations = G_LibTranslations_FR;
 			case "hu" : LanguageTranslations = G_LibTranslations_HU;
 			case "it" : LanguageTranslations = G_LibTranslations_IT;
-			case "jp" : LanguageTranslations = G_LibTranslations_JP;
-			case "kr" : LanguageTranslations = G_LibTranslations_KR;
+			case "ja" : LanguageTranslations = G_LibTranslations_JA;
+			case "ko" : LanguageTranslations = G_LibTranslations_KO;
 			case "nb" : LanguageTranslations = G_LibTranslations_NB;
 			case "nl" : LanguageTranslations = G_LibTranslations_NL;
 			case "pl" : LanguageTranslations = G_LibTranslations_PL;
@@ -725,8 +732,9 @@ Text InsertToManialink(Text[] _Phrases) {
 			case "ro" : LanguageTranslations = G_LibTranslations_RO;
 			case "ru" : LanguageTranslations = G_LibTranslations_RU;
 			case "sk" : LanguageTranslations = G_LibTranslations_SK;
+			case "sv" : LanguageTranslations = G_LibTranslations_SV;
 			case "tr" : LanguageTranslations = G_LibTranslations_TR;
-			case "zh" : LanguageTranslations = G_LibTranslations_ZH;
+			case "zh_CN" : LanguageTranslations = G_LibTranslations_ZHCN;
 		}
 		declare Text[] PhraseObjects;
 		
@@ -735,11 +743,11 @@ Text InsertToManialink(Text[] _Phrases) {
 			PhraseObjects.add(Index^" => \""^Private_MSEscape(LanguageTranslations[Index])^"\"");
 		}
 		
-		// Create array of language phrases with the language code as the key
+		// Create array of language segments with the language code as the key
 		if (PhraseObjects.count > 0) LanguageObjects.add("\""^Language^"\" => ["^TL::Join(", ", PhraseObjects)^"]");
 	}
 	
-	// Create array of languages and their available phrases
+	// Create array of languages and their available segments
 	if (LanguageObjects.count > 0) LanguagesList = "["^TL::Join(", ", LanguageObjects)^"]";
 	
 	return """
@@ -771,7 +779,7 @@ CMlLabel Private_LibTranslations_GetLabel(Text _LabelId) {
 }
 
 Text Translations_Get(Text _Phrase) {
-	if (_Phrase == "" || LocalUser.Language == "en" || LocalUser.Language == "en_GB") return _Phrase;
+	if (_Phrase == "" || LocalUser.Language == "en") return _Phrase;
 	declare AutoTranslatedPhrase = TL::GetTranslatedText(_Phrase);
 	
 	declare PhraseIndex = Private_LibTranslations_GetIndex(_Phrase);
@@ -846,8 +854,8 @@ Void Translate(Text _LabelId, Text[] _Arguments) {
 	""";
 }
 
-Text InjectInManialink(Text[] _Phrases) {
-	return InsertToManialink(_Phrases);
+Text InjectInManialink(Text[] _Segments) {
+	return InsertToManialink(_Segments);
 }
 
 // ---------------------------------- //

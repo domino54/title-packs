@@ -1,8 +1,16 @@
+// -------------------------------------- //
+//  SERVER MANAGER by domino54            //
+//  script version: 2017-12-15            //
+// -------------------------------------- //
+
+#Const Version		"2017-12-15"
+#Const ScriptName	"Libs/domino54/ServerManager.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
 // Constants
@@ -20,9 +28,19 @@
 	"domino54" => 3
 ]
 
+// Default commands permissions
+#Const C_LibServerManager_CommandsPermissions [
+	"setadmin" => 3, "setmod" => 3, "revoke" => 3,
+	"mute" => 1, "unmute" => 1
+]
+
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
+
+// Chat settings
+declare Integer G_LibServerManager_ChatAllowLinks;
+declare Integer G_LibServerManager_ChatAllowBadwords;
 
 // Pending chat messages
 declare Integer G_LibServerManager_LastChatMessageKey;
@@ -68,7 +86,7 @@ Text Private_CreateManialinkServerManager() {
 	
 	<!-- Players list -->
 	<frame id="Frame_PlayersList" pos="-81 52">
-		<label pos="2 -2" class="FontM" textsize="4" textprefix="$t" text="Players" />
+		<label pos="2 -2" class="FontM" textsize="4" textprefix="$t" id="Label_PlayersListTitle" />
 		<quad pos="0 -6" size="164 .5" valign="center" bgcolor="FFF" opacity=".5" />
 
 		<!-- Close window button -->
@@ -98,6 +116,19 @@ Text Private_CreateManialinkServerManager() {
 
 				<quad size="54 8" bgcolorfocus="FFF2" class="click" id="Quad_PlayersListReturn" ScriptEvents="1" />
 				<quad size="54 8" bgcolor="FFF" opacity=".125" />
+			</frame>
+
+			<frame id="Frame_PlayersListModes" pos="58 -2">
+				<framemodel id="FrameModel_PlayersListMode">
+					<quad pos="-.5 .5" size="9 9" style="Bgs1" substyle="BgColorContour" id="Quad_PlayersListModeActive" hidden="1" />
+					<quad pos="4 -4" size="7 7" halign="center" valign="center" id="Quad_PlayersListModeIcon" />
+
+					<quad size="8 8" bgcolorfocus="FFF2" class="click" id="Quad_PlayersListModeButton" ScriptEvents="1" />
+					<quad size="8 8" bgcolor="FFF" opacity=".125" />
+				</framemodel>
+				<frameinstance modelid="FrameModel_PlayersListMode" id="Frame_PlayersListMode#0" pos="0" />
+				<frameinstance modelid="FrameModel_PlayersListMode" id="Frame_PlayersListMode#1" pos="9" />
+				<frameinstance modelid="FrameModel_PlayersListMode" id="Frame_PlayersListMode#2" pos="18" />
 			</frame>
 
 			<!-- Page switch -->
@@ -146,10 +177,13 @@ Text Private_CreateManialinkServerManager() {
 
 #Const C_DefaultIcons [
 	"Muted" => "Icons128x32_1|Sound",
-	"Spectator" => "Icons64x64_1|CameraLocal",
+	"Spectator" => "Icons64x64_1|TV",
 	"SuperAdmin" => "Icons128x128_1|Hard",
 	"Admin" => "Icons128x128_1|Medium",
-	"Moderator" => "Icons128x128_1|Easy"
+	"Moderator" => "Icons128x128_1|Easy",
+	"Players" => "Icons128x128_1|ChallengeAuthor",
+	"Moderation" => "Icons128x128_1|Options",
+	"Encountered" => "Icons128x128_1|Puzzle"
 ]
 
 declare Text[Text] G_AvailableIcons;
@@ -165,6 +199,7 @@ declare Frame_ServerManager <=> (Page.GetFirstChild("Frame_ServerManager") as CM
 
 // Players list
 declare Frame_PlayersList <=> (Page.GetFirstChild("Frame_PlayersList") as CMlFrame);
+declare Label_PlayersListTitle <=> (Page.GetFirstChild("Label_PlayersListTitle") as CMlLabel);
 declare Quad_PlayersPagePrev <=> (Page.GetFirstChild("Quad_PlayersPagePrev") as CMlQuad);
 declare Quad_PlayersPageNext <=> (Page.GetFirstChild("Quad_PlayersPageNext") as CMlQuad);
 declare Label_PlayersCurPage <=> (Page.GetFirstChild("Label_PlayersCurPage") as CMlLabel);
@@ -172,10 +207,14 @@ declare Label_PlayersCurPage <=> (Page.GetFirstChild("Label_PlayersCurPage") as 
 declare CMlFrame[] Frame_PlayersListRows;
 for (I, 0, 11) Frame_PlayersListRows.add((Page.GetFirstChild("Frame_PlayersListRow#"^I) as CMlFrame));
 
+declare CMlFrame[] Frame_PlayersListModes;
+for (I, 0, 2) Frame_PlayersListModes.add((Page.GetFirstChild("Frame_PlayersListMode#"^I) as CMlFrame));
+
 // ---------------------------------- //
 // Net variables
 declare netread Integer[Text] Net_LibServerManager_PlayersPerms for Teams[0];
 declare netread Integer Net_LibServerManager_PlayersPermsUpdate for Teams[0];
+declare netread Integer Net_LibServerManager_MutedPlayersUpdate for Teams[0];
 
 // ---------------------------------- //
 // Persistent settings
@@ -192,16 +231,29 @@ declare DisplayServerManager = False;
 
 // Players list
 declare UpdatePlayersList = True;
+declare UpdatePlayersModeButtons = True;
 declare PlayersListCurPage = 1;
 declare PlayersListNbPages = 1;
 
 declare PrevMenuContext = -1;
 declare PrevNbPlayers = -1;
 declare PrevPlayersPermsUpdate = -1;
+declare PrevPlayersMutedUpdate = -1;
 
 // Init
 EnableMenuNavigation(Persistent_LibServerManager_IsVisible, False, Null, 0);
 Persistent_LibServerManager_Context = C_MenuContext_PlayersList;
+
+G_AvailableIcons = [
+	"Spectator" => "file://Media/Manialinks/TrackMania/Pursuit/Icons/Spectator.png",
+	"Muted" => "file://Media/Manialinks/TrackMania/Pursuit/Icons/Deafen.png",
+	"Players" => "file://Media/Manialinks/TrackMania/Pursuit/Icons/Run.png",
+	"Moderation" => "file://Media/Manialinks/TrackMania/Pursuit/Icons/Replie.png",
+	"SuperAdmin" => "file://Media/Manialinks/TrackMania/Pursuit/Icons/Replie.png",
+	"Admin" => "file://Media/Manialinks/TrackMania/Pursuit/Icons/Replie.png",
+	"Moderator" => "file://Media/Manialinks/TrackMania/Pursuit/Icons/Replie.png",
+	"Encountered" => "file://Media/Manialinks/TrackMania/Pursuit/Icons/Stopwatch.png"
+];
 ***
 
 // ---------------------------------- //
@@ -262,6 +314,18 @@ foreach (Event in PendingEvents) {
 			UpdatePlayersList = True;
 		}
 
+		// Switch players list mode
+		else if (Event.ControlId == "Quad_PlayersListModeButton") {
+			if (Frame_PlayersListModes.exists(Event.Control.Parent)) {
+				declare TargetMode = Frame_PlayersListModes.keyof(Event.Control.Parent);
+				Persistent_LibServerManager_PlayersListMode = TargetMode;
+
+				UpdatePlayersList = True;
+				UpdatePlayersModeButtons = True;
+				PlayersListCurPage = 1;
+			}
+		}
+
 		// Play sounds
 		if (Event.Control.HasClass("click"))
 			Audio.PlaySoundEvent(CAudioManager::ELibSound::Valid, 1, 1.);
@@ -304,30 +368,59 @@ if (PrevPlayersPermsUpdate != Net_LibServerManager_PlayersPermsUpdate) {
 	UpdatePlayersList = True;
 }
 
+// Server updated muted players list
+if (PrevPlayersMutedUpdate != Net_LibServerManager_MutedPlayersUpdate) {
+	PrevPlayersMutedUpdate = Net_LibServerManager_MutedPlayersUpdate;
+	UpdatePlayersList = True;
+}
+
+// ---------------------------------- //
+// Players number change
+if (PrevNbPlayers != Players.count) {
+	PrevNbPlayers = Players.count;
+	UpdatePlayersList = True;
+
+	// Save new encountered players
+	foreach (Player in Players) {
+		if (Player.User == LocalUser || TL::SubString(Player.User.Login, 0, 1) == "*") continue;
+
+		declare IsNewPlayer for Player = True;
+		if (!IsNewPlayer) continue;
+		IsNewPlayer = False;
+
+		Persistent_LibServerManager_PlayersEncountered[Player.User.Login] = Player.User.Name;
+	}
+}
+
 switch (Persistent_LibServerManager_Context) {
 	// ---------------------------------- //
 	// Players list
 	case C_MenuContext_PlayersList : {
-		if (PrevNbPlayers != Players.count) {
-			PrevNbPlayers = Players.count;
-			UpdatePlayersList = True;
+		// ---------------------------------- //
+		// Update players list mode buttons
+		if (UpdatePlayersModeButtons) {
+			UpdatePlayersModeButtons = False;
+
+			foreach (I => Frame in Frame_PlayersListModes) {
+				declare Quad_PlayersListModeIcon <=> (Frame.GetFirstChild("Quad_PlayersListModeIcon") as CMlQuad);
+				declare Quad_PlayersListModeActive <=> (Frame.GetFirstChild("Quad_PlayersListModeActive") as CMlQuad);
+
+				declare Text IconImage;
+				switch (I) {
+					case 0 : IconImage = GetIconImage("Players");
+					case 1 : IconImage = GetIconImage("Moderation");
+					case 2 : IconImage = GetIconImage("Encountered");
+				}
+
+				SetQuadStyle(Quad_PlayersListModeIcon, IconImage);
+				Quad_PlayersListModeActive.Visible = I == Persistent_LibServerManager_PlayersListMode;
+			}
 		}
 
 		// ---------------------------------- //
 		// Update players list
 		if (UpdatePlayersList) {
 			UpdatePlayersList = False;
-
-			// ---------------------------------- //
-			// Pages amount
-			PlayersListNbPages = (Players.count - 1) / Frame_PlayersListRows.count + 1;
-			PlayersListCurPage = ML::Clamp(PlayersListCurPage, 1, PlayersListNbPages);
-
-			Quad_PlayersPagePrev.Visible = PlayersListCurPage > 1;
-			Quad_PlayersPageNext.Visible = PlayersListCurPage < PlayersListNbPages;
-			Label_PlayersCurPage.Value = PlayersListCurPage^"/"^PlayersListNbPages;
-
-			Persistent_LibServerManager_PlayersListMode = C_PlayersListMode_Moderators;
 
 			// ---------------------------------- //
 			// List the players
@@ -337,6 +430,8 @@ switch (Persistent_LibServerManager_Context) {
 				// ---------------------------------- //
 				// List all moderators
 				case C_PlayersListMode_Moderators : {
+					Label_PlayersListTitle.Value = Translate("Moderators");
+
 					declare Text[][Integer] SortedPerms;
 					foreach (Login => Perms in Net_LibServerManager_PlayersPerms) {
 						if (Perms == C_Permissions_Default) continue;
@@ -349,11 +444,21 @@ switch (Persistent_LibServerManager_Context) {
 					}
 				}
 				// ---------------------------------- //
+				// List all encountered players
+				case C_PlayersListMode_Encountered : {
+					Label_PlayersListTitle.Value = _("Encountered players");
+
+					foreach (Login => Name in Persistent_LibServerManager_PlayersEncountered) PlayersLogins.add(Login);
+					PlayersLogins = PlayersLogins.sort();
+				}
+				// ---------------------------------- //
 				// List all players in alphabetical order.
 				default : {
-					PlayersLogins.add(LocalUser.Login);
+					Label_PlayersListTitle.Value = _("Players");
 
+					PlayersLogins.add(LocalUser.Login);
 					declare Text[] OnlinePlayers;
+
 					foreach (Player in Players) {
 						if (Player.User.Login == "*bot*" || Player.User.Login == LocalUser.Login) continue;
 						OnlinePlayers.add(Player.User.Login);
@@ -362,6 +467,14 @@ switch (Persistent_LibServerManager_Context) {
 					foreach (Login in OnlinePlayers.sort()) PlayersLogins.add(Login);
 				}
 			}
+
+			// Pager visibility
+			PlayersListNbPages = (PlayersLogins.count - 1) / Frame_PlayersListRows.count + 1;
+			PlayersListCurPage = ML::Clamp(PlayersListCurPage, 1, PlayersListNbPages);
+
+			Quad_PlayersPagePrev.Visible = PlayersListCurPage > 1;
+			Quad_PlayersPageNext.Visible = PlayersListCurPage < PlayersListNbPages;
+			Label_PlayersCurPage.Value = PlayersListCurPage^"/"^PlayersListNbPages;
 
 			// ---------------------------------- //
 			// Format frames
@@ -415,6 +528,13 @@ switch (Persistent_LibServerManager_Context) {
 ***
 
 {{{ManialinkTools::Functions(["SetQuadStyle"])}}}
+{{{Translations::InjectInManialink(["Moderators"])}}}
+
+Text GetIconImage(Text _Name) {
+	if (G_AvailableIcons.existskey(_Name)) return G_AvailableIcons[_Name];
+	if (C_DefaultIcons.existskey(_Name)) return C_DefaultIcons[_Name];
+	return "";
+}
 
 // ---------------------------------- //
 /** Get a player by their login.
@@ -432,13 +552,13 @@ CPlayer GetPlayer(Text _Login) {
 Text GetPlayerName(Text _Login) {
 	declare Player <=> GetPlayer(_Login);
 	if (Player != Null) return Player.User.Name;
-	return _Login;
-}
 
-Text GetIconImage(Text _Name) {
-	if (G_AvailableIcons.existskey(_Name)) return G_AvailableIcons[_Name];
-	if (C_DefaultIcons.existskey(_Name)) return C_DefaultIcons[_Name];
-	return "";
+	declare persistent Persistent_LibServerManager_PlayersEncountered for LocalUser = Text[Text];
+	if (Persistent_LibServerManager_PlayersEncountered.existskey(_Login)) {
+		return Persistent_LibServerManager_PlayersEncountered[_Login];
+	}
+
+	return _Login;
 }
 
 Integer GetPlayerPerms(Text _Login) {
@@ -491,8 +611,22 @@ Void Private_UpdateMutedList() {
 	Net_LibServerManager_MutedPlayersUpdate = Now;
 }
 
+// ---------------------------------- //
+/** Get permissions level of a command.
+ *
+ *	@param	_Command	Name of the command.
+ *
+ *	@return		Required permissions level to use the command.
+ */
 Integer Private_GetCommandPerms(Text _Command) {
-	
+	// TODO: Setver customized permissions
+
+	// Default permissions settings
+	if (C_LibServerManager_CommandsPermissions.existskey(_Command)) {
+		return C_LibServerManager_CommandsPermissions[_Command];
+	}
+
+	// Command accessible by everyone
 	return C_LibServerManager_Perms_Default;
 }
 
@@ -582,6 +716,20 @@ Text Private_GetPermsName(Integer _Perms) {
 // ---------------------------------- //
 
 // ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+	
+// ---------------------------------- //
 /** Get the name of a player by part of the login.
  *
  *	@param	_Login	Part of the target player's login.
@@ -666,21 +814,29 @@ Boolean ParseLinks() {
 }
 
 // ---------------------------------- //
-/** Get chat setting for parsing badwords.
+/** Get player permissions for parsing badwords.
+ *
+ *	@param	_Login	Login of the player to get setting.
  *
  *	@return		True, if chat is set to parse badwords.
  */
-Boolean ParseBadwords() {
-	return True;
+Boolean ParseBadwords(Text _Login) {
+	if (_Login == "") return False;
+	declare PlayerPerms = Private_GetPlayerPerms(_Login);
+	return PlayerPerms < G_LibServerManager_ChatAllowBadwords;
 }
 
 // ---------------------------------- //
-/** Get chat setting for removing links.
+/** Get player permissions for removing links.
+ *
+ *	@param	_Login	Login of the player to get setting.
  *
  *	@return		True, if chat is set to remove links.
  */
-Boolean RemoveLinks() {
-	return True;
+Boolean RemoveLinks(Text _Login) {
+	if (_Login == "") return False;
+	declare PlayerPerms = Private_GetPlayerPerms(_Login);
+	return PlayerPerms < G_LibServerManager_ChatAllowLinks;
 }
 
 // ---------------------------------- //
@@ -896,6 +1052,11 @@ Void Unload() {
 Void Load() {
 	Unload();
 
+	// Init settings
+	G_LibServerManager_ChatAllowLinks = C_LibServerManager_Perms_Moderator;
+	G_LibServerManager_ChatAllowBadwords = C_LibServerManager_Perms_Moderator;
+
+	// Create UI
 	Layers::Create(C_LibServerManager_LayerId, Private_CreateManialinkServerManager());
 	Layers::Attach(C_LibServerManager_LayerId);
 

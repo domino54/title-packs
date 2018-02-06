@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PURSUIT MODE BASE by domino54         //
-//  script version: 2017-12-15            //
+//  script version: 2018-02-16            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
 #Const CompatibleMapTypes	"PursuitArena"
-#Const PUR_Version		"2017-12-15"
+#Const PUR_Version		"2018-02-16"
 #Const PUR_ScriptName	"Modes/TrackMania/ModePursuit.Script.txt"
 
 #Include "MathLib" as ML
@@ -19,17 +19,19 @@
 #Include "Libs/domino54/Characters.Script.txt" as Characters
 #Include "Libs/domino54/Chat.Script.txt" as Chat
 #Include "Libs/domino54/CupAdmin.Script.txt" as CupAdmin
+#Include "Libs/domino54/CustomNames.Script.txt" as Names
 #Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
 #Include "Libs/domino54/Killfeed.Script.txt" as Killfeed
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/MapSelection.Script.txt" as MapSelection
+#Include "Libs/domino54/Minimap2.Script.txt" as Minimap
 #Include "Libs/domino54/Models.Script.txt" as Models
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
 #Include "Libs/domino54/PauseMenu2.Script.txt" as PauseMenu
-#Include "Libs/domino54/ServerAuth.Script.txt" as ServerAuth
 #Include "Libs/domino54/ServerManager.Script.txt" as ServerManager
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
+#Include "Libs/domino54/Streaks.Script.txt" as Streaks
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 #Include "Libs/domino54/Webhook.Script.txt" as Webhook
@@ -43,7 +45,7 @@
 // ---------------------------------- //
 #Setting S_EnableCharSelection	True	as _("Allow players to choose their vehicle")
 #Setting S_CharSelectionTime	10		as _("Vehicle selection display duration (s)")
-#Setting S_AllowLagoonCar		False	as _("Allow Lagoon Car on environments other than Lagoon")
+#Setting S_LagoonCarUnlockMode	0		as _("Lagoon Car availability [0 - Lagoon, 1 - unlocked, 2 - purchase]")
 #Setting S_EnableCollisions		True	as _("Enable collisions")
 #Setting S_ResetScoreLeavers	True	as _("Reset scores of players that left the game at the match end")
 #Setting S_UseLegacyHitbox		False	as _("Use old hit detection system")
@@ -58,7 +60,6 @@
 #Setting S_MusicPlaylistURL		""		as "<hidden>" ///< URL of the server custom music playlist file
 #Setting S_EnableMapSelection	True	as "<hidden>" ///< Allow players to choose which map they want to play next
 #Setting S_WebhookURL			""		as "<hidden>" ///< URL of the webhook to send notifications
-#Setting S_ServerAuthPassword	""		as "<hidden>" ///< Server mode authorization password.
 
 /// Competition settings
 #Setting S_AdminEnableCupMode		False	as "<hidden>"
@@ -77,16 +78,13 @@
 #Const C_InterfaceFont_Bold		"Eurostile_Bold"
 #Const C_PlayerSpawnDuration	1500	///< Duration of the countdown before starting race.
 #Const C_NoInteractionDuration	3000	///< Time after player respawn.
-#Const C_HitboxSphereDiameter	3.		///< Diameter of player hitbox sphere (deprecated).
+#Const C_HitboxSphereDiameter	3.5		///< Diameter of player hitbox sphere (deprecated).
 #Const C_CamperDetectionTime	30000	///< Time before mode detects thief as a camper.
 #Const C_CamperAbortDistance	100.	///< Distance to drive to abort automatic respawn.
 #Const C_CamperUpdateDistance	32.		///< Distance to drive to reset camping timer.
+#Const C_LagoonCarDuration		1800	///< Duration for which Lagoon Car is available atfer purchase.
 #Const C_DefaultKillfeedPosn	<159., 89., -5.>	///< Default position of the Killfeed layer.
 #Const C_SoundsBaseVolume		-5.
-
-/// Server authorization
-#Const C_ServerAuthListURL	""
-#Const C_ServerAuthPassword	""
 
 // ---------------------------------- //
 // Extends
@@ -110,7 +108,6 @@ Log::RegisterScript(Models::GetScriptName(), Models::GetScriptVersion());
 Log::RegisterScript(OffZone::GetScriptName(), OffZone::GetScriptVersion());
 Log::RegisterScript(PauseMenu::GetScriptName(), PauseMenu::GetScriptVersion());
 Log::RegisterScript(PursuitUI::GetScriptName(), PursuitUI::GetScriptVersion());
-Log::RegisterScript(ServerAuth::GetScriptName(), ServerAuth::GetScriptVersion());
 Log::RegisterScript(ServerManager::GetScriptName(), ServerManager::GetScriptVersion());
 Log::RegisterScript(StoragePlayer::GetScriptName(), StoragePlayer::GetScriptVersion());
 Log::RegisterScript(TopScores::GetScriptName(), TopScores::GetScriptVersion());
@@ -137,7 +134,7 @@ MB_Settings_UseDefaultRespawnBehaviour = False;
 // ---------------------------------- //
 ***ScoresTable***
 ***
-ST2::SetSize(<60., 11.>, <161., 59.5>, <160., 15.5>);
+ST2::SetSize(<60., 11.>, <162., 59.5>, <160., 15.5>);
 ST2::SetBackgroundProperties(<0., 5.>, <200., 100.>);
 ST2::SetModeIcon("Icons64x64_1|Opponents");
 ST2::SetTeamsScoresVisibility(False);
@@ -156,6 +153,7 @@ ST2::SetColWidth("LibST_Tools", 1.5);
 // ---------------------------------- //
 // Score points
 ST2::CreateCol("LibST_TMPoints", _("Score"), "0", 5., 100.);
+ST2::CreateCol("PUR_Vehicle", "", "", 2., 50.);
 ST2::SetColTextAlign("LibST_TMPoints", CMlControl::AlignHorizontal::Right);
 ST2::SetColTextSize("LibST_TMPoints", 3.);
 ST2::SetColScript("LibST_TMPoints", """
@@ -231,6 +229,7 @@ UiLaps = True;
 
 // Load models
 Models::Load();
+Models::LoadCanyonCar("Canyon Interceptor.Skin.Pack.Gbx");
 
 // ---------------------------------- //
 // Download translations
@@ -293,10 +292,12 @@ TopScores::Build();
 // Load Killfeed library
 Killfeed::Load();
 Killfeed::SetPosition(C_DefaultKillfeedPosn + <0., S_KillfeedOffsetY, 0.>);
-Killfeed::AddTranslations(["$<%1$> rest in OffZone", "$<%1$> tried to escape arena", "$<%1$> somehow fell below map"]);
+Killfeed::AddTranslations(["$<%1$> rests in the OffZone", "$<%1$> tried to escape the arena", "$<%1$> somehow fell below map"]);
 Killfeed::SetTextFont(C_InterfaceFont_Medium);
 Killfeed::SetMapSwitching(True);
-Killfeed::Build();
+
+// Load streaks
+Streaks::Load(C_ImgBase^"/Streaks/");
 
 // ---------------------------------- //
 // Load Fancy Messages
@@ -315,6 +316,10 @@ Chat::Load(C_InterfaceFont_Medium);
 // Load the Storage Music Player
 StoragePlayer::Load(C_ImgBase, C_InterfaceFont_Medium, C_InterfaceFont_Bold);
 StoragePlayer::SetDefaultPlaylistURL("");
+
+// Other
+Minimap::Load(C_ImgBase^"/Minimap/");
+Killfeed::Build();
 ***
 
 ***MB_Private_AfterLoadMap***
@@ -338,32 +343,30 @@ MapSelection::StartMap();
 PUR_DisableTimeLimit();
 
 declare PrevEnableCharSelection = S_EnableCharSelection;
-declare PrevAllowLagoonCar = !S_AllowLagoonCar;
-declare ForcedStadiumCar = False;
-declare LagoonCarAllowed = False;
-
-// ---------------------------------- //
-// Wait for server to be authorized
-if (!ServerAuth::IsAuthorized()) {
-	ServerAuth::CheckAuth(S_ServerAuthPassword);
-	while (ServerAuth::AuthLoop(S_ServerAuthPassword)) MB_Yield();
-}
+declare PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
 ***
 
 ***Match_StartMap***
 ***
 // ---------------------------------- //
 // Init characters menu
-ForcedStadiumCar = Map.CollectionName == "Stadium";
-LagoonCarAllowed = S_AllowLagoonCar || Map.CollectionName == "Lagoon";
-
-Characters::SetCharAvailable(0, !ForcedStadiumCar);
-Characters::SetCharAvailable(2, !ForcedStadiumCar);
-Characters::SetCharAvailable(3, !ForcedStadiumCar && LagoonCarAllowed);
+Characters::SetOpenplanetRequired(Map.CollectionName == "Stadium");
+PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
 
 PauseMenu::SetButtonVisibility("PUR_CharSelection", S_EnableCharSelection);
 if (S_EnableCharSelection) Characters::Manual();
 else Characters::Hide();
+
+// ---------------------------------- //
+// Split screen players names
+foreach (Player in Players) {
+	switch (Player.User.Login) {
+		case "*splitscreen_0*" : Names::Set(Player, "$07FAlpha");
+		case "*splitscreen_1*" : Names::Set(Player, "$F53Beta");
+		case "*splitscreen_2*" : Names::Set(Player, "$4F2Gamma");
+		case "*splitscreen_3*" : Names::Set(Player, "$B3FDelta");
+	}
+}
 ***
 
 // ---------------------------------- //
@@ -391,8 +394,14 @@ Message::Loop();
 PursuitUI::Loop();
 ServerManager::Loop();
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
+Streaks::Loop();
 Webhook::Loop(S_WebhookURL);
 WebLayers::Update(S_CustomLayersURLs);
+***
+
+***Match_StartPlayLoop***
+***
+Minimap::Show();
 ***
 
 // ---------------------------------- //
@@ -400,6 +409,57 @@ WebLayers::Update(S_CustomLayersURLs);
 // ---------------------------------- //
 ***Match_PlayLoop***
 ***
+// ---------------------------------- //
+// Custom chat commands
+foreach (CommandId in Chat::PendingCommands()) {
+	declare CommandPlayer	<=> Chat::GetCommandPlayer(CommandId);
+	declare CommandName		= Chat::GetCommandName(CommandId);
+	declare CommandParams	= Chat::GetCommandParams(CommandId);
+	if (CommandPlayer == Null) continue;
+
+	declare SenderPerms = ServerManager::Private_GetPlayerPerms(CommandPlayer.User.Login);
+
+	// Insufficient permissions to perform the command
+	if (ServerManager::C_LibServerManager_Perms_Moderator > SenderPerms) {
+		ServerManager::SendChat(CommandPlayer, "You don't have permissions to use this command!");
+		continue;
+	}
+
+	switch (CommandName) {
+		// ---------------------------------- //
+		// Lagoon Car unlock conditions
+		case "lagooncar" : {
+			if (CommandParams.count <= 0) continue;
+			declare Msg = "";
+
+			switch (TL::ToInteger(CommandParams[0])) {
+				// Available
+				case 1 : {
+					Characters::SetPurchaseTimeout(-1);
+					Characters::SetCharAvailable(3, True);
+					Msg = "$<%1$> set Lagoon Car availability to: available for everyone!";
+				}
+
+				// Purchaseable
+				case 2 : {
+					Characters::SetPurchaseTimeout(1800000);
+					Characters::SetCharAvailable(3, True);
+					Msg = "$<%1$> set Lagoon Car availability to: purchaseable!";
+				}
+				
+				// Locked
+				default : {
+					Characters::SetPurchaseTimeout(-1);
+					Characters::SetCharAvailable(3, False);
+					Msg = "$<%1$> set Lagoon Car availability to: locked!";
+				}
+			}
+
+			ServerManager::SendChat([Msg, CommandPlayer.User.Name]);
+		}
+	}
+}
+
 // ---------------------------------- //
 // Characters setting change
 if (PrevEnableCharSelection != S_EnableCharSelection) {
@@ -412,11 +472,15 @@ if (PrevEnableCharSelection != S_EnableCharSelection) {
 
 // ---------------------------------- //
 // Update Lagoon Car availability
-if (PrevAllowLagoonCar != S_AllowLagoonCar) {
-	PrevAllowLagoonCar = S_AllowLagoonCar;
-	LagoonCarAllowed = S_AllowLagoonCar || Map.CollectionName == "Lagoon";
-	Characters::SetCharAvailable(3, !ForcedStadiumCar && LagoonCarAllowed);
+if (PrevLagoonCarUnlockMode != S_LagoonCarUnlockMode) {
+	PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
+	PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
 }
+***
+
+***Match_EndPlayLoop***
+***
+Minimap::Hide();
 ***
 
 // ---------------------------------- //
@@ -641,6 +705,40 @@ Void PUR_ShowCharSelection() {
 }
 
 // ---------------------------------- //
+/** Update Lagoon Car availability.
+ *
+ *	@param	_LagoonCarMode		Lagoon Car mode.
+ */
+Void PUR_UpdateLagoonCar(Integer _LagoonCarMode) {
+	// Lagoon Car always available in Lagoon
+	if (Map != Null && Map.CollectionName == "Lagoon") {
+		Characters::SetPurchaseTimeout(-1);
+		Characters::SetCharAvailable(3, True);
+	}
+
+	// Apply the setting
+	else switch (_LagoonCarMode) {
+		// Available
+		case 1 : {
+			Characters::SetPurchaseTimeout(-1);
+			Characters::SetCharAvailable(3, True);
+		}
+
+		// Purchase
+		case 2: {
+			Characters::SetPurchaseTimeout(C_LagoonCarDuration * 1000);
+			Characters::SetCharAvailable(3, True);
+		}
+
+		// Locked
+		default : {
+			Characters::SetPurchaseTimeout(-1);
+			Characters::SetCharAvailable(3, False);
+		}
+	}
+}
+
+// ---------------------------------- //
 /** Reset player respawn timer.
  *
  *	@param	_Player		The player to reset.
@@ -682,6 +780,11 @@ Void PUR_SpawnPlayer(CTmPlayer _Player) {
 	TM::WaitRace(_Player);
 	PUR_ResetRespawn(_Player);
 	PUR_ResetCamping(_Player);
+	Streaks::CountElimination(_Player);
+
+	// Police special skins
+	declare PlayerClan = PUR_GetPlayerClan(_Player);
+	declare ModelName = "";
 
 	// Reset AFK checking
 	declare Integer IdleStartTime for _Player;
@@ -693,14 +796,40 @@ Void PUR_SpawnPlayer(CTmPlayer _Player) {
 	// Set player model
 	declare PlayerCharacterId = 0;
 	if (S_EnableCharSelection) PlayerCharacterId = Characters::GetPlayerChar(_Player);
+
+	// Forced StadiumCar
+	if (Characters::IsOpenplanetRequired() && !Characters::HasOpenplanet(_Player)) PlayerCharacterId = 1;
+
 	Characters::SendPlayerCharInfo(_Player, PlayerCharacterId);
+	Minimap::SetVehicleType(_Player, PlayerCharacterId + 1);
 
 	switch (PlayerCharacterId) {
-		case 0 : Models::SetCanyonCar(_Player);
-		case 1 : Models::SetStadiumCar(_Player);
-		case 2 : Models::SetValleyCar(_Player);
-		case 3 : Models::SetLagoonCar(_Player);
-		default : Models::SetDefault(_Player);
+		// ---------------------------------- //
+		// Canyon Car
+		case 0 : {
+			switch (PlayerClan) {
+				case 1 : ModelName = "Canyon Interceptor.Skin.Pack.Gbx";
+				default : ModelName = "";
+			}
+			Models::SetCanyonCar(_Player, ModelName);
+			ST2::SetColValue("PUR_Vehicle", _Player.Score, "$F00C");
+		}
+		case 1 : {
+			Models::SetStadiumCar(_Player);
+			ST2::SetColValue("PUR_Vehicle", _Player.Score, "$0F7S");
+		}
+		case 2 : {
+			Models::SetValleyCar(_Player);
+			ST2::SetColValue("PUR_Vehicle", _Player.Score, "$7F0V");
+		}
+		case 3 : {
+			Models::SetLagoonCar(_Player);
+			ST2::SetColValue("PUR_Vehicle", _Player.Score, "$07FL");
+		}
+		default : {
+			Models::SetDefault(_Player);
+			ST2::SetColValue("PUR_Vehicle", _Player.Score, "");
+		}
 	}
 
 	// ---------------------------------- //

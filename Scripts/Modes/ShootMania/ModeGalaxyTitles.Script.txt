@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2017-12-15            //
+//  script version: 2018-02-16            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2017-12-15"
+#Const GTVersion	"2018-02-16"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -29,11 +29,13 @@
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/MapSelection.Script.txt" as MapSelection
 #Include "Libs/domino54/MarkersPro.Script.txt" as Markers
+#Include "Libs/domino54/Minimap2.Script.txt" as MiniMap
 #Include "Libs/domino54/Models.Script.txt" as Models
 #Include "Libs/domino54/PauseMenu2.Script.txt" as PauseMenu
 #Include "Libs/domino54/PlayerList.Script.txt" as PlayerList
 #Include "Libs/domino54/Statistics.Script.txt" as Statistics
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
+#Include "Libs/domino54/Streaks.Script.txt" as Streaks
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 #Include "Libs/domino54/Webhook.Script.txt" as Webhook
@@ -41,10 +43,8 @@
 #Include "Libs/domino54/ShootMania/GalaxyTitles.Script.txt" as GalaxyTitles
 #Include "Libs/domino54/ShootMania/Interfancy.Script.txt" as Interfancy
 #Include "Libs/domino54/ShootMania/Inventory.Script.txt" as Inventory
-#Include "Libs/domino54/ShootMania/MiniMap.Script.txt" as MiniMap
 #Include "Libs/domino54/ShootMania/PlayersToads.Script.txt" as Toads
 #Include "Libs/domino54/ShootMania/PlayersTurrets.Script.txt" as Turrets
-#Include "Libs/domino54/ShootMania/Streaks.Script.txt" as Streaks
 
 // ---------------------------------- //
 // Settings
@@ -70,7 +70,7 @@
 #Setting S_EnableMapSelection	True	as "<hidden>" ///< Allow players to choose which map they want to play next
 #Setting S_PodiumTrackDuration	8000	as "<hidden>" ///< Duration of the podium sequence (10 max)
 #Setting S_WebhookURL			""		as "<hidden>" ///< URL of the webhook to send notifications
-#Setting S_AutoManageAFK		True
+#Setting S_AutoManageAFK		False
 
 #Setting S_ScriptEnvironment "production"
 
@@ -403,10 +403,10 @@ Killfeed::SetWeaponsIcons([
 
 // Load Statistics and Streaks
 Statistics::Load();
-Streaks::Load();
+Streaks::Load(C_ImgBase^"/Streaks/");
 
 // Load minimap
-MiniMap::Load();
+MiniMap::Load(C_ImgBase^"/Minimap/");
 MiniMap::SetOpponentsVisibility(!MM_IsMatchServer());
 
 // ---------------------------------- //
@@ -700,7 +700,7 @@ if (Event.Shooter != Null) {
 		Killfeed::SendNotice(Event.Victim.Login, "", C_ImgBase^"Icons/Toad.png", "");
 
 	else Killfeed::OnArmorEmpty(Event, EventAssistant);
-	Streaks::OnArmorEmpty(Event);
+	Streaks::CountElimination(Event.Victim, Event.Shooter);
 	GT_JustHitByToad = False;
 	GT_JustHitByTurret = False;
 	

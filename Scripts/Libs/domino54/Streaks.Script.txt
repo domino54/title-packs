@@ -1,0 +1,420 @@
+// -------------------------------------- //
+//  LIBRARY STREAKS by domino54           //
+//  script version: 2018-02-16            //
+// -------------------------------------- //
+
+/**
+ *	Works only with title packs "GalaxyTitles@domino54",
+ *	"Pursuit@domino54" and "PursuitStadium@domino54".
+ *
+ *	This library is counting kill streaks for all players
+ *	and displaying them as a notice after eliminating
+ *	multiple enemies. It also counts eliminations on
+ *	individual players and display dominations in the
+ *	Killfeed library.
+ */
+
+#Const Version		"2018-02-16"
+#Const ScriptName	"Libs/domino54/Streaks.Script.txt"
+
+#Include "MathLib" as ML
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/domino54/Statistics.Script.txt" as Statistics
+#Include "Libs/domino54/Killfeed.Script.txt" as Killfeed
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibStreaks_StreakTimeBase		2000
+#Const C_LibStreaks_StreakTimePerKill	500
+#Const C_LibStreaks_KillsForDomination	4
+#Const C_LibStreaks_InterfaceLayerName	"LibStreaks:Notices"
+#Const C_LibStreaks_NoticeDisplayTime	2000
+#Const C_LibStreaks_DisplayTimePerKill	125
+#Const C_LibStreaks_NoticePosition		<0., 30.>
+#Const C_LibStreaks_UICleaningPeriod	1000
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Boolean G_LibStreaks_LibraryIsLoaded;
+declare Integer G_LibStreaks_KillsForDomination;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Check if the player is valid.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player is valid.
+ */
+Boolean Private_IsValidPlayer(CPlayer _Player) {
+	if (_Player == Null) return False;
+
+	switchtype (_Player) {
+		case CSmPlayer : {
+			declare Player <=> (_Player as CSmPlayer);
+			return !Player.IsBot || Player.Driver.Owner != Null;
+		}
+		default : return True;
+	}
+
+	return True;
+}
+
+// ---------------------------------- //
+/** Check if the player is spawned.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player is spawned.
+ */
+Boolean Private_IsPlayerSpawned(CPlayer _Player) {
+	if (_Player == Null) return False;
+
+	switchtype (_Player) {
+		case CSmPlayer : {
+			declare Player <=> (_Player as CSmPlayer);
+			return Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned;
+		}
+		case CTmPlayer : {
+			declare Player <=> (_Player as CTmPlayer);
+			return Player.IsSpawned;
+		}
+		default : return False;
+	}
+
+	return False;
+}
+
+// ---------------------------------- //
+/** Create manialink for the notice module.
+ *
+ *	@param	_ImgBase	Tath to the image files.
+ *
+ *	@return		The notice module manialink.
+ */
+Text Private_CreateManialinkNotices(Text _ImgBase) {
+	return """
+<manialink version="3" name="{{{C_LibStreaks_InterfaceLayerName}}}">
+<frame pos="{{{C_LibStreaks_NoticePosition.X^" "^C_LibStreaks_NoticePosition.Y}}}">
+	<quad size="60 15" halign="center" valign="center" opacity="0" id="Quad_StreakNotice" />
+</frame>
+
+<script><!--
+/**
+ *	C_LibStreaks_InterfaceLayerName
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Quad_StreakNotice <=> (Page.GetFirstChild("Quad_StreakNotice") as CMlQuad);
+
+// Persistent settings
+declare persistent Boolean Persistent_LibStreaks_DisableStreaks for LocalUser;
+
+// Variables
+declare CurrentPlayerStreak = 0;
+declare StreakDisplayEndTime = -1;
+declare StreakNotice_IsVisible = False;
+
+/// Update
+declare PrevPlayerStreak = -1;
+declare PrevStreakIsVisible = False;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+if (!PageIsVisible) continue;
+
+// ---------------------------------- //
+// Streak data
+StreakNotice_IsVisible = !IsInGameMenuDisplayed && GUIPlayer != Null && UI.UISequence == CUIConfig::EUISequence::Playing && !Persistent_LibStreaks_DisableStreaks;
+
+if (StreakNotice_IsVisible) {
+	declare netread Integer Net_LibStreaks_KillStreak for GUIPlayer;
+	declare netread Integer Net_LibStreaks_StreakEndTime for GUIPlayer;
+
+	CurrentPlayerStreak = Net_LibStreaks_KillStreak;
+	StreakNotice_IsVisible = GameTime <= Net_LibStreaks_StreakEndTime;
+}
+
+// ---------------------------------- //
+// Change the streak notice style
+if (PrevPlayerStreak != CurrentPlayerStreak) {
+	PrevPlayerStreak = CurrentPlayerStreak;
+	
+	Quad_StreakNotice.ImageUrl = "{{{_ImgBase}}}"^GetStreakImage(CurrentPlayerStreak);
+	Quad_StreakNotice.Colorize = GetStreakColor(CurrentPlayerStreak);
+	
+	// Trigger animation
+	PrevStreakIsVisible = False;
+}
+
+// ---------------------------------- //
+// Display streak notice to a player
+if (PrevStreakIsVisible != StreakNotice_IsVisible) {
+	PrevStreakIsVisible = StreakNotice_IsVisible;
+	
+	declare TargetOpacity = 0.;
+	declare TargetScale = .75;
+	declare Easing = CAnimManager::EAnimManagerEasing::SineIn;
+	
+	Quad_StreakNotice.RelativeScale = 1.;
+	Quad_StreakNotice.Opacity = 1.;
+	
+	if (StreakNotice_IsVisible) {
+		TargetOpacity = 1.;
+		TargetScale = 1.;
+		Easing = CAnimManager::EAnimManagerEasing::CircOut;
+		
+		Quad_StreakNotice.RelativeScale = 2.;
+		Quad_StreakNotice.Opacity = 0.;
+	}
+	
+	AnimMgr.Add(Quad_StreakNotice, "<quad scale='"^TargetScale^"' opacity='"^TargetOpacity^"' />", 250, Easing);
+}
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get the image of a streak
+ *
+ *	@param	_Eliminations	Amount of eliminations
+ *
+ *	@return		Name of the streak image
+ */
+Text GetStreakImage(Integer _Eliminations) {
+	if (_Eliminations < 2) return "";
+	switch (_Eliminations) {
+		case 2 : return "02_DoubleKill.png";
+		case 3 : return "03_TripleKill.png";
+		case 4 : return "04_QuadraKill.png";
+		case 5 : return "05_PentaKill.png";
+		case 6 : return "06_HexaKill.png";
+		case 7 : return "07_SeptaKill.png";
+		case 8 : return "08_OctaKill.png";
+		case 9 : return "09_NonaKill.png";
+		case 10 : return "10_DecaKill.png";
+	}
+	return "11_KillingGod.png";
+}
+
+// ---------------------------------- //
+/** Get the color of a streak
+ *
+ *	@param	_Eliminations	Amount of eliminations
+ *
+ *	@return		Color of the streak
+ */
+Vec3 GetStreakColor(Integer _Eliminations) {
+	if (_Eliminations < 2) return <1., 1., 1.>;
+	switch (_Eliminations) {
+		case 2 : return <1., 1., 0.>;
+		case 3 : return <1., .66, 0.>;
+		case 4 : return <1., .33, 0.>;
+		case 5 : return <1., 0., 0.>;
+		case 6 : return <1., 0., .33>;
+		case 7 : return <1., 0., .66>;
+		case 8 : return <1., 0., 1.>;
+		case 9 : return <.75, .25, 1.>;
+		case 10 : return <.0, .5, 1.>;
+	}
+	return <.25, .75, 1.>;
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	+++Main+++
+	while (True) {
+		yield;
+		+++Yield+++
+	}
+}
+
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Count elimination on a player.
+ *
+ *	@param	_Victim		The player, who's been eliminated.
+ */
+Void CountElimination(CPlayer _Victim) {
+	if (!G_LibStreaks_LibraryIsLoaded) return;
+	if (_Victim == Null || !Private_IsValidPlayer(_Victim)) return;
+
+	// Break victim's killstreak
+	declare netwrite Integer Net_LibStreaks_KillStreak for _Victim;
+	declare netwrite Integer Net_LibStreaks_StreakEndTime for _Victim;
+
+	Net_LibStreaks_KillStreak = 0;
+	Net_LibStreaks_StreakEndTime = -1;
+}
+
+// ---------------------------------- //
+/** Count elimination on a player.
+ *
+ *	@param	_Victim		The player who's been eliminated.
+ *	@param	_Shooter	The player who eliminated the victim.
+ */
+Void CountElimination(CPlayer _Victim, CPlayer _Shooter) {
+	if (!G_LibStreaks_LibraryIsLoaded) return;
+	CountElimination(_Victim);
+
+	// Check if the shooter is valid
+	if (_Shooter == Null || _Shooter == _Victim || !Private_IsValidPlayer(_Shooter)) return;
+
+	// ---------------------------------- //
+	// Increase shooter killstreak
+	declare netwrite Integer Net_LibStreaks_KillStreak for _Shooter;
+	declare netwrite Integer Net_LibStreaks_StreakEndTime for _Shooter;
+
+	Net_LibStreaks_KillStreak += 1;
+	Net_LibStreaks_StreakEndTime = Now + C_LibStreaks_StreakTimeBase + C_LibStreaks_StreakTimePerKill * (Net_LibStreaks_KillStreak - 2);
+
+	// ---------------------------------- //
+	// Count dominations for the shooter
+	declare VictimLogin = _Victim.User.Login;
+	declare Integer[Text] LibStreaks_PlayerEliminations as ShooterEliminations for _Shooter;
+
+	// Increase shooter kills on the victim
+	if (!ShooterEliminations.existskey(VictimLogin)) ShooterEliminations[VictimLogin] = 0;
+	ShooterEliminations[VictimLogin] += 1;
+
+	// Announce kill declaring domination
+	if (ShooterEliminations[VictimLogin] == G_LibStreaks_KillsForDomination) {
+		Killfeed::SendNotice(["$<%1$> is dominating $<%2$>!", _Shooter.User.Name, _Victim.User.Name]);
+		Statistics::TrackEvent(_Shooter, "DominatedPlayers", 1);
+		Statistics::TrackEvent(_Victim, "TimesDominated", 1);
+	}
+
+	// ---------------------------------- //
+	// Take revenge on the victim
+	declare ShooterLogin = _Shooter.User.Login;
+	declare Integer[Text] LibStreaks_PlayerEliminations as VictimEliminations for _Victim;
+
+	if (VictimEliminations.existskey(ShooterLogin)) {
+		// Announce the revenge
+		if (VictimEliminations[ShooterLogin] >= G_LibStreaks_KillsForDomination) {
+			Killfeed::SendNotice(["$<%1$> takes revenge on $<%2$>", _Shooter.User.Name, _Victim.User.Name]);
+			Statistics::TrackEvent(_Shooter, "NemesisRevenged", 1);
+			Statistics::TrackEvent(_Victim, "VictimsRevenges", 1);
+		}
+
+		// Reset the elimination counter
+		VictimEliminations[ShooterLogin] = 0;
+	}
+}
+
+// ---------------------------------- //
+/// Reset everyone's dominations lists.
+Void ResetDominations() {
+	if (!G_LibStreaks_LibraryIsLoaded) return;
+
+	foreach (Player in AllPlayers) {
+		declare Integer[Text] LibStreaks_PlayerEliminations for Player;
+		LibStreaks_PlayerEliminations.clear();
+	}
+}
+
+// ---------------------------------- //
+/** Set the number of kills required for domination.
+ *
+ *	@param	_NbKills	Amount of kills required for dominating a player.
+ */
+Void SetNbKillsForDomination(Integer _NbKills) {
+	G_LibStreaks_KillsForDomination = ML::Max(0, _NbKills);
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	Layers::Detach(C_LibStreaks_InterfaceLayerName);
+	Layers::Destroy(C_LibStreaks_InterfaceLayerName);
+	
+	G_LibStreaks_LibraryIsLoaded = False;
+}
+
+// ---------------------------------- //
+/** Load the library.
+ *
+ *	@param	_ImgBase	Tath to the image files.
+ */
+Void Load(Text _ImgBase) {
+	Unload();
+	
+	Layers::Create(C_LibStreaks_InterfaceLayerName, Private_CreateManialinkNotices(_ImgBase));
+	Layers::Attach(C_LibStreaks_InterfaceLayerName);
+	
+	Killfeed::AddTranslations(["$<%1$> is dominating $<%2$>!", "$<%1$> takes revenge on $<%2$>"]);
+	SetNbKillsForDomination(C_LibStreaks_KillsForDomination);
+	G_LibStreaks_LibraryIsLoaded = True;
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	if (!G_LibStreaks_LibraryIsLoaded) return;
+	
+	// ---------------------------------- //
+	// Manage players' killstreaks
+	foreach (Player in AllPlayers) {
+		if (!Private_IsValidPlayer(Player)) continue;
+		
+		// Killstreaks data
+		declare netwrite Integer Net_LibStreaks_KillStreak for Player;
+		declare netwrite Integer Net_LibStreaks_StreakEndTime for Player;
+		
+		if (Net_LibStreaks_KillStreak <= 0) continue;
+
+		// Reset timed out kill streak
+		if (Now < Net_LibStreaks_StreakEndTime && Private_IsPlayerSpawned(Player)) continue;
+		
+		Net_LibStreaks_StreakEndTime = -1;
+		Net_LibStreaks_KillStreak = 0;
+	}
+}

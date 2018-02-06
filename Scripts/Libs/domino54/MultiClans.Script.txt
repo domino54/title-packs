@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MULTICLANS by domino54        //
-//  script version: 2017-08-22            //
+//  script version: 2018-02-16            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const Version		"2017-08-22"
+#Const Version		"2018-02-16"
 #Const ScriptName	"Libs/domino54/MultiClans.Script.txt"
 
 // ---------------------------------- //
@@ -99,22 +99,6 @@ Void SetUsePlayersNames(Boolean _UsePlayersNames) {
 }
 
 // ---------------------------------- //
-/** Change clan of a player
- *
- *	@param	_Player		The player to chaneg clan
- *	@param	_Clan		The clan to move player in
- */
-Void SetPlayerClan(CPlayer _Player, Integer _Clan) {
-	if (_Player == Null) return;
-	
-	declare TargetClan = ML::Max(0, _Clan);
-	if (TargetClan > C_LibMultiClans_MaxNbTeams) TargetClan = 0;
-	
-	declare Integer LibMultiClans_PlayerClan for _Player;
-	LibMultiClans_PlayerClan = TargetClan;
-}
-
-// ---------------------------------- //
 /** Get the clan of a player
  *
  *	@param	_Player		The player to get clan
@@ -123,70 +107,21 @@ Void SetPlayerClan(CPlayer _Player, Integer _Clan) {
  */
 Integer GetPlayerClan(CPlayer _Player) {
 	if (_Player == Null) return 0;
-	declare Integer LibMultiClans_PlayerClan for _Player;
-	return LibMultiClans_PlayerClan;
-}
 
-// ---------------------------------- //
-/** Reset clan of a player
- *
- *	@param	_Player		The player to reset clan
- */
-Void ResetPlayerClan(CPlayer _Player) { SetPlayerClan(_Player, 0); }
-
-// ---------------------------------- //
-/// Reset all players clans
-Void ResetAllPlayersClans() { foreach (Player in AllPlayers) ResetPlayerClan(Player); }
-
-// ---------------------------------- //
-/** Check if two players are teammates
- *
- *	@param	_Player1	First Player to check
- *	@param	_Player2	Second player to check
- *
- *	@return		True, if players are teammates
- */
-Boolean AreTeammates(CPlayer _Player1, CPlayer _Player2) {
-	if (_Player1 == Null || _Player2 == Null) return False;
-	declare Player1Clan = GetPlayerClan(_Player1);
-	declare Player2Clan = GetPlayerClan(_Player2);
-	
-	if (Player1Clan == 0 || Player2Clan == 0) return False;
-	return Player1Clan == Player2Clan;
-}
-
-// ---------------------------------- //
-/** Check if two players are opponents
- *
- *	@param	_Player1	First Player to check
- *	@param	_Player2	Second player to check
- *
- *	@return		True, if players are opponents
- */
-Boolean AreOpponents(CPlayer _Player1, CPlayer _Player2) { return !AreTeammates(_Player1, _Player2); }
-
-// ---------------------------------- //
-/** Set the name of a clan
- *
- *	@param	_Clan	The clan to set name
- *	@param	_Name	The name to set
- */
-Void SetClanName(Integer _Clan, Text _Name) {
-	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return;
-	
-	if (_Name != "") G_LibMultiClans_TeamsNames[_Clan] = _Name;
-	
-	else if (G_LibMultiClans_TeamsNames.existskey(_Clan)) {	
-		declare Removed = G_LibMultiClans_TeamsNames.removekey(_Clan);
+	switchtype (_Player) {
+		case CTmPlayer : {
+			declare Player <=> (_Player as CTmPlayer);
+			if (Player.CurrentClan > 0) return Player.CurrentClan;
+		}
+		case CSmPlayer : {
+			declare Player <=> (_Player as CSmPlayer);
+			if (Player.CurrentClan > 0) return Player.CurrentClan;
+		}
 	}
-}
 
-// ---------------------------------- //
-/** Reset the name of a clan
- *
- *	@param	_Clan	The clan to reset name
- */
-Void ResetClanName(Integer _Clan) { SetClanName(_Clan, ""); }
+	declare netwrite Integer Net_LibMultiClans_PlayerClan for _Player;
+	return Net_LibMultiClans_PlayerClan;
+}
 
 // ---------------------------------- //
 /** Get the name of a clan
@@ -209,9 +144,50 @@ Text GetClanName(Integer _Clan) {
 }
 
 // ---------------------------------- //
+/** Set the name of a clan
+ *
+ *	@param	_Clan	The clan to set name
+ *	@param	_Name	The name to set
+ */
+Void SetClanName(Integer _Clan, Text _Name) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return;
+	
+	if (_Name != "") G_LibMultiClans_TeamsNames[_Clan] = _Name;
+	
+	else if (G_LibMultiClans_TeamsNames.existskey(_Clan)) {	
+		declare Removed = G_LibMultiClans_TeamsNames.removekey(_Clan);
+	}
+
+	declare netwrite Text[Integer] Net_LibMultiClans_ClansNames for Teams[0];
+	Net_LibMultiClans_ClansNames[_Clan] = GetClanName(_Clan);
+}
+
+// ---------------------------------- //
+/** Reset the name of a clan
+ *
+ *	@param	_Clan	The clan to reset name
+ */
+Void ResetClanName(Integer _Clan) { SetClanName(_Clan, ""); }
+
+// ---------------------------------- //
 /// Reset names of all clans
 Void ResetClansNames() {
 	for (Clan, 1, C_LibMultiClans_MaxNbTeams) ResetClanName(Clan);
+}
+
+// ---------------------------------- //
+/** Get the color of a clan
+ *
+ *	@param	_Clan	The clan to get color
+ *
+ *	@return		Color of the clan
+ */
+Vec3 GetClanColor(Integer _Clan) {
+	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return <-1., -1., -1.>;
+	
+	if (G_LibMultiClans_TeamsColors.existskey(_Clan)) return G_LibMultiClans_TeamsColors[_Clan];
+	if (C_LibMultiClans_DefaultTeamsColors.existskey(_Clan - 1)) return C_LibMultiClans_DefaultTeamsColors[_Clan - 1];
+	return Vec3;
 }
 
 // ---------------------------------- //
@@ -228,6 +204,9 @@ Void SetClanColor(Integer _Clan, Vec3 _Color) {
 	else if (G_LibMultiClans_TeamsColors.existskey(_Clan)) {	
 		declare Removed = G_LibMultiClans_TeamsColors.removekey(_Clan);
 	}
+
+	declare netwrite Vec3[Integer] Net_LibMultiClans_ClansColors for Teams[0];
+	Net_LibMultiClans_ClansColors[_Clan] = GetClanColor(_Clan);
 }
 
 // ---------------------------------- //
@@ -238,18 +217,9 @@ Void SetClanColor(Integer _Clan, Vec3 _Color) {
 Void ResetClanColor(Integer _Clan) { SetClanColor(_Clan, Vec3); }
 
 // ---------------------------------- //
-/** Get the color of a clan
- *
- *	@param	_Clan	The clan to get color
- *
- *	@return		Color of the clan
- */
-Vec3 GetClanColor(Integer _Clan) {
-	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return Vec3;
-	
-	if (G_LibMultiClans_TeamsColors.existskey(_Clan)) return G_LibMultiClans_TeamsColors[_Clan];
-	if (C_LibMultiClans_DefaultTeamsColors.existskey(_Clan - 1)) return C_LibMultiClans_DefaultTeamsColors[_Clan - 1];
-	return Vec3;
+/// Reset colors of all clans
+Void ResetClansColors() {
+	for (Clan, 1, C_LibMultiClans_MaxNbTeams) ResetClanColor(Clan);
 }
 
 // ---------------------------------- //
@@ -262,12 +232,6 @@ Vec3 GetClanColor(Integer _Clan) {
 Text GetClanColorizedName(Integer _Clan) {
 	if (_Clan < 1 || _Clan > C_LibMultiClans_MaxNbTeams) return "";
 	return "$"^TL::ColorToText(GetClanColor(_Clan))^GetClanName(_Clan);
-}
-
-// ---------------------------------- //
-/// Reset colors of all clans
-Void ResetClansColors() {
-	for (Clan, 1, C_LibMultiClans_MaxNbTeams) ResetClanColor(Clan);
 }
 
 // ---------------------------------- //
@@ -421,6 +385,66 @@ Void ResetClans() {
 }
 
 // ---------------------------------- //
+/** Change clan of a player
+ *
+ *	@param	_Player		The player to chaneg clan
+ *	@param	_Clan		The clan to move player in
+ */
+Void SetPlayerClan(CPlayer _Player, Integer _Clan) {
+	if (_Player == Null) return;
+	
+	declare TargetClan = ML::Max(0, _Clan);
+	if (TargetClan > C_LibMultiClans_MaxNbTeams) TargetClan = 0;
+	
+	declare netwrite Integer Net_LibMultiClans_PlayerClan for _Player;
+	Net_LibMultiClans_PlayerClan = TargetClan;
+
+	// Force color in ShootMania
+	if (_Player is CSmPlayer) {
+		declare Player <=> (_Player as CSmPlayer);
+		Player.ForceColor = GetClanColor(TargetClan);
+	}
+}
+
+// ---------------------------------- //
+/** Reset clan of a player
+ *
+ *	@param	_Player		The player to reset clan
+ */
+Void ResetPlayerClan(CPlayer _Player) { SetPlayerClan(_Player, 0); }
+
+// ---------------------------------- //
+/// Reset all players clans
+Void ResetAllPlayersClans() { foreach (Player in AllPlayers) ResetPlayerClan(Player); }
+
+// ---------------------------------- //
+/** Check if two players are teammates
+ *
+ *	@param	_Player1	First Player to check
+ *	@param	_Player2	Second player to check
+ *
+ *	@return		True, if players are teammates
+ */
+Boolean AreTeammates(CPlayer _Player1, CPlayer _Player2) {
+	if (_Player1 == Null || _Player2 == Null) return False;
+	declare Player1Clan = GetPlayerClan(_Player1);
+	declare Player2Clan = GetPlayerClan(_Player2);
+	
+	if (Player1Clan == 0 || Player2Clan == 0) return False;
+	return Player1Clan == Player2Clan;
+}
+
+// ---------------------------------- //
+/** Check if two players are opponents
+ *
+ *	@param	_Player1	First Player to check
+ *	@param	_Player2	Second player to check
+ *
+ *	@return		True, if players are opponents
+ */
+Boolean AreOpponents(CPlayer _Player1, CPlayer _Player2) { return !AreTeammates(_Player1, _Player2); }
+
+// ---------------------------------- //
 /** Get the amount of players in a specific clan
  *
  *	@param	_Clan	The clan to get players
@@ -531,4 +555,83 @@ Integer GetClanNbPlayersWaiting(Integer _Clan) {
 		if (!Player.IsSpawned && Player.RaceStartTime <= 0 && GetPlayerClan(Player) == _Clan) Count += 1;
 	}
 	return Count;
+}
+
+Text Framework() {
+	// Init net values
+	for (I, 1, C_LibMultiClans_MaxNbTeams) {
+		SetClanColor(I, GetClanColor(I));
+		SetClanName(I, GetClanName(I));
+	}
+
+	return """
+// ---------------------------------- //
+/** Get clan of a player.
+ *
+ *	@param	_Player		The player to get clan.
+ *
+ *	@return		The clan of the player.
+ */
+Integer Clans_GetPlayerClan(CPlayer _Player) {
+	if (_Player == Null) return 0;
+
+	switchtype (_Player) {
+		case CTmMlPlayer : {
+			declare Player <=> (_Player as CTmMlPlayer);
+			if (Player.CurrentClan > 0) return Player.CurrentClan;
+		}
+		case CSmPlayer : {
+			declare Player <=> (_Player as CSmPlayer);
+			if (Player.CurrentClan > 0) return Player.CurrentClan;
+		}
+	}
+
+	declare netread Integer Net_LibMultiClans_PlayerClan for _Player;
+	return Net_LibMultiClans_PlayerClan;
+}
+
+// ---------------------------------- //
+/** Check if players are teammates.
+ *
+ *	@param	_Player1	1st player.
+ *	@param	_Player2	2nd player.
+ *
+ *	@return		True, if players are teammates.
+ */
+Boolean Clans_AreTeammates(CPlayer _Player1, CPlayer _Player2) {
+	if (_Player1 == Null || _Player2 == Null) return False;
+
+	declare Player1CurrentClan = Clans_GetPlayerClan(_Player1);
+	declare Player2CurrentClan = Clans_GetPlayerClan(_Player2);
+
+	if (Player1CurrentClan == 0 || Player2CurrentClan == 0) return False;
+	return Player1CurrentClan == Player2CurrentClan;
+}
+
+// ---------------------------------- //
+/** Get color of a clan.
+ *
+ *	@param	_Clan	The clan to get color.
+ *
+ *	@return		The color of the clan.
+ */
+Vec3 Clans_GetClanColor(Integer _Clan) {
+	declare netread Vec3[Integer] Net_LibMultiClans_ClansColors for Teams[0];
+	if (!Net_LibMultiClans_ClansColors.existskey(_Clan)) return Vec3;
+	return Net_LibMultiClans_ClansColors[_Clan];
+}
+
+// ---------------------------------- //
+/** Get name of a clan.
+ *
+ *	@param	_Clan	The clan to get name.
+ *
+ *	@return		The name of the clan.
+ */
+Text Clans_GetClanName(Integer _Clan) {
+	declare netread Text[Integer] Net_LibMultiClans_ClansNames for Teams[0];
+	if (!Net_LibMultiClans_ClansNames.existskey(_Clan)) return "";
+	return Net_LibMultiClans_ClansNames[_Clan];
+}
+	""";
 }

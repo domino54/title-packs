@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY FANCY MESSAGES by domino54    //
-//  script version: 2017-11-26            //
+//  script version: 2018-02-16            //
 // -------------------------------------- //
 
 /**
@@ -9,12 +9,13 @@
  *	position, text font and text size.
  */
 
-#Const Version		"2017-11-26"
+#Const Version		"2018-02-16"
 #Const ScriptName	"FancyMessages.Script.txt"
 
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
+#Include "Libs/domino54/SplitScreenLib.Script.txt" as SplitScreen
 
 // ---------------------------------- //
 // Constants
@@ -47,17 +48,24 @@ Text Private_CreateManialinkFancyMessages() {
 	 />
 </stylesheet>
 
-<!-- UI.BigMessage -->
-<frame id="Frame_BigMessage">
-	<label class="Message" id="Label_BigMessage" />
-	<label z-index="-1" class="Message" id="Label_BigMessageGhost" />
-</frame>
+<framemodel id="FrameModel_Messages">
+	<!-- UI.BigMessage -->
+	<frame id="Frame_BigMessage">
+		<label class="Message" id="Label_BigMessage" />
+		<label z-index="-1" class="Message" id="Label_BigMessageGhost" />
+	</frame>
 
-<!-- UI.StatusMessage -->
-<frame id="Frame_StatusMessage">
-	<label class="Message" textsize="3" id="Label_StatusMessage" />
-	<label z-index="-1" class="Message" id="Label_StatusMessageGhost" />
-</frame>
+	<!-- UI.StatusMessage -->
+	<frame id="Frame_StatusMessage">
+		<label class="Message" textsize="3" id="Label_StatusMessage" />
+		<label z-index="-1" class="Message" id="Label_StatusMessageGhost" />
+	</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_Messages" id="Frame_Messages#0" />
+<frameinstance modelid="FrameModel_Messages" id="Frame_Messages#1" />
+<frameinstance modelid="FrameModel_Messages" id="Frame_Messages#2" />
+<frameinstance modelid="FrameModel_Messages" id="Frame_Messages#3" />
 
 <script><!--
 /**
@@ -74,29 +82,25 @@ Text Private_CreateManialinkFancyMessages() {
 ***
 // ---------------------------------- //
 // Load interface elements
-declare Frame_BigMessage <=> (Page.GetFirstChild("Frame_BigMessage") as CMlFrame);
-declare Label_BigMessage <=> (Page.GetFirstChild("Label_BigMessage") as CMlLabel);
-declare Label_BigMessageGhost <=> (Page.GetFirstChild("Label_BigMessageGhost") as CMlLabel);
-declare Frame_StatusMessage <=> (Page.GetFirstChild("Frame_StatusMessage") as CMlFrame);
-declare Label_StatusMessage <=> (Page.GetFirstChild("Label_StatusMessage") as CMlLabel);
-declare Label_StatusMessageGhost <=> (Page.GetFirstChild("Label_StatusMessageGhost") as CMlLabel);
+declare CMlFrame[] Frame_Messages;
+for (I, 0, 3) Frame_Messages.add((Page.GetFirstChild("Frame_Messages#"^I) as CMlFrame));
 
 // ---------------------------------- //
 // Netcode
 declare netread Integer Net_LibFancyMessages_SettingsUpdate for Teams[0];
 declare netread Text[Text] Net_LibFancyMessages_Settings for Teams[0];
-declare netread Text Net_LibFancyMessages_BigMessage for UI;
-declare netread Text Net_LibFancyMessages_BigMessageSound for UI;
-declare netread Integer Net_LibFancyMessages_BigMessageSoundVariant for UI;
-declare netread Text Net_LibFancyMessages_StatusMessage for UI;
+declare netread Boolean Net_LibFancyMessages_UseSplitScreen for Teams[0];
 
 declare ShowFancyMessages = True;
+declare IsPodiumSequence = False;
+declare FormatFrames = True;
+declare BigMessagePosition = <0., 0.>;
+declare StatusMessagePosition = <0., 0.>;
 
 // Update
 declare PrevSettingsUpdate = -1;
-declare PrevBigMessageText = "";
-declare PrevStatusMessageText = "";
 declare PrevShowFancyMessages = False;
+declare PrevIsPodiumSequence = False;
 
 // Disable original messages
 ClientUI.BigMessage = " ";
@@ -108,6 +112,58 @@ ClientUI.StatusMessage = " ";
 // ---------------------------------- //
 ***Yield***
 ***
+IsPodiumSequence = UI.UISequence == CUIConfig::EUISequence::Podium;
+
+if (PrevIsPodiumSequence != IsPodiumSequence) {
+	PrevIsPodiumSequence = IsPodiumSequence;
+	FormatFrames = True;
+}
+
+// ---------------------------------- //
+// Format frames
+if (FormatFrames) {
+	FormatFrames = False;
+
+	foreach (I => Frame in Frame_Messages) {
+		Frame.Visible = I == 0 || I < SplitScreen_NbPlayers();
+
+		declare Frame_BigMessage for Frame <=> (Frame.GetFirstChild("Frame_BigMessage") as CMlFrame);
+		declare Label_BigMessage for Frame <=> (Frame.GetFirstChild("Label_BigMessage") as CMlLabel);
+		declare Label_BigMessageGhost for Frame <=> (Frame.GetFirstChild("Label_BigMessageGhost") as CMlLabel);
+		declare Frame_StatusMessage for Frame <=> (Frame.GetFirstChild("Frame_StatusMessage") as CMlFrame);
+		declare Label_StatusMessage for Frame <=> (Frame.GetFirstChild("Label_StatusMessage") as CMlLabel);
+		declare Label_StatusMessageGhost for Frame <=> (Frame.GetFirstChild("Label_StatusMessageGhost") as CMlLabel);
+
+		// Normal
+		if (!IsPodiumSequence) {
+			Frame_BigMessage.RelativePosition_V3 = SplitScreen_GetPosition(BigMessagePosition, I, False);
+			Frame_BigMessage.RelativeScale = SplitScreen_GetScale(1.);
+
+			Frame_StatusMessage.RelativePosition_V3 = SplitScreen_GetPosition(StatusMessagePosition, I, False);
+			Frame_StatusMessage.RelativeScale = SplitScreen_GetScale(1.);
+		}
+
+		// Podium sequence
+		else {
+			Frame.Visible = I == 0;
+			
+			Frame_BigMessage.RelativePosition_V3 = BigMessagePosition;
+			Frame_BigMessage.RelativeScale = 1.;
+
+			Frame_StatusMessage.RelativePosition_V3 = StatusMessagePosition;
+			Frame_StatusMessage.RelativeScale = 1.;
+		}
+
+		declare MessageSizeX = 280.;
+		if (SplitScreen_SplitMode() == 2) MessageSizeX = 150.;
+
+		Label_BigMessage.Size.X = MessageSizeX;
+		Label_BigMessageGhost.Size.X = MessageSizeX;
+		Label_StatusMessage.Size.X = MessageSizeX;
+		Label_StatusMessageGhost.Size.X = MessageSizeX;
+	}
+}
+
 // ---------------------------------- //
 // Update settings
 if (PrevSettingsUpdate != Net_LibFancyMessages_SettingsUpdate) {
@@ -116,19 +172,26 @@ if (PrevSettingsUpdate != Net_LibFancyMessages_SettingsUpdate) {
 	foreach (SettingName => SettingValue in Net_LibFancyMessages_Settings) {
 		declare SplitSetting = TL::Split(":", SettingName);
 		if (SplitSetting.count < 2) continue;
-		declare CMlFrame Frame;
 		declare CMlLabel[] Labels;
 		
 		// ---------------------------------- //
 		// Get the target label and frame
 		switch (SplitSetting[0]) {
 			case "BigMessage" : {
-				Frame = Frame_BigMessage;
-				Labels = [Label_BigMessage, Label_BigMessageGhost];
+				foreach (Frame in Frame_Messages) {
+					declare CMlLabel Label_BigMessage for Frame;
+					declare CMlLabel Label_BigMessageGhost for Frame;
+					Labels.add(Label_BigMessage);
+					Labels.add(Label_BigMessageGhost);
+				}
 			}
 			case "StatusMessage" : {
-				Frame = Frame_StatusMessage;
-				Labels = [Label_StatusMessage, Label_StatusMessageGhost];
+				foreach (Frame in Frame_Messages) {
+					declare CMlLabel Label_StatusMessage for Frame;
+					declare CMlLabel Label_StatusMessageGhost for Frame;
+					Labels.add(Label_StatusMessage);
+					Labels.add(Label_StatusMessageGhost);
+				}
 			}
 		}
 		
@@ -138,11 +201,17 @@ if (PrevSettingsUpdate != Net_LibFancyMessages_SettingsUpdate) {
 			case "Position" : {
 				declare SplitPosition = TL::Split(" ", SettingValue);
 				if (SplitPosition.count < 2) continue;
-				for (I, 0, 1) Frame.RelativePosition_V3[I] = TL::ToReal(SplitPosition[I]);
+
+				for (I, 0, 1) switch (SplitSetting[0]) {
+					case "BigMessage" : BigMessagePosition[I] = TL::ToReal(SplitPosition[I]);
+					case "StatusMessage" : StatusMessagePosition[I] = TL::ToReal(SplitPosition[I]);
+				}
 			}
 			case "TextFont" : foreach (Label in Labels) Label.TextFont = SettingValue;
 			case "TextSize" : foreach (Label in Labels) Label.TextSize = TL::ToInteger(SettingValue);
 		}
+
+		FormatFrames = True;
 	}
 }
 
@@ -154,68 +223,105 @@ ShowFancyMessages = !IsInGameMenuDisplayed && UI.UISequence != CUIConfig::EUISeq
 if (PrevShowFancyMessages != ShowFancyMessages) {
 	PrevShowFancyMessages = ShowFancyMessages;
 
-	Frame_BigMessage.Visible = ShowFancyMessages;
-	Frame_StatusMessage.Visible = ShowFancyMessages;
+	foreach (Frame in Frame_Messages) {
+		if (!Frame.Visible) continue;
+
+		declare CMlFrame Frame_BigMessage for Frame;
+		declare CMlFrame Frame_StatusMessage for Frame;
+
+		Frame_BigMessage.Visible = ShowFancyMessages;
+		Frame_StatusMessage.Visible = ShowFancyMessages;
+	}
 }
 
 // ---------------------------------- //
-// Update displayed big message
-if (PrevBigMessageText != Net_LibFancyMessages_BigMessage) {
-	PrevBigMessageText = Net_LibFancyMessages_BigMessage;
-	
-	// ---------------------------------- //
-	// Set label text
-	Label_BigMessageGhost.SetText(Label_BigMessage.Value);
-	Label_BigMessage.SetText(Net_LibFancyMessages_BigMessage);
-	
-	// ---------------------------------- //
-	// Play big message sound
-	if (PrevBigMessageText != "")
-		PlayUiSound(GetSound(Net_LibFancyMessages_BigMessageSound), Net_LibFancyMessages_BigMessageSoundVariant, 1.);
-	
-	// ---------------------------------- //
-	// Create label animation
-	Label_BigMessage.Opacity = 0.;
-	Label_BigMessage.RelativePosition.Y = 3.;
-	Label_BigMessageGhost.Opacity = 1.;
-	Label_BigMessageGhost.RelativePosition.Y = 0.;
-	
-	AnimMgr.Add(Label_BigMessage, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
-	AnimMgr.Add(Label_BigMessageGhost, "<label pos='0 -3' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
-}
+// Format frames
+foreach (I => Frame in Frame_Messages) {
+	if (!Frame.Visible) continue;
+	declare CPlayer Player;
 
-// ---------------------------------- //
-// Update displayed status message
-if (PrevStatusMessageText != Net_LibFancyMessages_StatusMessage) {
-	PrevStatusMessageText = Net_LibFancyMessages_StatusMessage;
-	
-	// ---------------------------------- //
-	// Set label text
-	Label_StatusMessageGhost.SetText(Label_StatusMessage.Value);
-	Label_StatusMessage.SetText(Net_LibFancyMessages_StatusMessage);
-	
-	// ---------------------------------- //
-	// Create label animation
-	Label_StatusMessage.Opacity = 0.;
-	Label_StatusMessage.RelativePosition.Y = 3.;
-	Label_StatusMessageGhost.Opacity = 1.;
-	Label_StatusMessageGhost.RelativePosition.Y = 0.;
-	
-	AnimMgr.Add(Label_StatusMessage, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
-	AnimMgr.Add(Label_StatusMessageGhost, "<label pos='0 -3' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
-}
+	if (SplitScreen_Enabled()) {
+		Player <=> SplitScreen_GetPlayer(I);
+	} else {
+		Player <=> InputPlayer;
+	}
 
-// ---------------------------------- //
-// Hide labels to prevent displaying links underlines
-Label_BigMessage.Visible = Label_BigMessage.Opacity > 0;
-Label_BigMessageGhost.Visible = Label_BigMessageGhost.Opacity > 0;
-Label_StatusMessage.Visible = Label_StatusMessage.Opacity > 0;
-Label_StatusMessageGhost.Visible = Label_StatusMessageGhost.Opacity > 0;
+	if (Player == Null) continue;
+
+	declare CMlLabel Label_BigMessage for Frame;
+	declare CMlLabel Label_BigMessageGhost for Frame;
+	declare CMlLabel Label_StatusMessage for Frame;
+	declare CMlLabel Label_StatusMessageGhost for Frame;
+
+	declare PrevBigMessageText for Frame = "";
+	declare PrevStatusMessageText for Frame = "";
+
+	declare netread Text Net_LibFancyMessages_BigMessage for Player;
+	declare netread Text Net_LibFancyMessages_BigMessageSound for Player;
+	declare netread Integer Net_LibFancyMessages_BigMessageSoundVariant for Player;
+	declare netread Text Net_LibFancyMessages_StatusMessage for Player;
+
+	// ---------------------------------- //
+	// Update displayed big message
+	if (PrevBigMessageText != Net_LibFancyMessages_BigMessage) {
+		PrevBigMessageText = Net_LibFancyMessages_BigMessage;
+		
+		// ---------------------------------- //
+		// Set label text
+		Label_BigMessageGhost.SetText(Label_BigMessage.Value);
+		Label_BigMessage.SetText(Net_LibFancyMessages_BigMessage);
+		
+		// ---------------------------------- //
+		// Play big message sound
+		if (PrevBigMessageText != "")
+			PlayUiSound(GetSound(Net_LibFancyMessages_BigMessageSound), Net_LibFancyMessages_BigMessageSoundVariant, 1.);
+		
+		// ---------------------------------- //
+		// Create label animation
+		Label_BigMessage.Opacity = 0.;
+		Label_BigMessage.RelativePosition.Y = 3.;
+		Label_BigMessageGhost.Opacity = 1.;
+		Label_BigMessageGhost.RelativePosition.Y = 0.;
+		
+		AnimMgr.Add(Label_BigMessage, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+		AnimMgr.Add(Label_BigMessageGhost, "<label pos='0 -3' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+	}
+
+	// ---------------------------------- //
+	// Update displayed status message
+	if (PrevStatusMessageText != Net_LibFancyMessages_StatusMessage) {
+		PrevStatusMessageText = Net_LibFancyMessages_StatusMessage;
+
+		// ---------------------------------- //
+		// Set label text
+		Label_StatusMessageGhost.SetText(Label_StatusMessage.Value);
+		Label_StatusMessage.SetText(Net_LibFancyMessages_StatusMessage);
+		
+		// ---------------------------------- //
+		// Create label animation
+		Label_StatusMessage.Opacity = 0.;
+		Label_StatusMessage.RelativePosition.Y = 3.;
+		Label_StatusMessageGhost.Opacity = 1.;
+		Label_StatusMessageGhost.RelativePosition.Y = 0.;
+		
+		AnimMgr.Add(Label_StatusMessage, "<label pos='0 0' opacity='1' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+		AnimMgr.Add(Label_StatusMessageGhost, "<label pos='0 -3' opacity='0' />", 200, CAnimManager::EAnimManagerEasing::Linear);
+	}
+
+	// ---------------------------------- //
+	// Hide labels to prevent displaying links underlines
+	Label_BigMessage.Visible = Label_BigMessage.Opacity > 0;
+	Label_BigMessageGhost.Visible = Label_BigMessageGhost.Opacity > 0;
+	Label_StatusMessage.Visible = Label_StatusMessage.Opacity > 0;
+	Label_StatusMessageGhost.Visible = Label_StatusMessageGhost.Opacity > 0;
+}
 ***
 
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
+
+{{{SplitScreen::Framework()}}}
 
 // ---------------------------------- //
 /** Retrieve interface sound enum from given text
@@ -357,13 +463,10 @@ Void FormatStatusMessage(Vec3 _Position, Text _TextFont, Integer _TextSize) {
 /// Reset the whole net data.
 Void ResetData() {
 	foreach (Player in AllPlayers) {
-		declare UI <=> UIManager.GetUI(Player);
-		if (UI == Null) continue;
-
-		declare netwrite Text Net_LibFancyMessages_BigMessage for UI;
-		declare netwrite Text Net_LibFancyMessages_BigMessageSound for UI;
-		declare netwrite Text Net_LibFancyMessages_StatusMessage for UI;
-		declare netwrite Integer Net_LibFancyMessages_BigMessageSoundVariant for UI;
+		declare netwrite Text Net_LibFancyMessages_BigMessage for Player;
+		declare netwrite Text Net_LibFancyMessages_BigMessageSound for Player;
+		declare netwrite Text Net_LibFancyMessages_StatusMessage for Player;
+		declare netwrite Integer Net_LibFancyMessages_BigMessageSoundVariant for Player;
 
 		Net_LibFancyMessages_BigMessage = "";
 		Net_LibFancyMessages_BigMessageSound = "";
@@ -424,9 +527,9 @@ Void Loop() {
 			
 			// ---------------------------------- //
 			// Send new data to the interface
-			declare netwrite Text Net_LibFancyMessages_BigMessage for UI;
-			declare netwrite Text Net_LibFancyMessages_BigMessageSound for UI;
-			declare netwrite Integer Net_LibFancyMessages_BigMessageSoundVariant for UI;
+			declare netwrite Text Net_LibFancyMessages_BigMessage for Player;
+			declare netwrite Text Net_LibFancyMessages_BigMessageSound for Player;
+			declare netwrite Integer Net_LibFancyMessages_BigMessageSoundVariant for Player;
 			
 			Net_LibFancyMessages_BigMessage = BigMessage;
 			Net_LibFancyMessages_BigMessageSound = ""^Sound;
@@ -441,7 +544,7 @@ Void Loop() {
 		if (UI.StatusMessage != "") StatusMessage = UI.StatusMessage;
 		
 		if (PrevStatusMessage != StatusMessage) {
-			declare netwrite Text Net_LibFancyMessages_StatusMessage for UI;
+			declare netwrite Text Net_LibFancyMessages_StatusMessage for Player;
 			Net_LibFancyMessages_StatusMessage = StatusMessage;
 			PrevStatusMessage = StatusMessage;
 		}

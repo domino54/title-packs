@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  PURSUIT UI LIB by domino54            //
-//  script version: 2017-10-09            //
+//  script version: 2018-02-16            //
 // -------------------------------------- //
 
 /**
@@ -19,7 +19,6 @@
  *	- ScoreSummary		Display ShootMania-like teams scores summary in top of the screen, above the countdown.
  *	- ThievesCount		Replace chrono with a Thieves counter in the middle bottom of the screen.
  *	- PoliceCount		Display Policemen counter next to the speed in bottom right screen corner.
- *	- SafeTime			Display non-interaction "lock" icon above player rank.
  *	- PoliceLights		Display light effects for players in chasing team. Always Blue in FFA.
  *	- RespawnTimer		Display respawn progress bar above Thieves counter. For Thieves only.
  *	- SpecInfo			Replace default spectator player info with custom one with team color and Echelons.
@@ -29,7 +28,7 @@
  *	- Detector			Display label showing distance to nearest policemen.
  */
 
-#Const	Version		"2017-10-09"
+#Const	Version		"2018-02-16"
 #Const	ScriptName	"PursuitUI.Script.txt"
 
 #Include "MathLib" as ML
@@ -39,6 +38,7 @@
 #Include "Libs/Nadeo/TrackMania/XmlRpc.Script.txt" as XmlRpc
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
+#Include "Libs/domino54/SplitScreenLib.Script.txt" as SplitScreen
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
@@ -47,17 +47,16 @@
 #Const C_ImgBase "file://Media/Manialinks/TrackMania/Pursuit/"
 #Const C_LibPursuitUI_CountdownPos		<0., 85.>
 #Const C_LibPursuitUI_SpeedometerPos 	<132., -64.>
-#Const C_LibPursuitUI_BackgroundPos		<0., -90., -65.>
+#Const C_LibPursuitUI_BackgroundPos		<0., -90.>
 #Const C_LibPursuitUI_SpecInfoPos		<0., -72.>
 #Const C_LibPursuitUI_ScoreSummaryPos	<0., 91.5>
 #Const C_LibPursuitUI_ThievesCountPos	<0., -88.>
 #Const C_LibPursuitUI_PoliceCountPos	<132., -86.5>
 #Const C_LibPursuitUI_RespawnTimerPos	<0., -56.>
-#Const C_LibPursuitUI_SafeTimePos		<132., -64.>
 #Const C_LibPursuitUI_PoliceLightsPos	<0., -88.>
 #Const C_LibPursuitUI_321GoPos			<0., 12., 0.>
 #Const C_LibPursuitUI_ShowPointsPos		<0., -72.>
-#Const C_LibPursuitUI_JoinPolicePos		<-160., 20.>
+#Const C_LibPursuitUI_JoinPolicePos		<-160., 18.>
 
 /// Function to obtain player's current clan.
 #Const C_LibPursuitUI_GetPlayerClan """
@@ -131,9 +130,14 @@ Void Private_SetModuleSetting(Text _Name, Text _Value) {
 Text Private_CreateManialinkCountdown() {
 	return """
 <manialink version="3" name="LibPursuitUI:Countdown">
-<frame id="Frame_Countdown" pos="{{{C_LibPursuitUI_CountdownPos.X^" "^C_LibPursuitUI_CountdownPos.Y}}}">
+<framemodel id="FrameModel_Countdown">
 	<label halign="center" valign="center2" textsize="4" textemboss="1" textcolor="FB0" textfont="RajdhaniMono" id="Label_Countdown" />
-</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_Countdown" id="Frame_Countdown#0" />
+<frameinstance modelid="FrameModel_Countdown" id="Frame_Countdown#1" />
+<frameinstance modelid="FrameModel_Countdown" id="Frame_Countdown#2" />
+<frameinstance modelid="FrameModel_Countdown" id="Frame_Countdown#3" />
 
 <script><!--
 /**
@@ -147,6 +151,8 @@ Text Private_CreateManialinkCountdown() {
 #Const C_CountdownSongsNames 	["Countdown1Compressed.ogg", "Countdown02.ogg"]
 #Const C_CountdownSongDuration	30000
 
+{{{SplitScreen::Framework()}}}
+
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
@@ -154,8 +160,8 @@ Text Private_CreateManialinkCountdown() {
 ***
 // ---------------------------------- //
 // Load interface elements
-declare Frame_Countdown <=> (Page.GetFirstChild("Frame_Countdown") as CMlFrame);
-declare Label_Countdown <=> (Page.GetFirstChild("Label_Countdown") as CMlLabel);
+declare CMlFrame[] Frame_Countdowns;
+for (I, 0, 3) Frame_Countdowns.add((Page.GetFirstChild("Frame_Countdown#"^I) as CMlFrame));
 
 // ---------------------------------- //
 // Netcode
@@ -175,9 +181,21 @@ declare StartTime = -1;
 declare EndTime = -1;
 declare CurrentTick = -1;
 declare CountdownMusic = CAudioSource;
+declare UpdateVisibility = True;
+declare IsModuleVisible = False;
 
 declare PrevSettingsUpdate = -1;
+declare PrevStartTime = -1;
 declare PrevTick = -1;
+
+// ---------------------------------- //
+// Configure frames
+foreach (I => Frame in Frame_Countdowns) {
+	Frame.RelativePosition_V3 = SplitScreen_GetPosition({{{C_LibPursuitUI_CountdownPos}}}, I, False);
+	Frame.RelativeScale = SplitScreen_GetScale(1.);
+
+	declare Label_Countdown for Frame <=> (Frame.GetFirstChild("Label_Countdown") as CMlLabel);
+}
 ***
 
 // ---------------------------------- //
@@ -210,15 +228,25 @@ if (PrevSettingsUpdate != Net_LibPursuitUI_SettingsUpdate) {
 			}
 		}
 	}
+
+	UpdateVisibility = True;
 }
 
 // ---------------------------------- //
 // Set visibility
-Frame_Countdown.Visible = Countdown_Display && StartTime >= 0;
+if (UpdateVisibility) {
+	UpdateVisibility = False;
+
+	IsModuleVisible = Countdown_Display && StartTime >= 0;
+
+	foreach (I => Frame in Frame_Countdowns) {
+		Frame.Visible = (I == 0 || I < SplitScreen_NbPlayers()) && IsModuleVisible;
+	}
+}
 
 // ---------------------------------- //
 // Display current time
-if (Frame_Countdown.Visible) {
+if (IsModuleVisible) {
 	declare Integer Time;
 	declare Countdown = True;
 	
@@ -244,9 +272,15 @@ if (Frame_Countdown.Visible) {
 		CurrentTick = -1;
 		Countdown = False;
 	}
+
+	declare TimeText = TimeToText(Time, Countdown, ScoreSummary_Display && UseClans);
 	
-	// Set label value
-	Label_Countdown.Value = TimeToText(Time, Countdown, ScoreSummary_Display && UseClans);
+	// Set labels values
+	foreach (Frame in Frame_Countdowns) {
+		if (!Frame.Visible) continue;
+		declare CMlLabel Label_Countdown for Frame;
+		Label_Countdown.Value = TimeText;
+	}
 }
 
 // ---------------------------------- //
@@ -313,12 +347,17 @@ if (PrevTick != CurrentTick) {
 	// ---------------------------------- //
 	// Display tick animation
 	if (CurrentTick > 0 && (AnimStartTick == 0 || CurrentTick < AnimStartTick)) {
-		Label_Countdown.RelativeScale = 2.;
-		Label_Countdown.RelativeRotation = 7.5;
-		if (UI.CountdownEndTime > 0) Label_Countdown.TextColor = <0., 1., 0.>;
-		else Label_Countdown.TextColor = <1., 0., 0.>;
-		
-		AnimMgr.Add(Label_Countdown, "<label scale='1' textcolor='FB0' rot='0' />", 1000, CAnimManager::EAnimManagerEasing::CircOut);
+		foreach (Frame in Frame_Countdowns) {
+			if (!Frame.Visible) continue;
+			declare CMlLabel Label_Countdown for Frame;
+
+			Label_Countdown.RelativeScale = 2.;
+			Label_Countdown.RelativeRotation = 7.5;
+			if (UI.CountdownEndTime > 0) Label_Countdown.TextColor = <0., 1., 0.>;
+			else Label_Countdown.TextColor = <1., 0., 0.>;
+			
+			AnimMgr.Add(Label_Countdown, "<label scale='1' textcolor='FB0' rot='0' />", 1000, CAnimManager::EAnimManagerEasing::CircOut);
+		}
 	}
 }
 ***
@@ -412,7 +451,6 @@ main() {
  *	@return		The manialink
  */
 Text Private_CreateManialinkSpeedometer() {
-
 	declare RPMSteps = "";
 	for (I, 0, 63) RPMSteps ^= "<frameinstance modelid='FrameModel_RPMStep' id='Frame_RPMStep#"^I^"' hidden='1' />";
 
@@ -424,7 +462,7 @@ Text Private_CreateManialinkSpeedometer() {
 	<style class="Font" halign="center" valign="center2" textsize="1" textcolor="FFF" textfont="RajdhaniMono" />
 </stylesheet>
 
-<frame id="Frame_Speedometer" pos="{{{C_LibPursuitUI_SpeedometerPos.X^" "^C_LibPursuitUI_SpeedometerPos.Y}}}" scale="0">
+<framemodel id="FrameModel_Speedometer">
 	<!-- RPM values -->
 	<framemodel id="FrameModel_RPMStep">
 		<quad size="1.25 21" halign="center" valign="bottom" id="Quad_RPMStepValue" />
@@ -455,7 +493,29 @@ Text Private_CreateManialinkSpeedometer() {
 	</frame>
 
 	<quad size="42 42" halign="center" valign="center" image="{{{C_ImgBase}}}Speedometer/BG.png" opacity=".75" />
-</frame>
+
+	<frame id="Frame_IsSecure" pos="0 25" hidden="1">
+		<quad size="4 4" valign="center" image="{{{C_ImgBase}}}IconSafeTime.png" opacity=".5" />
+		<label pos="5 -.25" class="Font" halign="left" textsize="1.5" textfont="OswaldMono" text="" id="Label_IsSecure" opacity=".5" />
+		<quad pos="4" size="14 4" valign="center" bgcolor="000" opacity=".2" id="Quad_IsSecureBg" />
+	</frame>
+
+	<!-- Safe time gauge -->
+	<frame scale="1.05">
+		<frame pos="0 5.75" size="21 44.25" halign="right" valign="center">
+			<quad pos="0 -5.75" size="42 42" halign="center" valign="center" image="{{{C_ImgBase}}}Speedometer/SafeGauge.png" rot="-144" id="Quad_GaugeSafe1" />
+		</frame>
+		<frame size="21 42" halign="left" valign="center">
+			<quad pos="-0.125" size="42 42" halign="center" valign="center" image="{{{C_ImgBase}}}Speedometer/SafeGauge.png" rot="0" id="Quad_GaugeSafe2" />
+		</frame>
+		<quad size="42 42" halign="center" valign="center" image="{{{C_ImgBase}}}Speedometer/SafeGaugeFill.png" id="Quad_GaugeFill2" hidden="1" />
+	</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_Speedometer" id="Frame_Speedometer#0" scale="0" />
+<frameinstance modelid="FrameModel_Speedometer" id="Frame_Speedometer#1" scale="0" />
+<frameinstance modelid="FrameModel_Speedometer" id="Frame_Speedometer#2" scale="0" />
+<frameinstance modelid="FrameModel_Speedometer" id="Frame_Speedometer#3" scale="0" />
 
 <script><!--
 /**
@@ -467,7 +527,9 @@ Text Private_CreateManialinkSpeedometer() {
 
 #Const C_DefaultEngineMaxRPM	10000.
 
-{{{ManialinkTools::Functions(["Brightness"])}}}
+{{{ManialinkTools::Functions(["Brightness", "ComputeWidth"])}}}
+{{{Translations::InjectInManialink(["No interaction"])}}}
+{{{SplitScreen::Framework()}}}
 {{{C_LibPursuitUI_GetPlayerClan}}}
 {{{C_LibPursuitUI_GetClanColor}}}
 
@@ -477,46 +539,31 @@ Text Private_CreateManialinkSpeedometer() {
 main() {
 	// ---------------------------------- //
 	// Load interface elements
-	declare Frame_Speedometer <=> (Page.GetFirstChild("Frame_Speedometer") as CMlFrame);
-	declare Label_Speed <=> (Page.GetFirstChild("Label_Speed") as CMlLabel);
-	declare Label_SpeedUnit <=> (Page.GetFirstChild("Label_SpeedUnit") as CMlLabel);
-	declare Label_Gear <=> (Page.GetFirstChild("Label_Gear") as CMlLabel);
-	declare Label_Distance <=> (Page.GetFirstChild("Label_Distance") as CMlLabel);
-	declare Quad_GaugeRPM1 <=> (Page.GetFirstChild("Quad_GaugeRPM1") as CMlQuad);
-	declare Quad_GaugeRPM2 <=> (Page.GetFirstChild("Quad_GaugeRPM2") as CMlQuad);
-	declare Quad_GaugeArrow <=> (Page.GetFirstChild("Quad_GaugeArrow") as CMlQuad);
-	declare Quad_GaugeFill <=> (Page.GetFirstChild("Quad_GaugeFill") as CMlQuad);
+	declare CMlFrame[] Frame_Speedometers;
+	for (I, 0, 3) Frame_Speedometers.add((Page.GetFirstChild("Frame_Speedometer#"^I) as CMlFrame));
 
-	declare CMlFrame[] Frame_RPMSteps;
-	for (I, 0, 63) Frame_RPMSteps.add((Page.GetFirstChild("Frame_RPMStep#"^I) as CMlFrame));
-	
 	// ---------------------------------- //
 	// Netcode
 	declare netread Integer Net_LibPursuitUI_SettingsUpdate for Teams[0];
 	declare netread Text[Text] Net_LibPursuitUI_Settings for Teams[0];
 
+	// ---------------------------------- //
+	// Persistent settings
 	declare persistent Persistent_LibPursuitUI_UseRetardedUnits for LocalUser = False;
-
+	declare persistent Persistent_LibPursuitUI_UseWideFormat for LocalUser = False;
+	
 	// ---------------------------------- //
 	// Variables
 	declare DisplaySpeedometer = False;
-	declare SpeedometerVisible = False;
+	declare SafeTimeDuration = 0;
 	declare GaugeRPMValue = 0.;
 	declare GlobalEngineMaxRPM = C_DefaultEngineMaxRPM;
 	declare GaugeMaxRPM = GlobalEngineMaxRPM;
 	declare UpdateColor = True;
-	declare InterfaceColor = <1., 1., .333>;
+	declare ConfigureFrames = True;
 
 	declare PrevSettingsUpdate = -1;
-	declare PrevSpeedometerVisible = False;
-	declare PrevEngineGear = -1;
-	declare PrevDistance = -1.;
-	declare PrevGaugeRPMValue = 0.;
-	declare PrevGaugeMaxRPM = -1.;
-	declare PrevGUIPlayerId = NullId;
-	declare PrevGUIPlayerClan = -1;
-	declare PrevInterfaceColor = Vec3;
-	declare PrevUseRetardedUnits = False;
+	declare PrevUseWideFormat = False;
 
 	// ---------------------------------- //
 	// Yield
@@ -525,6 +572,9 @@ main() {
 		yield;
 		if (!PageIsVisible) continue;
 
+		// Disable Cam 1 and Cam 7
+		//if (CurPlayerCamera == 4 || CurPlayerCamera == 2) CurPlayerCamera = 5;
+		
 		// ---------------------------------- //
 		// Update settings
 		if (PrevSettingsUpdate != Net_LibPursuitUI_SettingsUpdate) {
@@ -536,146 +586,264 @@ main() {
 					case "Speedometer_Position" : {
 						declare Splitpos = TL::Split(" ", SettingValue);
 						if (Splitpos.count < 3) continue;
-						for (I, 0, 1) Frame_Speedometer.RelativePosition_V3[I] = TL::ToReal(Splitpos[I]);
+						//for (I, 0, 1) Frame_Speedometer.RelativePosition_V3[I] = TL::ToReal(Splitpos[I]);
 					}
 					case "EngineMaxRPM" : {
 						declare NewValue = TL::ToReal(SettingValue);
 						if (NewValue > 0) GlobalEngineMaxRPM = NewValue;
 					}
+					case "SafeTime_Duration" : {
+						declare NewDuration = TL::ToInteger(SettingValue);
+						if (SafeTimeDuration >= 0) SafeTimeDuration = NewDuration;
+						else SafeTimeDuration = 0;
+					}
 				}
 			}
 		}
-		
-		// ---------------------------------- //
-		// Update speedometer visibility
-		SpeedometerVisible = DisplaySpeedometer && GUIPlayer != Null && GUIPlayer.IsSpawned;
 
-		if (PrevSpeedometerVisible != SpeedometerVisible) {
-			PrevSpeedometerVisible = SpeedometerVisible;
-
-			declare Scale = 0.;
-			declare Easing = CAnimManager::EAnimManagerEasing::CircIn;
-			if (SpeedometerVisible) {
-				Scale = 1.;
-				Easing = CAnimManager::EAnimManagerEasing::CircOut;
-			}
-
-			AnimMgr.Add(Frame_Speedometer, "<frame scale='"^Scale^"' />", 250, Easing);
-		}
-
-		if (!SpeedometerVisible) continue;
-		
-		// ---------------------------------- //
-		// On units change
-		if (PrevUseRetardedUnits != Persistent_LibPursuitUI_UseRetardedUnits) {
-			PrevUseRetardedUnits = Persistent_LibPursuitUI_UseRetardedUnits;
-			PrevDistance = -1.;
-
-			if (PrevUseRetardedUnits) Label_SpeedUnit.Value = "MPH";
-			else Label_SpeedUnit.Value = "KM/H";
-		}
-		
-		// Update speed
-		if (PrevUseRetardedUnits) Label_Speed.Value = TL::ToText(ML::Abs(ML::FloorInteger(GUIPlayer.Speed * 2.24)));
-		else Label_Speed.Value = TL::ToText(GUIPlayer.DisplaySpeed);
-
-		// Update gear
-		if (PrevEngineGear != GUIPlayer.EngineCurGear) {
-			PrevEngineGear = GUIPlayer.EngineCurGear;
-
-			if (PrevEngineGear <= 0) Label_Gear.Value = "R";
-			else Label_Gear.Value = TL::ToText(PrevEngineGear);
-
-			Label_Gear.Opacity = 0.;
-			AnimMgr.Add(Label_Gear, "<label opacity='1' />", 250, CAnimManager::EAnimManagerEasing::Linear);
-		}
-		
-		// Update distance
-		if (PrevDistance != InputPlayer.Distance) {
-			PrevDistance = InputPlayer.Distance;
-
-			declare Distance = InputPlayer.Distance;
-			if (PrevUseRetardedUnits) Distance /= 1.6;
-
-			Label_Distance.Value = TL::FormatInteger(ML::FloorInteger(Distance), 5)^"."^(ML::FloorInteger(Distance * 10) % 10);
-
-			if (PrevUseRetardedUnits) Label_Distance.Value ^= " Mi";
-			else Label_Distance.Value ^= " M";
+		if (PrevUseWideFormat != Persistent_LibPursuitUI_UseWideFormat) {
+			PrevUseWideFormat = Persistent_LibPursuitUI_UseWideFormat;
+			ConfigureFrames = True;
 		}
 
 		// ---------------------------------- //
-		// Show the current RPM value
-		GaugeRPMValue = GUIPlayer.EngineRpm / GaugeMaxRPM;
-		if (GaugeRPMValue < .025 || GameTime <= GUIPlayer.RaceStartTime) GaugeRPMValue = 0.;
+		// Configure frames
+		if (ConfigureFrames) {
+			ConfigureFrames = False;
 
-		if (PrevGaugeRPMValue != GaugeRPMValue) {
-			PrevGaugeRPMValue = GaugeRPMValue;
+			foreach (I => Frame in Frame_Speedometers) {
+				Frame.Visible = I == 0 || I < SplitScreen_NbPlayers();
+				Frame.RelativePosition_V3 = SplitScreen_GetPosition(
+					{{{C_LibPursuitUI_SpeedometerPos}}}, I,
+					CMlControl::AlignHorizontal::Right,
+					CMlControl::AlignVertical::Bottom,
+					Persistent_LibPursuitUI_UseWideFormat
+				);
+				Frame.RelativeScale = SplitScreen_GetScale(1.);
 
-			Quad_GaugeFill.Visible = GaugeRPMValue > 0;
-			Quad_GaugeRPM1.RelativeRotation = ML::Clamp(GaugeRPMValue * 2, 0., 1.) * 144 - 144;
-			Quad_GaugeRPM2.RelativeRotation = ML::Clamp((GaugeRPMValue - .5) * 2, 0., 1.) * 144.;
-			Quad_GaugeArrow.RelativeRotation = ML::Clamp(GaugeRPMValue, 0., 1.) * 288. - 144.;
-		}
-
-		// ---------------------------------- //
-		// Update the max RPM value
-		GaugeMaxRPM = GlobalEngineMaxRPM;
-
-		declare netread Real Net_LibPursuitUI_PlayerEngineMaxRPM for GUIPlayer;
-		if (Net_LibPursuitUI_PlayerEngineMaxRPM > 0) GaugeMaxRPM = Net_LibPursuitUI_PlayerEngineMaxRPM;
-
-		if (PrevGaugeMaxRPM != GaugeMaxRPM) {
-			PrevGaugeMaxRPM = GaugeMaxRPM;
-
-			foreach (I => Frame in Frame_RPMSteps) {
-				declare StepRPM = (I + 1) * 250.;
-				Frame.Visible = StepRPM < GaugeMaxRPM;
-				if (!Frame.Visible) continue;
-
-				// Set frame rotation
-				Frame.RelativeRotation = (StepRPM / GaugeMaxRPM) * 288. - 144.;
-				declare IsFullStep = StepRPM / 1000 == ML::FloorInteger(StepRPM / 1000);
+				declare Label_Speed 	for Frame <=> (Frame.GetFirstChild("Label_Speed") as CMlLabel);
+				declare Label_SpeedUnit for Frame <=> (Frame.GetFirstChild("Label_SpeedUnit") as CMlLabel);
+				declare Label_Gear 		for Frame <=> (Frame.GetFirstChild("Label_Gear") as CMlLabel);
+				declare Label_Distance 	for Frame <=> (Frame.GetFirstChild("Label_Distance") as CMlLabel);
+				declare Quad_GaugeRPM1 	for Frame <=> (Frame.GetFirstChild("Quad_GaugeRPM1") as CMlQuad);
+				declare Quad_GaugeRPM2 	for Frame <=> (Frame.GetFirstChild("Quad_GaugeRPM2") as CMlQuad);
+				declare Quad_GaugeArrow for Frame <=> (Frame.GetFirstChild("Quad_GaugeArrow") as CMlQuad);
+				declare Quad_GaugeFill 	for Frame <=> (Frame.GetFirstChild("Quad_GaugeFill") as CMlQuad);
 				
-				// Set the step label
-				declare Label_RPMStepValue <=> (Frame.GetFirstChild("Label_RPMStepValue") as CMlLabel);
-				Label_RPMStepValue.Visible = IsFullStep;
-				if (Label_RPMStepValue.Visible) {
-					Label_RPMStepValue.Value = TL::ToText(ML::FloorInteger(StepRPM / 1000));
-					Label_RPMStepValue.RelativeRotation = -Frame.RelativeRotation;
-				}
+				declare Quad_GaugeSafe1 for Frame <=> (Frame.GetFirstChild("Quad_GaugeSafe1") as CMlQuad);
+				declare Quad_GaugeSafe2 for Frame <=> (Frame.GetFirstChild("Quad_GaugeSafe2") as CMlQuad);
+				declare Quad_GaugeFill2 for Frame <=> (Frame.GetFirstChild("Quad_GaugeFill2") as CMlQuad);
+				declare Frame_IsSecure 	for Frame <=> (Frame.GetFirstChild("Frame_IsSecure") as CMlFrame);
+				declare Label_IsSecure 	for Frame <=> (Frame.GetFirstChild("Label_IsSecure") as CMlLabel);
+				declare Quad_IsSecureBg for Frame <=> (Frame.GetFirstChild("Quad_IsSecureBg") as CMlQuad);
 
-				// Set the step image
-				declare Quad_RPMStepValue <=> (Frame.GetFirstChild("Quad_RPMStepValue") as CMlQuad);
-				if (IsFullStep) Quad_RPMStepValue.ImageUrl = "{{{C_ImgBase}}}Speedometer/Step.png";
-				else Quad_RPMStepValue.ImageUrl = "{{{C_ImgBase}}}Speedometer/StepSmall.png";
+				declare CMlFrame[] Frame_RPMSteps for Frame;
+				for (I, 0, 63) Frame_RPMSteps.add((Frame.GetFirstChild("Frame_RPMStep#"^I) as CMlFrame));
+
+				// Translation
+				Label_IsSecure.Value = TL::ToUpperCase(Translate("No interaction"));
+				Quad_IsSecureBg.Size.X = ComputeWidth(Label_IsSecure) + 2.;
+				Frame_IsSecure.RelativePosition_V3.X = (Quad_IsSecureBg.Size.X + 4.) * -.5;
 			}
 		}
+		
+		foreach (FrameId => Frame in Frame_Speedometers) {
+			declare Player <=> SplitScreen_GetTmPlayer(FrameId);
 
-		// ---------------------------------- //
-		// Update the interface color
-		if (PrevGUIPlayerId != GUIPlayer.Id) {
-			PrevGUIPlayerId = GUIPlayer.Id;
-			UpdateColor = True;
-		}
-		if (PrevGUIPlayerClan != GetClan(GUIPlayer)) {
-			PrevGUIPlayerClan = GetClan(GUIPlayer);
-			UpdateColor = True;
-		}
-		if (UpdateColor) {
-			UpdateColor = False;
+			// ---------------------------------- //
+			// Update speedometer visibility
+			declare SpeedometerVisible = DisplaySpeedometer && Player != Null && Player.IsSpawned;
+			declare PrevSpeedometerVisible for Frame = !SpeedometerVisible;
 
-			if (PrevGUIPlayerClan > 0) InterfaceColor = GetClanColor(PrevGUIPlayerClan);
-			else InterfaceColor = GUIPlayer.User.Color;
-			InterfaceColor = Brightness(InterfaceColor, 1.5);
-		}
+			if (PrevSpeedometerVisible != SpeedometerVisible) {
+				PrevSpeedometerVisible = SpeedometerVisible;
 
-		if (PrevInterfaceColor != InterfaceColor) {
-			PrevInterfaceColor = InterfaceColor;
+				declare Scale = 0.;
+				declare Easing = CAnimManager::EAnimManagerEasing::CircIn;
+				if (SpeedometerVisible) {
+					Scale = SplitScreen_GetScale(1.);
+					Easing = CAnimManager::EAnimManagerEasing::CircOut;
+				}
 
-			Quad_GaugeFill.Colorize = InterfaceColor;
-			Quad_GaugeRPM1.Colorize = InterfaceColor;
-			Quad_GaugeRPM2.Colorize = InterfaceColor;
-			Quad_GaugeArrow.Colorize = InterfaceColor;
+				AnimMgr.Add(Frame, "<frame scale='"^Scale^"' />", 250, Easing);
+			}
+
+			if (!SpeedometerVisible) continue;
+
+			// ---------------------------------- //
+			// Update variables
+			declare PrevEngineGear		for Frame = -1;
+			declare PrevDistance		for Frame = -1.;
+			declare PrevGaugeRPMValue	for Frame = 0.;
+			declare PrevGaugeMaxRPM		for Frame = -1.;
+			declare PrevPlayerId		for Frame = NullId;
+			declare PrevPlayerClan		for Frame = -1;
+			declare PrevInterfaceColor	for Frame = Vec3;
+			declare PrevGaugeSafeValue	for Frame = -1.;
+			declare PrevUseRetardedUnits for Frame = False;
+
+			// ---------------------------------- //
+			// Frame components
+			declare CMlLabel Label_Speed 		for Frame;
+			declare CMlLabel Label_SpeedUnit 	for Frame;
+			declare CMlLabel Label_Gear 		for Frame;
+			declare CMlLabel Label_Distance 	for Frame;
+			declare CMlQuad Quad_GaugeRPM1 		for Frame;
+			declare CMlQuad Quad_GaugeRPM2 		for Frame;
+			declare CMlQuad Quad_GaugeArrow		for Frame;
+			declare CMlQuad Quad_GaugeFill 		for Frame;
+			declare CMlQuad Quad_GaugeSafe1		for Frame;
+			declare CMlQuad Quad_GaugeSafe2		for Frame;
+			declare CMlQuad Quad_GaugeFill2		for Frame;
+			declare CMlFrame Frame_IsSecure		for Frame;
+			declare CMlFrame[] Frame_RPMSteps	for Frame;
+			
+			// ---------------------------------- //
+			// On units change
+			if (PrevUseRetardedUnits != Persistent_LibPursuitUI_UseRetardedUnits) {
+				PrevUseRetardedUnits = Persistent_LibPursuitUI_UseRetardedUnits;
+				PrevDistance = -1.;
+
+				if (PrevUseRetardedUnits) Label_SpeedUnit.Value = "MPH";
+				else Label_SpeedUnit.Value = "KM/H";
+			}
+			
+			// Update speed
+			if (PrevUseRetardedUnits) Label_Speed.Value = TL::ToText(ML::Abs(ML::FloorInteger(Player.Speed * 2.24)));
+			else Label_Speed.Value = TL::ToText(Player.DisplaySpeed);
+
+			// Update gear
+			if (PrevEngineGear != Player.EngineCurGear) {
+				PrevEngineGear = Player.EngineCurGear;
+
+				if (PrevEngineGear <= 0) Label_Gear.Value = "R";
+				else Label_Gear.Value = TL::ToText(PrevEngineGear);
+
+				Label_Gear.Opacity = 0.;
+				AnimMgr.Add(Label_Gear, "<label opacity='1' />", 250, CAnimManager::EAnimManagerEasing::Linear);
+			}
+			
+			// Update distance
+			if (PrevDistance != Player.Distance) {
+				PrevDistance = Player.Distance;
+
+				declare Distance = Player.Distance;
+				if (PrevUseRetardedUnits) Distance /= 1.6;
+
+				Label_Distance.Value = TL::FormatInteger(ML::FloorInteger(Distance), 5)^"."^(ML::FloorInteger(Distance * 10) % 10);
+
+				if (PrevUseRetardedUnits) Label_Distance.Value ^= " Mi";
+				else Label_Distance.Value ^= " M";
+			}
+
+			// ---------------------------------- //
+			// Show the current RPM value
+			GaugeRPMValue = Player.EngineRpm / GaugeMaxRPM;
+			if (GaugeRPMValue < .025 || GameTime <= Player.RaceStartTime) GaugeRPMValue = 0.;
+
+			if (PrevGaugeRPMValue != GaugeRPMValue) {
+				PrevGaugeRPMValue = GaugeRPMValue;
+
+				Quad_GaugeFill.Visible = GaugeRPMValue > 0;
+				Quad_GaugeRPM1.RelativeRotation = ML::Clamp(GaugeRPMValue * 2, 0., 1.) * 144 - 144;
+				Quad_GaugeRPM2.RelativeRotation = ML::Clamp((GaugeRPMValue - .5) * 2, 0., 1.) * 144.;
+				Quad_GaugeArrow.RelativeRotation = ML::Clamp(GaugeRPMValue, 0., 1.) * 288. - 144.;
+			}
+
+			// ---------------------------------- //
+			// Update the max RPM value
+			GaugeMaxRPM = GlobalEngineMaxRPM;
+
+			declare netread Real Net_LibPursuitUI_PlayerEngineMaxRPM for Player;
+			if (Net_LibPursuitUI_PlayerEngineMaxRPM > 0) GaugeMaxRPM = Net_LibPursuitUI_PlayerEngineMaxRPM;
+
+			if (PrevGaugeMaxRPM != GaugeMaxRPM) {
+				PrevGaugeMaxRPM = GaugeMaxRPM;
+
+				foreach (I => Frame in Frame_RPMSteps) {
+					declare StepRPM = (I + 1) * 250.;
+					Frame.Visible = StepRPM < GaugeMaxRPM;
+					if (!Frame.Visible) continue;
+
+					// Set frame rotation
+					Frame.RelativeRotation = (StepRPM / GaugeMaxRPM) * 288. - 144.;
+					declare IsFullStep = StepRPM / 1000 == ML::FloorInteger(StepRPM / 1000);
+					
+					// Set the step label
+					declare Label_RPMStepValue <=> (Frame.GetFirstChild("Label_RPMStepValue") as CMlLabel);
+					Label_RPMStepValue.Visible = IsFullStep;
+					if (Label_RPMStepValue.Visible) {
+						Label_RPMStepValue.Value = TL::ToText(ML::FloorInteger(StepRPM / 1000));
+						Label_RPMStepValue.RelativeRotation = -Frame.RelativeRotation;
+					}
+
+					// Set the step image
+					declare Quad_RPMStepValue <=> (Frame.GetFirstChild("Quad_RPMStepValue") as CMlQuad);
+					if (IsFullStep) Quad_RPMStepValue.ImageUrl = "{{{C_ImgBase}}}Speedometer/Step.png";
+					else Quad_RPMStepValue.ImageUrl = "{{{C_ImgBase}}}Speedometer/StepSmall.png";
+				}
+			}
+
+			// ---------------------------------- //
+			// Get the player's safe time
+			declare GaugeSafeValue = 0.;
+			if (GameTime <= Player.RaceStartTime) GaugeSafeValue = 1.;
+			else if (GameTime >= Player.RaceStartTime + SafeTimeDuration) GaugeSafeValue = 0.;
+			else GaugeSafeValue = 1. - (ML::ToReal(GameTime - Player.RaceStartTime) / SafeTimeDuration);
+			
+			if (GaugeSafeValue < .005) GaugeSafeValue = 0.;
+			Frame_IsSecure.Visible = GaugeSafeValue > 0.;
+			
+			// ---------------------------------- //
+			// Show the current safe time
+			if (PrevGaugeSafeValue != GaugeSafeValue) {
+				PrevGaugeSafeValue = GaugeSafeValue;
+
+				Quad_GaugeFill2.Visible = GaugeSafeValue > 0;
+				Quad_GaugeSafe1.RelativeRotation = ML::Clamp(GaugeSafeValue * 2, 0., 1.) * 144 - 144;
+				Quad_GaugeSafe2.RelativeRotation = ML::Clamp((GaugeSafeValue - .5) * 2, 0., 1.) * 144.;
+			}
+
+			// ---------------------------------- //
+			// Update the interface color
+			declare InterfaceColor for Frame = <1., 0., 0.>;
+
+			if (PrevPlayerId != Player.Id) {
+				PrevPlayerId = Player.Id;
+				UpdateColor = True;
+			}
+			if (PrevPlayerClan != GetClan(Player)) {
+				PrevPlayerClan = GetClan(Player);
+				UpdateColor = True;
+			}
+			if (UpdateColor) {
+				UpdateColor = False;
+
+				if (PrevPlayerClan > 0) InterfaceColor = GetClanColor(PrevPlayerClan);
+
+				// Split screen color or user setting
+				else switch (Player.User.Login) {
+					case "*splitscreen_0*" : InterfaceColor = <0., 0., 1.>;
+					case "*splitscreen_1*" : InterfaceColor = <1., 0., 0.>;
+					case "*splitscreen_2*" : InterfaceColor = <0., 1., 0.>;
+					case "*splitscreen_3*" : InterfaceColor = <.5, 0., 1.>;
+					default : InterfaceColor = Player.User.Color;
+				}
+
+				InterfaceColor = Brightness(InterfaceColor, 1.5);
+			}
+
+			if (PrevInterfaceColor != InterfaceColor) {
+				PrevInterfaceColor = InterfaceColor;
+
+				Quad_GaugeFill.Colorize = InterfaceColor;
+				Quad_GaugeRPM1.Colorize = InterfaceColor;
+				Quad_GaugeRPM2.Colorize = InterfaceColor;
+				Quad_GaugeArrow.Colorize = InterfaceColor;
+				Quad_GaugeFill2.Colorize = InterfaceColor;
+				Quad_GaugeSafe1.Colorize = InterfaceColor;
+				Quad_GaugeSafe2.Colorize = InterfaceColor;
+			}
 		}
 	}
 }
@@ -691,9 +859,14 @@ main() {
 Text Private_CreateManialinkBackground() {
 	return """
 <manialink version="3" name="LibPursuitUI:Background">
-<frame id="Frame_Background" hidden="1" pos="{{{C_LibPursuitUI_BackgroundPos.X^" "^C_LibPursuitUI_BackgroundPos.Y}}}" z-index="-65">
+<framemodel id="FrameModel_Background">
 	<quad size="320 24" halign="center" valign="bottom" opacity="0" colorize="000" image="{{{C_ImgBase}}}TeamColor.png" id="Quad_Gradient" />
-</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_Background" id="Frame_Background#0" z-index="-65" />
+<frameinstance modelid="FrameModel_Background" id="Frame_Background#1" z-index="-65" />
+<frameinstance modelid="FrameModel_Background" id="Frame_Background#2" z-index="-65" />
+<frameinstance modelid="FrameModel_Background" id="Frame_Background#3" z-index="-65" />
 
 <script><!--
 /**
@@ -703,6 +876,7 @@ Text Private_CreateManialinkBackground() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
+{{{SplitScreen::Framework()}}}
 {{{C_LibPursuitUI_GetPlayerClan}}}
 {{{C_LibPursuitUI_GetClanColor}}}
 
@@ -712,21 +886,30 @@ Text Private_CreateManialinkBackground() {
 main() {
 	// ---------------------------------- //
 	// Load interface elements
-	declare Frame_Background <=> (Page.GetFirstChild("Frame_Background") as CMlFrame);
-	declare Quad_Gradient <=> (Page.GetFirstChild("Quad_Gradient") as CMlQuad);
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibPursuitUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibPursuitUI_Settings for Teams[0];
-	
+	declare CMlFrame[] Frame_Backgrounds;
+	for (I, 0, 3) Frame_Backgrounds.add((Page.GetFirstChild("Frame_Background#"^I) as CMlFrame));
+
 	// ---------------------------------- //
 	// Variables
-	declare PlayerClan = 0;
-	
 	declare PrevGUIPlayerLogin = "";
 	declare PrevPlayerClan = -1;
 	declare PrevSettingsUpdate = -1;
+
+	// ---------------------------------- //
+	// Configure frames
+	foreach (I => Frame in Frame_Backgrounds) {
+		Frame.Visible = I == 0 || I < SplitScreen_NbPlayers();
+		Frame.RelativePosition_V3 = SplitScreen_GetPosition({{{C_LibPursuitUI_BackgroundPos}}}, I, False);
+		Frame.RelativeScale = SplitScreen_GetScale(1.);
+
+		declare Quad_Gradient for Frame <=> (Frame.GetFirstChild("Quad_Gradient") as CMlQuad);
+		Quad_Gradient.Size.X = 320.;
+
+		switch (SplitScreen_SplitMode()) {
+			case 1 : Quad_Gradient.Size.X *= 2.;
+			case 2 : Quad_Gradient.Size.X /= 2.;
+		}
+	}
 	
 	// ---------------------------------- //
 	// Yield
@@ -735,46 +918,41 @@ main() {
 		yield;
 		if (!PageIsVisible) continue;
 		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibPursuitUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibPursuitUI_SettingsUpdate;
-			
-			foreach (SettingName => SettingValue in Net_LibPursuitUI_Settings) {
-				switch (SettingName) {
-					case "Background_Display" : Frame_Background.Visible = SettingValue == "True";
-				}
-			}
-		}
-		
-		if (!Frame_Background.Visible) continue;
-		
-		// Get player clan
-		PlayerClan = 0;
-		if (GUIPlayer != Null) PlayerClan = GetClan(GUIPlayer);
-		
-		// ---------------------------------- //
-		// Update interface clan color
-		if (PrevPlayerClan != PlayerClan) {
-			declare Color = "000";
-			declare Opacity = 0.;
+		foreach (I => Frame in Frame_Backgrounds) {
+			if (!Frame.Visible) continue;
+			declare Player <=> SplitScreen_GetTmPlayer(I);
 
-			if (PlayerClan > 0) {
-				Color = TL::ColorToText(GetClanColor(PlayerClan));
-				Opacity = .875;
+			// Get player clan
+			declare PlayerClan = 0;
+			if (Player != Null) PlayerClan = GetClan(Player);
+			
+			// ---------------------------------- //
+			// Update interface clan color
+			declare PrevPlayerLogin for Frame = "";
+			declare PrevPlayerClan for Frame = -1;
+
+			if (PrevPlayerClan != PlayerClan) {
+				declare Color = "000";
+				declare Opacity = 0.;
+
+				if (PlayerClan > 0) {
+					Color = TL::ColorToText(GetClanColor(PlayerClan));
+					Opacity = .875;
+				}
+				
+				declare CMlQuad Quad_Gradient for Frame;
+				AnimMgr.Add(Quad_Gradient, "<quad colorize='"^Color^"' opacity='"^Opacity^"' />", 250, CAnimManager::EAnimManagerEasing::Linear);
+				
+				// Play capture sound
+				if (PlayerClan == 1 && PrevPlayerClan == 2 && Player != Null && PrevPlayerLogin == Player.User.Login)
+					Audio.PlaySoundEvent("{{{C_ImgBase}}}Sounds/Captured.wav", 0.);
+				
+				PrevPlayerClan = PlayerClan;
 			}
 			
-			AnimMgr.Add(Quad_Gradient, "<quad colorize='"^Color^"' opacity='"^Opacity^"' />", 250, CAnimManager::EAnimManagerEasing::Linear);
-			
-			// Play capture sound
-			if (PlayerClan == 1 && PrevPlayerClan == 2 && GUIPlayer != Null && PrevGUIPlayerLogin == GUIPlayer.Login)
-				Audio.PlaySoundEvent("{{{C_ImgBase}}}Sounds/Captured.wav", 0.);
-			
-			PrevPlayerClan = PlayerClan;
+			// Update player login
+			if (Player != Null && PrevPlayerLogin != Player.User.Login) PrevPlayerLogin = Player.User.Login;
 		}
-		
-		// Update player login
-		if (GUIPlayer != Null && PrevGUIPlayerLogin != GUIPlayer.Login) PrevGUIPlayerLogin = GUIPlayer.Login;
 	}
 }
 --></script>
@@ -1076,10 +1254,15 @@ Text Private_CreateManialinkThievesCount() {
 	<style class="Font" halign="center" valign="center2" textemboss="1" textcolor="FFF" textfont="RajdhaniMono" />
 </stylesheet>
 
-<frame id="Frame_ThievesCount" pos="{{{C_LibPursuitUI_ThievesCountPos.X^" "^C_LibPursuitUI_ThievesCountPos.Y}}}" hidden="1">
+<framemodel id="FrameModel_ThievesCount">
 	<label pos="0 5" class="Font" textsize="7" id="Label_NbThieves" opacity="0" />
 	<label size="32 3" class="Font" textsize="1.5" id="Label_Subtitle" opacity="0" />
-</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_ThievesCount" id="Frame_ThievesCount#0" />
+<frameinstance modelid="FrameModel_ThievesCount" id="Frame_ThievesCount#1" />
+<frameinstance modelid="FrameModel_ThievesCount" id="Frame_ThievesCount#2" />
+<frameinstance modelid="FrameModel_ThievesCount" id="Frame_ThievesCount#3" />
 
 <script><!--
 /**
@@ -1092,6 +1275,7 @@ Text Private_CreateManialinkThievesCount() {
 #Const C_AnimDuration 500
 
 {{{Translations::InsertToManialink(["Thieves left"])}}}
+{{{SplitScreen::Framework()}}}
 
 // ---------------------------------- //
 // Main
@@ -1099,9 +1283,8 @@ Text Private_CreateManialinkThievesCount() {
 main() {
 	// ---------------------------------- //
 	// Load interface elements
-	declare Frame_ThievesCount	<=> (Page.GetFirstChild("Frame_ThievesCount") as CMlFrame);
-	declare Label_NbThieves <=> (Page.GetFirstChild("Label_NbThieves") as CMlLabel);
-	declare Label_Subtitle <=> (Page.GetFirstChild("Label_Subtitle") as CMlLabel);
+	declare CMlFrame[] Frame_ThievesCount;
+	for (I, 0, 3) Frame_ThievesCount.add((Page.GetFirstChild("Frame_ThievesCount#"^I) as CMlFrame));
 	
 	// ---------------------------------- //
 	// Netcode
@@ -1120,8 +1303,20 @@ main() {
 	
 	declare PrevSettingsUpdate = -1;
 	declare PrevNbThieves = -1;
-	
-	Label_Subtitle.SetText("$T"^Translate("Thieves left"));
+
+	// ---------------------------------- //
+	// Configure frames
+	foreach (I => Frame in Frame_ThievesCount) {
+		Frame.Visible = I == 0 || I < SplitScreen_NbPlayers();
+		Frame.RelativePosition_V3 = SplitScreen_GetPosition({{{C_LibPursuitUI_ThievesCountPos}}}, I, False);
+		Frame.RelativeScale = SplitScreen_GetScale(1.);
+
+		declare Label_NbThieves	for Frame <=> (Frame.GetFirstChild("Label_NbThieves") as CMlLabel);
+		declare Label_Subtitle	for Frame <=> (Frame.GetFirstChild("Label_Subtitle") as CMlLabel);
+
+		// Translations
+		Label_Subtitle.SetText("$T"^Translate("Thieves left"));
+	}
 	
 	// ---------------------------------- //
 	// Yield
@@ -1132,6 +1327,7 @@ main() {
 		
 		// ---------------------------------- //
 		// Update settings
+		/*
 		if (PrevSettingsUpdate != Net_LibPursuitUI_SettingsUpdate) {
 			PrevSettingsUpdate = Net_LibPursuitUI_SettingsUpdate;
 			
@@ -1148,6 +1344,7 @@ main() {
 		}
 		
 		if (!Frame_ThievesCount.Visible) continue;
+		*/
 		
 		// ---------------------------------- //
 		// Define current Thieves amount
@@ -1158,47 +1355,77 @@ main() {
 		// ---------------------------------- //
 		// Update amount label
 		if (PrevNbThieves != NbThievesAlive) {
-			Label_NbThieves.SetText(TL::ToText(NbThievesAlive));
+			foreach (I => Frame in Frame_ThievesCount) {
+				if (!Frame.Visible) continue;
+
+				declare CMlLabel Label_NbThieves for Frame;
+				Label_NbThieves.SetText(TL::ToText(NbThievesAlive));
+			}
+			
 			declare CAnimManager::EAnimManagerEasing Easing;
 			
 			// ---------------------------------- //
 			// Thieves amount has changed
 			if (NbThievesAlive > 0 && PrevNbThieves > 0) {
 				Audio.PlaySoundEvent(CAudioManager::ELibSound::ScoreIncrease, 0, 0.);
-				Label_NbThieves.Opacity = 1.;
-				Label_Subtitle.Opacity = 1.;
-				
+
 				declare Color = "F00";
 				if (NbThievesAlive > PrevNbThieves) Color = "0F0";
 				
-				AnimMgr.Add(Label_NbThieves, "<label scale='1.25' textcolor='"^Color^"' />", C_AnimDuration/2, CAnimManager::EAnimManagerEasing::SineOut);
-				AnimMgr.AddChain(Label_NbThieves, "<label scale='1' textcolor='FFF' />", C_AnimDuration/2, CAnimManager::EAnimManagerEasing::SineIn);
+				foreach (I => Frame in Frame_ThievesCount) {
+					if (!Frame.Visible) continue;
+
+					declare CMlLabel Label_NbThieves for Frame;
+					declare CMlLabel Label_Subtitle for Frame;
+					
+					Label_NbThieves.Opacity = 1.;
+					Label_Subtitle.Opacity = 1.;
+					
+					AnimMgr.Add(Label_NbThieves, "<label scale='1.25' textcolor='"^Color^"' />", C_AnimDuration/2, CAnimManager::EAnimManagerEasing::SineOut);
+					AnimMgr.AddChain(Label_NbThieves, "<label scale='1' textcolor='FFF' />", C_AnimDuration/2, CAnimManager::EAnimManagerEasing::SineIn);
+				}
 			}
 			// ---------------------------------- //
 			// Show counter
 			else if (NbThievesAlive > 0 && PrevNbThieves <= 0) {
 				Easing = CAnimManager::EAnimManagerEasing::CircOut;
-				Frame_ThievesCount.RelativeScale = 2.;
-				Label_NbThieves.Opacity = 0.;
-				Label_NbThieves.TextColor = <1., 1., 1.>;
-				Label_Subtitle.Opacity = 0.;
-				
-				AnimMgr.Add(Frame_ThievesCount, "<frame scale='1' />", C_AnimDuration, Easing);
-				AnimMgr.Add(Label_NbThieves, "<label opacity='1' />", C_AnimDuration, Easing);
-				AnimMgr.Add(Label_Subtitle, "<label opacity='1' />", C_AnimDuration, Easing);
+
+				foreach (I => Frame in Frame_ThievesCount) {
+					if (!Frame.Visible) continue;
+
+					declare CMlLabel Label_NbThieves for Frame;
+					declare CMlLabel Label_Subtitle for Frame;
+
+					Frame.RelativeScale = SplitScreen_GetScale(2.);
+					Label_NbThieves.Opacity = 0.;
+					Label_NbThieves.TextColor = <1., 1., 1.>;
+					Label_Subtitle.Opacity = 0.;
+					
+					AnimMgr.Add(Frame, "<frame scale='"^SplitScreen_GetScale(1.)^"' />", C_AnimDuration, Easing);
+					AnimMgr.Add(Label_NbThieves, "<label opacity='1' />", C_AnimDuration, Easing);
+					AnimMgr.Add(Label_Subtitle, "<label opacity='1' />", C_AnimDuration, Easing);
+				}
 			}
 			// ---------------------------------- //
 			// Hide counter
 			else if (NbThievesAlive <= 0 && PrevNbThieves > 0) {
 				Easing = CAnimManager::EAnimManagerEasing::CircIn;
-				Frame_ThievesCount.RelativeScale = 1.;
-				Label_NbThieves.Opacity = 1.;
-				Label_NbThieves.TextColor = <1., 1., 1.>;
-				Label_Subtitle.Opacity = 1.;
-				
-				AnimMgr.Add(Frame_ThievesCount, "<frame scale='.5' />", C_AnimDuration, Easing);
-				AnimMgr.Add(Label_NbThieves, "<label opacity='0' />", C_AnimDuration, Easing);
-				AnimMgr.Add(Label_Subtitle, "<label opacity='0' />", C_AnimDuration, Easing);
+
+				foreach (I => Frame in Frame_ThievesCount) {
+					if (!Frame.Visible) continue;
+
+					declare CMlLabel Label_NbThieves for Frame;
+					declare CMlLabel Label_Subtitle for Frame;
+
+					Frame.RelativeScale = SplitScreen_GetScale(1.);
+					Label_NbThieves.Opacity = 1.;
+					Label_NbThieves.TextColor = <1., 1., 1.>;
+					Label_Subtitle.Opacity = 1.;
+					
+					AnimMgr.Add(Frame, "<frame scale='"^SplitScreen_GetScale(.5)^"' />", C_AnimDuration, Easing);
+					AnimMgr.Add(Label_NbThieves, "<label opacity='0' />", C_AnimDuration, Easing);
+					AnimMgr.Add(Label_Subtitle, "<label opacity='0' />", C_AnimDuration, Easing);
+				}
 			}
 			
 			PrevNbThieves = NbThievesAlive;
@@ -1217,12 +1444,17 @@ main() {
 Text Private_CreateManialinkPoliceCount() {
 	return """
 <manialink version="3" name="LibPursuitUI:PoliceCount">
-<frame id="Frame_PoliceCount" pos="{{{C_LibPursuitUI_PoliceCountPos.X^" "^C_LibPursuitUI_PoliceCountPos.Y}}}" hidden="1">
+<framemodel id="FrameModel_PoliceCount">
 	<frame id="Frame_IconOffset">
-		<quad size="5.5 5.5" valign="center" image="{{{C_ImgBase}}}IconPolice.png" id="Quad_PoliceIcon" />
-		<label pos="6 -.5" valign="center2" style="TextButtonNav" textemboss="1" textsize="3" textcolor="FFF" textfont="RajdhaniMono" id="Label_PoliceCount" />
+		<quad size="5.5 5.5" valign="center" image="{{{C_ImgBase}}}IconPolice.png" id="Quad_PoliceIcon" hidden="1" />
+		<label pos="6 -.5" valign="center2" style="TextButtonNav" textemboss="1" textsize="3" textcolor="FFF" textfont="RajdhaniMono" id="Label_PoliceCount" hidden="1" />
 	</frame>
-</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_PoliceCount" id="Frame_PoliceCount#0" />
+<frameinstance modelid="FrameModel_PoliceCount" id="Frame_PoliceCount#1" />
+<frameinstance modelid="FrameModel_PoliceCount" id="Frame_PoliceCount#2" />
+<frameinstance modelid="FrameModel_PoliceCount" id="Frame_PoliceCount#3" />
 
 <script><!--
 /**
@@ -1233,6 +1465,7 @@ Text Private_CreateManialinkPoliceCount() {
 #Include "TextLib" as TL
 
 {{{ManialinkTools::Functions(["ComputeWidth"])}}}
+{{{SplitScreen::Framework()}}}
 
 // ---------------------------------- //
 // Main
@@ -1240,11 +1473,9 @@ Text Private_CreateManialinkPoliceCount() {
 main() {
 	// ---------------------------------- //
 	// Load interface elements
-	declare Frame_PoliceCount <=> (Page.GetFirstChild("Frame_PoliceCount") as CMlFrame);
-	declare Label_PoliceCount <=> (Page.GetFirstChild("Label_PoliceCount") as CMlLabel);
-	declare Quad_PoliceIcon <=> (Page.GetFirstChild("Quad_PoliceIcon") as CMlQuad);
-	declare Frame_IconOffset <=> (Page.GetFirstChild("Frame_IconOffset") as CMlFrame);
-	
+	declare CMlFrame[] Frame_PoliceCount;
+	for (I, 0, 3) Frame_PoliceCount.add((Page.GetFirstChild("Frame_PoliceCount#"^I) as CMlFrame));
+
 	// ---------------------------------- //
 	// Netcode
 	declare netread Integer Net_LibPursuitUI_SettingsUpdate for Teams[0];
@@ -1254,6 +1485,8 @@ main() {
 	declare netread Integer Net_LibPursuitUI_EscapingClan for Teams[0];
 	wait(Net_LibPursuitUI_ClansNbPlayers.count == 3);
 	
+	declare persistent Persistent_LibPursuitUI_UseWideFormat for LocalUser = False;
+
 	// ---------------------------------- //
 	// Variables
 	declare EscapingClan = 0;
@@ -1262,6 +1495,24 @@ main() {
 	
 	declare PrevSettingsUpdate = -1;
 	declare PrevNbPolice = -1;
+	declare PrevUseWideFormat = Persistent_LibPursuitUI_UseWideFormat;
+
+	// ---------------------------------- //
+	// Configure frames
+	foreach (I => Frame in Frame_PoliceCount) {
+		Frame.Visible = I == 0 || I < SplitScreen_NbPlayers();
+		Frame.RelativePosition_V3 = SplitScreen_GetPosition(
+			{{{C_LibPursuitUI_PoliceCountPos}}}, I,
+			CMlControl::AlignHorizontal::Right,
+			CMlControl::AlignVertical::Bottom,
+			Persistent_LibPursuitUI_UseWideFormat
+		);
+		Frame.RelativeScale = SplitScreen_GetScale(1.);
+
+		declare Label_PoliceCount	for Frame <=> (Frame.GetFirstChild("Label_PoliceCount") as CMlLabel);
+		declare Quad_PoliceIcon		for Frame <=> (Frame.GetFirstChild("Quad_PoliceIcon") as CMlQuad);
+		declare Frame_IconOffset	for Frame <=> (Frame.GetFirstChild("Frame_IconOffset") as CMlFrame);
+	}
 	
 	// ---------------------------------- //
 	// Yield
@@ -1272,6 +1523,7 @@ main() {
 		
 		// ---------------------------------- //
 		// Update settings
+		/*
 		if (PrevSettingsUpdate != Net_LibPursuitUI_SettingsUpdate) {
 			PrevSettingsUpdate = Net_LibPursuitUI_SettingsUpdate;
 			
@@ -1288,6 +1540,12 @@ main() {
 		}
 		
 		if (!Frame_PoliceCount.Visible) continue;
+		*/
+
+		if (PrevUseWideFormat != Persistent_LibPursuitUI_UseWideFormat) {
+			PrevUseWideFormat = Persistent_LibPursuitUI_UseWideFormat;
+			PrevNbPolice = -1;
+		}
 		
 		EscapingClan = Net_LibPursuitUI_EscapingClan;
 		for (I, 0, 2) ClansNbPlayers[I] = Net_LibPursuitUI_ClansNbPlayers[I];
@@ -1300,12 +1558,27 @@ main() {
 		if (PrevNbPolice != NbPoliceAlive) {
 			PrevNbPolice = NbPoliceAlive;
 
-			Label_PoliceCount.Visible = NbPoliceAlive > 0;
-			Quad_PoliceIcon.Visible = Label_PoliceCount.Visible;
+			foreach (I => Frame in Frame_PoliceCount) {
+				if (!Frame.Visible) continue;
+				
+				Frame.RelativePosition_V3 = SplitScreen_GetPosition(
+					{{{C_LibPursuitUI_PoliceCountPos}}}, I,
+					CMlControl::AlignHorizontal::Right,
+					CMlControl::AlignVertical::Bottom,
+					Persistent_LibPursuitUI_UseWideFormat
+				);
+				
+				declare CMlLabel Label_PoliceCount	for Frame;
+				declare CMlQuad Quad_PoliceIcon		for Frame;
+				declare CMlFrame Frame_IconOffset	for Frame;
 
-			if (Label_PoliceCount.Visible) {
-				Label_PoliceCount.Value = TL::ToText(NbPoliceAlive);
-				Frame_IconOffset.RelativePosition_V3.X = (6 + ComputeWidth(Label_PoliceCount)) * -.5;
+				Label_PoliceCount.Visible = NbPoliceAlive > 0;
+				Quad_PoliceIcon.Visible = Label_PoliceCount.Visible;
+
+				if (Label_PoliceCount.Visible) {
+					Label_PoliceCount.Value = TL::ToText(NbPoliceAlive);
+					Frame_IconOffset.RelativePosition_V3.X = (6 + ComputeWidth(Label_PoliceCount)) * -.5;
+				}
 			}
 		}
 	}
@@ -1326,7 +1599,7 @@ Text Private_CreateManialinkRespawnTimer() {
 	<style class="Font" halign="center" valign="center2" textsize="1" textemboss="1" textcolor="FFF" textfont="RajdhaniMono" />
 </stylesheet>
 
-<frame id="Frame_RespawnProgress" pos="{{{C_LibPursuitUI_RespawnTimerPos.X^" "^C_LibPursuitUI_RespawnTimerPos.Y}}}">
+<framemodel id="FrameModel_RespawnProgress">
 	<frame id="Frame_RespawnProgAnim">
 		<quad posn="0 8 -.1" sizen="12 12" halign="center" valign="center" id="Quad_RespawnProgIcon" opacity="0" />
 		<label class="Font" textsize="3" id="Label_RespawnProgress" opacity="0" />
@@ -1336,7 +1609,12 @@ Text Private_CreateManialinkRespawnTimer() {
 			<label pos="0 -3.5" class="Font" textsize="3" id="Label_RespawnCampDist" opacity="0" />
 		</frame>
 	</frame>
-</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_RespawnProgress" id="Frame_RespawnProgress#0" />
+<frameinstance modelid="FrameModel_RespawnProgress" id="Frame_RespawnProgress#1" />
+<frameinstance modelid="FrameModel_RespawnProgress" id="Frame_RespawnProgress#2" />
+<frameinstance modelid="FrameModel_RespawnProgress" id="Frame_RespawnProgress#3" />
 
 <script><!--
 /**
@@ -1350,6 +1628,7 @@ Text Private_CreateManialinkRespawnTimer() {
 
 {{{Translations::InsertToManialink(["Respawning...", "Camper! Move %1 meters away to cancel!"])}}}
 {{{ManialinkTools::Functions(["SetGaugeRatio"])}}}
+{{{SplitScreen::Framework()}}}
 {{{C_LibPursuitUI_GetPlayerClan}}}
 {{{C_LibPursuitUI_GetClanColor}}}
 
@@ -1359,23 +1638,15 @@ Text Private_CreateManialinkRespawnTimer() {
 main() {
 	// ---------------------------------- //
 	// Load interface elements
-	declare Frame_RespawnProgress	<=> (Page.GetFirstChild("Frame_RespawnProgress") as CMlFrame);
-	declare Frame_RespawnProgAnim	<=> (Page.GetFirstChild("Frame_RespawnProgAnim") as CMlLabel);
-	declare Label_RespawnProgress	<=> (Page.GetFirstChild("Label_RespawnProgress") as CMlLabel);
-	declare Quad_RespawnProgIcon	<=> (Page.GetFirstChild("Quad_RespawnProgIcon") as CMlQuad);
-	declare Gauge_RespawnProgress	<=> (Page.GetFirstChild("Gauge_RespawnProgress") as CMlGauge);
-	declare Frame_RespawnIsCamper	<=> (Page.GetFirstChild("Frame_RespawnIsCamper") as CMlFrame);
-	declare Label_CampWarningText	<=> (Page.GetFirstChild("Label_CampWarningText") as CMlLabel);
-	declare Label_RespawnCampDist	<=> (Page.GetFirstChild("Label_RespawnCampDist") as CMlLabel);
-	
-	Label_CampWarningText.Value = Translate(["Camper! Move %1 meters away to cancel!", "100"]);
+	declare CMlFrame[] Frame_RespawnProgress;
+	for (I, 0, 3) Frame_RespawnProgress.add((Page.GetFirstChild("Frame_RespawnProgress#"^I) as CMlFrame));
 	
 	// ---------------------------------- //
 	// Netcode
 	declare netread Integer Net_LibPursuitUI_SettingsUpdate for Teams[0];
 	declare netread Text[Text] Net_LibPursuitUI_Settings for Teams[0];
 	declare netread Integer Net_LibPursuitUI_EscapingClan for Teams[0];
-	
+
 	// ---------------------------------- //
 	// Variables
 	declare DisplayRespawnProgress = False;
@@ -1386,10 +1657,25 @@ main() {
 	declare RespawnBaseMessage = "";
 	
 	declare PrevSettingsUpdate = -1;
-	declare PrevRespawnProgressVisible = False;
-	declare PrevGUIPlayerId = NullId;
-	declare PrevGUIPlayerClan = -1;
-	declare PrevFinishedRespawning = True;
+
+	// ---------------------------------- //
+	// Initialize frames layout
+	foreach (I => Frame in Frame_RespawnProgress) {
+		Frame.Visible = I == 0 || I < SplitScreen_NbPlayers();
+		Frame.RelativePosition_V3 = SplitScreen_GetPosition({{{C_LibPursuitUI_RespawnTimerPos}}}, I, False);
+		Frame.RelativeScale = SplitScreen_GetScale(1.);
+
+		declare Frame_RespawnProgAnim	for Frame <=> (Frame.GetFirstChild("Frame_RespawnProgAnim") as CMlFrame);
+		declare Label_RespawnProgress	for Frame <=> (Frame.GetFirstChild("Label_RespawnProgress") as CMlLabel);
+		declare Quad_RespawnProgIcon	for Frame <=> (Frame.GetFirstChild("Quad_RespawnProgIcon") as CMlQuad);
+		declare Gauge_RespawnProgress	for Frame <=> (Frame.GetFirstChild("Gauge_RespawnProgress") as CMlGauge);
+		declare Frame_RespawnIsCamper	for Frame <=> (Frame.GetFirstChild("Frame_RespawnIsCamper") as CMlFrame);
+		declare Label_CampWarningText	for Frame <=> (Frame.GetFirstChild("Label_CampWarningText") as CMlLabel);
+		declare Label_RespawnCampDist	for Frame <=> (Frame.GetFirstChild("Label_RespawnCampDist") as CMlLabel);
+
+		// Translations
+		Label_CampWarningText.Value = Translate(["Camper! Move %1 meters away to cancel!", "100"]);
+	}
 	
 	// ---------------------------------- //
 	// Yield
@@ -1412,280 +1698,131 @@ main() {
 				}
 			}
 		}
-		
-		// ---------------------------------- //
-		// Check if current player is respawning
-		if (
-			!DisplayRespawnProgress || GUIPlayer == Null || !GUIPlayer.IsSpawned ||
-			GUIPlayer.RaceStartTime <= 0 || GetClan(GUIPlayer) != Net_LibPursuitUI_EscapingClan
-		) {
-			RespawnProgressVisible = False;
-		} else {
-			declare netread Integer Net_LibPursuitUI_RespawnStartTime for GUIPlayer;
-			RespawnProgressVisible = GameTime - C_DisplayDuration <= Net_LibPursuitUI_RespawnStartTime + RespawnDuration;
-		}
 
-		// ---------------------------------- //
-		// Update respawn timer visibility
-		if (PrevRespawnProgressVisible != RespawnProgressVisible) {
-			PrevRespawnProgressVisible = RespawnProgressVisible;
-			
-			Gauge_RespawnProgress.Visible = RespawnProgressVisible;
-			Frame_RespawnProgAnim.RelativePosition.Y = 0.;
-			Label_RespawnProgress.Opacity = 1.;
-			declare PositionY = -2.;
-			declare Opacity = 0.;
-			
-			if (RespawnProgressVisible) {
-				Frame_RespawnProgAnim.RelativePosition.Y = -PositionY;
-				Label_RespawnProgress.Opacity = 0.;
-				PositionY = 0.;
-				Opacity = 1.;
+		foreach (I => Frame in Frame_RespawnProgress) {
+			if (!Frame.Visible) continue;
+			declare Player <=> SplitScreen_GetTmPlayer(I);
+
+			// ---------------------------------- //
+			// Frame elements
+			declare CMlFrame Frame_RespawnProgAnim	for Frame;
+			declare CMlLabel Label_RespawnProgress	for Frame;
+			declare CMlQuad Quad_RespawnProgIcon	for Frame;
+			declare CMlGauge Gauge_RespawnProgress	for Frame;
+			declare CMlFrame Frame_RespawnIsCamper	for Frame;
+			declare CMlLabel Label_CampWarningText	for Frame;
+			declare CMlLabel Label_RespawnCampDist	for Frame;
+
+			declare PrevRespawnProgressVisible for Frame = False;
+			declare PrevPlayerId for Frame = NullId;
+			declare PrevPlayerClan for Frame = -1;
+			declare PrevFinishedRespawning for Frame = True;
+
+			// ---------------------------------- //
+			// Check if current player is respawning
+			if (
+				!DisplayRespawnProgress || Player == Null || !Player.IsSpawned ||
+				Player.RaceStartTime <= 0 || GetClan(Player) != Net_LibPursuitUI_EscapingClan
+			) {
+				RespawnProgressVisible = False;
+			} else {
+				declare netread Integer Net_LibPursuitUI_RespawnStartTime for Player;
+				RespawnProgressVisible = GameTime - C_DisplayDuration <= Net_LibPursuitUI_RespawnStartTime + RespawnDuration;
 			}
-			
-			AnimMgr.Add(Frame_RespawnProgAnim, "<frame pos='0 "^PositionY^"'/>", 125, CAnimManager::EAnimManagerEasing::Linear);
-			AnimMgr.Add(Label_RespawnProgress, "<label opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
-			AnimMgr.Add(Quad_RespawnProgIcon, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
-			AnimMgr.Add(Label_CampWarningText, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
-			AnimMgr.Add(Label_RespawnCampDist, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
-			
-			// Play sound
-			declare Sound = CAudioManager::ELibSound::ShowMenu;
-			if (!RespawnProgressVisible) Sound = CAudioManager::ELibSound::HideMenu;
-			Audio.PlaySoundEvent(Sound, 0, 0.);
-		}
-		
-		if (!RespawnProgressVisible) continue;
 
-		// Get the player's respawn time
-		declare netread Integer Net_LibPursuitUI_RespawnStartTime for GUIPlayer;
-		declare TimeUntilRespawn = Net_LibPursuitUI_RespawnStartTime + RespawnDuration - GameTime;
-	
-		// Set respawn gauge ratio
-		SetGaugeRatio(Gauge_RespawnProgress, 1 - ML::ToReal(TimeUntilRespawn) / RespawnDuration);
-		
-		// Update color on player change
-		if (PrevGUIPlayerId != GUIPlayer.Id) {
-			PrevGUIPlayerId = GUIPlayer.Id;
-			UpdateInterfaceColor = True;
-		}
-
-		// Update color on clan change
-		if (PrevGUIPlayerClan != GetClan(GUIPlayer)) {
-			PrevGUIPlayerClan = GetClan(GUIPlayer);
-			UpdateInterfaceColor = True;
-		}
-
-		// ---------------------------------- //
-		// Update the gauge color
-		if (UpdateInterfaceColor) {
-			UpdateInterfaceColor = False;
-
-			declare InterfaceColor = GUIPlayer.User.Color;
-			if (PrevGUIPlayerClan > 0) InterfaceColor = GetClanColor(PrevGUIPlayerClan);
-			Gauge_RespawnProgress.Color = InterfaceColor;
-		}
-
-		FinishedRespawning = TimeUntilRespawn <= 0;
-
-		// ---------------------------------- //
-		// Update icon on respawn status change
-		if (PrevFinishedRespawning != FinishedRespawning) {
-			PrevFinishedRespawning = FinishedRespawning;
-
-			declare IconURL = "{{{C_ImgBase}}}c_goal_shield.dds";
-			if (FinishedRespawning) IconURL = "{{{C_ImgBase}}}c_goal_captured.dds";
-			Quad_RespawnProgIcon.ImageUrl = IconURL;
-
-			if (FinishedRespawning) RespawnBaseMessage = Translate("Respawned!");
-			else RespawnBaseMessage = Translate("Respawning...");
-			Label_RespawnProgress.Value = RespawnBaseMessage;
-		}
-
-		// Set respawn message text
-		if (!FinishedRespawning) {
-			declare SecondsToRespawn = ML::CeilingInteger(TimeUntilRespawn / 1000.);
-			Label_RespawnProgress.Value = RespawnBaseMessage^" ("^SecondsToRespawn^")";
-		}
-
-		// ---------------------------------- //
-		// Set camper warning visibility
-		declare netread Boolean Net_LibPursuitUI_PlayerIsCamping for GUIPlayer;
-		Frame_RespawnIsCamper.Visible = Net_LibPursuitUI_PlayerIsCamping;
-
-		// Respawn cancel distance
-		if (Frame_RespawnIsCamper.Visible) {
-			declare netread Vec3 Net_LibPursuitUI_PlayerCampingAnchor for GUIPlayer;
-			Label_RespawnCampDist.Value = ML::FloorInteger(ML::Distance(GUIPlayer.Position, Net_LibPursuitUI_PlayerCampingAnchor))^" M";
-		}
-	}
-}
---></script>
-</manialink>""";
-}
-
-// ---------------------------------- //
-/** Create the manialink for the safe time module
- *
- *	@return		The manialink
- */
-Text Private_CreateManialinkSafeTime() {
-	return """
-<manialink version="3" name="LibPursuitUI:SafeTime">
-<stylesheet>
-	<style class="Font" valign="center2" textsize="1" textcolor="FFF" />
-</stylesheet>
-
-<frame id="Frame_SafeTime" pos="{{{C_LibPursuitUI_SafeTimePos.X^" "^C_LibPursuitUI_SafeTimePos.Y}}}" hidden="1">
-	<frame id="Frame_IsSecure" pos="0 25" hidden="1">
-		<quad size="4 4" valign="center" image="{{{C_ImgBase}}}IconSafeTime.png" opacity=".5" />
-		<label pos="5 -.25" class="Font" textsize="1.5" textfont="OswaldMono" text="" id="Label_IsSecure" opacity=".5" />
-		<quad pos="4" size="14 4" valign="center" bgcolor="000" opacity=".2" id="Quad_IsSecureBg" />
-	</frame>
-
-	<!-- Safe time gauge -->
-	<frame scale="1.05">
-		<frame pos="0 5.75" size="21 44.25" halign="right" valign="center">
-			<quad pos="0 -5.75" size="42 42" halign="center" valign="center" image="{{{C_ImgBase}}}Speedometer/SafeGauge.png" rot="-144" id="Quad_GaugeSafe1" />
-		</frame>
-		<frame size="21 42" halign="left" valign="center">
-			<quad pos="-0.125" size="42 42" halign="center" valign="center" image="{{{C_ImgBase}}}Speedometer/SafeGauge.png" rot="0" id="Quad_GaugeSafe2" />
-		</frame>
-		<quad size="42 42" halign="center" valign="center" image="{{{C_ImgBase}}}Speedometer/SafeGaugeFill.png" id="Quad_GaugeFill" hidden="1" />
-	</frame>
-</frame>
-
-<script><!--
-/**
- *	LibPursuitUI: SafeTime
- */
-
-#Include "MathLib" as ML
-#Include "TextLib" as TL
-
-{{{ManialinkTools::Functions(["Brightness", "ComputeWidth"])}}}
-{{{Translations::InjectInManialink(["No interaction"])}}}
-{{{C_LibPursuitUI_GetPlayerClan}}}
-{{{C_LibPursuitUI_GetClanColor}}}
-
-// ---------------------------------- //
-// Main
-// ---------------------------------- //
-main() {
-	// ---------------------------------- //
-	// Load interface elements
-	declare Frame_SafeTime <=> (Page.GetFirstChild("Frame_SafeTime") as CMlFrame);
-	declare Quad_GaugeSafe1 <=> (Page.GetFirstChild("Quad_GaugeSafe1") as CMlQuad);
-	declare Quad_GaugeSafe2 <=> (Page.GetFirstChild("Quad_GaugeSafe2") as CMlQuad);
-	declare Quad_GaugeFill <=> (Page.GetFirstChild("Quad_GaugeFill") as CMlQuad);
-	declare Frame_IsSecure <=> (Page.GetFirstChild("Frame_IsSecure") as CMlFrame);
-	declare Label_IsSecure <=> (Page.GetFirstChild("Label_IsSecure") as CMlLabel);
-	declare Quad_IsSecureBg <=> (Page.GetFirstChild("Quad_IsSecureBg") as CMlQuad);
-
-	Label_IsSecure.Value = TL::ToUpperCase(Translate("No interaction"));
-	Quad_IsSecureBg.Size.X = ComputeWidth(Label_IsSecure) + 2.;
-	Frame_IsSecure.RelativePosition_V3.X = (Quad_IsSecureBg.Size.X + 4.) * -.5;
-	
-	// ---------------------------------- //
-	// Netcode
-	declare netread Integer Net_LibPursuitUI_SettingsUpdate for Teams[0];
-	declare netread Text[Text] Net_LibPursuitUI_Settings for Teams[0];
-
-	// ---------------------------------- //
-	// Variables
-	declare SafeTimeDuration = 0;
-	declare IsPlayerSafe = False;
-	declare GaugeSafeValue = 0.;
-	declare InterfaceColor = <1., 1., 1.>;
-	declare UpdateColor = True;
-	declare UpdateInterfaceColor = True;
-	
-	declare PrevIsPlayerSafe = False;
-	declare PrevSettingsUpdate = -1;
-	declare PrevGaugeSafeValue = -1.;
-	declare PrevGUIPlayerId = NullId;
-	declare PrevGUIPlayerClan = -1;
-	declare PrevInterfaceColor = Vec3;
-	
-	// ---------------------------------- //
-	// Yield
-	// ---------------------------------- //
-	while (True) {
-		yield;
-		if (!PageIsVisible) continue;
-		
-		// ---------------------------------- //
-		// Update settings
-		if (PrevSettingsUpdate != Net_LibPursuitUI_SettingsUpdate) {
-			PrevSettingsUpdate = Net_LibPursuitUI_SettingsUpdate;
-			
-			foreach (SettingName => SettingValue in Net_LibPursuitUI_Settings) {
-				switch (SettingName) {
-					case "SafeTime_Display" : Frame_SafeTime.Visible = SettingValue == "True";
-					case "SafeTime_Position" : {
-						declare Splitpos = TL::Split(" ", SettingValue);
-						if (Splitpos.count < 3) continue;
-						for (I, 0, 1) Frame_SafeTime.RelativePosition_V3[I] = TL::ToReal(Splitpos[I]);
-					}
-					case "SafeTime_Duration" : {
-						declare NewDuration = TL::ToInteger(SettingValue);
-						if (SafeTimeDuration >= 0) SafeTimeDuration = NewDuration;
-						else SafeTimeDuration = 0;
-					}
+			// ---------------------------------- //
+			// Update respawn timer visibility
+			if (PrevRespawnProgressVisible != RespawnProgressVisible) {
+				PrevRespawnProgressVisible = RespawnProgressVisible;
+				
+				Gauge_RespawnProgress.Visible = RespawnProgressVisible;
+				Frame_RespawnProgAnim.RelativePosition.Y = 0.;
+				Label_RespawnProgress.Opacity = 1.;
+				declare PositionY = -2.;
+				declare Opacity = 0.;
+				
+				if (RespawnProgressVisible) {
+					Frame_RespawnProgAnim.RelativePosition.Y = -PositionY;
+					Label_RespawnProgress.Opacity = 0.;
+					PositionY = 0.;
+					Opacity = 1.;
 				}
+				
+				AnimMgr.Add(Frame_RespawnProgAnim, "<frame pos='0 "^PositionY^"'/>", 125, CAnimManager::EAnimManagerEasing::Linear);
+				AnimMgr.Add(Label_RespawnProgress, "<label opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+				AnimMgr.Add(Quad_RespawnProgIcon, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+				AnimMgr.Add(Label_CampWarningText, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+				AnimMgr.Add(Label_RespawnCampDist, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+				
+				// Play sound
+				declare Sound = CAudioManager::ELibSound::ShowMenu;
+				if (!RespawnProgressVisible) Sound = CAudioManager::ELibSound::HideMenu;
+				Audio.PlaySoundEvent(Sound, 0, 0.);
 			}
-		}
+			
+			if (!RespawnProgressVisible) continue;
+
+			// Get the player's respawn time
+			declare netread Integer Net_LibPursuitUI_RespawnStartTime for Player;
+			declare TimeUntilRespawn = Net_LibPursuitUI_RespawnStartTime + RespawnDuration - GameTime;
 		
-		if (!Frame_SafeTime.Visible) continue;
-
-		// ---------------------------------- //
-		// Get the player's safe time
-		if (GUIPlayer != Null) {
-			if (GameTime <= GUIPlayer.RaceStartTime) GaugeSafeValue = 1.;
-			else if (GameTime >= GUIPlayer.RaceStartTime + SafeTimeDuration) GaugeSafeValue = 0.;
-			else GaugeSafeValue = 1. - (ML::ToReal(GameTime - GUIPlayer.RaceStartTime) / SafeTimeDuration);
-		}
-		else if (GaugeSafeValue != 0.) GaugeSafeValue = 0.;
-
-		if (GaugeSafeValue < .005) GaugeSafeValue = 0.;
-		Frame_IsSecure.Visible = GaugeSafeValue > 0.;
-		
-		// ---------------------------------- //
-		// Show the current safe time
-		if (PrevGaugeSafeValue != GaugeSafeValue) {
-			PrevGaugeSafeValue = GaugeSafeValue;
-
-			Quad_GaugeFill.Visible = GaugeSafeValue > 0;
-			Quad_GaugeSafe1.RelativeRotation = ML::Clamp(GaugeSafeValue * 2, 0., 1.) * 144 - 144;
-			Quad_GaugeSafe2.RelativeRotation = ML::Clamp((GaugeSafeValue - .5) * 2, 0., 1.) * 144.;
-		}
-
-		// ---------------------------------- //
-		// Update the interface color
-		if (GUIPlayer != Null) {
-			if (PrevGUIPlayerId != GUIPlayer.Id) {
-				PrevGUIPlayerId = GUIPlayer.Id;
-				UpdateColor = True;
+			// Set respawn gauge ratio
+			SetGaugeRatio(Gauge_RespawnProgress, 1 - ML::ToReal(TimeUntilRespawn) / RespawnDuration);
+			
+			// Update color on player change
+			if (PrevPlayerId != Player.Id) {
+				PrevPlayerId = Player.Id;
+				UpdateInterfaceColor = True;
 			}
-			if (PrevGUIPlayerClan != GetClan(GUIPlayer)) {
-				PrevGUIPlayerClan = GetClan(GUIPlayer);
-				UpdateColor = True;
+
+			// Update color on clan change
+			if (PrevPlayerClan != GetClan(Player)) {
+				PrevPlayerClan = GetClan(Player);
+				UpdateInterfaceColor = True;
 			}
-			if (UpdateColor) {
-				UpdateColor = False;
 
-				InterfaceColor = GUIPlayer.User.Color;
-				if (PrevGUIPlayerClan > 0) InterfaceColor = GetClanColor(PrevGUIPlayerClan);
-				InterfaceColor = Brightness(InterfaceColor, 1.5);
+			// ---------------------------------- //
+			// Update the gauge color
+			if (UpdateInterfaceColor) {
+				UpdateInterfaceColor = False;
+
+				declare InterfaceColor = Player.User.Color;
+				if (PrevPlayerClan > 0) InterfaceColor = GetClanColor(PrevPlayerClan);
+				Gauge_RespawnProgress.Color = InterfaceColor;
 			}
-		}
 
-		if (PrevInterfaceColor != InterfaceColor) {
-			PrevInterfaceColor = InterfaceColor;
+			FinishedRespawning = TimeUntilRespawn <= 0;
 
-			Quad_GaugeFill.Colorize = InterfaceColor;
-			Quad_GaugeSafe1.Colorize = InterfaceColor;
-			Quad_GaugeSafe2.Colorize = InterfaceColor;
+			// ---------------------------------- //
+			// Update icon on respawn status change
+			if (PrevFinishedRespawning != FinishedRespawning) {
+				PrevFinishedRespawning = FinishedRespawning;
+
+				declare IconURL = "{{{C_ImgBase}}}c_goal_shield.dds";
+				if (FinishedRespawning) IconURL = "{{{C_ImgBase}}}c_goal_captured.dds";
+				Quad_RespawnProgIcon.ImageUrl = IconURL;
+
+				if (FinishedRespawning) RespawnBaseMessage = Translate("Respawned!");
+				else RespawnBaseMessage = Translate("Respawning...");
+				Label_RespawnProgress.Value = RespawnBaseMessage;
+			}
+
+			// Set respawn message text
+			if (!FinishedRespawning) {
+				declare SecondsToRespawn = ML::CeilingInteger(TimeUntilRespawn / 1000.);
+				Label_RespawnProgress.Value = RespawnBaseMessage^" ("^SecondsToRespawn^")";
+			}
+
+			// ---------------------------------- //
+			// Set camper warning visibility
+			declare netread Boolean Net_LibPursuitUI_PlayerIsCamping for Player;
+			Frame_RespawnIsCamper.Visible = Net_LibPursuitUI_PlayerIsCamping;
+
+			// Respawn cancel distance
+			if (Frame_RespawnIsCamper.Visible) {
+				declare netread Vec3 Net_LibPursuitUI_PlayerCampingAnchor for Player;
+				Label_RespawnCampDist.Value = ML::FloorInteger(ML::Distance(GUIPlayer.Position, Net_LibPursuitUI_PlayerCampingAnchor))^" M";
+			}
 		}
 	}
 }
@@ -1890,6 +2027,8 @@ main() {
 				}
 			}
 		}
+
+		if (!Frame_321Go.Visible) continue;
 		
 		// ---------------------------------- //
 		// Get current step
@@ -1921,8 +2060,8 @@ Text Private_CreateManialinkShowPoints() {
 	return """
 <manialink version="3" name="Pursuit:ShowPoints">
 <stylesheet>
-	<style id="Label_PointsAmt" style="TextValueSmallSm" textsize="5" textcolor="FF0" />
-	<style id="Label_PointsDesc" style="TextValueSmallSm" textsize="1" textcolor="FF0" />
+	<style id="Label_PointsAmt" textemboss="1" textsize="5" textcolor="FF0" textfont="RajdhaniMono" />
+	<style id="Label_PointsDesc" textemboss="1" textsize="2" textcolor="FF0" textfont="RajdhaniMono" />
 </stylesheet>
 
 <frame id="Frame_ShowPoints" pos="{{{C_LibPursuitUI_ShowPointsPos.X^" "^C_LibPursuitUI_ShowPointsPos.Y}}}" scale="1">
@@ -1944,7 +2083,7 @@ Text Private_CreateManialinkShowPoints() {
 #Const C_PointsVisibleTime	4000	///< Duration of points label visibility
 
 {{{Manialink::Animations(["EaseInCirc", "EaseOutCirc", "EaseInBack", "EaseOutBack"])}}}
-{{{Translations::InsertToManialink(["For being the first policeman", "For surviving other catch", "For catching a Thief", "For surviving to the end", "For being the last Thief"])}}}
+{{{Translations::InsertToManialink(["For being the first officer", "For surviving another catch", "For catching a Thief", "For surviving to the end", "For being the last Thief"])}}}
 
 // ---------------------------------- //
 /** Compute width of the label text
@@ -2086,26 +2225,26 @@ Text Private_CreateManialinkJoinPolice() {
 
 <frame id="Frame_JoinPolice" pos="{{{C_LibPursuitUI_JoinPolicePos.X - 60^" "^C_LibPursuitUI_JoinPolicePos.Y}}}">
 	<frame pos="0 24.5" size="90 8">
-		<quad pos="2.25 -4" size="7 7" valign="center" image="{{{C_ImgBase}}}IconPolice.png" id="Quad_PoliceIcon" />
-		<label pos="10 -4.375" size="48" class="Font" textsize="3" textprefix="$t" id="Label_WindowTitle" />
+		<quad pos="1.25 -4" size="7 7" valign="center" image="{{{C_ImgBase}}}IconPolice.png" id="Quad_PoliceIcon" />
+		<label pos="9 -4.375" size="48" class="Font" textsize="3" textprefix="$t" id="Label_WindowTitle" />
 		<quad size="54 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
 	</frame>
 
 	<frame pos="0 15.5" size="90 15">
-		<label pos="2.5 -7.5" size="50" class="Font" autonewline="1" maxline="3" id="Label_InfoText" />
+		<label pos="1.5 -7.5" size="50" class="Font" autonewline="1" maxline="3" id="Label_InfoText" />
 		<quad size="54 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
 	</frame>
 
 	<frame pos="0 -.5" size="90 11">
-		<label pos="2.5 -5.75" size="30" class="Font" autonewline="1" maxline="2" textfont="RajdhaniMono" textprefix="$t" id="Label_InfoToss" />
-		<label pos="32 -6" class="Font" textsize="5" textfont="RajdhaniMono" id="Label_PlayerTossChance" />
-		<quad size="53 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
+		<label pos="1.5 -5.75" size="34" class="Font" autonewline="1" maxline="2" textfont="RajdhaniMono" textprefix="$t" id="Label_InfoToss" />
+		<label pos="34 -6" class="Font" textsize="5" textfont="RajdhaniMono" id="Label_PlayerTossChance" />
+		<quad size="54 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
 	</frame>
 
 	<frame pos="0 -12.5" size="90 12">
-		<label pos="2.5 -6.25" size="28" class="Font" textsize="1" autonewline="1" maxline="3" textfont="RajdhaniMono" textprefix="$t" id="Label_InfoAmount" />
-		<label pos="30 -6.25" class="Font" textsize="4" textfont="RajdhaniMono" id="Label_RequestsCount" />
-		<quad size="44 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
+		<label pos="1.5 -6.25" size="35" class="Font" textsize="1" autonewline="1" maxline="3" textfont="RajdhaniMono" textprefix="$t" id="Label_InfoAmount" />
+		<label pos="35 -6.25" class="Font" textsize="4" textfont="RajdhaniMono" id="Label_RequestsCount" />
+		<quad size="46 84" valign="center" rot="11.25" style="Bgs1" substyle="BgDialogBlur" />
 	</frame>
 </frame>
 
@@ -2120,8 +2259,8 @@ Text Private_CreateManialinkJoinPolice() {
 #Include "TextLib" as TL
 
 {{{Translations::InsertToManialink([
-	"Become a policeman", "Do you want to join the Police team? Press %1 to increase your chances of being selected!",
-	"Your chance of being selected", "Number of players who want to join the Police team"
+	"Become an officer", "Do you want to join the Police team? Press %1 to increase your chances of being selected!",
+	"Your chance of being selected", "Number of players who want to join the Police team:"
 ])}}}
 
 // ---------------------------------- //
@@ -2138,10 +2277,10 @@ main() {
 	
 	// ---------------------------------- //
 	// Set translations
-	Translate("Label_WindowTitle", "Become a policeman");
+	Translate("Label_WindowTitle", "Become an officer");
 	Translate("Label_InfoText", ["Do you want to join the Police team? Press %1 to increase your chances of being selected!", "$<$F00DELETE$>"]);
 	Translate("Label_InfoToss", "Your chance of being selected");
-	Translate("Label_InfoAmount", "Number of players who want to join the Police team");
+	Translate("Label_InfoAmount", "Number of players who want to join the Police team:");
 	
 	// ---------------------------------- //
 	// Netcode
@@ -2751,7 +2890,6 @@ Void LoadModule(Text _ModuleId) {
 		case "ThievesCount"	: Layers::Create(_ModuleId, Private_CreateManialinkThievesCount());
 		case "RespawnTimer"	: Layers::Create(_ModuleId, Private_CreateManialinkRespawnTimer());
 		case "PoliceCount"	: Layers::Create(_ModuleId, Private_CreateManialinkPoliceCount());
-		case "SafeTime"		: Layers::Create(_ModuleId, Private_CreateManialinkSafeTime());
 		case "PoliceLights"	: Layers::Create(_ModuleId, Private_CreateManialinkPoliceLights());
 		case "321Go"		: Layers::Create(_ModuleId, Private_CreateManialink321Go());
 		case "ShowPoints"	: Layers::Create(_ModuleId, Private_CreateManialinkShowPoints());

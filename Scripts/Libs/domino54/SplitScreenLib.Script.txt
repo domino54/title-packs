@@ -1,0 +1,200 @@
+// -------------------------------------- //
+//  LIBRARY SPLIT SCREEN by domino54      //
+//  script version: 2018-02-16            //
+// -------------------------------------- //
+
+/**
+ *	This library features a few functions you can
+ *	insert in your ingame manialink to provide some
+ *	split screen integrations.
+ */
+
+#Const Version		"2018-02-16"
+#Const ScriptName	"Libs/domino54/SplitScreenLib.Script.txt"
+
+// ---------------------------------- //
+// Functons
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Get the functions of Split Screen Library.
+ * 
+ *	@return		The library functions.
+ */
+Text Framework() {
+	return """
+// ---------------------------------- //
+/** Check if split screen mode is enabled.
+ *
+ *	@return		True, if split screen mode is enabled.
+ */
+Boolean SplitScreen_Enabled() {
+	foreach (Player in Players) {
+		if (Player.User.Login != "*splitscreen_0*") continue;
+		return True;
+	}
+	return False;
+}
+
+// ---------------------------------- //
+/** Get the number of players in split screen mode.
+ *
+ *	@return		Number of players in split screen mode.
+ */
+Integer SplitScreen_NbPlayers() {
+	declare SS_NbPlayers = 0;
+	foreach (Player in Players) {
+		if (!TL::Find("*splitscreen_", Player.User.Login, True, True)) continue;
+		SS_NbPlayers += 1;
+	}
+	return SS_NbPlayers;
+}
+
+// ---------------------------------- //
+/** Get the active screen split type.
+ *
+ *	@return		Active plit mode [0 => disabled, 1 => horizontal, 2 => vertical, 3 => grid].
+ */
+Integer SplitScreen_SplitMode() {
+	if (!SplitScreen_Enabled()) return 0;
+	if (SplitScreen_NbPlayers() == 4) return 3;
+
+	declare persistent Persistent_LastSplitScreenLayout for LocalUser = 0;
+	switch (Persistent_LastSplitScreenLayout) {
+		case 0 : return 1;
+		case 1 : return 2;
+		case 2 : return 3;
+	}
+	return 0;
+}
+
+// ---------------------------------- //
+/** Get player of a given order.
+ *
+ *	@param	_Order	The order of the player to get.
+ *
+ *	@return		The desired player.
+ */
+CPlayer SplitScreen_GetPlayer(Integer _Order) {
+	if (!SplitScreen_Enabled()) return GUIPlayer;
+	foreach (Player in Players) if (Player.User.Login == "*splitscreen_"^_Order^"*") return Player;
+	return Null;
+}
+
+CTmMlPlayer SplitScreen_GetTmPlayer(Integer _Order) {
+	declare Player = SplitScreen_GetPlayer(_Order);
+	if (Player == Null || !(Player is CTmMlPlayer)) return Null;
+	return (Player as CTmMlPlayer);
+}
+
+// ---------------------------------- //
+/** Get the position adjusted to the splitscreen layout.
+ *
+ *	@param	_Position		The input position.
+ *	@param	_PlayerId		Order of the player on screen.
+ *	@param	_HAlign			Align items to left, right or centre of the screen.
+ *	@param	_VAlign			Align items to top, bottom or centre of the screen.
+ *	@param	_Widescreen		Expand elements on horizontal layout.
+ *
+ *	@return		Position according to input.
+ */
+Vec2 SplitScreen_GetPosition(Vec2 _Position, Integer _PlayerId, CMlControl::AlignHorizontal _HAlign, CMlControl::AlignVertical _VAlign, Boolean _Widescreen) {
+	if (!SplitScreen_Enabled()) return _Position;
+	
+	switch (SplitScreen_SplitMode()) {
+		// Grid layout
+		case 3 : {
+			declare RelativeCenter = <80., 45.>;
+			if (_PlayerId % 2 != 0) RelativeCenter.Y *= -1.;
+			if (_PlayerId / 2 < 1) RelativeCenter.X *= -1.;
+			return RelativeCenter + <_Position.X / 2, _Position.Y / 2>;
+		}
+
+		// Vertical layout
+		case 2 : {
+			declare Position = <0., _Position.Y>;
+			switch (_HAlign) {
+				case CMlControl::AlignHorizontal::Left : Position.X = _Position.X + 160.;
+				case CMlControl::AlignHorizontal::Right : Position.X = _Position.X - 160.;
+				default : Position.X = _Position.X / 2 - 80.;
+			}
+			if (_PlayerId != 0) Position.X += 160.;
+			return Position;
+		}
+
+		// Horizontal layout
+		case 1 : {
+			declare Position = <0., 0.>;
+			if (!_Widescreen) {
+				Position.X = _Position.X / 2;
+			} else switch (_HAlign) {
+				case CMlControl::AlignHorizontal::Left : Position.X = _Position.X / 2 - 160.;
+				case CMlControl::AlignHorizontal::Right : Position.X = _Position.X / 2 + 80.;
+				default : Position.X = _Position.X / 2;
+			}
+			switch (_VAlign) {
+				case CMlControl::AlignVertical::Top : Position.Y = _Position.Y / 2;
+				case CMlControl::AlignVertical::Bottom : Position.Y = _Position.Y / 2 + 45.;
+				default : Position.Y = _Position.Y / 2 + 45.;
+			}
+			if (_PlayerId != 0) Position.Y -= 90.;
+			return Position;
+		}
+	}
+
+	return _Position;
+}
+
+Vec2 SplitScreen_GetPosition(Vec2 _Position, Integer _PlayerId, Boolean _Widescreen) {
+	return SplitScreen_GetPosition(_Position, _PlayerId, CMlControl::AlignHorizontal::HCenter, CMlControl::AlignVertical::VCenter, _Widescreen);
+}
+
+// ---------------------------------- //
+/** Get the scale adjusted to the splitscreen layout.
+ *
+ *	@param	_Scale		The input scale.
+ *	@param	_HAlign		Align items to left, right or centre of the screen.
+ *	@param	_VAlign		Align items to top, bottom or centre of the screen.
+ *
+ *	@return		Position according to input.
+ */
+Real SplitScreen_GetScale(Real _Scale, CMlControl::AlignHorizontal _HAlign, CMlControl::AlignVertical _VAlign) {
+	if (!SplitScreen_Enabled()) return _Scale;
+
+	switch (SplitScreen_SplitMode()) {
+		// Grid layout
+		case 3 : return _Scale / 2;
+
+		// Vertical layout
+		case 2 : return _Scale;
+		
+		// Horizontal layout
+		case 1 : return _Scale / 2;
+	}
+
+	return _Scale;
+}
+
+Real SplitScreen_GetScale(Real _Scale) {
+	return SplitScreen_GetScale(_Scale, CMlControl::AlignHorizontal::HCenter, CMlControl::AlignVertical::VCenter);
+}
+	""";
+}

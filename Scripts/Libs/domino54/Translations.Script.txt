@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY TRANSLATIONS by domino54      //
-//  script version: 2017-12-15            //
+//  script version: 2018-02-06            //
 // -------------------------------------- //
 
 /**
@@ -10,7 +10,7 @@
  *	Chat messages MUST be prefixed.
  */
 
-#Const Version		"2017-12-15"
+#Const Version		"2018-02-06"
 #Const ScriptName	"Libs/domino54/Translations.Script.txt"
 
 #Include "TextLib" as TL
@@ -176,6 +176,19 @@ Void Private_LoadTranslations(CXmlDocument _Document) {
 }
 
 // ---------------------------------- //
+/** Get player language.
+ *
+ *	@param	_Player		The player to get their language.
+ *
+ *	@return		Language of the player.
+ */
+Text Private_GetLang(CPlayer _Player) {
+	if (_Player == Null || _Player.User == Null) return "en";
+	if (TL::Find("*splitscreen_", _Player.User.Login, True, True)) return Users[0].Language; // Account language in split screen mode
+	return _Player.User.Language;
+}
+
+// ---------------------------------- //
 // Public
 // ---------------------------------- //
 
@@ -291,7 +304,7 @@ Void Private_SetMessage(CPlayer _Player, Text _Message, Text _Type) {
 	declare UI <=> UIManager.GetUI(_Player);
 	if (UI == Null) return;
 	
-	declare TranslatedMessage = Translate(_Player.User.Language, _Message);
+	declare TranslatedMessage = Translate(Private_GetLang(_Player), _Message);
 	
 	switch (_Type) {
 		case "big" : UI.BigMessage = TranslatedMessage;
@@ -312,7 +325,7 @@ Void Private_SetComposedMessage(CPlayer _Player, Text[] _Arguments, Text _Type) 
 	declare UI <=> UIManager.GetUI(_Player);
 	if (UI == Null) return;
 	
-	declare TranslatedMessage = Translate(_Player.User.Language, _Arguments);
+	declare TranslatedMessage = Translate(Private_GetLang(_Player), _Arguments);
 	
 	switch (_Type) {
 		case "big" : UI.BigMessage = TranslatedMessage;
@@ -341,7 +354,7 @@ Void SendChat(CPlayer _Player, Text _Message) {
 	if (G_LibTranslations_ChatPrefix == "") G_LibTranslations_ChatPrefix = C_LibTranslations_DefaultChatPrefix;
 	
 	declare UI <=> UIManager.GetUI(_Player);
-	if (UI != Null) UI.SendChat(G_LibTranslations_ChatPrefix^Translate(_Player.User.Language, _Message));
+	if (UI != Null) UI.SendChat(G_LibTranslations_ChatPrefix^Translate(Private_GetLang(_Player), _Message));
 }
 
 // ---------------------------------- //
@@ -366,7 +379,7 @@ Void SendChat(CPlayer _Player, Text[] _Arguments) {
 	if (G_LibTranslations_ChatPrefix == "") G_LibTranslations_ChatPrefix = C_LibTranslations_DefaultChatPrefix;
 	
 	declare UI <=> UIManager.GetUI(_Player);
-	if (UI != Null) UI.SendChat(G_LibTranslations_ChatPrefix^Translate(_Player.User.Language, _Arguments));
+	if (UI != Null) UI.SendChat(G_LibTranslations_ChatPrefix^Translate(Private_GetLang(_Player), _Arguments));
 }
 
 // ---------------------------------- //
@@ -521,7 +534,7 @@ Void SendNotice(CPlayer _Player, Text _Notice, CUIConfig::ENoticeLevel _Level, C
 	if (_Notice == "" || _Player == Null || _Player.User == Null || _Player.User.IsFakeUser) return;
 	
 	declare UI <=> UIManager.GetUI(_Player);
-	if (UI != Null) UI.SendNotice(Translate(_Player.User.Language, _Notice), _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
+	if (UI != Null) UI.SendNotice(Translate(Private_GetLang(_Player), _Notice), _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
 }
 
 // ---------------------------------- //
@@ -553,7 +566,7 @@ Void SendNotice(CPlayer _Player, Text[] _Arguments, CUIConfig::ENoticeLevel _Lev
 	if (_Arguments.count <= 0 || _Player == Null || _Player.User == Null || _Player.User.IsFakeUser) return;
 	
 	declare UI <=> UIManager.GetUI(_Player);
-	if (UI != Null) UI.SendNotice(Translate(_Player.User.Language, _Arguments), _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
+	if (UI != Null) UI.SendNotice(Translate(Private_GetLang(_Player), _Arguments), _Level, _Avatar, _AvatarVariant, _Sound, _SoundVariant);
 }
 
 // ---------------------------------- //
@@ -864,7 +877,7 @@ Text InjectInManialink(Text[] _Segments) {
 
 Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendBigMessage(_Player, Translate(_Player.User.Language, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+	Message::SendBigMessage(_Player, Translate(Private_GetLang(_Player), _Message), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
 Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
@@ -873,7 +886,7 @@ Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConf
 
 Void SendBigMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendBigMessage(_Player, Translate(_Player.User.Language, _Arguments), _Duration, _Priority, _Sound, _SoundVariant);
+	Message::SendBigMessage(_Player, Translate(Private_GetLang(_Player), _Arguments), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
 Void SendBigMessage(Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
@@ -882,7 +895,7 @@ Void SendBigMessage(Text[] _Arguments, Integer _Duration, Integer _Priority, CUI
 
 Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendStatusMessage(_Player, Translate(_Player.User.Language, _Message), _Duration, _Priority, _Sound, _SoundVariant);
+	Message::SendStatusMessage(_Player, Translate(Private_GetLang(_Player), _Message), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
 Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
@@ -891,7 +904,7 @@ Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority, CUIC
 
 Void SendStatusMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendStatusMessage(_Player, Translate(_Player.User.Language, _Arguments), _Duration, _Priority, _Sound, _SoundVariant);
+	Message::SendStatusMessage(_Player, Translate(Private_GetLang(_Player), _Arguments), _Duration, _Priority, _Sound, _SoundVariant);
 }
 
 Void SendStatusMessage(Text[] _Arguments, Integer _Duration, Integer _Priority, CUIConfig::EUISound _Sound, Integer _SoundVariant) {
@@ -900,7 +913,7 @@ Void SendStatusMessage(Text[] _Arguments, Integer _Duration, Integer _Priority, 
 
 Void SendBigMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendBigMessage(_Player, Translate(_Player.User.Language, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	Message::SendBigMessage(_Player, Translate(Private_GetLang(_Player), _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }
 
 Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority) {
@@ -909,7 +922,7 @@ Void SendBigMessage(Text _Message, Integer _Duration, Integer _Priority) {
 
 Void SendBigMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendBigMessage(_Player, Translate(_Player.User.Language, _Arguments), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	Message::SendBigMessage(_Player, Translate(Private_GetLang(_Player), _Arguments), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }
 
 Void SendBigMessage(Text[] _Arguments, Integer _Duration, Integer _Priority) {
@@ -918,7 +931,7 @@ Void SendBigMessage(Text[] _Arguments, Integer _Duration, Integer _Priority) {
 
 Void SendStatusMessage(CPlayer _Player, Text _Message, Integer _Duration, Integer _Priority) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendStatusMessage(_Player, Translate(_Player.User.Language, _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	Message::SendStatusMessage(_Player, Translate(Private_GetLang(_Player), _Message), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }
 
 Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority) {
@@ -927,7 +940,7 @@ Void SendStatusMessage(Text _Message, Integer _Duration, Integer _Priority) {
 
 Void SendStatusMessage(CPlayer _Player, Text[] _Arguments, Integer _Duration, Integer _Priority) {
 	if (_Player == Null || _Player.User == Null) return;
-	Message::SendStatusMessage(_Player, Translate(_Player.User.Language, _Arguments), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
+	Message::SendStatusMessage(_Player, Translate(Private_GetLang(_Player), _Arguments), _Duration, _Priority, CUIConfig::EUISound::Silence, 0);
 }
 
 Void SendStatusMessage(Text[] _Arguments, Integer _Duration, Integer _Priority) {

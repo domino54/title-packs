@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2017-12-15            //
+//  script version: 2018-02-16            //
 // -------------------------------------- //
 
-#Const Version		"2017-12-15"
+#Const Version		"2018-02-16"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
@@ -17,11 +17,15 @@
 // Constants
 // ---------------------------------- //
 #Const C_LibCharacters_LayerId	"LibCharacters:Selection"
-#Const C_LibCharacters_RequestTimeOut	5000
+#Const C_LibCharacters_RequestTimeOut		5000
+#Const C_LibCharacters_RequireOpenplanet	True
+#Const C_LibCharacters_PurchaseTimeout		1800000
 
 #Const C_LibCharacters_DisplayModeHidden	0
 #Const C_LibCharacters_DisplayModeVisible	1
 #Const C_LibCharacters_DisplayModeManual	2
+
+#Const C_LibCharacters_Booleans ["true", "1"]
 
 // ---------------------------------- //
 // Global variables
@@ -43,6 +47,7 @@ declare Text[Integer] G_LibCharacters_WeaponsIcons;
 /// Characters data
 declare Text G_LibCharacters_CharSheetKey;
 declare Integer[] G_LibCharacters_Characters;
+declare Integer[] G_LibCharacters_OpenplanetChars;
 declare Text[Integer] G_LibCharacters_CharactersNames;
 declare Text[Integer] G_LibCharacters_CharactersIcons1;
 declare Text[Integer] G_LibCharacters_CharactersIcons2;
@@ -50,6 +55,8 @@ declare Text[Integer] G_LibCharacters_CharactersImage1;
 declare Text[Integer] G_LibCharacters_CharactersImage2;
 declare Text[Integer] G_LibCharacters_CharactersDesc;
 declare Vec3[Integer] G_LibCharacters_CharactersColor;
+declare Integer[Integer] G_LibCharacters_CharactersPlanets;
+declare Text[Integer] G_LibCharacters_CharactersULink;
 declare Text[Integer] G_LibCharacters_AbilityName;
 declare Text[Integer] G_LibCharacters_AbilityDesc;
 declare Text[Integer] G_LibCharacters_AbilityIcon;
@@ -98,6 +105,7 @@ Text Private_CreateManialinkSelection(Text _FontMedium, Text _FontBold) {
 	// ---------------------------------- //
 	// Characters data
 	declare Inject_Characters = dump(G_LibCharacters_Characters);
+	declare Inject_OpenplanetChars = dump(G_LibCharacters_OpenplanetChars);
 	declare Inject_CharactersNames = dump(G_LibCharacters_CharactersNames);
 	declare Inject_CharactersIcons1 = dump(G_LibCharacters_CharactersIcons1);
 	declare Inject_CharactersIcons2 = dump(G_LibCharacters_CharactersIcons2);
@@ -105,11 +113,14 @@ Text Private_CreateManialinkSelection(Text _FontMedium, Text _FontBold) {
 	declare Inject_CharactersImage2 = dump(G_LibCharacters_CharactersImage2);
 	declare Inject_CharactersDesc = dump(G_LibCharacters_CharactersDesc);
 	declare Inject_CharactersColor = dump(G_LibCharacters_CharactersColor);
+	declare Inject_CharactersPlanets = dump(G_LibCharacters_CharactersPlanets);
+	declare Inject_CharactersULink = dump(G_LibCharacters_CharactersULink);
 	declare Inject_AbilityName = dump(G_LibCharacters_AbilityName);
 	declare Inject_AbilityDesc = dump(G_LibCharacters_AbilityDesc);
 	declare Inject_AbilityIcon = dump(G_LibCharacters_AbilityIcon);
 
 	if (Inject_Characters == "[]") Inject_Characters = "Integer[]";
+	if (Inject_OpenplanetChars == "[]") Inject_OpenplanetChars = "Integer[]";
 	if (Inject_CharactersNames == "[]") Inject_CharactersNames = "Text[Integer]";
 	if (Inject_CharactersIcons1 == "[]") Inject_CharactersIcons1 = "Text[Integer]";
 	if (Inject_CharactersIcons2 == "[]") Inject_CharactersIcons2 = "Text[Integer]";
@@ -117,6 +128,8 @@ Text Private_CreateManialinkSelection(Text _FontMedium, Text _FontBold) {
 	if (Inject_CharactersImage2 == "[]") Inject_CharactersImage2 = "Text[Integer]";
 	if (Inject_CharactersDesc == "[]") Inject_CharactersDesc = "Text[Integer]";
 	if (Inject_CharactersColor == "[]") Inject_CharactersColor = "Vec3[Integer]";
+	if (Inject_CharactersPlanets == "[]") Inject_CharactersPlanets = "Integer[Integer]";
+	if (Inject_CharactersULink == "[]") Inject_CharactersULink = "Text[Integer]";
 	if (Inject_AbilityName == "[]") Inject_AbilityName = "Text[Integer]";
 	if (Inject_AbilityDesc == "[]") Inject_AbilityDesc = "Text[Integer]";
 	if (Inject_AbilityIcon == "[]") Inject_AbilityIcon = "Text[Integer]";
@@ -222,7 +235,7 @@ if (GUIPlayer != Null) {
 
 	// ---------------------------------- //
 	// Gather translations to load
-	declare RequiredTranslations = ["Special ability", "Weapons", "Pros & Cons"];
+	declare RequiredTranslations = ["Special ability", "Weapons", "Pros & Cons", "You need Openplanet to use this character. Openplanet is a new scripting platform, which allows you to access even more options, which plain ManiaPlanet can't offer.", "You can spend %1 Planets to gain access to %2 for %3 minutes.", "Unlock"];
 	foreach (Phrase in G_LibCharacters_StatsNames) RequiredTranslations.add(Phrase);
 	foreach (Phrase in G_LibCharacters_WeaponsNames) RequiredTranslations.add(Phrase);
 	foreach (Phrase in G_LibCharacters_CharactersNames) RequiredTranslations.add(Phrase);
@@ -243,8 +256,8 @@ if (GUIPlayer != Null) {
 	<style id="Label_SwitchCharNote" halign="center" textsize="1" textcolor="FFF" textfont="{{{TL::MLEncode(_FontBold)}}}" />
 </stylesheet>
 
-<!-- Map selection window -->
-<frame id="Frame_MapSelectionWindow" z-index="10" pos="-91 58" hidden="1">
+<!-- Character selection window -->
+<frame id="Frame_CharSelectionWindow" z-index="10" pos="-91 58" hidden="1">
 	<!-- Window header -->
 	<frame id="Frame_MapSelectionHeader" pos="0 -2">
 		<label pos="2" class="FontM" textsize="4" textprefix="$t" id="Label_WindowTitleText" />
@@ -353,12 +366,25 @@ if (GUIPlayer != Null) {
 			<quad pos="-.5 .5" size="25 15" style="Bgs1" substyle="BgColorContour" id="Quad_CharIsSelected" hidden="1" />
 			<label pos=".75 -2.25" class="FontB" textcolor="AAA" textsize="1.5" id="Label_CharSelectionHotkey" />
 			<quad pos="12 -7" size="12 12" halign="center" valign="center" style="Icons128x128_1" substyle="Padlock" id="Quad_CharButtonLock" hidden="1" />
+			<label pos="23.25 -2.25" class="FontB" halign="right" textsize="1.5" id="Label_CharTimeRemaining" />
 
 			<!-- Amount of players who have casted a vote -->
 			<frame id="Frame_CharNbPlayersUsing" pos="23.5 -11.75" hidden="1">
 				<label pos="-3.75" halign="right" class="FontB" textsize="1.5" id="Label_CharNbPlayersUsing" />
 				<label pos="-2 .125" class="FontM" halign="center" valign="center" textsize="1" text="👥" />
 				<quad size="0 3.5" class="FontM" halign="right" valign="center" bgcolor="000" opacity=".75" id="Quad_CharNbPlayersUsing" />
+			</frame>
+
+			<!-- Openplanet padlock -->
+			<frame id="Frame_CharOpenplanetLock" pos="12 -7" hidden="1">
+				<quad pos="3 -1" size="8 8" halign="center" valign="center" style="Icons128x128_1" substyle="Padlock" />
+				<label pos="0 1" halign="center" valign="center" textsize="5" textcolor="F39" text="" />
+			</frame>
+
+			<!-- Planets paywall -->
+			<frame id="Frame_CharPlanetsLock" pos="12 -7" hidden="1">
+				<label pos="0 -3.25" class="FontB" halign="center" textsize="1.5" id="Label_CharPlanetsCost" />
+				<quad pos="0 1.25" size="6 6" halign="center" valign="center" style="ManiaPlanetLogos" substyle="IconPlanets" />
 			</frame>
 
 			<quad size="24 14" keepratio="Clip" id="Quad_CharButtonIcon2" />
@@ -394,6 +420,54 @@ if (GUIPlayer != Null) {
 	</frame>
 </frame>
 
+<!-- Character Unlock window -->
+<frame id="Frame_CharacterUnlock" z-index="10" pos="-57 37" hidden="1">
+	<label pos="2 -2" class="FontM" id="Label_UnlockTitle" textsize="4" textprefix="$t" text="Unlock" translate="1" />
+	<quad pos="110.5 -2" size="7 7" halign="center" valign="center" style="Icons64x64_1" substyle="QuitRace" id="Quad_UnlockClose" ScriptEvents="1" />
+	<quad pos="0 -6" size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<frame pos="57 -20">
+		<quad size="36 21" halign="center" valign="center" keepratio="Clip" id="Quad_UnlockCharIcon2" />
+		<quad size="36 21" halign="center" valign="center" keepratio="Clip" class="Color" id="Quad_UnlockCharIcon" />
+	</frame>
+	<label pos="57 -33" class="FontB" halign="center" textsize="3" textprefix="$t$s" id="Label_UnlockCharName" />
+
+	<!-- Separator -->
+	<quad pos="4 -38" size="106 .25" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Openplanet -->
+	<label pos="57 -43.5" class="FontB" halign="center" textsize="4" textprefix="$t$s" textcolor="F39" text=" Openplanet" id="Label_UnlockOpenplanet" hidden="1" />
+
+	<!-- Unlock -->
+	<frame id="Frame_UnlockPlanets" pos="57 -43.5" hidden="1">
+		<quad size="7 7" valign="center" style="ManiaPlanetLogos" substyle="IconPlanets" />
+		<label pos="8" class="FontB" textsize="4" textprefix="$t$s" text="Planets" id="Label_UnlockPlanets" />
+	</frame>
+
+	<label pos="57 -53" size="106" class="FontM" halign="center" textsize="1.5" autonewline="1" id="Label_UnlockCharDesc" />
+
+	<quad pos="2 -8" size="110 54" bgcolor="FFF" opacity=".125" />
+	<quad pos="0 -64" size="114 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Default button -->
+	<frame id="Frame_ReturnButton" pos="2 -66">
+		<label pos="2.25 -4.125" class="FontM" text="" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Return" translate="1" />
+
+		<quad size="54.5 8" bgcolorfocus="FFF2" class="Click" id="Quad_UnlockReturn" ScriptEvents="1" />
+		<quad size="54.5 8" bgcolor="FFF" opacity=".125" />
+	</frame>
+
+	<!-- Unbind button -->
+	<frame id="Frame_ReturnButton" pos="57.5 -66">
+		<label pos="2.25 -4.125" class="FontM" text="" />
+		<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Unlock" translate="1" />
+
+		<quad size="54.5 8" bgcolorfocus="FFF2" class="Click" id="Quad_UnlockUnlock" ScriptEvents="1" />
+		<quad size="54.5 8" bgcolor="FFF" opacity=".125" />
+	</frame>
+</frame>
+
 <label pos="0 -16" id="Label_SwitchCharNote" hidden="1" opacity="0" />
 
 <!-- Background blur -->
@@ -410,11 +484,15 @@ if (GUIPlayer != Null) {
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
+#Include "TimeLib" as Time
 
 #Const C_ButtonColorEnabled		<1., 1., 1.>
 #Const C_ButtonColorDisabled	<.5, .5, .5>
 #Const C_SwitchCharNoteTime		2500
 #Const C_SwitchCharNoteFade		500
+
+#Const C_MenuContext_CharsBrowser	0
+#Const C_MenuContext_CharUnlock		1
 
 // ---------------------------------- //
 // Imported variables
@@ -435,6 +513,7 @@ declare G_LibCharacters_WeaponsIcons = {{{Inject_WeaponsIcons}}};
 /// Characters data
 declare G_LibCharacters_CharSheetKey = {{{dump(G_LibCharacters_CharSheetKey)}}};
 declare G_LibCharacters_Characters = {{{Inject_Characters}}};
+declare G_LibCharacters_OpenplanetChars = {{{Inject_OpenplanetChars}}};
 declare G_LibCharacters_CharactersNames = {{{Inject_CharactersNames}}};
 declare G_LibCharacters_CharactersIcons1 = {{{Inject_CharactersIcons1}}};
 declare G_LibCharacters_CharactersIcons2 = {{{Inject_CharactersIcons2}}};
@@ -442,6 +521,8 @@ declare G_LibCharacters_CharactersImage1 = {{{Inject_CharactersImage1}}};
 declare G_LibCharacters_CharactersImage2 = {{{Inject_CharactersImage2}}};
 declare G_LibCharacters_CharactersDesc = {{{Inject_CharactersDesc}}};
 declare G_LibCharacters_CharactersColor = {{{Inject_CharactersColor}}};
+declare G_LibCharacters_CharactersPlanets = {{{Inject_CharactersPlanets}}};
+declare G_LibCharacters_CharactersULink = {{{Inject_CharactersULink}}};
 declare G_LibCharacters_AbilityName = {{{Inject_AbilityName}}};
 declare G_LibCharacters_AbilityDesc = {{{Inject_AbilityDesc}}};
 declare G_LibCharacters_AbilityIcon = {{{Inject_AbilityIcon}}};
@@ -458,7 +539,7 @@ declare G_LibCharacters_CharWeapons = {{{Inject_CharWeapons}}};
 ***
 // ---------------------------------- //
 // Load manialink elements
-declare Frame_MapSelectionWindow	<=> (Page.GetFirstChild("Frame_MapSelectionWindow") as CMlFrame);
+declare Frame_CharSelectionWindow	<=> (Page.GetFirstChild("Frame_CharSelectionWindow") as CMlFrame);
 declare Frame_BackgroundBlur		<=> (Page.GetFirstChild("Frame_BackgroundBlur") as CMlFrame);
 declare Label_WindowTitleText		<=> (Page.GetFirstChild("Label_WindowTitleText") as CMlLabel);
 declare Quad_CharSelectionClose		<=> (Page.GetFirstChild("Quad_CharSelectionClose") as CMlQuad);
@@ -483,7 +564,6 @@ declare Label_CurCharacterDesc		<=> (Page.GetFirstChild("Label_CurCharacterDesc"
 declare Quad_CurCharacterDesc		<=> (Page.GetFirstChild("Quad_CurCharacterDesc") as CMlQuad);
 
 declare Frame_SpecialAbilityBox		<=> (Page.GetFirstChild("Frame_SpecialAbilityBox") as CMlFrame);
-declare Label_SpecialAbilityHeader	<=> (Page.GetFirstChild("Label_SpecialAbilityHeader") as CMlLabel);
 declare Label_SpecialAbilityName	<=> (Page.GetFirstChild("Label_SpecialAbilityName") as CMlLabel);
 declare Label_SpecialAbilityDesc	<=> (Page.GetFirstChild("Label_SpecialAbilityDesc") as CMlLabel);
 declare Quad_SpecialAbilityIcon		<=> (Page.GetFirstChild("Quad_SpecialAbilityIcon") as CMlQuad);
@@ -507,22 +587,40 @@ for (I, 0, 5) Frame_CurCharStatistics.add((Page.GetFirstChild("Frame_CurCharStat
 declare CMlFrame[] Frame_CurCharWeapons;
 for (I, 0, 3) Frame_CurCharWeapons.add((Page.GetFirstChild("Frame_CurCharWeapon#"^I) as CMlFrame));
 
+declare Frame_CharacterUnlock	<=> (Page.GetFirstChild("Frame_CharacterUnlock") as CMlFrame);
+declare Label_UnlockTitle		<=> (Page.GetFirstChild("Label_UnlockTitle") as CMlLabel);
+declare Quad_UnlockCharIcon		<=> (Page.GetFirstChild("Quad_UnlockCharIcon") as CMlQuad);
+declare Quad_UnlockCharIcon2	<=> (Page.GetFirstChild("Quad_UnlockCharIcon2") as CMlQuad);
+declare Label_UnlockCharName	<=> (Page.GetFirstChild("Label_UnlockCharName") as CMlLabel);
+declare Label_UnlockCharDesc	<=> (Page.GetFirstChild("Label_UnlockCharDesc") as CMlLabel);
+declare Label_UnlockOpenplanet	<=> (Page.GetFirstChild("Label_UnlockOpenplanet") as CMlLabel);
+declare Frame_UnlockPlanets		<=> (Page.GetFirstChild("Frame_UnlockPlanets") as CMlFrame);
+declare Label_UnlockPlanets		<=> (Page.GetFirstChild("Label_UnlockPlanets") as CMlLabel);
+
 ---ImportedVariables---
 
 // ---------------------------------- //
 // Persistent settings
 declare persistent Persistant_LibCharacters_SavedChar for LocalUser = Integer[Text];
+declare persistent Persistant_LibCharacters_CurPurchaseId for LocalUser = -1;
+declare persistent Persistent_LibCharacters_PurchasedChars for LocalUser = Integer[Integer][Text];
 
 // ---------------------------------- //
 // Netcode
-declare netwrite Integer Net_LibCharacters_PlayerCharacter for UI = 0;
 declare netread Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
+declare netread Integer Net_LibCharacters_DisabledCharsUpdate for Teams[0];
 declare netread Integer Net_LibCharacters_DisplayMode for Teams[0];
 declare netread Integer Net_LibCharacters_DisplayEndTime for Teams[0];
 declare netread Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
 declare netread Integer Net_LibCharacters_CharacterBaseArmor for Teams[0];
+declare netread Boolean Net_LibCharacters_OpenplanetRequired for Teams[0];
+declare netread Integer Net_LibCharacters_PaywallUnlockTimeout for Teams[0];
 declare netread Text Net_LibCharacters_WindowTitleText for Teams[0];
 declare netread Text Net_LibCharacters_SwitchCharNote for Teams[0];
+
+declare netwrite Integer Net_LibCharacters_PlayerCharacter for UI = 0;
+declare netwrite Boolean Net_LibCharacters_HasOpenplanet for UI = False;
+declare netwrite Integer[] Net_LibCharacters_PurchasedChars for UI;
 
 // ---------------------------------- //
 // Shared variables
@@ -534,21 +632,28 @@ declare LibCharacters_CurCharacterIcon2 for This = "";
 // Variables
 declare WindowVisible = False;
 declare UserSettingWindowVisible = False;
+declare InterfaceColor = <1., 0., 0.>;
+declare CharactersMenuContext = C_MenuContext_CharsBrowser;
+declare OpenplanetEnabled = False;
+declare CurrentTimestamp = 0;
+
+declare CharactersPageCurrent = 1;
+declare CharactersPageTotal = 1 + (G_LibCharacters_Characters.count - 1) / Frame_CharacterButtons.count;
+declare CurSelectedCharacter = G_LibCharacters_Characters[0];
+declare CurHoveredCharacter = -1;
+declare CurClickedCharacter = -1;
+declare CurUnlockCharacter = -1;
+
 declare UpdateCharactersList = True;
 declare UpdateCharacterPreview = True;
 declare UpdateCurCharIcon = True;
 declare UpdateTimer = True;
-declare InterfaceColor = <1., 0., 0.>;
-declare CurSelectedCharacter = G_LibCharacters_Characters[0];
-declare CurHoveredCharacter = -1;
-declare CurClickedCharacter = -1;
-declare CharactersPageCurrent = 1;
-declare CharactersPageTotal = 1 + (G_LibCharacters_Characters.count - 1) / Frame_CharacterButtons.count;
 
 /// Update
 declare PrevWindowVisible = False;
 declare PrevSelectedCharacter = -1;
 declare PrevHoveredCharacter = -1;
+declare PrevUnlockCharacter = -1;
 declare PrevPlayerCharChange = -1;
 declare PrevDisplayMode = -1;
 declare PrevGUIPlayerLinearHue = -1.;
@@ -560,6 +665,13 @@ declare PrevSwitchCharNote = "";
 declare PrevGUIPlayerId = NullId;
 declare PrevDisplayEndTime = -1;
 
+declare PrevCharactersMenuContext = CharactersMenuContext;
+declare PrevOpenplanetRequired = False;
+declare PrevDisabledCharsUpdate = Net_LibCharacters_DisabledCharsUpdate;
+declare PrevPaywallUnlockTimeout = Net_LibCharacters_PaywallUnlockTimeout;
+declare PrevUnlockTime = -1;
+declare PrevTimestamp = -1;
+
 /// Reset UI
 EnableMenuNavigation(False, False, Null, 0);
 ClientUI.ScoreTableVisibility = CUIConfig::EVisibility::None;
@@ -567,7 +679,7 @@ ClientUI.AltMenuNoCustomScores = False;
 ClientUI.UISequence = CUIConfig::EUISequence::None;
 
 /// Translations
-Label_SpecialAbilityHeader.Value = ReplaceChars(Translate("Special ability"));
+Translate("Label_SpecialAbilityHeader", "Special ability");
 Translate("Label_CurCharProsAndCons", "Pros & Cons");
 Translate("Label_CurCharWeapons", "Weapons");
 
@@ -578,14 +690,19 @@ foreach (CharId => CharStats in G_LibCharacters_CharStats) foreach (StatId => St
 }
 
 /// Restore saved character
-if (Persistant_LibCharacters_SavedChar.existskey(G_LibCharacters_CharSheetKey))
-	CurClickedCharacter = Persistant_LibCharacters_SavedChar[G_LibCharacters_CharSheetKey];
+if (Persistant_LibCharacters_SavedChar.existskey(G_LibCharacters_CharSheetKey)) {
+	declare SavedCharId = Persistant_LibCharacters_SavedChar[G_LibCharacters_CharSheetKey];
+	CurSelectedCharacter = SavedCharId;
+	Net_LibCharacters_PlayerCharacter = SavedCharId;
+}
 
 Frame_CharButtonsPageSwitch.Visible = CharactersPageTotal > 1;
 if (Frame_CharButtonsPageSwitch.Visible)
 	Frame_CharButtonsOffset.RelativePosition_V3.X = 12.5;
 else
 	Frame_CharButtonsOffset.RelativePosition_V3.X = 0.;
+
+Net_LibCharacters_HasOpenplanet = OpenplanetEnabled;
 ***
 
 // ---------------------------------- //
@@ -625,11 +742,54 @@ foreach (Event in PendingEvents) {
 		else if (Event.ControlId == "Quad_CharSelectionClose") {
 			UserSettingWindowVisible = False;
 		}
+		// ---------------------------------- //
+		// Unlock menu return
+		else if (Event.ControlId == "Quad_UnlockReturn") {
+			CharactersMenuContext = C_MenuContext_CharsBrowser;
+		}
+		// ---------------------------------- //
+		// Unlock menu unlock
+		else if (Event.ControlId == "Quad_UnlockUnlock") {
+			// Purchase cost
+			declare PlanetsCost = 0;
+			if (G_LibCharacters_CharactersPlanets.existskey(CurUnlockCharacter)) PlanetsCost = G_LibCharacters_CharactersPlanets[CurUnlockCharacter];
+
+			declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CurUnlockCharacter);
+			declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0;
+
+			// Take user to Openplanet website
+			if (IsOpenplanetNeeded) OpenLink("openplanet.nl", CMlScript::LinkType::ExternalBrowser);
+
+			// Take user to Unlock manialink
+			else if (IsPurchaseable) {
+				declare UnlockLink = "";
+				if (G_LibCharacters_CharactersULink.existskey(CurUnlockCharacter)) UnlockLink = G_LibCharacters_CharactersULink[CurUnlockCharacter];
+				OpenLink(UnlockLink, CMlScript::LinkType::ManialinkBrowser);
+			}
+
+			UserSettingWindowVisible = False;
+			CharactersMenuContext = C_MenuContext_CharsBrowser;
+		}
+		// ---------------------------------- //
+		// Unlock menu close
+		else if (Event.ControlId == "Quad_UnlockClose") {
+			UserSettingWindowVisible = False;
+			CharactersMenuContext = C_MenuContext_CharsBrowser;
+		}
 	}
 	// ---------------------------------- //
 	// On key press
 	else if (Event.Type == CMlEvent::Type::KeyPress) {
 		if (!WindowVisible) continue;
+
+		// Hack: mark Openplanet as installed
+		if (Event.KeyName == "F3") {
+			OpenplanetEnabled = True;
+			Net_LibCharacters_HasOpenplanet = OpenplanetEnabled;
+			UpdateCharactersList = True;
+			continue;
+		}
+
 		declare Order = TL::ToInteger(Event.KeyName);
 		if (Order < 0) continue;
 		if (Order == 0) Order = 10;
@@ -699,7 +859,32 @@ if (CurClickedCharacter >= 0) {
 
 	if (!G_LibCharacters_Characters.existskey(Order)) continue;
 	declare DesiredCharacter = G_LibCharacters_Characters[Order];
-	if (Net_LibCharacters_DisabledCharacters.exists(DesiredCharacter)) continue;
+
+	// Purchased character
+	declare IsPurchased =
+		Persistent_LibCharacters_PurchasedChars.existskey(G_LibCharacters_CharSheetKey) &&
+		Persistent_LibCharacters_PurchasedChars[G_LibCharacters_CharSheetKey].existskey(DesiredCharacter);
+
+	// Purchase cost
+		declare PlanetsCost = 0;
+		if (G_LibCharacters_CharactersPlanets.existskey(DesiredCharacter)) PlanetsCost = G_LibCharacters_CharactersPlanets[DesiredCharacter];
+
+	// Locked character
+	declare IsDisabled = Net_LibCharacters_DisabledCharacters.exists(DesiredCharacter);
+	declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(DesiredCharacter);
+	declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0;
+	declare IsLocked = (IsDisabled && !IsPurchased) || (IsOpenplanetNeeded && !OpenplanetEnabled) || (IsPurchaseable && !IsPurchased);
+
+	// Can't access character
+	if (IsLocked) {
+		CurUnlockCharacter = DesiredCharacter;
+		UserSettingWindowVisible = True;
+
+		// Request Openplanet installation or character Unlock
+		if (IsOpenplanetNeeded || IsPurchaseable) CharactersMenuContext = C_MenuContext_CharUnlock;
+		
+		continue;
+	}
 
 	CurSelectedCharacter = DesiredCharacter;
 	Net_LibCharacters_PlayerCharacter = CurSelectedCharacter;
@@ -751,6 +936,26 @@ if (UpdateCurCharIcon) {
 }
 
 // ---------------------------------- //
+// Confirm a character purchase
+if (Persistant_LibCharacters_CurPurchaseId >= 0) {
+	declare PurchasedCharId = Persistant_LibCharacters_CurPurchaseId;
+	declare ExpirationTimestamp = TL::ToInteger(Time::GetCurrent()) + Net_LibCharacters_PaywallUnlockTimeout / 1000;
+
+	if (!Persistent_LibCharacters_PurchasedChars.existskey(G_LibCharacters_CharSheetKey)) {
+		Persistent_LibCharacters_PurchasedChars[G_LibCharacters_CharSheetKey] = Integer[Integer];
+	}
+
+	// Save the purchase
+	Persistent_LibCharacters_PurchasedChars[G_LibCharacters_CharSheetKey][PurchasedCharId] = ExpirationTimestamp;
+
+	Persistant_LibCharacters_CurPurchaseId = -1;
+	CurClickedCharacter = PurchasedCharId;
+	UserSettingWindowVisible = False;
+	UpdateCharactersList = True;
+	PrevTimestamp = -1;
+} 
+
+// ---------------------------------- //
 // Update window visiblity
 WindowVisible = !IsInGameMenuDisplayed &&
 	(Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeVisible}}} ||
@@ -760,8 +965,9 @@ if (PrevWindowVisible != WindowVisible) {
 	PrevWindowVisible = WindowVisible;
 
 	EnableMenuNavigation(WindowVisible && Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeManual}}}, False, Null, 0);
-	Frame_MapSelectionWindow.Visible = WindowVisible;
 	Frame_BackgroundBlur.Visible = WindowVisible;
+	CharactersMenuContext = C_MenuContext_CharsBrowser;
+	PrevCharactersMenuContext = -1;
 
 	// Reset hovered character
 	if (!WindowVisible) {
@@ -780,9 +986,7 @@ if (PrevWindowVisible != WindowVisible) {
 	else ClientUI.UISequence = CUIConfig::EUISequence::None;
 
 	// Play sound
-	declare Sound = CAudioManager::ELibSound::HideDialog;
-	if (WindowVisible) Sound = CAudioManager::ELibSound::ShowDialog;
-	Audio.PlaySoundEvent(Sound, 0, 0.);
+	if (!WindowVisible) Audio.PlaySoundEvent(CAudioManager::ELibSound::HideDialog, 0, 0.);
 
 	// ---------------------------------- //
 	// Switch to selected char page
@@ -795,405 +999,561 @@ if (PrevWindowVisible != WindowVisible) {
 	}
 }
 
+CurrentTimestamp = TL::ToInteger(Time::GetCurrent());
+
+// ---------------------------------- //
+// On timestamp change
+if (PrevTimestamp != CurrentTimestamp) {
+	PrevTimestamp = CurrentTimestamp;
+
+	declare PurchasedAnyCharacter = Persistent_LibCharacters_PurchasedChars.existskey(G_LibCharacters_CharSheetKey);
+	Net_LibCharacters_PurchasedChars.clear();
+
+	if (PurchasedAnyCharacter) {
+		UpdateCharactersList = True;
+		declare Integer[] ToRemove;
+
+		// ---------------------------------- //
+		// Remove purchases which exceed the limit
+		foreach (CharacterId => ExpirationTimestamp in Persistent_LibCharacters_PurchasedChars[G_LibCharacters_CharSheetKey]) {
+			Net_LibCharacters_PurchasedChars.add(CharacterId);
+			if (CurrentTimestamp >= ExpirationTimestamp) {
+				if (CharacterId == Net_LibCharacters_PlayerCharacter) CurClickedCharacter = 0; 
+				ToRemove.add(CharacterId);
+			} 
+		}
+
+		while (ToRemove.existskey(0)) {
+			declare Boolean Removed;
+			Removed = Persistent_LibCharacters_PurchasedChars[G_LibCharacters_CharSheetKey].removekey(ToRemove[0]);
+			Removed = ToRemove.removekey(0);
+
+			// Remove sheet from purchases array
+			if (Persistent_LibCharacters_PurchasedChars[G_LibCharacters_CharSheetKey].count <= 0) {
+				Removed = Persistent_LibCharacters_PurchasedChars.removekey(G_LibCharacters_CharSheetKey);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// On context change
+if (PrevCharactersMenuContext != CharactersMenuContext) {
+	PrevCharactersMenuContext = CharactersMenuContext;
+
+	Frame_CharSelectionWindow.Visible = WindowVisible && CharactersMenuContext == C_MenuContext_CharsBrowser;
+	Frame_CharacterUnlock.Visible = WindowVisible && CharactersMenuContext == C_MenuContext_CharUnlock;
+
+	Audio.PlaySoundEvent(CAudioManager::ELibSound::ShowDialog, 0, 0.);
+}
+
 if (!WindowVisible) continue;
 
-// ---------------------------------- //
-// Update window title text
-if (PrevWindowTitleText != Net_LibCharacters_WindowTitleText) {
-	PrevWindowTitleText = Net_LibCharacters_WindowTitleText;
-	Label_WindowTitleText.Value = Translate(PrevWindowTitleText);
-}
-
-// ---------------------------------- //
-// Get interface color
-{{{ColorSelectionScript}}}
-
-// ---------------------------------- //
-// On display mode change
-if (PrevDisplayMode != Net_LibCharacters_DisplayMode) {
-	PrevDisplayMode = Net_LibCharacters_DisplayMode;
-	Quad_CharSelectionClose.Visible = Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeManual}}};
-	UpdateTimer = True;
-}
-
-// ---------------------------------- //
-// Update display end time
-if (PrevDisplayEndTime != Net_LibCharacters_DisplayEndTime) {
-	PrevDisplayEndTime = Net_LibCharacters_DisplayEndTime;
-	UpdateTimer = True;
-}
-
-// ---------------------------------- //
-// Update timer
-if (UpdateTimer) {
-	UpdateTimer = False;
-
-	Frame_SelectionEndTime.Visible =
-		Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeVisible}}} &&
-		Net_LibCharacters_DisplayEndTime > 0;
-}
-
-// ---------------------------------- //
-// Manage the countdown
-if (Frame_SelectionEndTime.Visible) {
-	Label_SelectionEndTime.Value = TL::TimeToText(Net_LibCharacters_DisplayEndTime - GameTime + 1000);
-}
-
-// ---------------------------------- //
-// Update list on spectator mode change
-if (PrevIsSpectatorClient != IsSpectatorClient) {
-	PrevIsSpectatorClient = IsSpectatorClient;
-	UpdateCharactersList = True;
-}
-
-// ---------------------------------- //
-// Update list on players amount change
-if (PrevNbPlayers != Players.count) {
-	PrevNbPlayers = Players.count;
-	UpdateCharactersList = True;
-}
-
-// ---------------------------------- //
-// Update the characters list
-if (UpdateCharactersList) {
-	UpdateCharactersList = False;
-
+switch (CharactersMenuContext) {
 	// ---------------------------------- //
-	// Update page switch
-	if (Frame_CharButtonsPageSwitch.Visible) {
-		Quad_PageButtonPrevCard.Visible = CharactersPageCurrent > 1;
-		Quad_PageButtonNextCard.Visible = CharactersPageCurrent < CharactersPageTotal;
-
-		declare ColorTextPrev = C_ButtonColorDisabled;
-		if (Quad_PageButtonPrevCard.Visible) ColorTextPrev = C_ButtonColorEnabled;
-		Quad_PageButtonPrevIcon.Colorize = ColorTextPrev;
-
-		declare ColorCardPrev = C_ButtonColorDisabled;
-		if (Quad_PageButtonPrevCard.Visible) ColorCardPrev = C_ButtonColorEnabled;
-		Quad_PageButtonPrevBg.BgColor = ColorCardPrev;
-
-		declare ColorTextNext = C_ButtonColorDisabled;
-		if (Quad_PageButtonNextCard.Visible) ColorTextNext = C_ButtonColorEnabled;
-		Quad_PageButtonNextIcon.Colorize = ColorTextNext;
-
-		declare ColorCardNext = C_ButtonColorDisabled;
-		if (Quad_PageButtonNextCard.Visible) ColorCardNext = C_ButtonColorEnabled;
-		Quad_PageButtonNextBg.BgColor = ColorCardNext;
-	}
-
-	// ---------------------------------- //
-	// Update all buttons
-	foreach (I => Frame in Frame_CharacterButtons) {
-		declare Key = I + (CharactersPageCurrent - 1) * (Frame_CharacterButtons.count - 1);
-		Frame.Visible = Key < G_LibCharacters_Characters.count && (I != Frame_CharacterButtons.count - 1 || G_LibCharacters_Characters.count == Frame_CharacterButtons.count);
-		if (!Frame.Visible) continue;
-		declare CharacterId = G_LibCharacters_Characters[Key];
-
+	// Character unlock menu
+	case C_MenuContext_CharUnlock : {
 		// ---------------------------------- //
-		// Frame elements
-		declare Label_CharSelectionHotkey <=> (Frame.GetFirstChild("Label_CharSelectionHotkey") as CMlLabel);
-		declare Frame_CharNbPlayersUsing <=> (Frame.GetFirstChild("Frame_CharNbPlayersUsing") as CMlFrame);
-		declare Label_CharNbPlayersUsing <=> (Frame.GetFirstChild("Label_CharNbPlayersUsing") as CMlLabel);
-		declare Quad_CharNbPlayersUsing <=> (Frame.GetFirstChild("Quad_CharNbPlayersUsing") as CMlQuad);
-		declare Quad_CharIsSelected <=> (Frame.GetFirstChild("Quad_CharIsSelected") as CMlQuad);
-		declare Quad_CharButtonIcon <=> (Frame.GetFirstChild("Quad_CharButtonIcon") as CMlQuad);
-		declare Quad_CharButtonIcon2 <=> (Frame.GetFirstChild("Quad_CharButtonIcon2") as CMlQuad);
-		declare Quad_CharButtonCard <=> (Frame.GetFirstChild("Quad_CharButtonCard") as CMlQuad);
-		declare Quad_CharButtonLock <=> (Frame.GetFirstChild("Quad_CharButtonLock") as CMlQuad);
-		declare Quad_CharButtonBg <=> (Frame.GetFirstChild("Quad_CharButtonBg") as CMlQuad);
+		// Character change
+		if (PrevUnlockCharacter != CurUnlockCharacter) {
+			PrevUnlockCharacter = CurUnlockCharacter;
+			declare CharId = CurUnlockCharacter;
 
-		// Configure the frame
-		Label_CharSelectionHotkey.Value = TL::ToText(Key + 1);
-		Quad_CharIsSelected.Visible = !IsSpectatorClient && CurSelectedCharacter == CharacterId;
-		Quad_CharButtonLock.Visible = Net_LibCharacters_DisabledCharacters.exists(CharacterId);
+			// Purchase cost
+			declare PlanetsCost = 0;
+			if (G_LibCharacters_CharactersPlanets.existskey(CharId)) PlanetsCost = G_LibCharacters_CharactersPlanets[CharId];
 
-		// ---------------------------------- //
-		// Set the background color
-		declare BgColor = C_ButtonColorEnabled;
-		Quad_CharButtonCard.Visible = !Quad_CharButtonLock.Visible;
-		if (!Quad_CharButtonCard.Visible) BgColor = C_ButtonColorDisabled;
-		Quad_CharButtonBg.BgColor = BgColor;
-
-		declare Opacity = 1.;
-		if (!Quad_CharButtonCard.Visible) Opacity = .25;
-		Quad_CharButtonIcon.Opacity = Opacity;
-		Quad_CharButtonIcon2.Opacity = Opacity;
-
-		// ---------------------------------- //
-		// Amount of players using the character
-		declare NbPlayersUsing = 0;
-		foreach (Player in Players) {
-			if (Player.RequestsSpectate || Player.User.Login == "*bot*") continue;
-			if (!IsSpectatorClient && InputPlayer.CurrentClan > 0 && Player.CurrentClan != InputPlayer.CurrentClan) continue;
-			declare netread Integer Net_LibCharacters_ServerCharacter for Player;
-			if (Net_LibCharacters_ServerCharacter != CharacterId) continue;
-			NbPlayersUsing += 1;
-		}
-		Frame_CharNbPlayersUsing.Visible = NbPlayersUsing > 0;
-		if (NbPlayersUsing > 0) {
-			Label_CharNbPlayersUsing.Value = TL::ToText(NbPlayersUsing);
-			Quad_CharNbPlayersUsing.Size.X = -Label_CharNbPlayersUsing.RelativePosition_V3.X + ComputeWidth(Label_CharNbPlayersUsing) + .75;
-		}
-
-		// ---------------------------------- //
-		// Set the icon
-		declare IconUrl1 = "";
-		if (G_LibCharacters_CharactersIcons1.existskey(CharacterId)) IconUrl1 = G_LibCharacters_CharactersIcons1[CharacterId];
-		Quad_CharButtonIcon.ImageUrl = IconUrl1;
-
-		declare IconUrl2 = "";
-		if (G_LibCharacters_CharactersIcons2.existskey(CharacterId)) IconUrl2 = G_LibCharacters_CharactersIcons2[CharacterId];
-		Quad_CharButtonIcon2.ImageUrl = IconUrl2;
-	}
-}
-
-// ---------------------------------- //
-// Update preview on selected character change
-if (PrevSelectedCharacter != CurSelectedCharacter) {
-	PrevSelectedCharacter = CurSelectedCharacter;
-	UpdateCharacterPreview = True;
-}
-
-// ---------------------------------- //
-// Update preview on hovered character change
-if (PrevHoveredCharacter != CurHoveredCharacter) {
-	PrevHoveredCharacter = CurHoveredCharacter;
-	UpdateCharacterPreview = True;
-}
-
-// ---------------------------------- //
-// Update preview on Armor base change
-if (PrevCharacterBaseArmor != Net_LibCharacters_CharacterBaseArmor) {
-	PrevCharacterBaseArmor = Net_LibCharacters_CharacterBaseArmor;
-	UpdateCharacterPreview = True;
-
-	// Maximum Armor
-	foreach (CharId => CharStats in G_LibCharacters_CharStats) foreach (StatId => StatValue in CharStats) {
-		if (StatId != 0) continue;
-		if (!G_LibCharacters_StatsMax.existskey(StatId) || StatValue > G_LibCharacters_StatsMax[StatId])
-			G_LibCharacters_StatsMax[StatId] = StatValue;
-	}
-}
-
-// ---------------------------------- //
-// Update current character preview
-if (UpdateCharacterPreview) {
-	UpdateCharacterPreview = False;
-
-	declare CharId = CurSelectedCharacter;
-	if (CurHoveredCharacter >= 0) CharId = CurHoveredCharacter;
-
-	declare ColHeightMiddle = 0.;
-	declare ColHeightRight = 0.;
-
-	// Character name
-	declare CurCharacterName = "Unknown character";
-	if (G_LibCharacters_CharactersNames.existskey(CharId)) CurCharacterName = G_LibCharacters_CharactersNames[CharId];
-	Label_CurCharacterName.Value = ReplaceChars(Translate(CurCharacterName));
-
-	// ---------------------------------- //
-	// Character image
-	declare CurCharacterImage = "";
-	if (G_LibCharacters_CharactersImage1.existskey(CharId)) CurCharacterImage = G_LibCharacters_CharactersImage1[CharId];
-	Quad_CurCharacterImage.ImageUrl = CurCharacterImage;
-
-	declare CurCharacterImage2 = "";
-	if (G_LibCharacters_CharactersImage2.existskey(CharId)) CurCharacterImage2 = G_LibCharacters_CharactersImage2[CharId];
-	Quad_CurCharacterImage2.ImageUrl = CurCharacterImage2;
-
-	// ---------------------------------- //
-	// Character description
-	declare CurCharacterDesc = "";
-	if (G_LibCharacters_CharactersDesc.existskey(CharId)) CurCharacterDesc = G_LibCharacters_CharactersDesc[CharId];
-	Frame_CurCharacterDesc.Visible = CurCharacterDesc != "";
-
-	if (Frame_CurCharacterDesc.Visible) {
-		Label_CurCharacterDesc.Value = Translate(CurCharacterDesc);
-		Quad_CurCharacterDesc.Size.Y = -Label_CurCharacterDesc.RelativePosition_V3.Y + Label_CurCharacterDesc.ComputeHeight(Label_CurCharacterDesc.Value) + 1.5;
-		ColHeightMiddle += Quad_CurCharacterDesc.Size.Y + 1.;
-	}
-
-	// ---------------------------------- //
-	// Character special ability
-	Frame_SpecialAbilityBox.Visible = G_LibCharacters_AbilityName.existskey(CharId);
-	if (Frame_SpecialAbilityBox.Visible) {
-		Frame_SpecialAbilityBox.RelativePosition_V3.Y = -ColHeightMiddle;
-		Label_SpecialAbilityName.Value = ReplaceChars(Translate(G_LibCharacters_AbilityName[CharId]));
-
-		// Ability icon
-		declare AbilityIcon = "";
-		if (G_LibCharacters_AbilityIcon.existskey(CharId)) AbilityIcon = G_LibCharacters_AbilityIcon[CharId];
-		Quad_SpecialAbilityIcon.ImageUrl = AbilityIcon;
-
-		// Ability description
-		declare AbilityDesc = "";
-		if (G_LibCharacters_AbilityDesc.existskey(CharId)) AbilityDesc = G_LibCharacters_AbilityDesc[CharId];
-		Label_SpecialAbilityDesc.Value = Translate(AbilityDesc);
-
-		Quad_SpecialAbilityBox.Size.Y = -Label_SpecialAbilityDesc.RelativePosition_V3.Y + Label_SpecialAbilityDesc.ComputeHeight(Label_SpecialAbilityDesc.Value) + 1.5;
-		ColHeightMiddle += Quad_SpecialAbilityBox.Size.Y + 1.;
-	}
-
-	// ---------------------------------- //
-	// Character pros and cons
-	declare Text[] CurCharPros;
-	declare Text[] CurCharCons;
-	declare Text[] CurCharProsAndCons;
-	if (G_LibCharacters_CharactersPros.existskey(CharId)) CurCharPros = G_LibCharacters_CharactersPros[CharId];
-	if (G_LibCharacters_CharactersCons.existskey(CharId)) CurCharCons = G_LibCharacters_CharactersCons[CharId];
-	foreach (Pro in CurCharPros) CurCharProsAndCons.add(Pro);
-	foreach (Con in CurCharCons) CurCharProsAndCons.add(Con);
-	Frame_ProsAndConsBox.Visible = CurCharProsAndCons.count > 0;
-
-	if (Frame_ProsAndConsBox.Visible) {
-		Frame_ProsAndConsBox.RelativePosition_V3.Y = -ColHeightMiddle;
-		declare NextAttributePos = 6.5;
-
-		// ---------------------------------- //
-		// Configure pros and cons frames
-		foreach (I => Frame in Frame_CurCharAttributes) {
-			Frame.Visible = CurCharProsAndCons.existskey(I);
-			if (!Frame.Visible) continue;
-
-			declare AttributeText = CurCharProsAndCons[I];
-			Frame.RelativePosition_V3.Y = -NextAttributePos;
-
-			declare Quad_AttributePro <=> (Frame.GetFirstChild("Quad_AttributePro") as CMlQuad);
-			declare Quad_AttributeCon <=> (Frame.GetFirstChild("Quad_AttributeCon") as CMlQuad);
-			declare Label_CurCharacterDesc <=> (Frame.GetFirstChild("Label_CurCharacterDesc") as CMlLabel);
-
-			Label_CurCharacterDesc.Value = Translate(AttributeText);
-			Quad_AttributePro.Visible = CurCharPros.exists(AttributeText);
-			Quad_AttributeCon.Visible = CurCharCons.exists(AttributeText);
-
-			NextAttributePos += Label_CurCharacterDesc.ComputeHeight(Label_CurCharacterDesc.Value) + 1.;
-		}
-
-		Quad_ProsAndConsBox.Size.Y = NextAttributePos + .5;
-		ColHeightMiddle += Quad_ProsAndConsBox.Size.Y + 1.;
-	}
-
-	// ---------------------------------- //
-	// Character statistics
-	declare Real[Integer] CurCharacterStats;
-	if (G_LibCharacters_CharStats.existskey(CharId)) CurCharacterStats = G_LibCharacters_CharStats[CharId];
-	Frame_CharStatisticsBox.Visible = CurCharacterStats.count > 0;
-
-	if (Frame_CharStatisticsBox.Visible) {
-		declare NextStatisticPos = 6.;
-
-		declare Integer[] StatsIds;
-		foreach (StatId => StatValue in CurCharacterStats) StatsIds.add(StatId);
-
-		// ---------------------------------- //
-		// Configure statictics frames
-		foreach (I => Frame in Frame_CurCharStatistics) {
-			Frame.Visible = StatsIds.existskey(I);
-			if (!Frame.Visible) continue;
-			declare StatId = StatsIds[I];
-
-			Frame.RelativePosition_V3.Y = -NextStatisticPos;
-			NextStatisticPos += 6.;
-
-			declare Label_CharStatisticName <=> (Frame.GetFirstChild("Label_CharStatisticName") as CMlLabel);
-			declare Label_CharStatisticValue <=> (Frame.GetFirstChild("Label_CharStatisticValue") as CMlLabel);
-			declare Gauge_CharStatisticValue <=> (Frame.GetFirstChild("Gauge_CharStatisticValue") as CMlGauge);
+			declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CharId);
+			declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0;
 
 			// ---------------------------------- //
-			// Statictic name
-			declare CurStatName = "Unknown attibute";
-			if (G_LibCharacters_StatsNames.existskey(StatId)) CurStatName = G_LibCharacters_StatsNames[StatId];
-			Label_CharStatisticName.Value = ReplaceChars(Translate(CurStatName));
+			// Set the icon
+			declare IconUrl1 = "";
+			if (G_LibCharacters_CharactersIcons1.existskey(CharId)) IconUrl1 = G_LibCharacters_CharactersIcons1[CharId];
+			Quad_UnlockCharIcon.ImageUrl = IconUrl1;
 
-			// ---------------------------------- //
-			// Statictic value gauge
-			declare Ratio = CurCharacterStats[StatId];
-			declare RatioMax = G_LibCharacters_StatsMax[StatId];
+			declare IconUrl2 = "";
+			if (G_LibCharacters_CharactersIcons2.existskey(CharId)) IconUrl2 = G_LibCharacters_CharactersIcons2[CharId];
+			Quad_UnlockCharIcon2.ImageUrl = IconUrl2;
 
-			// Special Armor treatment
-			if (StatId == 0) {
-				Ratio = ML::Clamp(Ratio + Net_LibCharacters_CharacterBaseArmor, 1., 10.);
-				RatioMax = ML::Clamp(RatioMax + Net_LibCharacters_CharacterBaseArmor, 1., 10.);
+			// Character name
+			declare CurCharacterName = "Unknown character";
+			if (G_LibCharacters_CharactersNames.existskey(CharId)) CurCharacterName = G_LibCharacters_CharactersNames[CharId];
+			Label_UnlockCharName.Value = Translate(CurCharacterName);
+			Label_UnlockTitle.Value = Translate(["%1 %2", "Unlock", CurCharacterName]);
+
+			Label_UnlockOpenplanet.Visible = IsOpenplanetNeeded;
+			Frame_UnlockPlanets.Visible = !Label_UnlockOpenplanet.Visible && IsPurchaseable;
+
+			// Openplanet required
+			if (IsOpenplanetNeeded) {
+				Label_UnlockCharDesc.Value = Translate("You need Openplanet to use this character. Openplanet is a new scripting platform, which allows you to access even more options, which plain ManiaPlanet can't offer.");
 			}
 
-			// Set gauge ratio
-			declare GaugeRatio = 1.;
-			if (RatioMax != 0) GaugeRatio = Ratio / RatioMax;
-			SetGaugeRatio(Gauge_CharStatisticValue, GaugeRatio);
+			// Purchase character
+			else if (IsPurchaseable) {
+				Label_UnlockCharDesc.Value = Translate([
+					"You can spend %1 Planets to gain access to %2 for %3 minutes.",
+					TL::ToText(PlanetsCost), CurCharacterName, TL::TimeToText(Net_LibCharacters_PaywallUnlockTimeout)
+				]);
+
+				Label_UnlockPlanets.Value = Translate([PlanetsCost^" %1", "Planets"]);
+				Frame_UnlockPlanets.RelativePosition_V3.X = 57. - (ComputeWidth(Label_UnlockPlanets) + 8.) / 2;
+			}
+		}
+	}
+	// ---------------------------------- //
+	// Characters browser
+	case C_MenuContext_CharsBrowser : {
+		// ---------------------------------- //
+		// Update window title text
+		if (PrevWindowTitleText != Net_LibCharacters_WindowTitleText) {
+			PrevWindowTitleText = Net_LibCharacters_WindowTitleText;
+			Label_WindowTitleText.Value = Translate(PrevWindowTitleText);
+		}
+
+		// ---------------------------------- //
+		// Get interface color
+		{{{ColorSelectionScript}}}
+
+		// ---------------------------------- //
+		// On display mode change
+		if (PrevDisplayMode != Net_LibCharacters_DisplayMode) {
+			PrevDisplayMode = Net_LibCharacters_DisplayMode;
+			Quad_CharSelectionClose.Visible = Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeManual}}};
+			UpdateTimer = True;
+		}
+
+		// ---------------------------------- //
+		// Update display end time
+		if (PrevDisplayEndTime != Net_LibCharacters_DisplayEndTime) {
+			PrevDisplayEndTime = Net_LibCharacters_DisplayEndTime;
+			UpdateTimer = True;
+		}
+
+		// ---------------------------------- //
+		// Update timer
+		if (UpdateTimer) {
+			UpdateTimer = False;
+
+			Frame_SelectionEndTime.Visible =
+				Net_LibCharacters_DisplayMode == {{{C_LibCharacters_DisplayModeVisible}}} &&
+				Net_LibCharacters_DisplayEndTime > 0;
+		}
+
+		// ---------------------------------- //
+		// Manage the countdown
+		if (Frame_SelectionEndTime.Visible) {
+			Label_SelectionEndTime.Value = TL::TimeToText(Net_LibCharacters_DisplayEndTime - GameTime + 1000);
+		}
+
+		// ---------------------------------- //
+		// Update list on spectator mode change
+		if (PrevIsSpectatorClient != IsSpectatorClient) {
+			PrevIsSpectatorClient = IsSpectatorClient;
+			UpdateCharactersList = True;
+		}
+
+		// ---------------------------------- //
+		// Update list on players amount change
+		if (PrevNbPlayers != Players.count) {
+			PrevNbPlayers = Players.count;
+			UpdateCharactersList = True;
+		}
+
+		// Update on Openplanet requirement change
+		if (PrevOpenplanetRequired != Net_LibCharacters_OpenplanetRequired) {
+			PrevOpenplanetRequired = Net_LibCharacters_OpenplanetRequired;
+			UpdateCharactersList = True;
+		}
+
+		// Disabled characters update
+		if (PrevDisabledCharsUpdate != Net_LibCharacters_DisabledCharsUpdate) {
+			PrevDisabledCharsUpdate = Net_LibCharacters_DisabledCharsUpdate;
+			UpdateCharactersList = True;
+		}
+
+		// Paywall change
+		if (PrevPaywallUnlockTimeout != Net_LibCharacters_PaywallUnlockTimeout) {
+			PrevPaywallUnlockTimeout = Net_LibCharacters_PaywallUnlockTimeout;
+			UpdateCharactersList = True;
+		}
+
+		// ---------------------------------- //
+		// Update the characters list
+		if (UpdateCharactersList) {
+			UpdateCharactersList = False;
 
 			// ---------------------------------- //
-			// Statictic value text
-			declare CurStatType = "count";
-			if (G_LibCharacters_StatsTypes.existskey(StatId)) CurStatType = G_LibCharacters_StatsTypes[StatId];
+			// Update page switch
+			if (Frame_CharButtonsPageSwitch.Visible) {
+				Quad_PageButtonPrevCard.Visible = CharactersPageCurrent > 1;
+				Quad_PageButtonNextCard.Visible = CharactersPageCurrent < CharactersPageTotal;
 
-			switch (CurStatType) {
-				case "percentage"	: Label_CharStatisticValue.Value = TL::FormatReal(Ratio * 100., 3, True, True)^"%";
-				default /* count */	: Label_CharStatisticValue.Value = TL::FormatReal(Ratio, 3, True, True);
+				declare ColorTextPrev = C_ButtonColorDisabled;
+				if (Quad_PageButtonPrevCard.Visible) ColorTextPrev = C_ButtonColorEnabled;
+				Quad_PageButtonPrevIcon.Colorize = ColorTextPrev;
+
+				declare ColorCardPrev = C_ButtonColorDisabled;
+				if (Quad_PageButtonPrevCard.Visible) ColorCardPrev = C_ButtonColorEnabled;
+				Quad_PageButtonPrevBg.BgColor = ColorCardPrev;
+
+				declare ColorTextNext = C_ButtonColorDisabled;
+				if (Quad_PageButtonNextCard.Visible) ColorTextNext = C_ButtonColorEnabled;
+				Quad_PageButtonNextIcon.Colorize = ColorTextNext;
+
+				declare ColorCardNext = C_ButtonColorDisabled;
+				if (Quad_PageButtonNextCard.Visible) ColorCardNext = C_ButtonColorEnabled;
+				Quad_PageButtonNextBg.BgColor = ColorCardNext;
+			}
+
+			// ---------------------------------- //
+			// Update all buttons
+			foreach (I => Frame in Frame_CharacterButtons) {
+				declare Key = I + (CharactersPageCurrent - 1) * (Frame_CharacterButtons.count - 1);
+				Frame.Visible = Key < G_LibCharacters_Characters.count && (I != Frame_CharacterButtons.count - 1 || G_LibCharacters_Characters.count == Frame_CharacterButtons.count);
+				if (!Frame.Visible) continue;
+				declare CharacterId = G_LibCharacters_Characters[Key];
+
+				// ---------------------------------- //
+				// Frame elements
+				declare Label_CharSelectionHotkey <=> (Frame.GetFirstChild("Label_CharSelectionHotkey") as CMlLabel);
+				declare Quad_CharIsSelected <=> (Frame.GetFirstChild("Quad_CharIsSelected") as CMlQuad);
+				declare Quad_CharButtonIcon <=> (Frame.GetFirstChild("Quad_CharButtonIcon") as CMlQuad);
+				declare Quad_CharButtonIcon2 <=> (Frame.GetFirstChild("Quad_CharButtonIcon2") as CMlQuad);
+				declare Quad_CharButtonCard <=> (Frame.GetFirstChild("Quad_CharButtonCard") as CMlQuad);
+				declare Quad_CharButtonBg <=> (Frame.GetFirstChild("Quad_CharButtonBg") as CMlQuad);
+
+				declare Frame_CharNbPlayersUsing <=> (Frame.GetFirstChild("Frame_CharNbPlayersUsing") as CMlFrame);
+				declare Label_CharNbPlayersUsing <=> (Frame.GetFirstChild("Label_CharNbPlayersUsing") as CMlLabel);
+				declare Quad_CharNbPlayersUsing <=> (Frame.GetFirstChild("Quad_CharNbPlayersUsing") as CMlQuad);
+
+				declare Quad_CharButtonLock <=> (Frame.GetFirstChild("Quad_CharButtonLock") as CMlQuad);
+				declare Frame_CharOpenplanetLock <=> (Frame.GetFirstChild("Frame_CharOpenplanetLock") as CMlFrame);
+				declare Frame_CharPlanetsLock <=> (Frame.GetFirstChild("Frame_CharPlanetsLock") as CMlFrame);
+				declare Label_CharPlanetsCost <=> (Frame.GetFirstChild("Label_CharPlanetsCost") as CMlLabel);
+				declare Label_CharTimeRemaining <=> (Frame.GetFirstChild("Label_CharTimeRemaining") as CMlLabel);
+
+				// Unlock cost in Planets
+				declare PlanetsCost = 0;
+				if (G_LibCharacters_CharactersPlanets.existskey(CharacterId)) PlanetsCost = G_LibCharacters_CharactersPlanets[CharacterId];
+				Label_CharPlanetsCost.Value = PlanetsCost^" P";
+
+				// Purchased character
+				declare IsPurchased =
+					Persistent_LibCharacters_PurchasedChars.existskey(G_LibCharacters_CharSheetKey) &&
+					Persistent_LibCharacters_PurchasedChars[G_LibCharacters_CharSheetKey].existskey(CharacterId);
+
+				// Locked character
+				declare IsDisabled = Net_LibCharacters_DisabledCharacters.exists(CharacterId);
+				declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CharacterId);
+				declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0;
+				declare IsLocked = (IsDisabled && !IsPurchased) || (IsOpenplanetNeeded && !OpenplanetEnabled) || (IsPurchaseable && !IsPurchased);
+
+				// Configure the frame
+				Label_CharSelectionHotkey.Value = TL::ToText(Key + 1);
+				Quad_CharIsSelected.Visible = !IsSpectatorClient && CurSelectedCharacter == CharacterId;
+				Frame_CharOpenplanetLock.Visible = IsOpenplanetNeeded && !OpenplanetEnabled;
+				Frame_CharPlanetsLock.Visible = !Frame_CharOpenplanetLock.Visible && IsPurchaseable && !IsPurchased;
+				Quad_CharButtonLock.Visible = !Frame_CharOpenplanetLock.Visible && !Frame_CharPlanetsLock.Visible && IsDisabled && !IsPurchased;
+
+				// ---------------------------------- //
+				// Set the background color
+				declare BgColor = C_ButtonColorEnabled;
+				Quad_CharButtonCard.Visible = !IsDisabled || IsPurchaseable || IsOpenplanetNeeded || IsPurchased;
+				if (IsLocked) BgColor = C_ButtonColorDisabled;
+				Quad_CharButtonBg.BgColor = BgColor;
+
+				declare Opacity = 1.;
+				if (IsLocked) Opacity = .25;
+				Quad_CharButtonIcon.Opacity = Opacity;
+				Quad_CharButtonIcon2.Opacity = Opacity;
+
+				// ---------------------------------- //
+				// Amount of players using the character
+				declare NbPlayersUsing = 0;
+				foreach (Player in Players) {
+					if (Player.RequestsSpectate || Player.User.Login == "*bot*") continue;
+					if (!IsSpectatorClient && InputPlayer.CurrentClan > 0 && Player.CurrentClan != InputPlayer.CurrentClan) continue;
+					declare netread Integer Net_LibCharacters_ServerCharacter for Player;
+					if (Net_LibCharacters_ServerCharacter != CharacterId) continue;
+					NbPlayersUsing += 1;
+				}
+				Frame_CharNbPlayersUsing.Visible = NbPlayersUsing > 0;
+				if (NbPlayersUsing > 0) {
+					Label_CharNbPlayersUsing.Value = TL::ToText(NbPlayersUsing);
+					Quad_CharNbPlayersUsing.Size.X = -Label_CharNbPlayersUsing.RelativePosition_V3.X + ComputeWidth(Label_CharNbPlayersUsing) + .75;
+				}
+
+				// ---------------------------------- //
+				// Set the icon
+				declare IconUrl1 = "";
+				if (G_LibCharacters_CharactersIcons1.existskey(CharacterId)) IconUrl1 = G_LibCharacters_CharactersIcons1[CharacterId];
+				Quad_CharButtonIcon.ImageUrl = IconUrl1;
+
+				declare IconUrl2 = "";
+				if (G_LibCharacters_CharactersIcons2.existskey(CharacterId)) IconUrl2 = G_LibCharacters_CharactersIcons2[CharacterId];
+				Quad_CharButtonIcon2.ImageUrl = IconUrl2;
+
+				// Remaining time
+				Label_CharTimeRemaining.Visible = IsPurchased;
+				if (Label_CharTimeRemaining.Visible) {
+					declare ExpirationTimestamp = Persistent_LibCharacters_PurchasedChars[G_LibCharacters_CharSheetKey][CharacterId];
+					declare TimeRemaining = (ExpirationTimestamp - CurrentTimestamp) * 1000;
+					Label_CharTimeRemaining.Value = TL::TimeToText(TimeRemaining);
+				}
 			}
 		}
 
-		Quad_CharStatisticsBox.Size.Y = NextStatisticPos + .5;
-		ColHeightRight += Quad_CharStatisticsBox.Size.Y + 1.;
-	}
-
-	// ---------------------------------- //
-	// Character weapons
-	declare Integer[Integer] CurCharacterWeapons;
-	if (G_LibCharacters_CharWeapons.existskey(CharId)) CurCharacterWeapons = G_LibCharacters_CharWeapons[CharId];
-	Frame_CharWeaponsBox.Visible = CurCharacterWeapons.count > 0;
-
-	if (Frame_CharWeaponsBox.Visible) {
-		Frame_CharWeaponsBox.RelativePosition_V3.Y = -ColHeightRight;
-
-		declare Integer[] WeaponsIds;
-		foreach (WeaponId => Ammo in CurCharacterWeapons) WeaponsIds.add(WeaponId);
-		declare InitialPositionX = ((WeaponsIds.count - 1) * 12.) / -2;
-
 		// ---------------------------------- //
-		// Configure weapons frames
-		foreach (I => Frame in Frame_CurCharWeapons) {
-			Frame.Visible = WeaponsIds.existskey(I);
-			if (!Frame.Visible) continue;
-			declare WeaponId = WeaponsIds[I];
-			Frame.RelativePosition_V3.X = InitialPositionX + I * 12.;
-
-			declare Quad_CharWeaponIcon <=> (Frame.GetFirstChild("Quad_CharWeaponIcon") as CMlQuad);
-			declare Label_CharWeaponName <=> (Frame.GetFirstChild("Label_CharWeaponName") as CMlLabel);
-			declare Label_CharWeaponAmmo <=> (Frame.GetFirstChild("Label_CharWeaponAmmo") as CMlLabel);
-
-			// ---------------------------------- //
-			// Set weapon icon
-			declare CurWeaponIcon = "";
-			if (G_LibCharacters_WeaponsIcons.existskey(WeaponId)) CurWeaponIcon = G_LibCharacters_WeaponsIcons[WeaponId];
-			Quad_CharWeaponIcon.ImageUrl = CurWeaponIcon;
-
-			// ---------------------------------- //
-			// Set weapon name
-			declare CurWeaponName = "";
-			if (G_LibCharacters_WeaponsNames.existskey(WeaponId)) CurWeaponName = G_LibCharacters_WeaponsNames[WeaponId];
-			Label_CharWeaponName.Value = Translate(CurWeaponName);
-
-			// ---------------------------------- //
-			// Set weapon ammo
-			declare CurWeaponAmmo = 0;
-			if (CurCharacterWeapons.existskey(WeaponId)) CurWeaponAmmo = CurCharacterWeapons[WeaponId];
-			Label_CharWeaponAmmo.Value = TL::ToText(CurWeaponAmmo);
-
-			declare Color = C_ButtonColorDisabled;
-			if (CurWeaponAmmo > 0) Color = C_ButtonColorEnabled;
-			Quad_CharWeaponIcon.ModulateColor = Color;
-			Label_CharWeaponAmmo.TextColor = Color;
-			Label_CharWeaponName.TextColor = Color;
+		// Update preview on selected character change
+		if (PrevSelectedCharacter != CurSelectedCharacter) {
+			PrevSelectedCharacter = CurSelectedCharacter;
+			UpdateCharacterPreview = True;
 		}
 
-		ColHeightRight += 18.;
-	}
+		// ---------------------------------- //
+		// Update preview on hovered character change
+		if (PrevHoveredCharacter != CurHoveredCharacter) {
+			PrevHoveredCharacter = CurHoveredCharacter;
+			UpdateCharacterPreview = True;
+		}
 
-	// ---------------------------------- //
-	// Update the character color
-	declare CurCharacterColor = InterfaceColor;
-	if (G_LibCharacters_CharactersColor.existskey(CharId)) CurCharacterColor = G_LibCharacters_CharactersColor[CharId];
-	SetInterfaceColor(CurCharacterColor);
+		// ---------------------------------- //
+		// Update preview on Armor base change
+		if (PrevCharacterBaseArmor != Net_LibCharacters_CharacterBaseArmor) {
+			PrevCharacterBaseArmor = Net_LibCharacters_CharacterBaseArmor;
+			UpdateCharacterPreview = True;
+
+			// Maximum Armor
+			foreach (CharId => CharStats in G_LibCharacters_CharStats) foreach (StatId => StatValue in CharStats) {
+				if (StatId != 0) continue;
+				if (!G_LibCharacters_StatsMax.existskey(StatId) || StatValue > G_LibCharacters_StatsMax[StatId])
+					G_LibCharacters_StatsMax[StatId] = StatValue;
+			}
+		}
+
+		// ---------------------------------- //
+		// Update current character preview
+		if (UpdateCharacterPreview) {
+			UpdateCharacterPreview = False;
+
+			declare CharId = CurSelectedCharacter;
+			if (CurHoveredCharacter >= 0) CharId = CurHoveredCharacter;
+
+			declare ColHeightMiddle = 0.;
+			declare ColHeightRight = 0.;
+
+			// Character name
+			declare CurCharacterName = "Unknown character";
+			if (G_LibCharacters_CharactersNames.existskey(CharId)) CurCharacterName = G_LibCharacters_CharactersNames[CharId];
+			Label_CurCharacterName.Value = Translate(CurCharacterName);
+
+			// ---------------------------------- //
+			// Character image
+			declare CurCharacterImage = "";
+			if (G_LibCharacters_CharactersImage1.existskey(CharId)) CurCharacterImage = G_LibCharacters_CharactersImage1[CharId];
+			Quad_CurCharacterImage.ImageUrl = CurCharacterImage;
+
+			declare CurCharacterImage2 = "";
+			if (G_LibCharacters_CharactersImage2.existskey(CharId)) CurCharacterImage2 = G_LibCharacters_CharactersImage2[CharId];
+			Quad_CurCharacterImage2.ImageUrl = CurCharacterImage2;
+
+			// ---------------------------------- //
+			// Character description
+			declare CurCharacterDesc = "";
+			if (G_LibCharacters_CharactersDesc.existskey(CharId)) CurCharacterDesc = G_LibCharacters_CharactersDesc[CharId];
+			Frame_CurCharacterDesc.Visible = CurCharacterDesc != "";
+
+			if (Frame_CurCharacterDesc.Visible) {
+				Label_CurCharacterDesc.Value = Translate(CurCharacterDesc);
+				Quad_CurCharacterDesc.Size.Y = -Label_CurCharacterDesc.RelativePosition_V3.Y + Label_CurCharacterDesc.ComputeHeight(Label_CurCharacterDesc.Value) + 1.5;
+				ColHeightMiddle += Quad_CurCharacterDesc.Size.Y + 1.;
+			}
+
+			// ---------------------------------- //
+			// Character special ability
+			Frame_SpecialAbilityBox.Visible = G_LibCharacters_AbilityName.existskey(CharId);
+			if (Frame_SpecialAbilityBox.Visible) {
+				Frame_SpecialAbilityBox.RelativePosition_V3.Y = -ColHeightMiddle;
+				Label_SpecialAbilityName.Value = Translate(G_LibCharacters_AbilityName[CharId]);
+
+				// Ability icon
+				declare AbilityIcon = "";
+				if (G_LibCharacters_AbilityIcon.existskey(CharId)) AbilityIcon = G_LibCharacters_AbilityIcon[CharId];
+				Quad_SpecialAbilityIcon.ImageUrl = AbilityIcon;
+
+				// Ability description
+				declare AbilityDesc = "";
+				if (G_LibCharacters_AbilityDesc.existskey(CharId)) AbilityDesc = G_LibCharacters_AbilityDesc[CharId];
+				Label_SpecialAbilityDesc.Value = Translate(AbilityDesc);
+
+				Quad_SpecialAbilityBox.Size.Y = -Label_SpecialAbilityDesc.RelativePosition_V3.Y + Label_SpecialAbilityDesc.ComputeHeight(Label_SpecialAbilityDesc.Value) + 1.5;
+				ColHeightMiddle += Quad_SpecialAbilityBox.Size.Y + 1.;
+			}
+
+			// ---------------------------------- //
+			// Character pros and cons
+			declare Text[] CurCharPros;
+			declare Text[] CurCharCons;
+			declare Text[] CurCharProsAndCons;
+			if (G_LibCharacters_CharactersPros.existskey(CharId)) CurCharPros = G_LibCharacters_CharactersPros[CharId];
+			if (G_LibCharacters_CharactersCons.existskey(CharId)) CurCharCons = G_LibCharacters_CharactersCons[CharId];
+			foreach (Pro in CurCharPros) CurCharProsAndCons.add(Pro);
+			foreach (Con in CurCharCons) CurCharProsAndCons.add(Con);
+			Frame_ProsAndConsBox.Visible = CurCharProsAndCons.count > 0;
+
+			if (Frame_ProsAndConsBox.Visible) {
+				Frame_ProsAndConsBox.RelativePosition_V3.Y = -ColHeightMiddle;
+				declare NextAttributePos = 6.5;
+
+				// ---------------------------------- //
+				// Configure pros and cons frames
+				foreach (I => Frame in Frame_CurCharAttributes) {
+					Frame.Visible = CurCharProsAndCons.existskey(I);
+					if (!Frame.Visible) continue;
+
+					declare AttributeText = CurCharProsAndCons[I];
+					Frame.RelativePosition_V3.Y = -NextAttributePos;
+
+					declare Quad_AttributePro <=> (Frame.GetFirstChild("Quad_AttributePro") as CMlQuad);
+					declare Quad_AttributeCon <=> (Frame.GetFirstChild("Quad_AttributeCon") as CMlQuad);
+					declare Label_CurCharacterDesc <=> (Frame.GetFirstChild("Label_CurCharacterDesc") as CMlLabel);
+
+					Label_CurCharacterDesc.Value = Translate(AttributeText);
+					Quad_AttributePro.Visible = CurCharPros.exists(AttributeText);
+					Quad_AttributeCon.Visible = CurCharCons.exists(AttributeText);
+
+					NextAttributePos += Label_CurCharacterDesc.ComputeHeight(Label_CurCharacterDesc.Value) + 1.;
+				}
+
+				Quad_ProsAndConsBox.Size.Y = NextAttributePos + .5;
+				ColHeightMiddle += Quad_ProsAndConsBox.Size.Y + 1.;
+			}
+
+			// ---------------------------------- //
+			// Character statistics
+			declare Real[Integer] CurCharacterStats;
+			if (G_LibCharacters_CharStats.existskey(CharId)) CurCharacterStats = G_LibCharacters_CharStats[CharId];
+			Frame_CharStatisticsBox.Visible = CurCharacterStats.count > 0;
+
+			if (Frame_CharStatisticsBox.Visible) {
+				declare NextStatisticPos = 6.;
+
+				declare Integer[] StatsIds;
+				foreach (StatId => StatValue in CurCharacterStats) StatsIds.add(StatId);
+
+				// ---------------------------------- //
+				// Configure statictics frames
+				foreach (I => Frame in Frame_CurCharStatistics) {
+					Frame.Visible = StatsIds.existskey(I);
+					if (!Frame.Visible) continue;
+					declare StatId = StatsIds[I];
+
+					Frame.RelativePosition_V3.Y = -NextStatisticPos;
+					NextStatisticPos += 6.;
+
+					declare Label_CharStatisticName <=> (Frame.GetFirstChild("Label_CharStatisticName") as CMlLabel);
+					declare Label_CharStatisticValue <=> (Frame.GetFirstChild("Label_CharStatisticValue") as CMlLabel);
+					declare Gauge_CharStatisticValue <=> (Frame.GetFirstChild("Gauge_CharStatisticValue") as CMlGauge);
+
+					// ---------------------------------- //
+					// Statictic name
+					declare CurStatName = "Unknown attibute";
+					if (G_LibCharacters_StatsNames.existskey(StatId)) CurStatName = G_LibCharacters_StatsNames[StatId];
+					Label_CharStatisticName.Value = Translate(CurStatName);
+
+					// ---------------------------------- //
+					// Statictic value gauge
+					declare Ratio = CurCharacterStats[StatId];
+					declare RatioMax = G_LibCharacters_StatsMax[StatId];
+
+					// Special Armor treatment
+					if (StatId == 0) {
+						Ratio = ML::Clamp(Ratio + Net_LibCharacters_CharacterBaseArmor, 1., 10.);
+						RatioMax = ML::Clamp(RatioMax + Net_LibCharacters_CharacterBaseArmor, 1., 10.);
+					}
+
+					// Set gauge ratio
+					declare GaugeRatio = 1.;
+					if (RatioMax != 0) GaugeRatio = Ratio / RatioMax;
+					SetGaugeRatio(Gauge_CharStatisticValue, GaugeRatio);
+
+					// ---------------------------------- //
+					// Statictic value text
+					declare CurStatType = "count";
+					if (G_LibCharacters_StatsTypes.existskey(StatId)) CurStatType = G_LibCharacters_StatsTypes[StatId];
+
+					switch (CurStatType) {
+						case "percentage"	: Label_CharStatisticValue.Value = TL::FormatReal(Ratio * 100., 3, True, True)^"%";
+						default /* count */	: Label_CharStatisticValue.Value = TL::FormatReal(Ratio, 3, True, True);
+					}
+				}
+
+				Quad_CharStatisticsBox.Size.Y = NextStatisticPos + .5;
+				ColHeightRight += Quad_CharStatisticsBox.Size.Y + 1.;
+			}
+
+			// ---------------------------------- //
+			// Character weapons
+			declare Integer[Integer] CurCharacterWeapons;
+			if (G_LibCharacters_CharWeapons.existskey(CharId)) CurCharacterWeapons = G_LibCharacters_CharWeapons[CharId];
+			Frame_CharWeaponsBox.Visible = CurCharacterWeapons.count > 0;
+
+			if (Frame_CharWeaponsBox.Visible) {
+				Frame_CharWeaponsBox.RelativePosition_V3.Y = -ColHeightRight;
+
+				declare Integer[] WeaponsIds;
+				foreach (WeaponId => Ammo in CurCharacterWeapons) WeaponsIds.add(WeaponId);
+				declare InitialPositionX = ((WeaponsIds.count - 1) * 12.) / -2;
+
+				// ---------------------------------- //
+				// Configure weapons frames
+				foreach (I => Frame in Frame_CurCharWeapons) {
+					Frame.Visible = WeaponsIds.existskey(I);
+					if (!Frame.Visible) continue;
+					declare WeaponId = WeaponsIds[I];
+					Frame.RelativePosition_V3.X = InitialPositionX + I * 12.;
+
+					declare Quad_CharWeaponIcon <=> (Frame.GetFirstChild("Quad_CharWeaponIcon") as CMlQuad);
+					declare Label_CharWeaponName <=> (Frame.GetFirstChild("Label_CharWeaponName") as CMlLabel);
+					declare Label_CharWeaponAmmo <=> (Frame.GetFirstChild("Label_CharWeaponAmmo") as CMlLabel);
+
+					// ---------------------------------- //
+					// Set weapon icon
+					declare CurWeaponIcon = "";
+					if (G_LibCharacters_WeaponsIcons.existskey(WeaponId)) CurWeaponIcon = G_LibCharacters_WeaponsIcons[WeaponId];
+					Quad_CharWeaponIcon.ImageUrl = CurWeaponIcon;
+
+					// ---------------------------------- //
+					// Set weapon name
+					declare CurWeaponName = "";
+					if (G_LibCharacters_WeaponsNames.existskey(WeaponId)) CurWeaponName = G_LibCharacters_WeaponsNames[WeaponId];
+					Label_CharWeaponName.Value = Translate(CurWeaponName);
+
+					// ---------------------------------- //
+					// Set weapon ammo
+					declare CurWeaponAmmo = 0;
+					if (CurCharacterWeapons.existskey(WeaponId)) CurWeaponAmmo = CurCharacterWeapons[WeaponId];
+					Label_CharWeaponAmmo.Value = TL::ToText(CurWeaponAmmo);
+
+					declare Color = C_ButtonColorDisabled;
+					if (CurWeaponAmmo > 0) Color = C_ButtonColorEnabled;
+					Quad_CharWeaponIcon.ModulateColor = Color;
+					Label_CharWeaponAmmo.TextColor = Color;
+					Label_CharWeaponName.TextColor = Color;
+				}
+
+				ColHeightRight += 18.;
+			}
+
+			// ---------------------------------- //
+			// Update the character color
+			declare CurCharacterColor = InterfaceColor;
+			if (G_LibCharacters_CharactersColor.existskey(CharId)) CurCharacterColor = G_LibCharacters_CharactersColor[CharId];
+			SetInterfaceColor(CurCharacterColor);
+		}
+	}
 }
 ***
 
@@ -1305,6 +1665,7 @@ Void Private_ResetCharactersData() {
 	// Reset characters data
 	G_LibCharacters_CharSheetKey = "";
 	G_LibCharacters_Characters.clear();
+	G_LibCharacters_OpenplanetChars.clear();
 	G_LibCharacters_CharactersNames.clear();
 	G_LibCharacters_CharactersIcons1.clear();
 	G_LibCharacters_CharactersIcons2.clear();
@@ -1382,13 +1743,22 @@ Void Private_LoadFromXMLDocument(CXmlDocument _Document) {
 				case "image2"		: G_LibCharacters_CharactersImage2	[CharacterId] = Attribute.TextContents;
 				case "description"	: G_LibCharacters_CharactersDesc	[CharacterId] = Attribute.TextContents;
 				case "color"		: G_LibCharacters_CharactersColor	[CharacterId] = TL::ToColor(Attribute.TextContents);
+				case "planets"		: G_LibCharacters_CharactersPlanets	[CharacterId] = TL::ToInteger(Attribute.TextContents);
+				case "unlocklink"	: G_LibCharacters_CharactersULink	[CharacterId] = Attribute.TextContents;
+				case "openplanet"	: {
+					if (C_LibCharacters_Booleans.exists(TL::ToLowerCase(Attribute.TextContents))) {
+						G_LibCharacters_OpenplanetChars.add(CharacterId);
+					}
+				}
 
 				// ---------------------------------- //
 				// Character's special ability
-				case "ability" : foreach (AbilityAttrib in Attribute.Children) switch (AbilityAttrib.Name) {
-					case "name"			: G_LibCharacters_AbilityName[CharacterId] = AbilityAttrib.TextContents;
-					case "icon"			: G_LibCharacters_AbilityIcon[CharacterId] = AbilityAttrib.TextContents;
-					case "description"	: G_LibCharacters_AbilityDesc[CharacterId] = AbilityAttrib.TextContents;
+				case "ability" : {
+					foreach (AbilityAttrib in Attribute.Children) switch (AbilityAttrib.Name) {
+						case "name"			: G_LibCharacters_AbilityName[CharacterId] = AbilityAttrib.TextContents;
+						case "icon"			: G_LibCharacters_AbilityIcon[CharacterId] = AbilityAttrib.TextContents;
+						case "description"	: G_LibCharacters_AbilityDesc[CharacterId] = AbilityAttrib.TextContents;
+					}
 				}
 				// ---------------------------------- //
 				// Gather character stats
@@ -1545,7 +1915,49 @@ Boolean IsCharAvailable(Integer _CharId) {
 	if (!CharExists(_CharId)) return False;
 
 	declare netwrite Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
-	return !Net_LibCharacters_DisabledCharacters.exists(_CharId);
+	if (Net_LibCharacters_DisabledCharacters.exists(_CharId)) return False;
+
+	if (G_LibCharacters_CharactersPlanets.existskey(_CharId) && G_LibCharacters_CharactersPlanets[_CharId] > 0) {
+		declare netwrite Integer Net_LibCharacters_PaywallUnlockTimeout for Teams[0];
+		return Net_LibCharacters_PaywallUnlockTimeout <= 0;
+	}
+
+	return True;
+}
+
+// ---------------------------------- //
+/** Check if a character is available to a player.
+ *
+ *	@param	_Player		The player to check.
+ *	@param	_CharId		Id of the character to check if is available.
+ *
+ *	@return		True, if the given character is available.
+ */
+Boolean CanAccessCharacter(CPlayer _Player, Integer _CharId) {
+	if (!CharExists(_CharId)) return False;
+	if (IsCharAvailable(_CharId)) return True;
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return False;
+
+	declare netread Integer[] Net_LibCharacters_PurchasedChars for UI;
+	return Net_LibCharacters_PurchasedChars.exists(_CharId);
+}
+
+// ---------------------------------- //
+/** Check if a player has Openplanet.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if player has Openplanet.
+ */
+Boolean HasOpenplanet(CPlayer _Player) {
+	if (_Player == Null) return False;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return False;
+
+	declare netread Boolean Net_LibCharacters_HasOpenplanet for UI;
+	return Net_LibCharacters_HasOpenplanet;
 }
 
 // ---------------------------------- //
@@ -1564,7 +1976,7 @@ Integer GetPlayerChar(CPlayer _Player) {
 	declare netread Integer Net_LibCharacters_PlayerCharacter for UI;
 	declare PlayerCharacter = ML::Max(Net_LibCharacters_PlayerCharacter, 0);
 
-	if (!IsCharAvailable(PlayerCharacter)) return 0;
+	if (!CanAccessCharacter(_Player, PlayerCharacter)) return 0;
 	return PlayerCharacter;
 }
 
@@ -1726,6 +2138,36 @@ Void SetDisplayEndTime(Integer _EndTime) {
 }
 
 // ---------------------------------- //
+/** Set the Openplanet requirement.
+ *
+ *	@param	_OpenplanetRequired		If True, game will ask player to download Openplanet.
+ */
+Void SetOpenplanetRequired(Boolean _OpenplanetRequired) {
+	declare netwrite Boolean Net_LibCharacters_OpenplanetRequired for Teams[0];
+	Net_LibCharacters_OpenplanetRequired = _OpenplanetRequired;
+}
+
+// ---------------------------------- //
+/** Check the Openplanet requirement.
+ *
+ *	@return		True, if Openplanet is required.
+ */
+Boolean IsOpenplanetRequired() {
+	declare netwrite Boolean Net_LibCharacters_OpenplanetRequired for Teams[0];
+	return Net_LibCharacters_OpenplanetRequired;
+}
+
+// ---------------------------------- //
+/** Set the purchase timeout.
+ *
+ *	@param	_PurchaseTimeout	Duration for which character is available after purchase.
+ */
+Void SetPurchaseTimeout(Integer _PurchaseTimeout) {
+	declare netwrite Integer Net_LibCharacters_PaywallUnlockTimeout for Teams[0];
+	Net_LibCharacters_PaywallUnlockTimeout = _PurchaseTimeout;
+}
+
+// ---------------------------------- //
 /// Unload the library.
 Void Unload() {
 	Private_ResetCharactersData();
@@ -1755,6 +2197,9 @@ Void Unload() {
 Void Load() {
 	Unload();
 	Hide();
+
+	SetOpenplanetRequired(C_LibCharacters_RequireOpenplanet);
+	SetPurchaseTimeout(C_LibCharacters_PurchaseTimeout);
 
 	foreach (Player in AllPlayers) {
 		declare PlayerCharacter = GetPlayerChar(Player);

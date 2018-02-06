@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY INTERFANCY by domino54        //
-//  script version: 2017-09-07            //
+//  script version: 2017-12-17            //
 // -------------------------------------- //
 
 /**
@@ -16,7 +16,7 @@
  *	- Crosshair		Replaces crosshair, features also first bullet reload gauge and notices
  */
 
-#Const Version		"2017-09-07"
+#Const Version		"2017-12-17"
 #Const ScriptName	"Libs/domino54/ShootMania/Interfancy.Script.txt"
 
 #Include "MathLib" as ML
@@ -348,16 +348,17 @@ declare netread Text[Text] Net_LibInterfancy_CustomGaugesIcons for Teams[0];
 // ---------------------------------- //
 // Variables
 declare Gauges_Display = True;
-declare InterfaceColor = 0.;
 declare StaminaDisplayEndTime = -1;
 declare ShowReloadBoost = False;
+declare UpdateGaugesColor = True;
 
 // Update
 declare PrevSettingsUpdate = -1;
 declare PrevGauges_Display = False;
 declare PrevGUIPlayerLogin = "";
 declare PrevGUIPlayerCurWeapon = 0;
-declare PrevInterfaceColor = -1.;
+declare PrevPlayerColorHue = -1.;
+declare PrevForcedColor = Vec3;
 declare PrevShowReloadBoost = False;
 declare PrevUseLegacyGauges = False;
 
@@ -472,13 +473,31 @@ GaugesModulesVisibility = UI.OverlayHideGauges && Gauges_Display && GUIPlayer !=
 
 // ---------------------------------- //
 // Get the interface color from the player
-if (GUIPlayer != Null && InterfaceColor != GUIPlayer.GetLinearHue) InterfaceColor = GUIPlayer.GetLinearHue;
+if (GUIPlayer != Null) {
+	if (PrevPlayerColorHue != GUIPlayer.GetLinearHue) {
+		PrevPlayerColorHue = GUIPlayer.GetLinearHue;
+		UpdateGaugesColor = True;
+	}
+
+	declare netread Vec3 Net_LibInterfancy_PlayerColor for GUIPlayer;
+	if (PrevForcedColor != Net_LibInterfancy_PlayerColor) {
+		PrevForcedColor = Net_LibInterfancy_PlayerColor;
+		UpdateGaugesColor = True;
+	}
+}
 
 // ---------------------------------- //
 // Set interface color
-if (PrevInterfaceColor != InterfaceColor) {
-	PrevInterfaceColor = InterfaceColor;
-	declare NewUIColor = HsvToRgb(<ML::Clamp(InterfaceColor, 0., 1.), 1., 1.>);
+if (UpdateGaugesColor) {
+	UpdateGaugesColor = False;
+
+	declare NewUIColor = HsvToRgb(<ML::Clamp(PrevPlayerColorHue, 0., 1.), 1., 1.>);
+
+	// Custom color
+	if (GUIPlayer != Null) {
+		declare netread Vec3 Net_LibInterfancy_PlayerColor for GUIPlayer;
+		if (Net_LibInterfancy_PlayerColor != <0., 0., 0.>) NewUIColor = Net_LibInterfancy_PlayerColor;
+	}
 
 	foreach (Module in C_AvailableModules) {
 		foreach (Gauge in G_Gauges[Module]) Gauge.Color = NewUIColor;
@@ -1978,7 +1997,11 @@ Label_CrosshairNote2.Visible = !IsInGameMenuDisplayed && Label_CrosshairNote2.Op
 
 {{{Translations::InjectInManialink([
 	"Laser", "Nucleus", "Arrow", "Rocket", "Replie", "Skills", "%1 miss",
-	"$<%1$> healed you!", "Healed %1 players", "Healed 1 player", "$<%1$> boosted you!", "Boosted %1 players", "Boosted 1 player"
+	"$<%1$> healed you!", "Healed $<%1$>", "Healed %1 players", "Healed %1 entities",
+	"Healed your turret", "Healed turret of $<%1$>", "Healed %1 turrets", "$<%1$> healed your turret!",
+	"Healed your Toad", "Healed Toad of $<%1$>", "Healed %1 Toads", "$<%1$> healed your Toad!",
+	"$<%1$> boosted you!", "Boosted $<%1$>", "Boosted %1 players", "Boosted %1 entities",
+	"Boosted your Toad", "Boosted Toad of $<%1$>", "Boosted %1 Toads", "$<%1$> boosted your Toad!"
 ])}}}
 {{{Bindings::Functions()}}}
 
@@ -2171,25 +2194,16 @@ Void SetPlayerReloadData(CSmPlayer _Player, Integer _StartTime, Integer _Duratio
 }
 
 // ---------------------------------- //
-/** Change player's interface and character color.
- *
- *	@deprecated		No longer need to use this function to set a player's color.
+/** Change player's interface color.
  *
  *	@param	_Player		The player to set color.
  *	@param	_Color		Color to apply to the player.
  */
-Void ForceColor(CSmPlayer _Player, Vec3 _Color) {
+Void SetColor(CSmPlayer _Player, Vec3 _Color) {
 	if (_Player == Null) return;
 	
-	// Set player forced color
-	if (_Color != <-1., -1., -1.>) {
-		declare Color = _Color;
-		for (I, 0, 2) Color[I] = ML::Clamp(Color[I], 0., 1.);
-		_Player.ForceColor = Color;
-	}
-	
-	// Reset forced color
-	else _Player.ForceColor = <-1., -1., -1.>;
+	declare netwrite Vec3 Net_LibInterfancy_PlayerColor for _Player;
+	Net_LibInterfancy_PlayerColor = _Color;
 }
 
 // ---------------------------------- //
@@ -2198,7 +2212,7 @@ Void ForceColor(CSmPlayer _Player, Vec3 _Color) {
  *	@param	_Player		The player to reset custom forced color.
  */
 Void ResetColor(CSmPlayer _Player) {
-	ForceColor(_Player, <-1., -1., -1.>);
+	SetColor(_Player, Vec3);
 }
 
 // ---------------------------------- //

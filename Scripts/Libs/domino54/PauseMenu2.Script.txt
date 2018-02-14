@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PAUSE MENU 2 by domino54      //
-//  script version: 2017-12-15            //
+//  script version: 2018-02-15            //
 // -------------------------------------- //
 
 /**
@@ -15,7 +15,7 @@
  *	using multiple custom teams.
  */
 
-#Const Version		"2017-12-15"
+#Const Version		"2018-02-15"
 #Const ScriptName	"Libs/domino54/PauseMenu2.Script.txt"
 
 #Include "TextLib" as TL
@@ -115,7 +115,7 @@ Text Private_CreateManialinkPauseMenu(Text _FontMedium) {
 	for (I, 0, 9) ServerManagerButtons ^= "<frameinstance modelid='FrameModel_ServerMgrButton' id='Frame_ServerMgrButton#"^I^"' pos='0 "^I*-9^"' hidden='0' />";
 
 	// List required translations
-	declare Text[] RequiredTranslations;
+	declare RequiredTranslations = ["Return to lobby"];
 	foreach (ButtonId => Label in G_LibPauseMenu_ButtonsLabels) RequiredTranslations.add(Label);
 	
 	// ---------------------------------- //
@@ -567,6 +567,7 @@ declare persistent Boolean Persistent_LibPauseMenu_HideMapInfo for LocalUser;
 // ---------------------------------- //
 // Netcode
 declare netread Boolean Net_LibPauseMenu_DisableQuitButton for Teams[0];
+declare netread Text Net_LibPauseMenu_LobbyJoinLink for Teams[0];
 declare netread Text[] Net_LibPauseMenu_DisabledButtons for Teams[0];
 declare netread Integer Net_LibPauseMenu_LastButtonsUpdate for Teams[0];
 declare netread Boolean Net_LibPauseMenu_HideMapInfo for Teams[0];
@@ -619,6 +620,7 @@ declare CurBindingKeyDefault = "";
 declare PrevPageIsVisible = False;
 declare PrevActiveContext = -1;
 declare PrevQuitDisabled = False;
+declare PrevLobbyJoinLink = "";
 declare PrevButtonsUpdate = -1;
 declare PrevIsSpectatorClient = False;
 declare PrevObserverMode = UI.SpectatorObserverMode;
@@ -739,12 +741,19 @@ foreach (Event in PendingEvents) {
 		if (Event.ControlId == "Quad_ResumeButtonCard")
 			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Resume);
 
-		// ---------------------------------- //
-		// Quit server
 		else if (Event.ControlId == "Quad_QuitButtonCard") {
-			// PauseActiveContext = C_LibPauseMenu_ContextConfirmQuit;
-			CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Quit);
-			// ActionToTrigger = "maniaplanet:quitserver";
+			// ---------------------------------- //
+			// Return the player back to the lobby
+			if (Net_LibPauseMenu_LobbyJoinLink != "") {
+				OpenLink(Net_LibPauseMenu_LobbyJoinLink, CMlScript::LinkType::ManialinkBrowser);
+			}
+			// ---------------------------------- //
+			// Quit server
+			else {
+				// PauseActiveContext = C_LibPauseMenu_ContextConfirmQuit;
+				CloseInGameMenu(CMlScriptIngame::EInGameMenuResult::Quit);
+				// ActionToTrigger = "maniaplanet:quitserver";
+			}
 		}
 		// ---------------------------------- //
 		// Change current team
@@ -1338,6 +1347,18 @@ switch (PauseActiveContext) {
 		}
 
 		// ---------------------------------- //
+		// Matchmaking lobby join link
+		if (PrevLobbyJoinLink != Net_LibPauseMenu_LobbyJoinLink) {
+			PrevLobbyJoinLink = Net_LibPauseMenu_LobbyJoinLink;
+
+			if (PrevLobbyJoinLink != "") {
+				Label_QuitButtonText.Value = Translate("Return to lobby");
+			} else {
+				Label_QuitButtonText.Value = Translate("Quit");
+			}
+		}
+
+		// ---------------------------------- //
 		// Available buttons update
 		if (PrevButtonsUpdate != Net_LibPauseMenu_LastButtonsUpdate) {
 			PrevButtonsUpdate = Net_LibPauseMenu_LastButtonsUpdate;
@@ -1755,6 +1776,16 @@ Text GetScriptName() { return ScriptName; }
 Void SetQuitButtonAvailable(Boolean _ButtonAvailable) {
 	declare netwrite Boolean Net_LibPauseMenu_DisableQuitButton for Teams[0];
 	Net_LibPauseMenu_DisableQuitButton = !_ButtonAvailable;
+}
+
+// ---------------------------------- //
+/** Set the join link to the matchmaking lobby.
+ *
+ *	@param	_JoinLink	Join link to the matchmaking lobby.
+ */
+Void SetLobbyJoinLink(Text _JoinLink) {
+	declare netwrite Text Net_LibPauseMenu_LobbyJoinLink for Teams[0];
+	Net_LibPauseMenu_LobbyJoinLink = _JoinLink;
 }
 
 // ---------------------------------- //

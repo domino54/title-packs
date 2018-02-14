@@ -1,12 +1,12 @@
 // -------------------------------------- //
-//  HUNGER GAMES 3.2.0 by domino54        //
-//  script version: 2017-09-07            //
+//  HUNGER GAMES 3.3.0 by domino54        //
+//  script version: 2018-02-15            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2017-09-07"
+#Const Version		"2018-02-15"
 #Const ScriptName	"Modes/ShootMania/HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
@@ -23,8 +23,7 @@
 #Setting S_ArmorRespawnTime			180		as _("Armor and Replie respawn duration (0 = don't respawn)")
 #Setting S_ToadsFirstSpawnDelay		30		as _("Delay before Toads are spawned")
 #Setting S_AllowPlayersRespawn		True	as _("Allow players to respawn on Checkpoints")
-#Setting S_MatchmakingFormat		6		as _("Number of players in matchmaking mode")
-#Setting S_MatchmakingEnablePenalty False	///< Disable penalties for leaving the game
+#Setting S_MatchmakingFormat		8		as _("Number of players in matchmaking mode")
 
 /// Overwrite existing settings
 #Setting S_AutoManageAFK		False
@@ -129,7 +128,7 @@ ST2::DestroyCol("LibST_SMRoundPoints");
 // ---------------------------------- //
 ***Match_Rules***
 ***
-ModeInfo::SetName("Galaxy Royale");
+ModeInfo::SetName("Hunger Games");
 ModeInfo::SetType(ModeInfo::C_Type_FreeForAll);
 ModeInfo::SetRules("1. You have only one life per map.\n2. At the very beginning of the map, you must activate your skills by touching the Goal.\n3. To get more weapons and develop your character abilities, search and pick up items on the map.\n4. If you are eliminated, you will spectate the rest of the map.\n5. The last player alive wins the game.");
 ModeInfo::SetStatusMessage(Description);
@@ -155,6 +154,8 @@ GT_CharactersDataFileURL = "";
 // ---------------------------------- //
 ***Match_InitServer***
 ***
+MM_EnableMatchReconnect(False);
+
 // Load objects
 G_ObjectId["Weapon"]	= ItemList_Add("HungerGames\\Weapon.Item.Gbx");
 G_ObjectId["Charge"]	= ItemList_Add("HungerGames\\Charge.Item.Gbx");
@@ -163,7 +164,6 @@ G_ObjectId["Mini"]		= ItemList_Add("HungerGames\\Mini.Item.Gbx");
 // Create custom interfaces
 UIManager.UIAll.SpectatorForceCameraType = 1; ///< Disables the free-cam ("Cam 7")
 Layers::Create("HungerGames:Interface", CreateManialinkInterface());
-Layers::Attach("HungerGames:Interface");
 Layers::Create("HungerGames:Statistics", CreateManialinkStatistics());
 Layers::SetType("HungerGames:Statistics", CUILayer::EUILayerType::ScoresTable);
 
@@ -171,6 +171,7 @@ Layers::SetType("HungerGames:Statistics", CUILayer::EUILayerType::ScoresTable);
 declare PrevTimeLimit = S_OffZoneActivationTime;
 declare PrevPlayersNbAlive = PlayersNbAlive;
 declare SpawnedToads = False;
+declare OffZoneRadiusMax = 0.;
 ***
 
 // ---------------------------------- //
@@ -317,12 +318,18 @@ if (S_RandomizeObjectsSpawns) foreach (Type => ObjectAmount in NbObjectsToSpawn)
 // ---------------------------------- //
 // Round start
 // ---------------------------------- //
-***Match_InitRound***
+***Match_StartRound***
 ***
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
 Interfancy::SetModuleVisibility("Countdown", False);
 UISetNbPlayersAlive(0);
 MiniMap::Hide();
+
+// Matchmaking: don't allow substitutes and disable penalty
+if (MM_IsMatchServer()) {
+	MM_AllowSubstitutes(False);
+	MM_EnablePenalty(False);
+}
 
 // ---------------------------------- //
 // Reset global variables
@@ -336,7 +343,7 @@ SpawnedToads = False;
 
 // ---------------------------------- //
 // Init OffZone
-declare OffZoneRadiusMax = 0.;
+OffZoneRadiusMax = 0.;
 OffZoneRadiusSpeed = 0.;
 OffZoneRadius = 0.;
 
@@ -380,12 +387,18 @@ UIManager.UIAll.BigMessage = _("Waiting for players...");
 while (!ServerShutdownRequested && !MatchEndRequested && (Players.count < C_RequiredPlayersNb || CupAdmin::IsCupPaused())) MB_Yield();
 UIManager.UIAll.BigMessage = "";
 
+// Reset UI
+foreach (Player in AllPlayers) {
+	UISetPlayerSurvivedPosition(Player, 0);
+}
+
 // ---------------------------------- //
 // Initialize objects
 ---InitializeObjects---
 
 // ---------------------------------- //
 // Begin match
+Layers::Attach("HungerGames:Interface");
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
 StartTime = Now + C_StartCountdownDuration + 1000;
 UISetStartTime(StartTime);
@@ -423,7 +436,10 @@ ST2::SetFooterText(TL::Compose("%1 "^PlayersNbAlive, _("Remaining players: ")));
 ***
 // ---------------------------------- //
 // Drop the player objects
-if (!Event.Victim.IsBot && PlayersNbAlive > 2) DropPlayerObjects(Event.Victim, S_ObjectsDroppingRatio);
+if (!Event.Victim.IsBot && PlayersNbAlive > 2) {
+	DropPlayerObjects(Event.Victim, S_ObjectsDroppingRatio);
+	if (MMCommon::IsMatchServer()) UISetPlayerSurvivedPosition(Event.Victim, PlayersNbAlive + 1);
+}
 
 // ---------------------------------- //
 // Chance for Toads to drop an item
@@ -849,6 +865,7 @@ if (Now > StartTime && PlayersNbAlive <= 1) MB_StopMatch();
 // ---------------------------------- //
 ***Match_EndMap***
 ***
+Layers::Detach("HungerGames:Interface");
 Interfancy::SetModuleVisibility("Countdown", False);
 UISetNbPlayersAlive(0);
 UISetStartTime(-1);
@@ -910,7 +927,6 @@ UIManager.UIAll.BigMessage = "";
 // ---------------------------------- //
 ***Match_EndServer***
 ***
-Layers::Detach("HungerGames:Interface");
 Layers::Destroy("HungerGames:Interface");
 Layers::Destroy("HungerGames:Statistics");
 ***
@@ -1341,6 +1357,21 @@ Void UIResetAll() {
 }
 
 // ---------------------------------- //
+/** Set player's survived position.
+ *
+ *	@param	_Player				The player to set position
+ *	@param	_SurvivedPosition	The survived position
+ */
+Void UISetPlayerSurvivedPosition(CSmPlayer _Player, Integer _SurvivedPosition) {
+	if (_Player == Null) return;
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return;
+
+	declare netwrite Integer Net_HungerGames_SurvivedPosition for UI;
+	Net_HungerGames_SurvivedPosition = _SurvivedPosition;
+}
+
+// ---------------------------------- //
 /** Create manialink for the interface module
  *
  *	@return		The interface manialink
@@ -1350,6 +1381,7 @@ Text CreateManialinkInterface() {
 <manialink version="3" name="HungerGames:Interface">
 <stylesheet>
 	<style class="font" halign="center" valign="center2" textsize="1" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
+	<style class="FontM" valign="center2" textemboss="1" textcolor="FFF" textfont="{{{TL::MLEncode("Eurostile")}}}" />
 </stylesheet>
 
 <frame id="Frame_RespawnProgress" pos="0 -54 5">
@@ -1368,6 +1400,41 @@ Text CreateManialinkInterface() {
 <frame id="Frame_TouchGoal" pos="0 76">
 	<label pos="0 2" class="font" textsize="4" textprefix="$T" id="Label_TouchGoalTitle" opacity="0" />
 	<label pos="0 -2" class="font" textprefix="$T" id="Label_TouchGoalDesc" opacity="0" />
+</frame>
+
+<frame id="Frame_Eliminated" pos="-60 54" hidden="1">
+	<label pos="4 -4" class="FontM" textsize="4" textprefix="$t" text="Eliminated!" translate="1" />
+	<quad pos="2 -8" size="116 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Description -->
+	<label pos="60 -18" size="116" class="FontM" halign="center" textsize="2" autonewline="1" id="Label_Description" />
+
+	<!-- Footer -->
+	<frame id="Frame_BottomButtonsRow" pos="2 -28">
+		<quad size="116 .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+		<!-- Resume button -->
+		<frame id="Frame_SpectateButton" pos="2 -2">
+			<label pos="2 -4" class="FontM" text="" />
+			<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Spectate" translate="1" />
+
+			<quad size="55.5 8" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_SpectateButtonCard" ScriptEvents="1" />
+			<quad size="55.5 8" bgcolor="FFF" opacity=".125" />
+		</frame>
+
+		<!-- Quit button -->
+		<frame id="Frame_QuitButton" pos="58.5 -2">
+			<label pos="2 -4.5" class="FontM" text="" id="Label_QuitButtonIcon" />
+			<label pos="8 -4" class="FontM" textsize="2" textprefix="$t" text="Return to lobby" translate="1" id="Label_QuitButtonText" />
+
+			<quad size="55.5 8" bgcolorfocus="FFF" opacity=".125" class="Click" id="Quad_QuitButtonCard" ScriptEvents="1" />
+			<quad size="55.5 8" bgcolor="FFF" opacity=".125" id="Quad_QuitButtonBg" />
+		</frame>
+	</frame>
+
+	<quad size="120 40" bgcolor="000" opacity=".75" />
+	<quad size="120 40" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+	<quad pos="-2.5 2.5" size="250 90" scale=".5" style="Bgs1InRace" substyle="BgButtonShadow" />
 </frame>
 
 <script><!--
@@ -1402,8 +1469,13 @@ declare Label_RespawnProgress <=> (Page.GetFirstChild("Label_RespawnProgress") a
 declare Quad_RespawnProgIcon <=> (Page.GetFirstChild("Quad_RespawnProgIcon") as CMlQuad);
 declare Gauge_RespawnProgress <=> (Page.GetFirstChild("Gauge_RespawnProgress") as CMlGauge);
 
+// Eliminated screen
+declare Frame_Eliminated <=> (Page.GetFirstChild("Frame_Eliminated") as CMlFrame);
+declare Label_Description <=> (Page.GetFirstChild("Label_Description") as CMlLabel);
+
 Label_TouchGoalTitle.SetText(ReplaceChars(Translate("Touch the Goal!")));
 Label_TouchGoalDesc.SetText(ReplaceChars(Translate("You must touch the Goal to be able to pick up items!")));
+Label_Description.SetText(Translate("You've been eliminated - the game is over for you!\nYou may want to spectate rest of the game, if not, use the button below to return to the lobby and find yourself a new match!"));
 
 // ---------------------------------- //
 // Netcode
@@ -1411,6 +1483,8 @@ declare netread Integer Net_HungerGames_StartTime for Teams[0];
 declare netread Integer Net_HungerGames_PlayersAlive for Teams[0];
 declare netread Text[] Net_HungerGames_TouchedGoal for Teams[0];
 declare netread Integer[Text] Net_HungerGames_RespawnStart for Teams[0];
+declare netread Integer Net_HungerGames_SurvivedPosition for UI;
+declare netread Text Net_LibPauseMenu_LobbyJoinLink for Teams[0];
 
 // ---------------------------------- //
 // Variables
@@ -1427,6 +1501,7 @@ declare PrevCountdownTick = CountdownTick;
 declare PrevNbPlayersAlive = -1;
 declare PrevTouchGoalAlertVisible = False;
 declare PrevRespawnProgressVisible = RespawnProgressVisible;
+declare PrevSurvivedPosition = 0;
 
 foreach (MapLandmark in MapLandmarks) {
 	if (MapLandmark.Gauge != Null && MapLandmark.Tag == "Goal") CenterGoalPosition = MapLandmark.Position;
@@ -1438,6 +1513,44 @@ foreach (MapLandmark in MapLandmarks) {
 // ---------------------------------- //
 ***Yield***
 ***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// Close the window
+		if (Event.ControlId == "Quad_SpectateButtonCard") {
+			Frame_Eliminated.Hide();
+		}
+
+		// Return to the lobby
+		else if (Event.ControlId == "Quad_QuitButtonCard") {
+			OpenLink(Net_LibPauseMenu_LobbyJoinLink, CMlScript::LinkType::ManialinkBrowser);
+		}
+	}
+	// ---------------------------------- //
+	// On mouse over
+	else if (Event.Type == CMlEvent::Type::MouseOver) {
+		if (Event.Control.HasClass("Click"))
+			Audio.PlaySoundEvent(CAudioManager::ELibSound::Focus, 1, 1.);
+	}
+}
+
+// ---------------------------------- //
+// Show the eliminated window
+if (PrevSurvivedPosition != Net_HungerGames_SurvivedPosition) {
+	PrevSurvivedPosition = Net_HungerGames_SurvivedPosition;
+
+	declare NbPlayersAlive = 0;
+	foreach (Player in Players) {
+		if (Player.IsBot || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
+		NbPlayersAlive += 1;
+	}
+
+	if (PrevSurvivedPosition > 0 && NbPlayersAlive > 0) Frame_Eliminated.Show();
+}
+
 // ---------------------------------- //
 // Set "Touch the Goal" message visibility
 TouchGoalAlertVisible = GUIPlayer != Null && GameTime >= GUIPlayer.StartTime && GUIPlayer.Armor > 0 && !Net_HungerGames_TouchedGoal.exists(GUIPlayer.Login);
@@ -1597,7 +1710,7 @@ if (RespawnProgressVisible) {
 ***
 
 {{{ManialinkTools::Functions(["Pulse", "SetGaugeRatio", "ReplaceChars"])}}}
-{{{Translations::InjectInManialink(["Touch the Goal!", "You must touch the Goal to be able to pick up items!", "Respawning...", "Respawned!"])}}}
+{{{Translations::InjectInManialink(["Touch the Goal!", "You must touch the Goal to be able to pick up items!", "Respawning...", "Respawned!", "Return to lobby"])}}}
 
 // ---------------------------------- //
 // Main

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY GALAXYTITLES by domino54      //
-//  script version: 2017-08-22            //
+//  script version: 2018-02-15            //
 // -------------------------------------- //
 
 /**
@@ -13,7 +13,7 @@
  *	-	Managing players' reload boost
  */
 
-#Const Version		"2017-08-22"
+#Const Version		"2018-02-15"
 #Const ScriptName	"Libs/domino54/ShootMania/GalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -108,6 +108,7 @@ declare Integer G_LibGalaxyTitles_PrevObjectsSpawnTier;
 declare Integer G_LibGalaxyTitles_ToadsArmorMax;
 declare Integer G_LibGalaxyTitles_PointsForPick;
 declare Boolean G_LibGalaxyTitles_ObjectsAffectEveryone;
+declare Boolean G_LibGalaxyTitles_ObjectsAffectOnlyMe;
 declare Integer G_LibGalaxyTitles_ObjectsDropLifetime;
 declare Integer G_LibGalaxyTitles_InventoryMaxWeapons;
 declare Integer G_LibGalaxyTitles_InventoryMaxReplies;
@@ -488,6 +489,7 @@ Boolean Private_CanUseHealing(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Check if players nearby can be healed
 	foreach (Player in Players) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Player == _Player || Player.Armor >= Player.ArmorMax) continue;
 		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
 
@@ -501,6 +503,7 @@ Boolean Private_CanUseHealing(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Check if Toads nearby can be healed
 	foreach (Toad in Toads::GetToads()) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Toad.Armor >= Toad.ArmorMax) continue;
 		if (ML::Distance(_Player.Position, Toad.Position) > C_LibGalaxyTitles_ArmorPickupRadius) continue;
 
@@ -515,6 +518,7 @@ Boolean Private_CanUseHealing(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Check if turrets nearby can be repaired
 	foreach (Turret in Turrets::GetTurrets()) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Turret.Armor >= Turret.ArmorMax) continue;
 
 		declare TurretPosition = Turrets::GetTurretPosition(Turret);
@@ -546,6 +550,7 @@ Boolean Private_CanUseBoost(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Check if players nearby can be boosted
 	foreach (Player in Players) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Player == _Player) continue;
 		if (ML::Distance(_Player.Position, Player.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
 
@@ -559,6 +564,7 @@ Boolean Private_CanUseBoost(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Check if Toads nearby can be boosted
 	foreach (Toad in Toads::GetToads()) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (ML::Distance(_Player.Position, Toad.Position) > C_LibGalaxyTitles_FuelPickupRadius) continue;
 
 		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
@@ -682,6 +688,7 @@ Void ResetAll() {
 Void Unload() {
 	ResetAll();
 	G_LibGalaxyTitles_ObjectsAffectEveryone = False;
+	G_LibGalaxyTitles_ObjectsAffectOnlyMe = False;
 	G_LibGalaxyTitles_PointsForPick = C_LibGalaxyTitles_DefaultPointsForPick;
 	G_LibGalaxyTitles_ToadsArmorMax = C_LibGalaxyTitles_ToadArmorMax;
 	G_LibGalaxyTitles_ObjectsDropLifetime = C_LibGalaxyTitles_ObjectsDropLifetime;
@@ -859,6 +866,7 @@ Integer UseHealing(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Heal player's teammates
 	foreach (Player in Players) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Player == _Player || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned || Player.Armor >= Player.ArmorMax) continue;
 
 		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
@@ -881,6 +889,7 @@ Integer UseHealing(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Heal Toads nearby
 	foreach (Toad in Toads::GetToads()) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Toad.Armor >= Toad.ArmorMax) continue;
 		if (Toad.Driver.Owner != _Player && !G_LibGalaxyTitles_ObjectsAffectEveryone) {
 			if (_Player.CurrentClan == 0 && !Clans::AreTeammates(Toad, _Player)) continue;
@@ -891,11 +900,18 @@ Integer UseHealing(CSmPlayer _Player) {
 		// Heal the Toad
 		GivePlayerArmor(Toad, C_LibGalaxyTitles_ArmorHealAmount);
 		AffectedToads.add(Toad.Driver.Owner.User.Name);
+
+		// Notify the owner their Toad was healed
+		if (Toad.Driver.Owner != _Player) Interfancy::SendCrosshairNote(
+			Toad.Driver.Owner, ["$<%1$> healed your Toad!", _Player.User.Name],
+			C_LibGalaxyTitles_NoteDisplayTime
+		);
 	}
 
 	// ---------------------------------- //
 	// Repair nearby turrets
 	foreach (Turret in Turrets::GetTurrets()) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Turret.Armor >= Turret.ArmorMax) continue;
 
 		declare TurretPosition = Turrets::GetTurretPosition(Turret);
@@ -910,7 +926,7 @@ Integer UseHealing(CSmPlayer _Player) {
 		Turret.Armor += C_LibGalaxyTitles_ArmorHealAmount;
 		AffectedTurrets.add(TurretOwner.User.Name);
 
-		// Notify th eowner their turret was healed
+		// Notify the owner their turret was healed
 		if (TurretOwner != _Player) Interfancy::SendCrosshairNote(
 			TurretOwner, ["$<%1$> healed your turret!", _Player.User.Name],
 			C_LibGalaxyTitles_NoteDisplayTime
@@ -982,6 +998,7 @@ Integer UseBoost(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Boost player's teammates
 	foreach (Player in Players) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Player == _Player || Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 		if (!G_LibGalaxyTitles_ObjectsAffectEveryone) {
 			if (_Player.CurrentClan == 0 && !Clans::AreTeammates(Player, _Player)) continue;
@@ -1004,6 +1021,7 @@ Integer UseBoost(CSmPlayer _Player) {
 	// ---------------------------------- //
 	// Boost Toads nearby
 	foreach (Toad in Toads::GetToads()) {
+		if (G_LibGalaxyTitles_ObjectsAffectOnlyMe) break;
 		if (Toad.Driver.Owner != _Player && !G_LibGalaxyTitles_ObjectsAffectEveryone) {
 			if (_Player.CurrentClan == 0 && !Clans::AreTeammates(Toad, _Player)) continue;
 			if (Toad.CurrentClan != _Player.CurrentClan) continue;
@@ -1014,6 +1032,12 @@ Integer UseBoost(CSmPlayer _Player) {
 		if (G_LibGalaxyTitles_FuelGivesReloadBoost) AddReloadBoost(Toad);
 		Toad.Stamina = ML::FloorInteger(Toad.StaminaMax * 3600);
 		AffectedToads.add(Toad.Driver.Owner.User.Name);
+
+		// Notify the owner their Toad was boosted
+		if (Toad.Driver.Owner != _Player) Interfancy::SendCrosshairNote(
+			Toad.Driver.Owner, ["$<%1$> boosted your Toad!", _Player.User.Name],
+			C_LibGalaxyTitles_NoteDisplayTime
+		);
 	}
 
 	// ---------------------------------- //
@@ -2033,6 +2057,15 @@ Void UseConsumableItems(CSmModeEvent _Event) {
  */
 Void SetObjectsAffectEveryone(Boolean _Setting) {
 	G_LibGalaxyTitles_ObjectsAffectEveryone = _Setting;
+}
+
+// ---------------------------------- //
+/** Set if objects affect only the player, who picked them.
+ *
+ *	@param	_Setting	True, if objects may only the player.
+ */
+Void SetObjectsAffectOnlyMe(Boolean _Setting) {
+	G_LibGalaxyTitles_ObjectsAffectOnlyMe = _Setting;
 }
 
 // ---------------------------------- //

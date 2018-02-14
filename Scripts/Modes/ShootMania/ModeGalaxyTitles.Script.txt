@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  GALAXYTITLES MODE BASE by domino54    //
-//  script version: 2018-02-16            //
+//  script version: 2018-02-15            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
 
 #Extends "Modes/ShootMania/Base/ModeShootmania.Script.txt"
 
-#Const GTVersion	"2018-02-16"
+#Const GTVersion	"2018-02-15"
 #Const GTScriptName	"Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Include "MathLib" as ML
@@ -136,6 +136,7 @@ declare Boolean GT_UseAutospawnObjects;		///< Use automatically spawned objects
 declare Boolean GT_UseComboWeapons;			///< Use Combo weapon items
 declare Boolean GT_UseRepliePickups;		///< Use Replie pickup items
 declare Boolean GT_UseRandomToads;			///< Spawn Toads on random bot path landmarks
+declare Boolean GT_UseKillNotifications;	///< Show player eliminations in the killfeed.
 declare Boolean GT_AutoManageOnHit;			///< Automatically manage OnHit events
 declare Boolean GT_AutoManageOnShoot;		///< Automatically manage OnShoot events
 declare Boolean GT_AutoManageOnArmorEmpty;	///< Automatically manage OnArmorEmpty events
@@ -255,6 +256,7 @@ GT_UseAutospawnObjects = True;
 GT_UseComboWeapons = True;
 GT_UseRepliePickups = True;
 GT_UseRandomToads = True;
+GT_UseKillNotifications = True;
 GT_AutoManageOnHit = True;
 GT_AutoManageOnShoot = True;
 GT_AutoManageOnArmorEmpty = True;
@@ -442,9 +444,9 @@ Killfeed::Build();
 ***
 
 // ---------------------------------- //
-// Server start (both lobby and match)
+// Server start (match only)
 // ---------------------------------- //
-***MB_Private_StartServer***
+***Match_StartServer***
 ***
 // ---------------------------------- //
 // Create the scores table
@@ -457,7 +459,13 @@ ST2::SetStyle("LibST_SMBasePoints");
 +++ScoresTable+++
 ST2::Build("SM");
 TopScores::Build();
+***
 
+// ---------------------------------- //
+// Server start (both lobby and match)
+// ---------------------------------- //
+***MB_Private_StartServer***
+***
 //PauseMenu::SetModeRules(ModeInfo::GetName(), ModeInfo::GetRules(), "");
 
 // Disable Constructor in non-team modes
@@ -500,7 +508,6 @@ TopScores::MatchBegin();
 Interfancy::ClearData();
 GalaxyTitles::ResetAll();
 CupAdmin::StartMap();
-PauseMenu::SetQuitButtonAvailable(!MM_IsMatchServer());
 
 // Clear all messages
 UIManager.UIAll.BigMessage = "";
@@ -553,6 +560,11 @@ UIManager.UIAll.BigMessage = "";
 UIManager.UIAll.StatusMessage = "";
 MiniMap::Show();
 PlayerList::Show();
+
+// Return to lobby button
+declare LobbyLogin = MMMatch::GetLobbyLogin();
+if (LobbyLogin != "") LobbyLogin = MMCommon::GetServerJoinLink(LobbyLogin);
+PauseMenu::SetLobbyJoinLink(LobbyLogin);
 
 // ---------------------------------- //
 // Init GalaxyTitles functions
@@ -634,7 +646,7 @@ if (Toads::BelongsToLib(Event.Victim)) {
 	}
 
 	// Send notice and destroy the Toad
-	if (Players.exists(Event.Victim.Driver.Owner)) Killfeed::SendNotice(
+	if (GT_UseKillNotifications && Players.exists(Event.Victim.Driver.Owner)) Killfeed::SendNotice(
 		"Toad - "^Names::Get(Event.Victim.Driver.Owner),
 		ShooterLogin, C_ImgBase^"Icons/"^EventIcon, ""
 	);
@@ -677,7 +689,8 @@ if (Event.Shooter != Null) {
 	else if (GT_JustHitByTurret) {
 		Statistics::TrackEvent(Event.Shooter, "TurretEliminations", 1);
 		Statistics::TrackEvent(Event.Victim, "EliminatedByTurret", 1);
-		Killfeed::SendNotice(
+		
+		if (GT_UseKillNotifications) Killfeed::SendNotice(
 			Event.Victim.Login, Event.Shooter.Login,
 			C_ImgBase^"Icons/TurretKill.png", AssistantLogin
 		);
@@ -688,7 +701,8 @@ if (Event.Shooter != Null) {
 	else if (GT_JustHitByToad) {
 		Statistics::TrackEvent(Event.Shooter, "ToadEliminations", 1);
 		Statistics::TrackEvent(Event.Victim, "EliminatedByToad", 1);
-		Killfeed::SendNotice(
+		
+		if (GT_UseKillNotifications) Killfeed::SendNotice(
 			Event.Victim.Login, Event.Shooter.Login,
 			C_ImgBase^"Icons/Toad.png", AssistantLogin
 		);
@@ -696,10 +710,16 @@ if (Event.Shooter != Null) {
 
 	// ---------------------------------- //
 	// Eliminated by wild Toad
-	else if (Event.Shooter.IsBot && EventAssistant == Null) 
-		Killfeed::SendNotice(Event.Victim.Login, "", C_ImgBase^"Icons/Toad.png", "");
+	else if (Event.Shooter.IsBot && EventAssistant == Null) {
+		if (GT_UseKillNotifications) Killfeed::SendNotice(Event.Victim.Login, "", C_ImgBase^"Icons/Toad.png", "");
+	}
 
-	else Killfeed::OnArmorEmpty(Event, EventAssistant);
+	// ---------------------------------- //
+	// Eliminated by a player
+	else if (GT_UseKillNotifications) {
+		Killfeed::OnArmorEmpty(Event, EventAssistant);
+	}
+
 	Streaks::CountElimination(Event.Victim, Event.Shooter);
 	GT_JustHitByToad = False;
 	GT_JustHitByTurret = False;
@@ -739,7 +759,7 @@ else {
 		GT_VictimLastShooter = NullId;
 		GT_VictimShootHistory.clear();
 
-		Killfeed::OnArmorEmpty(Event, Null);
+		if (GT_UseKillNotifications) Killfeed::OnArmorEmpty(Event, Null);
 		Statistics::OnArmorEmpty(Event);
 		PassOn(Event);
 	}
@@ -1054,7 +1074,7 @@ foreach (Event in PendingEvents) {
 				}
 
 				// Send notice and destroy the Turret
-				if (Players.exists(VictimTurretOwner)) Killfeed::SendNotice(
+				if (GT_UseKillNotifications && Players.exists(VictimTurretOwner)) Killfeed::SendNotice(
 					"Turret - "^Names::Get(VictimTurretOwner),
 					ShooterLogin, C_ImgBase^"Icons/"^EventIcon, ""
 				);
@@ -2008,7 +2028,7 @@ Void GT_WaitForPlayers(Integer _MinimumNbPlayers, Boolean _AllTeamsTotal) {
 				if (GT_WaitingDisableOffZone && Event.Victim.IsInOffZone && Event.Victim.Armor > 0) {
 					Discard(Event);
 				} else {
-					Killfeed::OnArmorEmpty(Event, Null);
+					if (GT_UseKillNotifications) Killfeed::OnArmorEmpty(Event, Null);
 					PassOn(Event);
 				}
 			}
@@ -2181,7 +2201,7 @@ Integer GT_SuddenDeath(CSmMapLandmark _Team1Spawn, CSmMapLandmark _Team2Spawn) {
 					);
 				}
 
-				Killfeed::OnArmorEmpty(Event, Null);
+				if (GT_UseKillNotifications) Killfeed::OnArmorEmpty(Event, Null);
 				Statistics::OnArmorEmpty(Event);
 				PassOn(Event);
 				UpdateBigMessage = True;

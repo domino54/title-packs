@@ -1,0 +1,728 @@
+// ---------------------------------------- //
+//  TROUBLE IN TERRORIST TOWN by domino54   //
+//  script version: 2018-02-15              //
+//  Based on Garry's Mod game mode created  //
+//  by Bad King Urgrain                     //
+// ---------------------------------------- //
+
+#Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
+
+#Const Version		"2018-02-15"
+#Const ScriptName	"Modes/ShootMania/TTT.Script.txt"
+
+#Include "Libs/Nadeo/Color.Script.txt" as Color
+#Include "Libs/domino54/MultiClans.Script.txt" as Clans
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit			600		as _("Time limit") ///< Time limit on a map
+#Setting S_SafePhaseDuration	15		as _("Time before players are assigned roles")
+#Setting S_TraitorsRatio		.25		as _("Percentage of players starting as Traitors")
+#Setting S_DetectivesRatio		.125	as _("Percentage of Detectives among Innocents")
+#Setting S_MatchmakingFormat	6		as _("Number of players in matchmaking mode")
+
+#Const Description _("")
+
+#Const C_MinNbPlayersRequired		2
+#Const C_MinInnocentForDetective	3
+#Const C_PlayerInitialKarma			1000
+
+// ---------------------------------- //
+// Gloabal variables
+// ---------------------------------- //
+declare Ident[] G_SpawnsList;			///< Id of all the landmarks with a player spawn of the map
+declare Ident G_LatestSpawnId;			///< Id of the last landmark used
+declare Ident[Vec3] G_CoinObjectsIds;	
+declare Ident G_GoldObjectId;			
+declare Ident[] G_CreatedObjects;		
+
+// ---------------------------------- //
+// Set up matchmaking
+// ---------------------------------- //
+***MM_SetupMatchmaking***
+***
+declare Integer[] MatchmakingFormats;
+for (I, 1, S_MatchmakingFormat) MatchmakingFormats.add(1);
+MM_SetFormat(MatchmakingFormats);
+***
+
+// ---------------------------------- //
+// Format the scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+ST2::SetPlayerDarkening(False);
+ST2::DestroyCol("LibST_SMRoundPoints");
+
+ST2::SetColWidth("LibST_SMPoints", 6.);
+ST2::SetColLegend("LibST_SMPoints", "Karma");
+ST2::SetColTextSize("LibST_SMPoints", 2.);
+
+ST2::CreateCol("TTT_KnownRole", "", "", 10., 90.);
+
+// Unload tops
+TopScores::Unload();
+AltTabs::Unload();
+***
+
+// ---------------------------------- //
+// Galaxy settings
+// ---------------------------------- //
+***GalaxyTitles_Settings***
+***
+GT_CharactersDataFileURL = "";
+***
+
+// ---------------------------------- //
+// Update the mode rules
+// ---------------------------------- //
+***Match_Rules***
+***
+ModeInfo::SetName("Trouble in Terrorist Town");
+ModeInfo::SetType(ModeInfo::C_Type_Teams);
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage(Description);
+***
+
+// ---------------------------------- //
+// Init server
+// ---------------------------------- //
+***Match_InitServer***
+***
+Layers::Create("TTT:Interface");
+Layers::Create("TTT:Markers", CreateTTTMarkersLayer());
+Layers::SetType("TTT:Markers", CUILayer::EUILayerType::Markers);
+
+Statistics::Unload();
+
+// ---------------------------------- //
+// Load objects
+G_GoldObjectId = ItemList_Add("SMCommon\\Collectibles\\Gold.Item.Gbx");
+
+for (I, 0, 12 - 1) {
+	declare ItemColor = Color::HsvToRgb(<ML::ToReal(I) / 12, 1., 1.>);
+	G_CoinObjectsIds[ItemColor] = ItemList_Add("SMCommon\\Coins\\Coin_"^TL::FormatInteger(I, 2)^".Item.Gbx");
+}
+
+// Roles names
+Clans::SetClanName(1, "Detective");
+Clans::SetClanName(2, "Traitor");
+Clans::SetClanName(3, "Innocent");
+
+declare IsSafePhase = True;
+declare IsMinimapSet = False;
+declare PrevTimeLimit = S_TimeLimit;
+***
+
+// ---------------------------------- //
+// Map start
+// ---------------------------------- //
+***Match_StartMap***
+***
+UIManager.UIAll.OpposingTeamLabelsShowGauges = CUIConfig::EVisibility::ForcedVisible;
+***
+
+// ---------------------------------- //
+// Init round
+// ---------------------------------- //
+***Match_StartRound***
+***
+G_SpawnsList.clear();
+G_LatestSpawnId = NullId;
+IsSafePhase = True;
+IsMinimapSet = False;
+UsePvPWeapons = True;
+UsePvPCollisions = True;
+
+GT_UseKillNotifications = True;
+GT_AutoManageOnRespawn = True;
+
+// Objects yet affect everyone
+GalaxyTitles::SetObjectsAffectEveryone(True);
+GalaxyTitles::SetObjectsAffectOnlyMe(False);
+
+// Show players on minimap
+MiniMap::SetTeammatesVisibility(True);
+MiniMap::SetOpponentsVisibility(True);
+MiniMap::SetEnableZoomPads(True);
+
+// Wait for enough players to start game
+while (!ServerShutdownRequested && !MatchEndRequested && TTT_NbPlayersTotal() < C_MinNbPlayersRequired) MB_Yield();
+
+// Reset clans
+foreach (Player in AllPlayers) TTT_SetPlayerClan(Player, 0);
+
+// Reset scores
+foreach (Score in Scores) {
+	declare Text PlayerMurderer for Score;
+	declare Boolean DroppedGold for Score;
+	PlayerMurderer = "";
+	DroppedGold = False;
+}
+
+// ---------------------------------- //
+// Start match
+StartTime = Now + S_RespawnTime;
+UIManager.UIAll.CountdownEndTime = StartTime + S_SafePhaseDuration * 1000;
+GT_DisableTimeLimit();
+
+// Disable PvP
+UsePvPWeapons = True;
+UsePvPCollisions = True;
+
+//if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+//else GT_DisableTimeLimit();
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+UIManager.UIAll.SendNotice("", CUIConfig::ENoticeLevel::MatchInfo, Null, CUIConfig::EAvatarVariant::Default, CUIConfig::EUISound::StartRound, 0);
+
+Interfancy::SetModuleVisibility("Countdown", S_TimeLimit > 0);
+Layers::Attach("TTT:Interface");
+Layers::Attach("TTT:Markers");
+***
+
+// ---------------------------------- //
+// On armor empty
+// ---------------------------------- //
+***OnArmorEmpty***
+***
+if (Event.Victim != Null && !Event.Victim.IsBot) {
+	SpawnCoin(Event.Victim);
+
+	// Save the murderer login
+	if (Event.Shooter != Null) {
+		declare Text PlayerMurderer for Event.Victim.Score;
+		PlayerMurderer = Event.Shooter.User.Login;
+	}
+}
+***
+
+// ---------------------------------- //
+// On player touches object
+// ---------------------------------- //
+***OnPlayerTouchesObject***
+***
+if (G_CreatedObjects.exists(Event.Object.Id)) {
+	Discard(Event);
+	TTT_PickUpObject(Event.Player, Event.Object);
+}
+***
+
+// ---------------------------------- //
+// On player request respawn
+// ---------------------------------- //
+***OnPlayerRequestRespawn***
+***
+if (!GT_AutoManageOnRespawn) {
+	Discard(Event);
+
+	Translations::SendStatusMessage(
+		Event.Player, ["Respawn is not allowed in $<%1$>!", ModeInfo::GetName()],
+		3000, 0, CUIConfig::EUISound::Warning, 0
+	);
+}
+***
+
+// ---------------------------------- //
+// On action event
+// ---------------------------------- //
+/*
+***OnActionEvent***
+***
+if (Event.ActionInput == CSmMode::EActionInput::Consumable2 && Clans::GetPlayerClan(Event.Player) == 2) {
+	SpawnCoin(Event.Player);
+}
+***
+*/
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Hide players from minimap - a delay is necessary
+if (!IsMinimapSet && Now >= UIManager.UIAll.CountdownEndTime - 125) {
+	MiniMap::SetTeammatesVisibility(False);
+	MiniMap::SetOpponentsVisibility(False);
+	MiniMap::SetEnableZoomPads(False);
+	IsMinimapSet = True;
+}
+
+// ---------------------------------- //
+// End of the safe phase
+if (IsSafePhase && Now >= UIManager.UIAll.CountdownEndTime) {
+	IsSafePhase = False;
+	UIManager.UIAll.CountdownEndTime = -1;
+	MiniMap::Flash();
+
+	// Enable PvP
+	UsePvPWeapons = True;
+	UsePvPCollisions = True;
+
+	// Objects don't affect other players
+	GalaxyTitles::SetObjectsAffectOnlyMe(True);
+
+	// Disable respawn and killfeed notifications
+	GT_UseKillNotifications = False;
+	GT_AutoManageOnRespawn = False;
+
+	// ---------------------------------- //
+	// Choose roles for the players
+	declare Ident[] PlayersIds;
+	foreach (Player in Players) PlayersIds.add(Player.Id);
+
+	while (PlayersIds.count > 0) {
+		declare PlayerId = PlayersIds[ML::Rand(0, PlayersIds.count - 1)];
+		declare Removed = PlayersIds.remove(PlayerId);
+		declare Player <=> Players[PlayerId];
+
+		// Default to Innocents
+		declare TargetClan = 3;
+		declare CurTraitorsRatio = Clans::GetClanNbPlayers(2) / ML::ToReal(TTT_NbPlayersTotal());
+
+		// Not enough traitors
+		if (CurTraitorsRatio < S_TraitorsRatio && PlayersIds.count > 0) TargetClan = 2;
+
+		// Pick Detectives
+		if (TargetClan != 2) {
+			declare TotalNbInnocent = Clans::GetClanNbPlayers(1) + Clans::GetClanNbPlayers(3);
+			if (TotalNbInnocent >= C_MinInnocentForDetective - 1) {
+				declare CurDetectivesRatio = Clans::GetClanNbPlayers(1) / ML::ToReal(TotalNbInnocent);
+				if (CurDetectivesRatio < S_DetectivesRatio) TargetClan = 1;
+			}
+		}
+
+		TTT_SetPlayerClan(Player, TargetClan);
+	}
+
+	// ---------------------------------- //
+	// Announce the roles
+	declare TraitorMessage = [
+		"Eliminate all $<$%1%2$> and $<$%3%4$>, remain undetected.",
+		TL::ColorToText(Clans::GetClanColor(3)), Clans::GetClanName(3),
+		TL::ColorToText(Clans::GetClanColor(1)), Clans::GetClanName(1)
+	];
+	declare InnocentMesage = [
+		"Expose and eliminate all $<$%1%2$>.",
+		TL::ColorToText(Clans::GetClanColor(2)), Clans::GetClanName(2)
+	];
+
+	foreach (Player in Players) {
+		declare PlayerClan = Clans::GetPlayerClan(Player);
+
+		Translations::SendBigMessage(
+			Player, ["$"^TL::ColorToText(Clans::GetClanColor(PlayerClan))^"%1", Clans::GetClanName(PlayerClan)],
+			5000, 0, CUIConfig::EUISound::PhaseChange, 1
+		);
+
+		declare Text[] StatusMessage;
+		switch (PlayerClan) {
+			case 2	: StatusMessage = TraitorMessage;
+			default	: StatusMessage = InnocentMesage;
+		}
+		Translations::SendStatusMessage(Player, StatusMessage, 5000, 0);
+	}
+}
+
+// ---------------------------------- //
+// Spawn players
+foreach (Player in Players) {
+	if (IsSafePhase && Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned && GT_IsValidPlayer(Player)) {
+		GT_InitPlayer(Player);
+		TTT_SpawnPlayer(Player);
+
+		// Configure bots
+		if (Player.Driver != Null) {
+			Player.Driver.AttackFilter = CSmPlayerDriver::ESmAttackFilter::Nobody;
+		}
+	}
+
+	// ---------------------------------- //
+	// Clear out Traitor forbidden items
+	declare Vec3[Ident] ForbiddenItems for Player;
+
+	if (ForbiddenItems.count > 0) {
+		declare Ident[] ToRemove;
+		foreach (ObjectId => Position in ForbiddenItems) {
+			if (ML::Distance(Player.Position, Position) <= 2) continue;
+			ToRemove.add(ObjectId);
+		}
+
+		while (ToRemove.existskey(0)) {
+			declare Boolean Removed;
+			Removed = ForbiddenItems.removekey(ToRemove[0]);
+			Removed = ToRemove.removekey(0);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update time limit
+if (PrevTimeLimit != S_TimeLimit) {
+	PrevTimeLimit = S_TimeLimit;
+	if (S_TimeLimit > 0) GT_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else GT_DisableTimeLimit();
+}
+
+// Victory conditions
+if (GT_TimeReachedLimit() || TTT_NbPlayersTotal() < C_MinNbPlayersRequired) MB_StopRound();
+if (!IsSafePhase && (TTT_NbTraitorsAlive() <= 0 || TTT_NbInnocentsAlive() <= 0)) MB_StopRound();
+***
+
+// ---------------------------------- //
+// Round end
+// ---------------------------------- //
+***Match_EndRound***
+***
+Layers::Detach("TTT:Interface");
+Layers::Detach("TTT:Markers");
+
+declare WinnerClan = 0;
+if (TTT_NbInnocentsAlive() <= 0) WinnerClan = 2;
+if (TTT_NbTraitorsAlive() <= 0) WinnerClan = 3;
+
+// Unspawn everyone
+SM::UnspawnAllPlayers();
+***
+
+***Match_EndMap***
+***
+// Disallow the players to move after match end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::UIInteraction;
+MB_Sleep(1500);
+
+// Cinematic round end
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+Interfancy::SetModuleVisibility("Countdown", False);
+MB_Sleep(1500);
+***
+
+***Match_EndServer***
+***
+Layers::Destroy("TTT:Interface");
+Layers::Destroy("TTT:Markers");
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Check if the player is allowed to play.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if the player is allowed to participate.
+ */
+Boolean TTT_IsAllowedToPlay(CSmPlayer _Player) {
+	if (_Player == Null) return False;
+
+	// Karma penalty
+
+	return True;
+}
+
+// ---------------------------------- //
+/** Get the total number of players allowed to play.
+ *
+ *	@return		The total number of players.
+ */
+Integer TTT_NbPlayersTotal() {
+	declare NbPlayersTotal = 0;
+	foreach (Player in Players) if (TTT_IsAllowedToPlay(Player)) NbPlayersTotal += 1;
+	return NbPlayersTotal;
+}
+
+// ---------------------------------- //
+/** Get the number of alive players in given team.
+ *
+ *	@param	_Clan	The team to get player count.
+ *
+ *	@return		Number of alive players of the team.
+ */
+Integer TTT_ClanNbPlayersAlive(Integer _Clan) {
+	declare ClanNbPlayersAlive = 0;
+	foreach (Player in Players) {
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned || Player.Armor <= 0) continue;
+		if (Clans::GetPlayerClan(Player) != _Clan) continue;
+		ClanNbPlayersAlive += 1;
+	}
+	return ClanNbPlayersAlive;
+}
+
+// ---------------------------------- //
+/** Get the number of alive Innocents.
+ *
+ *	@return		The number of alive Innocents.
+ */
+Integer TTT_NbInnocentsAlive() {
+	return TTT_ClanNbPlayersAlive(1) + TTT_ClanNbPlayersAlive(3);
+}
+
+// ---------------------------------- //
+/** Get the number of alive Traitors.
+ *
+ *	@return		The number of alive Traitors.
+ */
+Integer TTT_NbTraitorsAlive() {
+	return TTT_ClanNbPlayersAlive(2);
+}
+
+// ---------------------------------- //
+/** Get the number of alive Detectives.
+ *
+ *	@return		The number of alive Detectives.
+ */
+Integer TTT_NbDetectivesAlive() {
+	return TTT_ClanNbPlayersAlive(1);
+}
+
+// ---------------------------------- //
+/** Spawn player.
+ *
+ *	@param	_Player		The player to spawn.
+ */
+Void TTT_SpawnPlayer(CSmPlayer _Player) {
+	if (G_SpawnsList.count == 0) foreach (MapLandmark in MapLandmarks_PlayerSpawn) G_SpawnsList.add(MapLandmark.Id);
+
+	declare SpawnId = NullId;
+	while (True) {
+		SpawnId = G_SpawnsList[ML::Rand(0, G_SpawnsList.count - 1)];
+		if (SpawnId != G_LatestSpawnId) break;
+		if (G_SpawnsList.count == 1) break;
+	}
+	G_LatestSpawnId = SpawnId;
+	
+	SM::Spawn(_Player, _Player.CurrentClan, MapLandmarks_PlayerSpawn[SpawnId].PlayerSpawn);
+	declare Removed = G_SpawnsList.remove(SpawnId);
+}
+
+// ---------------------------------- //
+/** Set the clan of a player.
+ *
+ *	@param	_Player		The player to set their clan.
+ *	@param	_Clan		The clan to set.
+ */
+Void TTT_SetPlayerClan(CSmPlayer _Player, Integer _Clan) {
+	if (_Player == Null || _Clan < 0 || _Clan > 3) return;
+
+	Clans::SetPlayerClan(_Player, _Clan);
+	Interfancy::SetArmorText(_Player, Clans::GetClanName(_Clan));
+	Interfancy::ResetColor(_Player);
+
+	// Green color for traitors
+	if (_Clan == 2) {
+		Interfancy::SetColor(_Player, Clans::GetClanColor(_Clan));
+		_Player.ForceColor = Clans::GetClanColor(3);
+	}
+
+	// Detectives are known to everyone
+	else if (_Clan == 1) {
+		ST2::SetColValue("TTT_KnownRole", _Player.Score, Clans::GetClanColorizedName(_Clan));
+	}
+}
+
+Integer TTT_GetPlayerKarma(CSmPlayer _Player) {
+	if (_Player == Null) return 0;
+
+	declare persistent Integer[Text] Persistent_TTT_PlayersKarma;
+	if (!Persistent_TTT_PlayersKarma.existskey(_Player.User.Login)) return C_PlayerInitialKarma;
+	return Persistent_TTT_PlayersKarma[_Player.User.Login];
+}
+
+Void TTT_AddPlayerKarma(CSmPlayer _Player, Integer _Karma) {
+	if (_Player == Null || _Karma == 0) return;
+
+	declare persistent Integer[Text] Persistent_TTT_PlayersKarma;
+
+	if (!Persistent_TTT_PlayersKarma.existskey(_Player.User.Login)) {
+		Persistent_TTT_PlayersKarma[_Player.User.Login] = C_PlayerInitialKarma;
+	}
+
+	Persistent_TTT_PlayersKarma[_Player.User.Login] += _Karma;
+}
+
+Void TTT_RemovePlayerKarma(CSmPlayer _Player, Integer _Karma) {
+	TTT_AddPlayerKarma(_Player, -_Karma);
+}
+
+// ---------------------------------- //
+/** Drop a coin under the player.
+ *
+ *	@param	_Player		The player to drop their coin.
+ */
+Void SpawnCoin(CSmPlayer _Player) {
+	if (_Player == Null) return;
+
+	declare PlayerClan = Clans::GetPlayerClan(_Player);
+	if (PlayerClan <= 0) return;
+
+	// ---------------------------------- //
+	// Find a coin with closest color match
+	declare ClanColor = Clans::GetClanColor(PlayerClan);
+	declare Real[Vec3] ColorsDistances;
+	declare Vec3 CoinColorId;
+	foreach (Color => ObjectId in G_CoinObjectsIds) ColorsDistances[Color] = ML::Distance(ClanColor, Color);
+	
+	ColorsDistances = ColorsDistances.sort();
+	foreach (Color => Distance in ColorsDistances) { CoinColorId = Color; break; }
+
+	// A Traitor, who fakes their death shouldn't pick up the items immediately
+	declare Vec3[Ident] ForbiddenItems for _Player;
+
+	// ---------------------------------- //
+	// Create a coin
+	if (G_CoinObjectsIds.existskey(CoinColorId)) {
+		declare ModelId = G_CoinObjectsIds[CoinColorId];
+		declare Coin <=> ObjectCreate(ModelId);
+
+		declare Text ObjectTag for Coin;
+		declare Text ObjectOwner for Coin;
+		declare Integer OwnerClan for Coin;
+
+		ObjectTag = "Coin";
+		ObjectOwner = _Player.User.Login;
+		OwnerClan = PlayerClan;
+
+		Coin.SetPosition(_Player.Position);
+		ForbiddenItems[Coin.Id] = _Player.Position;
+		G_CreatedObjects.add(Coin.Id);
+	}
+
+	// ---------------------------------- //
+	// Create a gold crystal, if there are any detectives alive
+	if (TTT_NbDetectivesAlive() > 0) {
+		declare Gold <=> ObjectCreate(G_GoldObjectId);
+
+		declare Text ObjectTag for Gold;
+		declare Text ObjectOwner for Gold;
+		declare Integer OwnerClan for Gold;
+
+		ObjectTag = "Gold";
+		ObjectOwner = _Player.User.Login;
+		OwnerClan = PlayerClan;
+
+		declare Boolean DroppedGold for _Player.Score;
+		DroppedGold = True;
+
+		Gold.SetPosition(_Player.Position);
+		ForbiddenItems[Gold.Id] = _Player.Position;
+		G_CreatedObjects.add(Gold.Id);
+	}
+}
+
+// ---------------------------------- //
+/** Pick up an object.
+ *
+ *	@param	_Player		The player, who picked up an object.
+ *	@param	_Object		The object that's been picked up.
+ */
+Void TTT_PickUpObject(CSmPlayer _Player, CSmObject _Object) {
+	if (_Player == Null || _Object == Null) return;
+	if (!G_CreatedObjects.exists(_Object.Id)) return;
+
+	// Player can't pick up the object yet
+	declare Vec3[Ident] ForbiddenItems for _Player;
+	if (ForbiddenItems.existskey(_Object.Id)) return;
+
+	// Object data
+	declare Text ObjectTag for _Object;
+	declare Text ObjectOwner for _Object;
+	declare Integer OwnerClan for _Object;
+
+	switch (ObjectTag) {
+		// ---------------------------------- //
+		// Coin - identify the victim
+		case "Coin" : {
+			declare VictimName = Names::Get(ObjectOwner);
+			declare VictimScore <=> SM::GetScore(ObjectOwner);
+
+			Killfeed::SendNotice(VictimName, Names::Get(_Player), C_ImgBase^"/Icons/Search.png", "");
+			Killfeed::SendNotice([
+				"$<%1$> was $<$t%2%3$>!", VictimName,
+				"$"^TL::ColorToText(Clans::GetClanColor(OwnerClan)),
+				Clans::GetClanName(OwnerClan)
+			]);
+
+			// Update role on the scores table
+			ST2::SetColValue("TTT_KnownRole", VictimScore, Clans::GetClanColorizedName(OwnerClan));
+
+			// ---------------------------------- //
+			// Espose Traitor, who faked their death
+			declare Traitor <=> SM::GetPlayer(ObjectOwner);
+
+			if (Traitor != Null && Traitor.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned && Clans::GetPlayerClan(Traitor) == 2) {
+				Traitor.ForceColor = Clans::GetClanColor(2);
+
+				// Notify the Traitor
+				Translations::SendBigMessage(Traitor, "Exposed!", 5000, 0, CUIConfig::EUISound::Warning, 0);
+				Translations::SendStatusMessage(Traitor, "Someone found your faked items. Your Traitor status is now public!", 5000, 0);
+			}
+
+			// ---------------------------------- //
+			// Destroy the marker
+			declare Boolean DroppedGold for VictimScore;
+
+			if (!DroppedGold) {
+
+			}
+		}
+		// ---------------------------------- //
+		// Gold - identify the killer
+		case "Gold" : {
+			if (Clans::GetPlayerClan(_Player) != 1) return;
+
+			declare VictimName = Names::Get(ObjectOwner);
+			declare VictimScore <=> SM::GetScore(ObjectOwner);
+
+			if (VictimScore != Null) {
+				declare Text PlayerMurderer for VictimScore;
+				declare MurdererName = Names::Get(PlayerMurderer);
+
+				// There is a murderer
+				if (MurdererName != "") {
+					Killfeed::SendNotice(["$<%1$> got eliminated by $<%2$>.", VictimName, MurdererName]);
+				}
+
+				// Player died on their own
+				else {
+					Killfeed::SendNotice(["$<%1$> got eliminated on their own.", VictimName]);
+				}
+			}
+
+			// ---------------------------------- //
+			// Destroy the marker
+			
+		}
+	}
+
+	// Destroy the object
+	declare Removed = G_CreatedObjects.remove(_Object.Id);
+	_Object.SetUnspawned();
+	ObjectDestroy(_Object);
+}
+
+// ---------------------------------- //
+/** Create markers manialink.
+ *
+ *	@return		The markers manialink.
+ */
+Text CreateTTTMarkersLayer() {
+	return """
+<manialink version="3" name="TTT:Markers">
+<stylesheet>
+
+</stylesheet>
+
+<framemodel id="">
+
+</framemodel>
+
+<script><!--
+
+--></script>
+</manialink>
+	""";
+}

@@ -1,15 +1,16 @@
 // -------------------------------------- //
 //  HUNGER GAMES 3.3.0 by domino54        //
-//  script version: 2018-02-15            //
+//  script version: 2018-02-17            //
 // -------------------------------------- //
 
 #Extends "Modes/ShootMania/ModeGalaxyTitles.Script.txt"
 
 #Const CompatibleMapTypes "HungerGamesV2Arena"
-#Const Version		"2018-02-15"
+#Const Version		"2018-02-17"
 #Const ScriptName	"Modes/ShootMania/HungerGames.Script.txt"
 
 #Include "Libs/Nadeo/ShootMania/Map.Script.txt" as Map
+#Include "Libs/domino54/MultiClans.Script.txt" as Clans
 
 // ---------------------------------- //
 // Settings
@@ -119,6 +120,8 @@ TopScores::RemoveCategory("Support");
 TopScores::AddCategory("Items", "Found items", "", 1., "", 2.25, 60.);
 TopScores::AddCategory("Survival", "Survived kills", "", 2., "", 2.25, 75.);
 TopScores::SetFormat(3, 1);
+
+ST2::SetPlayerCardImages(" ", C_ImgBase^"STPlayerLeft.png", C_ImgBase^"STPlayerRight.png");
 ST2::SetColWidth("LibST_SMPoints", 5.);
 ST2::DestroyCol("LibST_SMRoundPoints");
 ***
@@ -162,7 +165,7 @@ G_ObjectId["Charge"]	= ItemList_Add("HungerGames\\Charge.Item.Gbx");
 G_ObjectId["Mini"]		= ItemList_Add("HungerGames\\Mini.Item.Gbx");
 
 // Create custom interfaces
-UIManager.UIAll.SpectatorForceCameraType = 1; ///< Disables the free-cam ("Cam 7")
+// UIManager.UIAll.SpectatorForceCameraType = 0; ///< Disables the free-cam ("Cam 7")
 Layers::Create("HungerGames:Interface", CreateManialinkInterface());
 Layers::Create("HungerGames:Statistics", CreateManialinkStatistics());
 Layers::SetType("HungerGames:Statistics", CUILayer::EUILayerType::ScoresTable);
@@ -492,6 +495,14 @@ if (PickedUpObject && MapLandmarks_ObjectAnchor.existskey(ObjectAnchorId)) {
 // ---------------------------------- //
 // On hit event
 // ---------------------------------- //
+***OnHitConditions***
+***
+if (Clans::AreTeammates(Event.Shooter, Event.Victim)) {
+	Discard(Event);
+	continue;
+}
+***
+
 ***OnHit***
 ***
 declare Boolean PlayerRequestsRespawn for Event.Victim;
@@ -823,7 +834,7 @@ foreach (Player in Players) {
 if (PrevPlayersNbAlive != PlayersNbAlive) {
 	ST2::SetFooterText(TL::Compose("%1 "^PlayersNbAlive, _("Remaining players: ")));
 	UISetNbPlayersAlive(PlayersNbAlive);
-	
+
 	if (Now > StartTime) {
 		// ---------------------------------- //
 		// Give survival points to all players alive
@@ -831,18 +842,21 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 			foreach (Player in Players) {
 				if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 				TopScores::AddPoints(Player.Score, "Survival", 1);
-				Scores::AddPlayerRoundPoints(Player.Score, C_PlayerPointsForSurvival);
+				Scores::AddPlayerMapPoints(Player.Score, C_PlayerPointsForSurvival);
 			}
 			if (PlayersNbAlive >= 2) Message::SendStatusMessage(TL::Compose("%1 "^PlayersNbAlive, _("Remaining players: ")), 4000, 2);
 		}
 	
 		// ---------------------------------- //
 		// Play the victory sound
-		if (PlayersNbAlive == 1) UIManager.UIAll.SendNotice(
-			"", CUIConfig::ENoticeLevel::Default,
-			Null, CUIConfig::EAvatarVariant::Default,
-			CUIConfig::EUISound::VictoryPoint, 0
-		);
+		if (Clans::GetNbAliveClans(True) == 1) {
+			UIManager.UIAll.SendNotice(
+				"", CUIConfig::ENoticeLevel::Default,
+				Null, CUIConfig::EAvatarVariant::Default,
+				CUIConfig::EUISound::VictoryPoint, 0
+			);
+			MB_StopMatch();
+		}
 	}
 
 	PrevPlayersNbAlive = PlayersNbAlive;
@@ -851,9 +865,11 @@ if (PrevPlayersNbAlive != PlayersNbAlive) {
 // ---------------------------------- //
 // Turn round points into actual total points
 foreach (Score in Scores) {
-	if (Score.RoundPoints == 0) continue;
-	Score.Points += Score.RoundPoints;
-	Score.RoundPoints = 0;
+	declare RoundPoints = Scores::GetPlayerRoundPoints(Score);
+	if (RoundPoints == 0) continue;
+
+	Scores::AddPlayerMapPoints(Score, RoundPoints);
+	Scores::SetPlayerRoundPoints(Score, 0);
 }
 
 // Victory conditions
@@ -879,9 +895,29 @@ if (CenterGoal != Null) CenterGoal.Gauge.Speed = 0;
 // ---------------------------------- //
 // Set the map winner
 declare WinnerId = NullId;
-if (PlayersNbAlive == 1) foreach (Player in Players) if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
-	if (Scores.existskey(1)) Player.Score.Points = ML::Max(Scores[0].Points + C_WinnerMinPointsDiff, Player.Score.Points);
+foreach (Player in Players) {
+	if (PlayersNbAlive != 1) break;
+	if (Player.SpawnStatus != CSmPlayer::ESpawnStatus::Spawned) continue;
 	WinnerId = Player.Id;
+
+	// ---------------------------------- //
+	// Minimum points for winner
+	declare MinTargetScore = 0;
+	foreach (Score in Scores) {
+		if (Score == Player.Score) continue;
+		declare MapPoints = Scores::GetPlayerMapPoints(Score);
+		if (MapPoints > MinTargetScore) MinTargetScore = MapPoints;
+	}
+
+	declare WinnerMapPoints = Scores::GetPlayerMapPoints(Player.Score);
+	declare Difference = WinnerMapPoints - MinTargetScore;
+
+	if (Difference <= 0) {
+		Scores::SetPlayerMapPoints(Player.Score, MinTargetScore + C_WinnerMinPointsDiff);
+	} else if (Difference < C_WinnerMinPointsDiff) {
+		Scores::AddPlayerMapPoints(Player.Score, C_WinnerMinPointsDiff - Difference);
+	}
+
 	break;
 }
 
@@ -1253,7 +1289,7 @@ Boolean PickUpObject(CSmModeEvent _Event) {
 	// ---------------------------------- //
 	// Give points for picking up the item
 	TopScores::AddPoints(_Event.Player.Score, "Items", 1);
-	Scores::AddPlayerRoundPoints(_Event.Player.Score, C_PlayerPointsForObjects);
+	Scores::AddPlayerMapPoints(_Event.Player.Score, C_PlayerPointsForObjects);
 	
 	// Destroy object
 	declare Destroyed = DestroyObject(_Event.Object);

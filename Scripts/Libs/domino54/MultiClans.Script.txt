@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MULTICLANS by domino54        //
-//  script version: 2018-02-16            //
+//  script version: 2018-02-17            //
 // -------------------------------------- //
 
 /**
@@ -11,7 +11,7 @@
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const Version		"2018-02-16"
+#Const Version		"2018-02-17"
 #Const ScriptName	"Libs/domino54/MultiClans.Script.txt"
 
 // ---------------------------------- //
@@ -60,8 +60,23 @@ CTmPlayer[] AllPlayers_TM() {
 	foreach (Player in AllPlayers) CommonPlayers.add(Player);
 	
 	declare CTmPlayer[] TMPlayers;
-	foreach (Player in TMPlayers) TMPlayers.add((Player as CTmPlayer));
+	foreach (Player in CommonPlayers) TMPlayers.add((Player as CTmPlayer));
 	return TMPlayers;
+}
+
+// ---------------------------------- //
+/** Get array of ShootMania players
+ *
+ *	@return		ShootMania players
+ */
+CSmPlayer[] AllPlayers_SM() {
+	if (!(This is CSmMode)) return CSmPlayer[];
+	declare CPlayer[] CommonPlayers;
+	foreach (Player in AllPlayers) CommonPlayers.add(Player);
+	
+	declare CSmPlayer[] SMPlayers;
+	foreach (Player in CommonPlayers) SMPlayers.add((Player as CSmPlayer));
+	return SMPlayers;
 }
 
 // ---------------------------------- //
@@ -455,6 +470,54 @@ Integer GetClanNbPlayers(Integer _Clan) {
 	declare Count = 0;
 	foreach (Player in Players) if (GetPlayerClan(Player) == _Clan) Count += 1;
 	return Count;
+}
+
+// ---------------------------------- //
+/** Get the amount of alive players in a specific clan.
+ *
+ *	@param	_Clan	The clan to get players.
+ *
+ *	@return		The amount of players in the clan.
+ */
+Integer GetClanNbPlayersAlive(Integer _Clan) {
+	if (!(This is CSmMode)) return 0;
+
+	declare Count = 0;
+	foreach (Player in AllPlayers_SM()) {
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned || Player.Armor <= 0) continue;
+		if (GetPlayerClan(Player) == _Clan) Count += 1;
+	}
+	return Count;
+}
+
+// ---------------------------------- //
+/** Get the amount of alive clans.
+ *
+ *	@param	_CountIndividuals	Count players outside any clan as a separate team.
+ *
+ *	@return		The amount of alive clans.
+ */
+Integer GetNbAliveClans(Boolean _CountIndividuals) {
+	if (!(This is CSmMode)) return 0;
+
+	declare AliveIndividuals = 0;
+	declare AliveClans = Integer[];
+
+	foreach (Player in AllPlayers_SM()) {
+		if (Player.SpawnStatus == CSmPlayer::ESpawnStatus::NotSpawned || Player.Armor <= 0) continue;
+		
+		declare PlayerClan = GetPlayerClan(Player);
+		if (PlayerClan <= 0) AliveIndividuals += 1;
+		else if (!AliveClans.exists(PlayerClan)) AliveClans.add(PlayerClan);
+	}
+
+	declare NbAliveClans = AliveClans.count;
+	if (_CountIndividuals) NbAliveClans += AliveIndividuals;
+	return NbAliveClans;
+}
+
+Integer GetNbAliveClans() {
+	return GetNbAliveClans(False);
 }
 
 // ---------------------------------- //

@@ -1,0 +1,503 @@
+// -------------------------------------- //
+//  LIBRARY DISCORD WEBHOOKS by domino54  //
+//  script version: 2018-02-28            //
+// -------------------------------------- //
+
+/**
+ *	Library to send messages on Discord servers through
+ *	the webhooks. Enhanced with easy methods to send
+ *	messages and simplified creation of rich embeds. 
+ */
+
+#Const Version		"2018-02-28"
+#Const ScriptName	"Libs/domino54/DiscordWebhooks.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibWebhooks_AdditionalHeaders	"Content-Type: application/json"
+#Const C_LibWebhooks_RequestTimeout		10000
+#Const C_LibWebhooks_ContentMaxLength	2000
+
+/// Forbidden characters in JSON.
+#Const C_LibWebhooks_ForbiddenCharacters [
+	"\"" => "\\\"",
+	"\\" => "\\\\",
+	"\n" => "\\n",
+	"\t" => "\\t"
+]
+
+/// Characters used within a mention entity.
+#Const C_LibWebhooks_MentionBody ["<", "@", "&", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ">"]
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[Text] G_LibWebhooks_CreatedWebhooks;
+declare Ident[] G_LibWebhooks_OngoingRequests;
+declare Ident[] G_LibWebhooks_RequestsToDestroy;
+declare Text[] G_LibWebhooks_EscapingMentions;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Check if a webhook with given id exists.
+ *
+ *	@param	_WebhookId	The webhook to test.
+ *
+ *	@return		True, if the webhook exists.
+ */
+Boolean Private_WebhookExists(Text _WebhookId) {
+	return G_LibWebhooks_CreatedWebhooks.existskey(_WebhookId);
+}
+
+// ---------------------------------- //
+/** Get the URL of a webhook.
+ *
+ *	@param	_WebhookId	Webhook to get its URL.
+ *
+ *	@return		The webhook URL, if exists.
+ */
+Text Private_GetURL(Text _WebhookId) {
+	if (!Private_WebhookExists(_WebhookId)) return "";
+	return G_LibWebhooks_CreatedWebhooks[_WebhookId];
+}
+
+// ---------------------------------- //
+/** Send payload to the webhook URL.
+ *
+ *	@param	_WebhookId	Id of the webhook to use.
+ *	@param	_Resource	The resource to send.
+ */
+Void Private_Post(Text _WebhookId, Text _Resource) {
+	if (_WebhookId == "" || _Resource == "" || Http.SlotsAvailable <= 0) return;
+
+	declare WebhookURL = Private_GetURL(_WebhookId);
+	if (WebhookURL == "") return;
+	log(_Resource);
+	declare Request = Http.CreatePost(WebhookURL, _Resource, C_LibWebhooks_AdditionalHeaders);
+	G_LibWebhooks_OngoingRequests.add(Request.Id);
+
+	declare Integer LibWebhooks_ExpirationTime for Request;
+	LibWebhooks_ExpirationTime = Now + C_LibWebhooks_RequestTimeout;
+}
+
+// ---------------------------------- //
+/** Escape forbidden JSON character in a string.
+ *
+ *	@param	_String		The string to escape.
+ *
+ *	@return		The escaped string.
+ */
+Text Private_EscapeJSON(Text _String) {
+	if (_String == "") return "\"\"";
+
+	// Check, if we have to escape the string
+	declare EscapeNeeded = False;
+
+	foreach (Char => Replacement in C_LibWebhooks_ForbiddenCharacters) {
+		if (!TL::Find(Char, _String, False, False)) continue;
+		EscapeNeeded = True;
+		break;
+	}
+
+	if (!EscapeNeeded) return "\"" ^ _String ^ "\"";
+
+	// Escape forbidden characters
+	declare Text EscapedString;
+
+	for (I, 0, TL::Length(_String) - 1) {
+		declare Char = TL::SubString(_String, I, 1);
+
+		if (C_LibWebhooks_ForbiddenCharacters.existskey(Char)) {
+			Char = C_LibWebhooks_ForbiddenCharacters[Char];
+		}
+
+		EscapedString ^= Char;
+	}
+
+	return "\"" ^ EscapedString ^ "\"";
+}
+
+// ---------------------------------- //
+/** Escape Discord users and roles mentions in a string.
+ *
+ *	@param	_String		The string to escape.
+ *
+ *	@return		The escaped string.
+ */
+Text Private_EscapeMentions(Text _String) {
+	if (_String == "") return _String;
+
+	// Escape @everyone
+	declare String = TL::Replace(_String, "@everyone", "`@everyone`");
+
+	// Escape user and role mentions
+	declare Text EscapedString;
+	declare PendingMention = False;
+
+	for (I, 0, TL::Length(String) - 1) {
+		declare Char = TL::SubString(String, I, 1);
+		declare Chars = TL::SubString(String, I, 2);
+
+		// Break the mention
+		if (PendingMention && !C_LibWebhooks_MentionBody.exists(Char)) PendingMention = False;
+
+		// Detect mention beginning
+		if (Chars == "<@") {
+			PendingMention = True;
+			EscapedString ^= "`removed mention`";
+		}
+
+		if (!PendingMention) EscapedString ^= Char;
+	}
+
+	return EscapedString;
+}
+
+// ---------------------------------- //
+/** Stringify text array to a JSON object.
+ *
+ *	@param	_Properties		Properties of the object to stringify.
+ *
+ *	@return		Stringified object.
+ */
+Text Private_StringifyObject(Text[Text] _Properties) {
+	if (_Properties.count <= 0) return "{}";
+
+	declare Text[] Properties;
+
+	foreach (Property => Value in _Properties) {
+		if (Property == "") continue;
+
+		// Assuming, that Value is already escaped, valid type
+		Properties.add(Private_EscapeJSON(Property) ^ ":" ^ Value);
+	}
+
+	return "{" ^ TL::Join(",", Properties) ^ "}";
+}
+
+// ---------------------------------- //
+/** Stringify an array to a JSON array.
+ *
+ *	@param	_Array	The array to stringify.
+ *
+ *	@return		Stringified object.
+ */
+Text Private_StringifyArray(Text[] _Array) {
+	if (_Array.count <= 0) return "[]";
+	return "[" ^ TL::Join(",", _Array) ^ "]";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Create a new Discord webhook.
+ *
+ *	@param	_WebhookId		Id of the new webhook.
+ *	@param	_WebhookURL		URL of the new webhook.
+ */
+Void CreateWebhook(Text _WebhookId, Text _WebhookURL) {
+	if (_WebhookId == "" || !Http.IsValidUrl(_WebhookURL)) return;
+	if (Private_WebhookExists(_WebhookId)) return;
+
+	// Validate Discord URL
+	declare Explode = TL::Split("/", _WebhookURL);
+	if (Explode.count < 6 || (Explode[0] != "http:" && Explode[0] != "https:")) return;
+	if (!TL::Find("discordapp.com", Explode[1], False, False) || Explode[2] != "api" || Explode[3] != "webhooks") return;
+
+	// Create a new webhook
+	G_LibWebhooks_CreatedWebhooks[_WebhookId] = _WebhookURL;
+}
+
+// ---------------------------------- //
+/** Destroy an existing Discord webhook.
+ *
+ *	@param	_WebhookId	Id of the webhook to destroy.
+ */
+Void DestroyWebhook(Text _WebhookId) {
+	if (_WebhookId == "" || !Private_WebhookExists(_WebhookId)) return;
+
+	declare Boolean Removed;
+	Removed = G_LibWebhooks_CreatedWebhooks.removekey(_WebhookId);
+	Removed = G_LibWebhooks_EscapingMentions.remove(_WebhookId);
+}
+
+// ---------------------------------- //
+/** Check if a webhook is set to escape mentions in the content.
+ *
+ *	@param	_WebhookId	Id of the webhook to check.
+ *
+ *	@return		True, if the webhook is escaping mentions.
+ */
+Boolean EscapeMentions(Text _WebhookId) {
+	return G_LibWebhooks_EscapingMentions.exists(_WebhookId);
+}
+
+// ---------------------------------- //
+/** Set the mentions escaping behavior of a webhook.
+ *
+ *	@param	_WebhookId			Id of the webhook to set.
+ *	@param	_EscapeMentions		If True, mentions will be escaped.
+ */
+Void SetEscapeMentions(Text _WebhookId, Boolean _EscapeMentions) {
+	if (!Private_WebhookExists(_WebhookId)) return;
+	if (EscapeMentions(_WebhookId) == _EscapeMentions) return;
+
+	if (_EscapeMentions) {
+		G_LibWebhooks_EscapingMentions.add(_WebhookId);
+	}
+
+	else if (G_LibWebhooks_EscapingMentions.exists(_WebhookId)) {
+		declare Removed = G_LibWebhooks_EscapingMentions.remove(_WebhookId);
+	}
+}
+
+// ---------------------------------- //
+/** Convert color to an integer.
+ *
+ *	@param	_Color	The color to convert.
+ *
+ *	@return		Color converted to an integer.
+ */
+Integer ColorToInteger(Vec3 _Color) {
+	if (_Color == <0., 0., 0.>) return 0;
+	
+	declare R = ML::NearestInteger(_Color.X * 255) * 255 * 255;
+	declare G = ML::NearestInteger(_Color.Y * 255) * 255;
+	declare B = ML::NearestInteger(_Color.Z * 255);
+
+	return R + G + B;
+}
+
+// ---------------------------------- //
+/** Send a message to Discord via a webhook.
+ *
+ *	@param	_WebhookId	Id of the webhook to use.
+ *	@param	_Content	Content of the message.
+ *	@param	_Embeds		Embeds sent with the message.
+ *	@param	_Username	Override the default webhook username.
+ *	@param	_AvatarURL	Override the default webhook avarar url.
+ *	@param	_IsTTS		If True, message will be read via TTS module.
+ */
+Void Send(Text _WebhookId, Text _Content, Text[] _Embeds, Text _Username, Text _AvatarURL, Boolean _IsTTS) {
+	if (!Private_WebhookExists(_WebhookId)) return;
+	if (_Content == "" && _Embeds.count <= 0) return;
+
+	// Content too long!
+	if (TL::Length(_Content) > C_LibWebhooks_ContentMaxLength) return;
+
+	// Escape all mentions in the content
+	declare Content = _Content;
+	if (EscapeMentions(_WebhookId)) Content = Private_EscapeMentions(Content);
+
+	// JSON stringify
+	declare Text[Text] Properties;
+
+	if (_Content != "")		Properties["content"]		= Private_EscapeJSON(Content);
+	if (_Embeds.count > 0)	Properties["embeds"]		= Private_StringifyArray(_Embeds);
+	if (_Username != "")	Properties["username"]		= Private_EscapeJSON(_Username);
+	if (_AvatarURL != "")	Properties["avatar_url"]	= Private_EscapeJSON(_AvatarURL);
+	if (_IsTTS)				Properties["tts"]			= "true";
+
+	// Create a JSON object and send a POST request
+	Private_Post(_WebhookId, Private_StringifyObject(Properties));
+}
+
+Void Send(Text _WebhookId, Text _Content, Text _Username, Text _AvatarURL, Boolean _IsTTS) {
+	Send(_WebhookId, _Content, Text[], _Username, _AvatarURL, _IsTTS);
+}
+
+Void Send(Text _WebhookId, Text _Content, Text _Username, Text _AvatarURL) {
+	Send(_WebhookId, _Content, Text[], _Username, _AvatarURL, False);
+}
+
+Void Send(Text _WebhookId, Text _Content, Boolean _IsTTS) {
+	Send(_WebhookId, _Content, Text[], "", "", _IsTTS);
+}
+
+Void Send(Text _WebhookId, Text _Content) {
+	Send(_WebhookId, _Content, Text[], "", "", False);
+}
+
+Void Send(Text _WebhookId, Text[] _Embeds, Text _Username, Text _AvatarURL) {
+	Send(_WebhookId, "", _Embeds, _Username, _AvatarURL, False);
+}
+
+Void Send(Text _WebhookId, Text[] _Embeds) {
+	Send(_WebhookId, "", _Embeds, "", "", False);
+}
+
+// ---------------------------------- //
+/** Create a stringified rich embed object.
+ *
+ *	@param	_Title			The embed title.
+ *	@param	_Description	Description of the embed.
+ *	@param	_URL			URL opened after clicking the embed.
+ *	@param	_Timestamp		ISO8601 timestamp.
+ *	@param	_Color			Color of the embed card.
+ *	@param	_Footer			Stringified object made with Footer() method.
+ *	@param	_Image			Stringified object made with Image() method.
+ *	@param	_Thumbnail		Stringified object made with Thumbnail() method.
+ *	@param	_Author			Stringified object made with Author() method.
+ *	@param	_Fields			Array of stringified objects made with Field() method.
+ *
+ *	@return		Stringified rich embed.
+ */
+Text RichEmbed(Text _Title, Text _Description, Text _URL, Integer _Timestamp, Vec3 _Color, Text _Footer, Text _Image, Text _Thumbnail, Text _Author, Text[] _Fields) {
+	if (_Title == "" && _Description == "" && _Timestamp <= 0 && _Footer == "" && _Image == "" && _Thumbnail == "" && _Author == "" && _Fields.count <= 0) return "{}";
+
+	// JSON stringify
+	declare Text[Text] Properties;
+	declare EmbedHasColor = _Color != <0., 0., 0.>;
+
+	if (_Title != "")		Properties["title"]			= Private_EscapeJSON(_Title);
+	if (_Description != "")	Properties["description"]	= Private_EscapeJSON(_Description);
+	if (_URL != "")			Properties["url"]			= Private_EscapeJSON(_URL);
+	if (_Timestamp > 0)		Properties["timestamp"]		= TL::ToText(_Timestamp);
+	if (EmbedHasColor)		Properties["color"]			= TL::ToText(ColorToInteger(_Color));
+	if (_Footer != "")		Properties["footer"]		= _Footer;
+	if (_Image != "")		Properties["image"]			= _Image;
+	if (_Thumbnail != "")	Properties["thumbnail"]		= _Thumbnail;
+	if (_Author != "")		Properties["author"]		= _Author;
+	if (_Fields.count > 0)	Properties["fields"]		= Private_StringifyArray(_Fields);
+
+	return Private_StringifyObject(Properties);
+}
+
+// ---------------------------------- //
+/** Create a stringified footer object.
+ *
+ *	@param	_Text		Footer text.
+ *	@param	_IconURL	Footer icon.
+ *
+ *	@return		Stringified footer.
+ */
+Text Footer(Text _Text, Text _IconURL) {
+	if (_Text == "") return "{}";
+
+	// JSON stringify
+	declare Text[Text] Properties;
+
+	if (_Text != "")	Properties["text"]		= Private_EscapeJSON(_Text);
+	if (_IconURL != "")	Properties["icon_url"]	= Private_EscapeJSON(_IconURL);
+
+	return Private_StringifyObject(Properties);
+}
+
+// ---------------------------------- //
+/** Create a stringified image object.
+ *
+ *	@param	_URL	Image URL.
+ *
+ *	@return		Stringified image.
+ */
+Text Image(Text _URL) {
+	if (_URL == "") return "{}";
+
+	// JSON stringify
+	return Private_StringifyObject(["url" => Private_EscapeJSON(_URL)]);
+}
+
+// ---------------------------------- //
+/** Create a stringified thumbnail object.
+ *
+ *	@param	_URL	Thumbnail URL.
+ *
+ *	@return		Stringified thumbnail.
+ */
+Text Thumbnail(Text _URL) {
+	return Image(_URL);
+}
+
+// ---------------------------------- //
+/** Create a stringified author object.
+ *
+ *	@param	_Name		Name of the author.
+ *	@param	_URL		URL to redirect to after clicking the author name.
+ *	@param	_IconURL	Image URL of the author.
+ *
+ *	@return		Stringified author.
+ */
+Text Author(Text _Name, Text _URL, Text _IconURL) {
+	if (_Name == "") return "{}";
+
+	// JSON stringify
+	declare Text[Text] Properties;
+
+	if (_Name != "")	Properties["name"]		= Private_EscapeJSON(_Name);
+	if (_URL != "")		Properties["url"]		= Private_EscapeJSON(_URL);
+	if (_IconURL != "")	Properties["icon_url"]	= Private_EscapeJSON(_IconURL);
+
+	return Private_StringifyObject(Properties);
+}
+
+// ---------------------------------- //
+/** Create a stringified field object.
+ *
+ *	@param	_Name		Name of the field.
+ *	@param	_Value		Value of the field.
+ *	@param	_Inline		Whether the field is inline or not.
+ *
+ *	@return		Stringified field.
+ */
+Text Field(Text _Name, Text _Value, Boolean _Inline) {
+	if (_Name == "" || _Value == "") return "{}";
+
+	// JSON stringify
+	declare Text[Text] Properties;
+
+	if (_Name != "")	Properties["name"]		= Private_EscapeJSON(_Name);
+	if (_Value != "")	Properties["value"]		= Private_EscapeJSON(_Value);
+	if (_Inline)		Properties["inline"]	= "true";
+
+	return Private_StringifyObject(Properties);
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	// Get finished and timed out requests
+	foreach (Request in Http.Requests) {
+		if (!G_LibWebhooks_OngoingRequests.exists(Request.Id)) continue;
+
+		declare Integer LibWebhooks_ExpirationTime for Request;
+		if (!Request.IsCompleted || Now < LibWebhooks_ExpirationTime) continue;
+		G_LibWebhooks_RequestsToDestroy.add(Request.Id);
+	}
+
+	// Destroy the requests
+	while (G_LibWebhooks_RequestsToDestroy.existskey(0)) {
+		declare RequestId = G_LibWebhooks_RequestsToDestroy[0];
+		declare Removed = G_LibWebhooks_RequestsToDestroy.removekey(0);
+
+		if (Http.Requests.existskey(RequestId)) {
+			Http.Destroy(Http.Requests[RequestId]);
+		}
+	}
+}

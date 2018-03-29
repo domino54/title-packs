@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY CHAT by domino54              //
-//  script version: 2017-12-15            //
+//  script version: 2018-03-29            //
 // -------------------------------------- //
 
 /**
@@ -9,13 +9,15 @@
  *	and allows to send longer messages.
  */
 
-#Const Version		"2017-12-15"
+#Const Version		"2018-03-29"
 #Const ScriptName	"Libs/domino54/Chat.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
+#Include "TimeLib" as Time
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/domino54/Bindings.Script.txt" as Bindings
+#Include "Libs/domino54/DiscordWebhooks.Script.txt" as Discord
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
 #Include "Libs/domino54/ServerManager.Script.txt" as ServerManager
@@ -69,6 +71,7 @@
 // Global variables
 // ---------------------------------- //
 declare Text G_LibChat_InterfaceFont;
+declare Text G_LibChat_DiscordWebhookURL;
 declare Integer G_LibChat_LastCommandId;
 declare Integer[] G_LibChat_PendingCommands;
 declare Text[Integer] G_LibChat_CommandSender;
@@ -166,6 +169,12 @@ Text Private_CreateManialinkChat() {
 		<label pos="3" id="Label_ChatKeyHint" textfont="Eurostile_Bold" />
 		<quad pos="-.375" size="3 3" valign="center" image="file://Media/Emoji/emoji.png" opacity=".5" id="Quad_EmojiPickerToggle" ScriptEvents="1" />
 	</frame>
+
+	<frame id="Frame_ChatBackground" hidden="1">
+		<quad pos="-1" size="122 138" valign="bottom" bgcolor="000" opacity=".75" />
+		<quad pos="-1" size="122 138" valign="bottom" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+		<quad pos="-6 -5" size="132 148" valign="bottom" style="Bgs1InRace" substyle="BgButtonShadow" />
+	</frame>
 </frame>
 <script><!--
 /**
@@ -253,6 +262,7 @@ declare Text[Text] G_AvailableEmoji;
 // ---------------------------------- //
 // Load interface elements
 declare Frame_ChatWindow <=> (Page.GetFirstChild("Frame_ChatWindow") as CMlFrame);
+declare Frame_ChatBackground <=> (Page.GetFirstChild("Frame_ChatBackground") as CMlFrame);
 declare Frame_LabelsAnim <=> (Page.GetFirstChild("Frame_LabelsAnim") as CMlFrame);
 declare Entry_ChatInput <=> (Page.GetFirstChild("Entry_ChatInput") as CMlEntry);
 declare Label_ChatKeyHint <=> (Page.GetFirstChild("Label_ChatKeyHint") as CMlLabel);
@@ -295,6 +305,7 @@ declare persistent Persistent_LibChat_EnableEmojiParser for LocalUser = True;
 declare netread Boolean Net_LibChat_UseCustomChat for Teams[0];
 declare netread Text[Integer] Net_LibChat_GlobalChatMessages for Teams[0];
 declare netread Text[Integer] Net_LibChat_GlobalChatSenders for Teams[0];
+declare netread Integer[Integer] Net_LibChat_GlobalChatClans for Teams[0];
 declare netread Text[Integer] Net_LibChat_UserChatMessages for InputPlayer;
 declare netread Text[Integer] Net_LibChat_UserChatSenders for InputPlayer;
 declare netread Integer Net_LibChat_GlobalLastMessage for Teams[0];
@@ -306,15 +317,20 @@ declare netread Text[Text] Net_LibChat_ServerEmoji for Teams[0];
 declare UpdateMessagesList = True;
 declare MaxNbMessagesDisplayed = 7;
 declare SlideNewMessage = False;
+declare CancelNextSlide = False;
 declare IsFirstLaunch = True;
 declare UpdateTooltip = True;
 declare PrevMessageKey = -1;
 declare FormatLabels = True;
 declare UpdateProfileCard = "";
+declare CurrentPlayerClan = 0;
+declare PrevPlayerClan = -1;
+declare PrevIsSpectator = False;
 
 declare MessagesList = Integer[];
 declare MessagesBody = Text[][Integer];
 declare MessagesSender = Text[Integer];
+declare MessagesClan = Integer[Integer];
 
 declare UpdatePickerMoji = True;
 declare PickerMojiCurPage = 1;
@@ -490,8 +506,19 @@ if (Bindings_Listener("LibChat_TeamMessage", "Y")) {
 // ---------------------------------- //
 // Toggle expand chat
 if (Bindings_Listener("LibChat_ToggleChat", "C")) {
-	if (MaxNbMessagesDisplayed == {{{C_LibChat_MaxNbMessagesSmall}}}) MaxNbMessagesDisplayed = {{{C_LibChat_MaxNbMessagesLarge}}};
-	else MaxNbMessagesDisplayed = {{{C_LibChat_MaxNbMessagesSmall}}};
+	// Expanded mode
+	if (MaxNbMessagesDisplayed == {{{C_LibChat_MaxNbMessagesSmall}}}) {
+		MaxNbMessagesDisplayed = {{{C_LibChat_MaxNbMessagesLarge}}};
+		Frame_ChatWindow.RelativePosition_V3 = <-60., -69.>;
+	}
+
+	// Normal mode
+	else {
+		MaxNbMessagesDisplayed = {{{C_LibChat_MaxNbMessagesSmall}}};
+		Frame_ChatWindow.RelativePosition_V3 = <-160., -90.>;
+	}
+
+	Frame_ChatBackground.Visible = MaxNbMessagesDisplayed == {{{C_LibChat_MaxNbMessagesLarge}}};
 }
 
 Label_ChatKeyHint.Visible = !Entry_ChatInput.Visible;
@@ -517,14 +544,44 @@ if (PrevMaxNbMessagesDisplayed != MaxNbMessagesDisplayed) {
 	UpdateMessagesList = True;
 }
 
+// Update the current clan
+if (!IsSpectatorClient) {
+	CurrentPlayerClan = Clans_GetPlayerClan(InputPlayer);
+}
+
+// Update on spectator mode change
+if (PrevIsSpectator != IsSpectatorClient) {
+	PrevIsSpectator = IsSpectatorClient;
+	CurrentPlayerClan = 0;
+}
+
+// ---------------------------------- //
+// Update messages on clan change
+if (PrevPlayerClan != CurrentPlayerClan) {
+	PrevPlayerClan = CurrentPlayerClan;
+	
+	UpdateMessagesList = True;
+	CancelNextSlide = True;
+
+	MessagesList.clear();
+	MessagesBody.clear();
+	MessagesSender.clear();
+	MessagesClan.clear();
+	PrevMessageKey = 0;
+}
+
+// ---------------------------------- //
 // Emoji parsing setting change
 if (PrevEnableEmojiParser != Persistent_LibChat_EnableEmojiParser) {
 	PrevEnableEmojiParser = Persistent_LibChat_EnableEmojiParser;
 
 	UpdateMessagesList = True;
+	CancelNextSlide = True;
+
 	MessagesList.clear();
 	MessagesBody.clear();
 	MessagesSender.clear();
+	MessagesClan.clear();
 	PrevMessageKey = 0;
 
 	Quad_EmojiPickerToggle.Visible = PrevEnableEmojiParser;
@@ -590,11 +647,20 @@ if (UpdateMessagesList) {
 		declare MessageSender = "";
 		if (Net_LibChat_GlobalChatSenders.existskey(Key)) MessageSender = Net_LibChat_GlobalChatSenders[Key];
 		else if (Net_LibChat_UserChatSenders.existskey(Key)) MessageSender = Net_LibChat_UserChatSenders[Key];
+
+		// Sender is muted
 		if (MessageSender != "" && Persistent_LibServerManager_PrivateMutedUsers.exists(MessageSender)) continue;
+
+		declare MessageClan = 0;
+		if (Net_LibChat_GlobalChatClans.existskey(Key)) MessageClan = Net_LibChat_GlobalChatClans[Key];
+
+		// Filter messages by clan.
+		if (!IsSpectatorClient && CurrentPlayerClan > 0 && MessageClan > 0 && CurrentPlayerClan != MessageClan) continue;
 
 		MessagesList.add(Key);
 		MessagesBody[Key] = ParseMessage(Message, MessageSender != "" && PrevEnableEmojiParser);
 		MessagesSender[Key] = MessageSender;
+		MessagesClan[Key] = MessageClan;
 		MessageKey = Key;
 	}
 
@@ -604,12 +670,13 @@ if (UpdateMessagesList) {
 		Removed = MessagesList.removekey(0);
 		Removed = MessagesBody.removekey(0);
 		Removed = MessagesSender.removekey(0);
+		Removed = MessagesClan.removekey(0);
 	}
 
 	// Trigger animation for new messages
 	if (PrevMessageKey != MessageKey) {
 		PrevMessageKey = MessageKey;
-		if (!IsFirstLaunch) SlideNewMessage = True;
+		if (!IsFirstLaunch && !CancelNextSlide) SlideNewMessage = True;
 	}
 
 	if (SlideNewMessage) {
@@ -626,23 +693,35 @@ if (UpdateMessagesList) {
 		declare MessageId = MessagesList[Key];
 		declare MessageBody = Text[];
 		declare MessageSender = "";
+		declare MessageClan = 0;
 
 		if (MessagesBody.existskey(MessageId)) MessageBody = MessagesBody[MessageId];
 		if (MessagesSender.existskey(MessageId)) MessageSender = MessagesSender[MessageId];
+		if (MessagesClan.existskey(MessageId)) MessageClan = MessagesClan[MessageId];
 		
 		Frame.Visible = I <= MaxNbMessagesDisplayed;
 		if (!Frame.Visible) continue;
 
 		declare PrevSenderIsSame = False;
-		/*if (MessagesList.existskey(Key-1) && MessagesSender.existskey(MessagesList[Key-1])) {
-			PrevSenderIsSame = MessageSender == MessagesSender[MessagesList[Key-1]];
-		}*/
+		declare PrevClanIsSame = False;
+		declare PrevMsgKey = Key - 1;
 
-		FormatChatLine(Frame, MessageBody, MessageSender, SlideNewMessage && I == 0, !PrevSenderIsSame);
+		if (MessagesList.existskey(PrevMsgKey)) {
+			if (MessagesSender.existskey(MessagesList[PrevMsgKey])) {
+				PrevSenderIsSame = MessageSender == MessagesSender[MessagesList[PrevMsgKey]];
+			}
+
+			if (MessagesClan.existskey(MessagesList[PrevMsgKey])) {
+				PrevClanIsSame = MessageClan == MessagesClan[MessagesList[PrevMsgKey]];
+			}
+		}
+
+		FormatChatLine(Frame, MessageBody, MessageSender, MessageClan, SlideNewMessage && I == 0, !PrevSenderIsSame || !PrevClanIsSame);
 	}
 
 	SlideNewMessage = False;
 	IsFirstLaunch = False;
+	CancelNextSlide = False;
 }
 
 // Update tooltip text
@@ -680,6 +759,11 @@ foreach (I => Frame in Frame_ChatMessages) {
 {{{Translations::InjectInManialink(["Press '%1' to chat"])}}}
 {{{Bindings::Functions()}}}
 {{{ManialinkTools::Functions(["ComputeWidth", "SetQuadStyle", "ReplaceChars"])}}}
+{{{Clans::Framework()}}}
+
+Integer GetCurrentClan() {
+	return 0;
+}
 
 // ---------------------------------- //
 /** Get player by login.
@@ -820,10 +904,11 @@ Text[] ParseMessage(Text _Message, Boolean _FindEmoji) {
  *	@param	_Frame		The frame to format.
  *	@param	_Message	Message data to put into the model.
  *	@param	_Sender		Login of the message sender.
+ *	@param	_Clan		The clan the message was sent to.
  *	@param	_AnimIn		Show fade-in animation.
  *	@param	_ShowSender	Show name of the message sender.
  */
-Void FormatChatLine(CMlFrame _Frame, Text[] _Message, Text _Sender, Boolean _AnimIn, Boolean _ShowSender) {
+Void FormatChatLine(CMlFrame _Frame, Text[] _Message, Text _Sender, Integer _Clan, Boolean _AnimIn, Boolean _ShowSender) {
 	if (_Frame == Null || !_Frame.Visible) return;
 
 	declare TotalLineLength = 0.;
@@ -852,6 +937,10 @@ Void FormatChatLine(CMlFrame _Frame, Text[] _Message, Text _Sender, Boolean _Ani
 		Quad_MessageSender.Size.X = ML::Min(ComputeWidth(Label_SenderName), Label_SenderName.Size.X) + 1;
 		Label_SenderArrow.RelativePosition_V3.X = Quad_MessageSender.Size.X + .5;
 		TotalLineLength += Quad_MessageSender.Size.X + 2;
+
+		declare ClanColor = <1., 1., 1.>;
+		if (_Clan > 0) ClanColor = Clans_GetClanColor(_Clan);
+		Label_SenderArrow.TextColor = ClanColor;
 
 		declare Text UserLogin for Quad_MessageSender;
 		UserLogin = _Sender;
@@ -927,16 +1016,19 @@ main() {
  *	@param	_Message	Message to send.
  *	@param	_Sender		The message sender.
  */
-Void Private_SendMessage(Text _Message, CPlayer _Sender) {
+Void Private_SendMessage(Text _Message, CPlayer _Sender, Integer _Clan) {
 	if (_Message == "") return;
 	declare netwrite Text[Integer] Net_LibChat_GlobalChatMessages for Teams[0];
 	declare netwrite Text[Integer] Net_LibChat_GlobalChatSenders for Teams[0];
+	declare netwrite Integer[Integer] Net_LibChat_GlobalChatClans for Teams[0];
 	declare netwrite Integer Net_LibChat_GlobalLastMessage for Teams[0];
 	Net_LibChat_GlobalLastMessage = Now;
 	
 	declare Key = Now;
 	while (Net_LibChat_GlobalChatMessages.existskey(Key)) Key += 1;
+
 	Net_LibChat_GlobalChatMessages[Key] = _Message;
+	Net_LibChat_GlobalChatClans[Key] = _Clan;
 
 	if (_Sender != Null)
 		Net_LibChat_GlobalChatSenders[Key] = _Sender.User.Login;
@@ -950,7 +1042,12 @@ Void Private_SendMessage(Text _Message, CPlayer _Sender) {
 		declare Boolean Removed;
 		Removed = Net_LibChat_GlobalChatMessages.removekey(KeyToRemove);
 		Removed = Net_LibChat_GlobalChatSenders.removekey(KeyToRemove);
+		Removed = Net_LibChat_GlobalChatClans.removekey(KeyToRemove);
 	}
+}
+
+Void Private_SendMessage(Text _Message, CPlayer _Sender) {
+	Private_SendMessage(_Message, _Sender, 0);
 }
 
 // ---------------------------------- //
@@ -1261,7 +1358,7 @@ Void SendMessage(CPlayer _Player, Text _Message) {
  *	@param	_Message	Message to send.
  */
 Void SendMessage(Integer _Clan, Text _Message) {
-	foreach (Player in Players) if (Private_GetClan(Player) == _Clan) SendMessage(Player, _Message);
+	Private_SendMessage(_Message, Null, _Clan);
 }
 
 // ---------------------------------- //
@@ -1294,7 +1391,7 @@ Void SendMessage(CPlayer _Player, Text _Message, CPlayer _Sender) {
  *	@param	_Sender		The message sender.
  */
 Void SendMessage(Integer _Clan, Text _Message, CPlayer _Sender) {
-	foreach (Player in Players) if (Private_GetClan(Player) == _Clan) SendMessage(Player, _Message, _Sender);
+	Private_SendMessage(_Message, _Sender, _Clan);
 }
 
 Void SendTranslated(CPlayer _Player, Text[] _Message) {
@@ -1368,14 +1465,111 @@ Text[] GetCommandParams(Integer _CommandId) {
 }
 
 // ---------------------------------- //
+/** Event on new chat message.
+ *
+ *	@param	_Message	The message that has been sent.
+ *	@param	_Sender		The player, who sent the message.
+ */
+Void Private_OnNewMessage(Text _Message, CPlayer _Sender) {
+	if (_Sender == Null || _Message == "") return; 
+	declare Message = _Message;
+	
+	// Check if message is a command
+	declare IsCommand = TL::SubString(Message, 0, 1) == "/";
+	
+	// ---------------------------------- //
+	// Handle commands
+	if (IsCommand) {
+		declare SplitCommand = TL::Split(" ", Message);
+		if (!SplitCommand.existskey(0)) return;
+
+		declare CommandSender = _Sender.User.Login;
+		declare CommandName = SplitCommand[0];
+		declare CommandParams = SplitCommand;
+		declare Removed = CommandParams.remove(CommandName);
+		CommandName = TL::Replace(CommandName, "/", "");
+
+		Private_RegisterCommand(CommandSender, CommandName, CommandParams);
+	}
+	
+	// ---------------------------------- //
+	// Send global message
+	else if (!ServerManager::IsMuted(_Sender.User.Login)) {
+		declare SplitMessage = TL::Split(" ", Message);
+		declare PremadeMsgCode = SplitMessage[0];
+
+		// ---------------------------------- //
+		// Premade short answers
+		if (SplitMessage.count <= 2 && C_LibChat_PremadeMessages.existskey(PremadeMsgCode)) {
+			Message = "$i"^C_LibChat_PremadeMessages[PremadeMsgCode];
+			if (SplitMessage.existskey(1) && C_LibChat_PremadeWithRecipient.exists(PremadeMsgCode)) {
+				declare TargetName = ServerManager::GetNameByLogin(SplitMessage[1]);
+				if (SplitMessage[1] == "all") TargetName = "all";
+				Message ^= " $<"^TargetName^"$>";
+			}
+			Message ^= "!";
+		}
+
+		else Message = TL::Join(" ", SplitMessage); // Spaces removal
+		Message = Private_ParseMessage(Message, _Sender.User.Login);
+
+		// Discord integration
+		Discord::Send("LibChat", TL::StripFormatting(Message), TL::StripFormatting(_Sender.User.Name), "");
+
+		if (Message == "") return;
+		declare Messages = Text[];
+
+		// ---------------------------------- //
+		// Split too long text message
+		if (TL::Length(Message) > C_LibChat_MessageMaxLength) {
+			SplitMessage = TL::Split(" ", Message);
+			declare CurrentPart = Text[];
+			declare CurrentLength = 0;
+
+			foreach (I => Segment in SplitMessage) {
+				CurrentPart.add(Segment);
+				CurrentLength += TL::Length(Segment) + 1;
+				if (CurrentLength < C_LibChat_MessageMaxLength && I != SplitMessage.count - 1) continue;
+				Messages.add(TL::Join(" ", CurrentPart));
+				CurrentPart.clear();
+				CurrentLength = 0;
+			}
+		}
+
+		// Message wasn't split
+		if (Messages.count <= 0) Messages = [Message];
+
+		// Send chat message
+		foreach (I => Segment in Messages) SendMessage(Segment, _Sender);
+	}
+}
+
+// ---------------------------------- //
+/** Set the Discord webhook URL.
+ *
+ * @param	_WebhookURL		The URL of the Discord webhook.
+ */
+Void SetDiscordWebhookURL(Text _WebhookURL) {
+	Discord::DestroyWebhook("LibChat");
+	Discord::CreateWebhook("LibChat", _WebhookURL);
+	Discord::SetEscapeMentions("LibChat", True);
+}
+
+// ---------------------------------- //
 /** Library loop.
  *
  *	@param	_UseCustomChat	Whether the chat is used or not.
  */
-Void Loop(Boolean _UseCustomChat) {
+Void Loop(Boolean _UseCustomChat, Text _WebhookURL) {
 	SetVisibility(_UseCustomChat);
 	if (!_UseCustomChat) return;
 	if (G_LibChat_PendingCommands.count > 0) G_LibChat_PendingCommands.clear();
+
+	// Update webhook
+	if (G_LibChat_DiscordWebhookURL != _WebhookURL) {
+		G_LibChat_DiscordWebhookURL = _WebhookURL;
+		SetDiscordWebhookURL(_WebhookURL);
+	}
 
 	// ---------------------------------- //
 	// Manage events
@@ -1386,79 +1580,8 @@ Void Loop(Boolean _UseCustomChat) {
 			if (Event.CustomEventType == "LibChat_MessageSent" && Event.CustomEventData.existskey(0)) {
 				declare Message = Event.CustomEventData[0];
 				declare Sender = Private_GetPlayer(Event.UI);
-				if (Sender == Null || Message == "") continue; 
-				
-				// Check if message is a command
-				declare IsCommand = TL::SubString(Message, 0, 1) == "/";
-				
-				// ---------------------------------- //
-				// Handle commands
-				if (IsCommand) {
-					declare SplitCommand = TL::Split(" ", Message);
-					if (!SplitCommand.existskey(0)) continue;
 
-					declare CommandSender = Sender.User.Login;
-					declare CommandName = SplitCommand[0];
-					declare CommandParams = SplitCommand;
-					declare Removed = CommandParams.remove(CommandName);
-					CommandName = TL::Replace(CommandName, "/", "");
-
-					Private_RegisterCommand(CommandSender, CommandName, CommandParams);
-				}
-				
-				// ---------------------------------- //
-				// Send global message
-				else if (!ServerManager::IsMuted(Sender.User.Login)) {
-					declare SplitMessage = TL::Split(" ", Message);
-					declare PremadeMsgCode = SplitMessage[0];
-
-					// ---------------------------------- //
-					// Premade short answers
-					if (SplitMessage.count <= 2 && C_LibChat_PremadeMessages.existskey(PremadeMsgCode)) {
-						Message = "$i"^C_LibChat_PremadeMessages[PremadeMsgCode];
-						if (SplitMessage.existskey(1) && C_LibChat_PremadeWithRecipient.exists(PremadeMsgCode)) {
-							declare TargetName = ServerManager::GetNameByLogin(SplitMessage[1]);
-							if (SplitMessage[1] == "all") TargetName = "all";
-							Message ^= " $<"^TargetName^"$>";
-						}
-						Message ^= "!";
-					}
-
-					else Message = TL::Join(" ", SplitMessage); // Spaces removal
-					Message = Private_ParseMessage(Message, Sender.User.Login);
-					if (Message == "") continue;
-					declare Messages = Text[];
-
-					// ---------------------------------- //
-					// Split too long text message
-					if (TL::Length(Message) > C_LibChat_MessageMaxLength) {
-						SplitMessage = TL::Split(" ", Message);
-						declare CurrentPart = Text[];
-						declare CurrentLength = 0;
-
-						foreach (I => Segment in SplitMessage) {
-							CurrentPart.add(Segment);
-							CurrentLength += TL::Length(Segment) + 1;
-							if (CurrentLength < C_LibChat_MessageMaxLength && I != SplitMessage.count - 1) continue;
-							Messages.add(TL::Join(" ", CurrentPart));
-							CurrentPart.clear();
-							CurrentLength = 0;
-						}
-					}
-
-					// Message wasn't split
-					if (Messages.count <= 0) Messages = [Message];
-
-					// ---------------------------------- //
-					// Send chat message
-					foreach (I => Segment in Messages) {
-						declare TargetMessage = C_LibChat_MessageFormat_Global;
-						if (I > 0) TargetMessage = C_LibChat_MessageFormat_Global2;
-						TargetMessage = TL::Replace(TargetMessage, "%1", Sender.User.Name);
-						TargetMessage = TL::Replace(TargetMessage, "%2", Segment);
-						SendMessage(Segment, Sender);
-					}
-				}
+				Private_OnNewMessage(Message, Sender);
 			}
 		}
 	}
@@ -1475,17 +1598,40 @@ Void Loop(Boolean _UseCustomChat) {
 			// ---------------------------------- //
 			// Send team message
 			case "t" : {
-				declare PlayerClan = Private_GetClan(CommandPlayer);
+				if (ServerManager::IsMuted(CommandPlayer.User.Login)) continue;
 				if (!CommandParams.existskey(0)) continue;
 
-				declare Message = C_LibChat_MessageFormat_Global;
-				if (PlayerClan > 0) Message = C_LibChat_MessageFormat_Team;
+				declare Message = TL::Join(" ", CommandParams);
+				Message = Private_ParseMessage(Message, CommandPlayer.User.Login);
 
-				Message = TL::Replace(Message, "%1", CommandPlayer.User.Name);
-				Message = TL::Replace(Message, "%2", TL::Join(" ", CommandParams));
+				// Discord integration
+				Discord::Send("LibChat", TL::StripFormatting(Message), TL::StripFormatting(CommandPlayer.User.Name), "");
+
+				declare PlayerClan = Private_GetClan(CommandPlayer);
+				declare Messages = Text[];
+
+				// ---------------------------------- //
+				// Split too long text message
+				if (TL::Length(Message) > C_LibChat_MessageMaxLength) {
+					declare SplitMessage = TL::Split(" ", Message);
+					declare CurrentPart = Text[];
+					declare CurrentLength = 0;
+
+					foreach (I => Segment in SplitMessage) {
+						CurrentPart.add(Segment);
+						CurrentLength += TL::Length(Segment) + 1;
+						if (CurrentLength < C_LibChat_MessageMaxLength && I != SplitMessage.count - 1) continue;
+						Messages.add(TL::Join(" ", CurrentPart));
+						CurrentPart.clear();
+						CurrentLength = 0;
+					}
+				}
+
+				// Message wasn't split
+				if (Messages.count <= 0) Messages = [Message];
 				
-				if (PlayerClan > 0) SendMessage(PlayerClan, Message, CommandPlayer);
-				else SendMessage(Message, CommandPlayer);
+				// Send chat message
+				foreach (I => Segment in Messages) SendMessage(PlayerClan, Segment, CommandPlayer);
 			}
 			// ---------------------------------- //
 			// Me command
@@ -1601,6 +1747,10 @@ Void Loop(Boolean _UseCustomChat) {
 			else SendTranslated(MessageBody);
 		}
 	}
+}
+
+Void Loop(Boolean _UseCustomChat) {
+	Loop(_UseCustomChat, "");
 }
 
 // ---------------------------------- //

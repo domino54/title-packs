@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY DISCORD WEBHOOKS by domino54  //
-//  script version: 2018-02-28            //
+//  script version: 2018-03-29            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
  *	messages and simplified creation of rich embeds. 
  */
 
-#Const Version		"2018-02-28"
+#Const Version		"2018-03-29"
 #Const ScriptName	"Libs/domino54/DiscordWebhooks.Script.txt"
 
 #Include "MathLib" as ML
@@ -83,7 +83,7 @@ Void Private_Post(Text _WebhookId, Text _Resource) {
 
 	declare WebhookURL = Private_GetURL(_WebhookId);
 	if (WebhookURL == "") return;
-	log(_Resource);
+	
 	declare Request = Http.CreatePost(WebhookURL, _Resource, C_LibWebhooks_AdditionalHeaders);
 	G_LibWebhooks_OngoingRequests.add(Request.Id);
 
@@ -138,16 +138,13 @@ Text Private_EscapeJSON(Text _String) {
 Text Private_EscapeMentions(Text _String) {
 	if (_String == "") return _String;
 
-	// Escape @everyone
-	declare String = TL::Replace(_String, "@everyone", "`@everyone`");
-
 	// Escape user and role mentions
 	declare Text EscapedString;
 	declare PendingMention = False;
 
-	for (I, 0, TL::Length(String) - 1) {
-		declare Char = TL::SubString(String, I, 1);
-		declare Chars = TL::SubString(String, I, 2);
+	for (I, 0, TL::Length(_String) - 1) {
+		declare Char = TL::SubString(_String, I, 1);
+		declare Chars = TL::SubString(_String, I, 2);
 
 		// Break the mention
 		if (PendingMention && !C_LibWebhooks_MentionBody.exists(Char)) PendingMention = False;
@@ -159,6 +156,25 @@ Text Private_EscapeMentions(Text _String) {
 		}
 
 		if (!PendingMention) EscapedString ^= Char;
+	}
+
+	/*
+
+	// Escape @everyone
+	while (TL::Find("@everyone", EscapedString, True, True)) {
+		EscapedString = TL::Replace(EscapedString, "@everyone", "everyone");
+	}
+
+	// Escape @here
+	while (TL::Find("@here", EscapedString, True, True)) {
+		EscapedString = TL::Replace(EscapedString, "@here", "everyone");
+	}
+
+	*/
+
+	// Temporary workaround
+	while (TL::Find("@", EscapedString, False, False)) {
+		EscapedString = TL::Replace(EscapedString, "@", "");
 	}
 
 	return EscapedString;

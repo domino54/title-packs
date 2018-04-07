@@ -1,0 +1,311 @@
+// -------------------------------------- //
+//  LIBRARY CHECKPOINTS by domino54       //
+//  script version: 2018-04-06            //
+// -------------------------------------- //
+
+#Const Version		"2018-04-06"
+#Const ScriptName	"Libs/domino54/TrackMania/Checkpoints.Script.txt"
+
+#Include "MathLib" as ML
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibCheckpoints_SafeOffsetY		1.
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Integer[]	G_LibCheckpoints_TriggersList;
+declare Vec3[]		G_LibCheckpoints_Position;
+declare Vec3[]		G_LibCheckpoints_Size;
+declare Integer[]	G_LibCheckpoints_Direction;
+declare Integer[]	G_LibCheckpoints_Type;
+
+declare Integer[Ident] G_LibCheckpoints_PendingEvents;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Distance to the center of a horizontal tube (X axis).
+ *
+ *	@param	_1	First position.
+ *	@param	_2	Second position.
+ *
+ * 	@return		The distance.
+ */
+Real Private_Distance2DX(Vec3 _1, Vec3 _2) {
+	return ML::Sqrt(ML::Pow(_1.Z - _2.Z, 2.) + ML::Pow(_1.Y - _2.Y, 2.));
+}
+
+// ---------------------------------- //
+/** Distance to the center of a vertical tube.
+ *
+ *	@param	_1	First position.
+ *	@param	_2	Second position.
+ *
+ * 	@return		The distance.
+ */
+Real Private_Distance2DY(Vec3 _1, Vec3 _2) {
+	return ML::Sqrt(ML::Pow(_1.X - _2.X, 2.) + ML::Pow(_1.Z - _2.Z, 2.));
+}
+
+// ---------------------------------- //
+/** Distance to the center of a vertical tube (Z axis).
+ *
+ *	@param	_1	First position.
+ *	@param	_2	Second position.
+ *
+ * 	@return		The distance.
+ */
+Real Private_Distance2DZ(Vec3 _1, Vec3 _2) {
+	return ML::Sqrt(ML::Pow(_1.X - _2.X, 2.) + ML::Pow(_1.Y - _2.Y, 2.));
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/// Load the map checkpoints info.
+Void LoadMap() {
+	if (Map == Null) return;
+
+	// Reset the data
+	G_LibCheckpoints_TriggersList	.clear();
+	G_LibCheckpoints_Position		.clear();
+	G_LibCheckpoints_Size			.clear();
+	G_LibCheckpoints_Direction		.clear();
+	G_LibCheckpoints_Type			.clear();
+
+	// Obtain checkpoints data from the map file
+	declare metadata Vec3[] Metadata_Lib_Checkpoints_Position for Map;
+	declare metadata Vec3[] Metadata_Lib_Checkpoints_Size for Map;
+	declare metadata Integer[] Metadata_Lib_Checkpoints_Direction for Map;
+	declare metadata Integer[] Metadata_Lib_Checkpoints_Type for Map;
+	declare metadata Integer Metadata_Lib_Checkpoints_NbTotal for Map;
+
+	for (I, 0, Metadata_Lib_Checkpoints_NbTotal - 1) {
+		declare Vec3 Position;
+		declare Vec3 Size;
+		declare Direction = 0;
+		declare Type = 0;
+
+		if (Metadata_Lib_Checkpoints_Position.existskey(I)) {
+			Position = Metadata_Lib_Checkpoints_Position[I];
+		}
+
+		if (Metadata_Lib_Checkpoints_Size.existskey(I)) {
+			Size = Metadata_Lib_Checkpoints_Size[I];
+		}
+
+		if (Metadata_Lib_Checkpoints_Direction.existskey(I)) {
+			Direction = Metadata_Lib_Checkpoints_Direction[I];
+		}
+
+		if (Metadata_Lib_Checkpoints_Type.existskey(I)) {
+			Type = Metadata_Lib_Checkpoints_Type[I];
+		}
+
+		// Save the checkpoint
+		G_LibCheckpoints_TriggersList	.add(I);
+		G_LibCheckpoints_Position		.add(Position);
+		G_LibCheckpoints_Size			.add(Size);
+		G_LibCheckpoints_Direction		.add(Direction);
+		G_LibCheckpoints_Type			.add(Type);
+	}
+}
+
+// ---------------------------------- //
+/** Get the position of the checkpoint.
+ *
+ *	@param	_CheckpointId	Id of the checkpoint to get its position.
+ *
+ *	@return		Position of the checkpoint.
+ */
+Vec3 GetPosition(Integer _CheckpointId) {
+	if (!G_LibCheckpoints_Position.existskey(_CheckpointId)) return Vec3;
+	return G_LibCheckpoints_Position[_CheckpointId];
+}
+
+// ---------------------------------- //
+/** Get the size of the checkpoint.
+ *
+ *	@param	_CheckpointId	Id of the checkpoint to get its size.
+ *
+ *	@return		Size of the checkpoint.
+ */
+Vec3 GetSize(Integer _CheckpointId) {
+	if (!G_LibCheckpoints_Size.existskey(_CheckpointId)) return Vec3;
+	return G_LibCheckpoints_Size[_CheckpointId];
+}
+
+// ---------------------------------- //
+/** Get the direction of the checkpoint.
+ *
+ *	@param	_CheckpointId	Id of the checkpoint to get its direction.
+ *
+ *	@return		Direction of the checkpoint.
+ */
+Integer GetDirection(Integer _CheckpointId) {
+	if (!G_LibCheckpoints_Direction.existskey(_CheckpointId)) return 0;
+	return G_LibCheckpoints_Direction[_CheckpointId];
+}
+
+// ---------------------------------- //
+/** Get the type of the checkpoint.
+ *
+ *	@param	_CheckpointId	Id of the checkpoint to get its type.
+ *
+ *	@return		Type of the checkpoint.
+ */
+Integer GetType(Integer _CheckpointId) {
+	if (!G_LibCheckpoints_Type.existskey(_CheckpointId)) return 0;
+	return G_LibCheckpoints_Type[_CheckpointId];
+}
+
+// ---------------------------------- //
+/** Check if the player is in a given checkpoint.
+ *
+ *	@param	_Player		The player to check.
+ *	@param	_TriggerId	Id of the trigger to check.
+ *
+ *	@return		True, if the player is in this checkpoint.
+ */
+Boolean IsInTrigger(CTmPlayer _Player, Integer _TriggerId) {
+	if (_Player == Null || !_Player.IsSpawned || !G_LibCheckpoints_TriggersList.exists(_TriggerId)) return False;
+
+	// Get the trigger info
+	declare TriggerPosition		= GetPosition(_TriggerId);
+	declare TriggerSize			= GetSize(_TriggerId);
+	declare TriggerDirection	= GetDirection(_TriggerId);
+	declare TriggerType			= GetType(_TriggerId);
+
+	switch (TriggerType) {
+		// Horizontal ring
+		case 1 : {
+			// Horizontal
+			if (Private_Distance2DY(_Player.Position, TriggerPosition) > TriggerSize.X) return False;
+
+			// Vertical
+			if (ML::Abs(_Player.Position.Y - TriggerPosition.Y) > TriggerSize.Y / 2) return False;
+			
+			return True;
+		}
+
+		// Vertical ring
+		case 2 : {
+			// Z axis
+			if (TriggerDirection == 0 || TriggerDirection == 2) {
+				if (Private_Distance2DZ(_Player.Position, TriggerPosition) > TriggerSize.X) return False;
+				if (ML::Abs(_Player.Position.Z - TriggerPosition.Z) > TriggerSize.Y / 2) return False;
+			}
+
+			// X axis
+			else {
+				if (Private_Distance2DX(_Player.Position, TriggerPosition) > TriggerSize.X) return False;
+				if (ML::Abs(_Player.Position.X - TriggerPosition.X) > TriggerSize.Y / 2) return False;
+			}
+
+			return True;
+		}
+
+		// Prism trigger
+		default : {
+			// Horizontal
+			if (ML::Abs(_Player.Position.X - TriggerPosition.X) > TriggerSize.X / 2) return False;
+			if (ML::Abs(_Player.Position.Z - TriggerPosition.Z) > TriggerSize.Z / 2) return False;
+			
+			// Vertical
+			if (_Player.Position.Y < TriggerPosition.Y - C_LibCheckpoints_SafeOffsetY) return False;
+			if (_Player.Position.Y > TriggerPosition.Y + TriggerSize.Y + C_LibCheckpoints_SafeOffsetY) return False;
+			
+			return True;
+		}
+	}
+
+	return False;
+}
+
+// ---------------------------------- //
+/** Get the id of the checkpoint the player is in.
+ *
+ *	@param	_Player		The player to get the checkpoint id.
+ *
+ *	@return		Id of the active checkpoint trigger.
+ */
+Integer ActiveTrigger(CTmPlayer _Player) {
+	if (_Player == Null || !_Player.IsSpawned) return -1;
+
+	foreach (TriggerId in G_LibCheckpoints_TriggersList) {
+		if (IsInTrigger(_Player, TriggerId)) return TriggerId;
+	}
+
+	return -1;
+}
+
+// ---------------------------------- //
+/** Get the array of all checkpoints ids.
+ *
+ *	@return		Array of all checkpoints ids.
+ */
+Integer[] List() {
+	return G_LibCheckpoints_TriggersList;
+}
+
+// ---------------------------------- //
+/** Get the number of available checkpoints.
+ *
+ *	@return		Number of available checkpoints.
+ */
+Integer NbCheckpoints() {
+	return List().count;
+}
+
+// ---------------------------------- //
+/** Pending trigger change events.
+ *
+ *	@return		Array of pending events [Ident PlayerId => Integer TriggerId].
+ */
+Integer[Ident] OnTriggerChange() {
+	return G_LibCheckpoints_PendingEvents;
+}
+
+// ---------------------------------- //
+/// Library main loop.
+Void Loop() {
+	// Reset all events
+	if (G_LibCheckpoints_PendingEvents.count > 0) {
+		G_LibCheckpoints_PendingEvents.clear();
+	}
+
+	foreach (Player in Players) {
+		declare LibCheckpoints_PrevTriggerId for Player = -1;
+		declare CurTriggerId = ActiveTrigger(Player);
+
+		if (LibCheckpoints_PrevTriggerId == CurTriggerId) continue;
+		LibCheckpoints_PrevTriggerId = CurTriggerId;
+
+		G_LibCheckpoints_PendingEvents[Player.Id] = CurTriggerId;
+	}
+}

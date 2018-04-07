@@ -1,0 +1,1004 @@
+// -------------------------------------- //
+//  GOAL HUNT TM by domino54              //
+//  script version: 2018-04-06            //
+// -------------------------------------- //
+
+#Extends "Modes/TrackMania/ModePursuit.Script.txt"
+
+#Const CompatibleMapTypes	"GoalHuntArena"
+#Const Version				"2018-04-06"
+#Const ScriptName			"Modes/TrackMania/GoalHunt.Script.txt"
+
+#Include "Libs/domino54/SplitScreenLib.Script.txt" as SplitScreen
+#Include "Libs/domino54/TrackMania/Checkpoints.Script.txt" as Checkpoints
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit			300 	as _("Time limit (seconds)")
+#Setting S_PointsLimit			120		as _("Points limit")
+#Setting S_MaxNbPrevGoals		2		as _("Number of capturable previous checkpoints (4 max)")
+#Setting S_GoalCaptureTimeout 	30 		as _("Time before other checkpoint is selected if not captured")
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_NbCheckpointsRequired	5	///< Minimal number of checkpoints required on the map.
+#Const C_PointsPerCapturedGoal	1	///< Amount of points per every goal avaialble.
+#Const C_RespawnPenaltyPoints	-1	///< Amount of points removed for respawning.
+#Const C_MaxNbPrevGoalsToCap	4 	///< Maximum number of previous Goals to capture.
+
+/// Colors of the checkpoints
+#Const C_CheckpointsColors [<1., 1., 0.>, <0., 1., 0.>]
+
+#Const Description _("TYPE: Free for all\nOBJECTIVE: Touch the highlighted checkpoint to get a point. The first player to reach the points limit wins the map.")
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Integer G_CheckpointsNbMax;		///< Maxinum number of previous checkpoints to capture
+declare Integer[] G_CheckpointsOrder;	///< All checkpoints listed from the oldest to the newest tossed
+declare Integer[] G_CheckpointsList;	///< List of checkpoints available to toss
+declare Integer G_LatestCheckpointId;	///< Previously tossed checkpoint
+declare Integer G_CheckpointTimeout;	///< Time when next checkpoint will be selected
+declare Text[] G_CreatedMapMarkers; 	///< Text Ids of all markers created on the minimap by the mode
+
+declare Integer StartTime;
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***Match_LogVersions***
+***
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(Checkpoints::GetScriptName(), Checkpoints::GetScriptVersion());
+Log::RegisterScript(SplitScreen::GetScriptName(), SplitScreen::GetScriptVersion());
+***
+
+// ---------------------------------- //
+// Initialize the server
+// ---------------------------------- //
+***Match_InitServer***
+***
+// ---------------------------------- //
+// Create custom interface
+Layers::Create("GoalHuntTM:Markers", CreateManialinkMarkers());
+Layers::SetType("GoalHuntTM:Markers", CUILayer::EUILayerType::Markers);
+Layers::Create("GoalHuntTM:Countdown", CreateManialinkCountdown());
+Layers::Create("GoalHuntTM:PointsCount", CreateManialinkPointsCount());
+
+UpdateInterface();
+***
+
+// ---------------------------------- //
+// Scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+ST2::SetColWidth("LibST_Name", 20.);
+TopScores::AddCategory("GoalHuntTM:Capture", "Most captures", "", 2.);
+TopScores::AddCategory("GoalHuntTM:Stunts", "Most stunts", "🔥", 3.);
+TopScores::SetFormat(2, 1);
+***
+
+// ---------------------------------- //
+// Rules
+// ---------------------------------- //
+***Match_Rules***
+***
+ModeInfo::SetName("Goal Hunt");
+ModeInfo::SetType(ModeInfo::Type_FreeForAll());
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage(_("Touch the highlighted checkpoint to get a point. The first player to reach the points limit wins the map."));
+***
+
+// ---------------------------------- //
+// Start map
+// ---------------------------------- //
+***Match_InitMap***
+***
+declare CurrentTimeLimit = S_TimeLimit;
+declare PrevPointsLimit = -1;
+declare LeadId = NullId;
+
+// Load Checkpoints
+Checkpoints::LoadMap();
+
+// ---------------------------------- //
+// Check if the map is valid
+declare MapValidated = True;
+declare MapType = "";
+foreach (I in TL::Split("\\", Map.MapType)) MapType = I;
+
+if (MapType != "GoalHuntArena") MapValidated = False;
+if (Checkpoints::NbCheckpoints() < C_NbCheckpointsRequired) MapValidated = False;
+
+// Skip invalid map
+if (!MapValidated) {
+	declare Msg = "This map is invalid; moving to the next one.";
+	Translations::SendChat(Msg);
+	Chat::SendMessage(Msg);
+
+	if (!ServerShutdownRequested) MB_Sleep(10000);
+	MB_StopMap();
+}
+***
+
+***Match_StartMap***
+***
+MB_Private_SectionCount_Round = 1; // Hax
+
+// Reset arrays
+G_CheckpointsNbMax = ML::Clamp(S_MaxNbPrevGoals, 0, C_MaxNbPrevGoalsToCap);
+G_CheckpointsOrder.clear();
+G_CheckpointsList.clear();
+G_LatestCheckpointId = -1;
+
+// ---------------------------------- //
+// Wait for enough players to start game
+while (!ServerShutdownRequested && !MatchEndRequested && Players.count <= 0) MB_Yield();
+
+// Vehicle selection
+PUR_ShowCharSelection();
+
+// Scores
+if (Scores.existskey(0)) LeadId = Scores[0].User.Id;
+
+// Init players
+foreach (Player in Players) {
+	declare Integer[] CapturedCheckpointsIds for Player;
+	CapturedCheckpointsIds.clear();
+}
+
+// ---------------------------------- //
+// Initialize race
+StartTime = Now + C_PlayerSpawnDuration;
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+PursuitUI::SetStartTime(StartTime);
+
+if (S_TimeLimit > 0) PUR_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+else PUR_DisableTimeLimit();
+
+PUR_PlaySound(CUIConfig::EUISound::StartRound, 0);
+Replay_Start();
+
+// Set the first Goal
+SelectNextGoal();
+
+// Attach the interface
+Layers::Attach("GoalHuntTM:Countdown");
+Layers::Attach("GoalHuntTM:Markers");
+Layers::Attach("GoalHuntTM:PointsCount");
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Check if current Goal has timed out
+if (G_CheckpointTimeout > 0 && Now >= G_CheckpointTimeout) {
+	Translations::SendStatusMessage("The Goal has timed out", 3000, 0);
+	PUR_PlaySound(CUIConfig::EUISound::Notice, 0);
+	SelectNextGoal();
+}
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	Discard(Event);
+
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) TM::WaitRace(Event.Player);
+	}
+	// ---------------------------------- //
+	// Respawn
+	else if (Event.Type == CTmModeEvent::EType::GiveUp || Event.Type == CTmModeEvent::EType::Respawn) {
+		TM::WaitRace(Event.Player);
+		PUR_AddPoints(Event.Player, C_RespawnPenaltyPoints);
+	}
+	// ---------------------------------- //
+	// On stunt
+	if (Event.Type == CTmModeEvent::EType::Stunt) {
+		TopScores::AddPoints(Event.Player.Score, "GoalHuntTM:Stunts", Event.Points);
+	}
+}
+
+// ---------------------------------- //
+// Active triggers
+foreach (Player in Players) {
+	if (!Player.IsSpawned) continue;
+
+	foreach (I => CheckpointId in G_CheckpointsOrder) {
+		if (I < G_CheckpointsOrder.count - G_CheckpointsNbMax - 1) continue;
+		if (!Checkpoints::IsInTrigger(Player, CheckpointId)) continue;
+
+		CaptureCheckpoint(Player, CheckpointId);
+	}
+}
+
+// ---------------------------------- //
+// Respawn players changing vehicles
+foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
+	if (!Players.existskey(PlayerId)) continue;
+	declare Player <=> Players[PlayerId];
+	
+	TM::WaitRace(Player);
+	PUR_AddPoints(Player, C_RespawnPenaltyPoints);
+}
+
+// ---------------------------------- //
+// Manage players functions
+foreach (Player in Players) {
+	// Respawn falling into OffZone
+	if (OffZone::IsInOffZone(Player)) {
+		PUR_AddPoints(Player, C_RespawnPenaltyPoints);
+		TM::WaitRace(Player);
+	}
+	
+	// Respawn leaving map area
+	if (OffZone::IsBeyondMapEdge(Player)) {
+		PUR_AddPoints(Player, C_RespawnPenaltyPoints);
+		TM::WaitRace(Player);
+	}
+	
+	// Respawn falling under map
+	if (OffZone::IsBelowMapBottom(Player)) {
+		PUR_AddPoints(Player, C_RespawnPenaltyPoints);
+		TM::WaitRace(Player);
+	}
+
+	// Spawn players awaiting race
+	if (TM::IsWaiting(Player)) {
+		PUR_SpawnPlayer(Player);
+	}
+}
+
+// ---------------------------------- //
+// Play sound and notice if someone is taking the lead
+if (Scores.existskey(0) && Scores[0].User.Id != LeadId) {
+	LeadId = Scores[0].User.Id;
+	Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Scores[0].User.Name), 3000, 1);
+	PUR_PlaySound(CUIConfig::EUISound::PhaseChange, 1);
+}
+
+// ---------------------------------- //
+// Server info change
+if (PrevPointsLimit != S_PointsLimit) {
+	PrevPointsLimit = S_PointsLimit;
+	ST2::SetFooterText(TL::Compose("%1 "^S_PointsLimit, _("Points limit : ")));
+}
+
+// ---------------------------------- //
+// Update time limit
+if (CurrentTimeLimit != S_TimeLimit) {
+	CurrentTimeLimit = S_TimeLimit;
+	if (S_TimeLimit > 0) PUR_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else PUR_DisableTimeLimit();
+}
+
+// ---------------------------------- //
+// Victory conditions
+if (Scores.existskey(0) && Scores[0].Points >= S_PointsLimit) {
+	Message::SendBigMessage(TL::Compose(_("$<%1$> gets the final hit!"), Scores[0].User.Name), 3000, 3);
+	PUR_PlaySound(CUIConfig::EUISound::VictoryPoint, 0);
+	MB_StopMatch();
+}
+if (PUR_TimeReachedLimit()) MB_StopMatch();
+***
+
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+***Match_EndMap***
+***
+// Detach the interface
+Layers::Detach("GoalHuntTM:Countdown");
+Layers::Detach("GoalHuntTM:Markers");
+
+UIManager.UIAll.CountdownEndTime = -1;
+PursuitUI::SetStartTime(-1);
+TopScores::RoundEnd();
+TM::WaitRaceAll();
+Replay_Stop();
+
+MB_Sleep(3000);
+
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+Message::CleanAllMessages();
+PUR_PlaySound(CUIConfig::EUISound::EndRound, 0);
+Layers::Detach("GoalHuntTM:PointsCount");
+***
+
+// ---------------------------------- //
+// Server end
+// ---------------------------------- //
+***EndServer***
+***
+Layers::Destroy("GoalHuntTM:Countdown");
+Layers::Destroy("GoalHuntTM:Markers");
+Layers::Destroy("GoalHuntTM:PointsCount");
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get the selection order of a checkpoint
+ *
+ *	@param	_CheckpointId		Id of the checkpoint to get order
+ *
+ *	@return		The checkpoint order
+ */
+Integer GetGoalOrder(Integer _CheckpointId) {
+	if (!G_CheckpointsOrder.exists(_CheckpointId)) return -1;
+	
+	declare Order = 0;
+	while (Order <= G_CheckpointsOrder.count - 1) {
+		if (G_CheckpointsOrder[G_CheckpointsOrder.count - Order - 1] == _CheckpointId) return Order;
+		Order += 1;
+	}
+	return -1;
+}
+
+// ---------------------------------- //
+/// Update the data sent to the interface
+Void UpdateInterface() {
+	declare netwrite Integer Net_GoalHuntTM_NbMaxGoals for Teams[0];
+	declare netwrite Integer Net_GoalHuntTM_UpdateTime for Teams[0];
+	declare netwrite Vec3 Net_GoalHuntTM_CurrentGoal for Teams[0];
+	declare netwrite Vec3[] Net_GoalHuntTM_GoalsOrder for Teams[0];
+	declare netwrite Vec3[][Text] Net_GoalHuntTM_CapturedGoals for Teams[0];
+	
+	Net_GoalHuntTM_NbMaxGoals = G_CheckpointsNbMax;
+	Net_GoalHuntTM_UpdateTime = Now;
+	Net_GoalHuntTM_CurrentGoal = Vec3;
+	Net_GoalHuntTM_GoalsOrder.clear();
+	Net_GoalHuntTM_CapturedGoals.clear();
+	
+	// ---------------------------------- //
+	// Get the list of all capturable Goals
+	foreach (CheckpointId in G_CheckpointsOrder) {
+		declare GoalOrder = GetGoalOrder(CheckpointId);
+		if (GoalOrder < 0 || GoalOrder > G_CheckpointsNbMax) continue;
+		
+		// Get landmark position
+		declare Position = Checkpoints::GetPosition(CheckpointId);
+		Net_GoalHuntTM_GoalsOrder.add(Position);
+	}
+	
+	// ---------------------------------- //
+	// Get the current Goal
+	if (Net_GoalHuntTM_GoalsOrder.count > 0) {
+		Net_GoalHuntTM_CurrentGoal = Net_GoalHuntTM_GoalsOrder[Net_GoalHuntTM_GoalsOrder.count - 1];
+	}
+	
+	// ---------------------------------- //
+	// Get list of Goals captured by players
+	foreach (Player in Players) {
+		declare Integer[] CapturedCheckpointsIds for Player;
+		Net_GoalHuntTM_CapturedGoals[Player.User.Login] = Vec3[];
+		
+		foreach (CheckpointId in CapturedCheckpointsIds) {
+			declare Position = Checkpoints::GetPosition(CheckpointId);
+			Net_GoalHuntTM_CapturedGoals[Player.User.Login].add(Position);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Update minimap markers
+	foreach (Marker in G_CreatedMapMarkers) Minimap::DestroyMarker(Marker);
+	G_CreatedMapMarkers.clear();
+	
+	foreach (CheckpointId in G_CheckpointsOrder) {
+		declare GoalOrder = GetGoalOrder(CheckpointId);
+		if (GoalOrder < 0 || GoalOrder > G_CheckpointsNbMax) continue;
+		
+		// Configure marker apperance
+		declare MarkerId = "Goal#"^GoalOrder;
+		declare Color = <1., 1., 1.>;
+		if (C_CheckpointsColors.existskey(GoalOrder)) Color = C_CheckpointsColors[GoalOrder];
+		
+		// Create marker
+		declare Position = Checkpoints::GetPosition(CheckpointId);
+		Minimap::SetMarker(MarkerId, "Goal.png", Color, Position);
+		G_CreatedMapMarkers.add(MarkerId);
+	}
+}
+
+// ---------------------------------- //
+/// Show the capture alert animation
+Void ShowCaptureAlert() {
+	declare netwrite Integer Net_GoalHuntTM_CaptureTime for Teams[0];
+	Net_GoalHuntTM_CaptureTime = Now;
+}
+
+// ---------------------------------- //
+/// Select random next goal
+Void SelectNextGoal() {
+	// Fill the goals list
+	if (G_CheckpointsList.count <= 0) G_CheckpointsList = Checkpoints::List();
+	
+	// ---------------------------------- //
+	// Choose random goal
+	declare CheckpointId = -1;
+	while (True) {
+		CheckpointId = G_CheckpointsList[ML::Rand(0, G_CheckpointsList.count - 1)];
+		if (CheckpointId != G_LatestCheckpointId || G_CheckpointsList.count == 1) break;
+	}
+	declare Removed = G_CheckpointsList.remove(CheckpointId);
+	G_LatestCheckpointId = CheckpointId;
+	
+	// ---------------------------------- //
+	// List the goal at the end of the array
+	if (G_CheckpointsOrder.exists(CheckpointId)) {
+		declare Removed = G_CheckpointsOrder.remove(CheckpointId);
+	}
+	G_CheckpointsOrder.add(CheckpointId);
+	
+	// ---------------------------------- //
+	// Remove landmark from captured IDs array
+	foreach (Player in AllPlayers) {
+		declare Integer[] CapturedCheckpointsIds for Player;
+		while (CapturedCheckpointsIds.exists(CheckpointId)) {
+			Removed = CapturedCheckpointsIds.remove(CheckpointId);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Set the goal timeout
+	declare netwrite Integer Net_GoalHuntTM_CountdownStart for Teams[0];
+	declare netwrite Integer Net_GoalHuntTM_TimeForCapture for Teams[0];
+
+	Net_GoalHuntTM_CountdownStart = 0;
+	Net_GoalHuntTM_TimeForCapture = 0;
+	G_CheckpointTimeout = -1;
+
+	if (S_GoalCaptureTimeout > 0) {
+		Net_GoalHuntTM_CountdownStart = Now;
+		Net_GoalHuntTM_TimeForCapture = S_GoalCaptureTimeout * 1000;
+		G_CheckpointTimeout = Net_GoalHuntTM_CountdownStart + Net_GoalHuntTM_TimeForCapture;
+	}
+	
+	// Update interfaces
+	UpdateInterface();
+	Minimap::Flash();
+}
+
+// ---------------------------------- //
+/** Capture a checkpoint by a player
+ *
+ *	@param	_Player			The player that captures a checkpoint
+ *	@param	_CheckpointId	Id of the checkpoint to capture
+ */
+Void CaptureCheckpoint(CTmPlayer _Player, Integer _CheckpointId) {
+	if (_Player == Null || _CheckpointId == -1) return;
+	
+	// Get the order of the goal
+	declare GoalOrder = GetGoalOrder(_CheckpointId);
+	if (GoalOrder <= -1 || GoalOrder > G_CheckpointsNbMax) return;
+	
+	// Check if player haven't captured this goal yet
+	declare Integer[] CapturedCheckpointsIds for _Player;
+	if (CapturedCheckpointsIds.exists(_CheckpointId)) return;
+	CapturedCheckpointsIds.add(_CheckpointId);
+	
+	// Give points for capturing the goal
+	declare Points = (G_CheckpointsNbMax - GoalOrder + 1) * C_PointsPerCapturedGoal;
+	PUR_AddPoints(_Player, Points);
+	TopScores::AddPoints(_Player.Score, "GoalHuntTM:Capture", Points);
+	
+	// Notify player about the capture
+	Translations::SendStatusMessage(_Player, ["You've captured the Goal #%1!", TL::ToText(GoalOrder + 1)], 3000, 1);
+	PUR_PlaySound(_Player, CUIConfig::EUISound::Checkpoint, 0);
+	
+	// ---------------------------------- //
+	// Things valid only for the highlighted Goal
+	if (GoalOrder == 0) {
+		foreach (Player in AllPlayers) {
+			if (Player == _Player) continue;
+			
+			// Notify other players about the capture
+			Translations::SendStatusMessage(Player, ["$<%1$> has captured the Goal #%2", _Player.User.Name, TL::ToText(GoalOrder + 1)], 3000, 0);
+			PUR_PlaySound(Player, CUIConfig::EUISound::Checkpoint, 1);
+		}
+		
+		// Select new random Goal
+		SelectNextGoal();
+		ShowCaptureAlert();
+	}
+	
+	// Update interfaces
+	else UpdateInterface();
+}
+
+// ---------------------------------- //
+/** Create manialink for the countdown module
+ *
+ *	@return		The countdown manialink
+ */
+Text CreateManialinkCountdown() {
+	return """
+<manialink version="3" name="GoalHuntTM:Countdown">
+<stylesheet>
+	<style class="text" halign="center" valign="center2" textemboss="1" textfont="RajdhaniMono" textcolor="FFF" />
+	<style class="CircGauge" size="16 16" halign="center" valign="center" colorize="FFF" />
+</stylesheet>
+
+<frame id="Frame_PoleGauge" pos="0 74" hidden="1">
+	<label pos="0 -2.75" class="text" textsize="2" text="0s" id="Label_Ratio" />
+	<quad pos="0 1.25" size="6 6" halign="center" valign="center" style="Emblems" substyle="#0" />
+	<frame size="8 16" halign="left" valign="center">
+		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeL" hidden="1" />
+	</frame>
+	<frame size="8 16" halign="right" valign="center">
+		<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeProg.png" id="Quad_GaugeR" hidden="1" rot="180" />
+	</frame>
+	<quad class="CircGauge" image="{{{C_ImgBase}}}CircGaugeBg.png" id="Quad_GaugeBg" />
+	<quad
+		size="14 14" halign="center" valign="center"
+		image="file://Media/Manialinks/Common/disc.dds" colorize="FFF" opacity="0" id="Quad_CaptureAlert"
+	/>
+</frame>
+
+<script><!--
+/**
+ *	GoalHuntTM: Countdown
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_CheckpointsColors {{{C_CheckpointsColors}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare Frame_PoleGauge <=> (Page.GetFirstChild("Frame_PoleGauge") as CMlFrame);
+declare Quad_GaugeL <=> (Page.GetFirstChild("Quad_GaugeL") as CMlQuad);
+declare Quad_GaugeR <=> (Page.GetFirstChild("Quad_GaugeR") as CMlQuad);
+declare Quad_GaugeBg <=> (Page.GetFirstChild("Quad_GaugeBg") as CMlQuad);
+declare Label_Ratio <=> (Page.GetFirstChild("Label_Ratio") as CMlLabel);
+declare Quad_CaptureAlert <=> (Page.GetFirstChild("Quad_CaptureAlert") as CMlQuad);
+
+// ---------------------------------- //
+// Persistent settings
+declare persistent Persistent_GoalHuntTM_NamesVisibility for LocalUser = 0;
+
+// ---------------------------------- //
+// Netcode
+declare netread Vec3 Net_GoalHuntTM_CurrentGoal for Teams[0];
+declare netread Integer Net_GoalHuntTM_CaptureTime for Teams[0];
+declare netread Integer Net_GoalHuntTM_CountdownStart for Teams[0];
+declare netread Integer Net_GoalHuntTM_TimeForCapture for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare CurrentGoalId = NullId;
+declare Time = 0;
+declare MaxTime = 0;
+declare PrevNamesVisibility = -1;
+
+// Update
+declare PrevGoal = Vec3;
+declare PrevCaptureTime = -1;
+
+// ---------------------------------- //
+// Set the gauge color
+declare Color = C_CheckpointsColors[0];
+Quad_GaugeL.Colorize = Color;
+Quad_GaugeR.Colorize = Color;
+Quad_GaugeBg.Colorize = Color;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+if (!PageIsVisible) continue;
+
+// ---------------------------------- //
+// Names visibility change
+if (PrevNamesVisibility != Persistent_GoalHuntTM_NamesVisibility) {
+	PrevNamesVisibility = Persistent_GoalHuntTM_NamesVisibility;
+
+	switch (PrevNamesVisibility) {
+		case 1 : ClientUI.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenInFrustum;
+		case 2 : ClientUI.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+		default : ClientUI.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
+	}
+}
+
+// ---------------------------------- //
+// Show the capture alert
+if (PrevCaptureTime != Net_GoalHuntTM_CaptureTime) {
+	if (PrevCaptureTime > 0) {
+		Quad_CaptureAlert.RelativeScale = 1.;
+		Quad_CaptureAlert.Opacity = .75;
+		
+		AnimMgr.Add(Quad_CaptureAlert, "<quad scale='1.75' opacity='0' />", 1500, CAnimManager::EAnimManagerEasing::CircOut);
+	}
+	PrevCaptureTime = Net_GoalHuntTM_CaptureTime;
+}
+
+// ---------------------------------- //
+// Set the frame visibility
+Time = (Net_GoalHuntTM_CountdownStart + Net_GoalHuntTM_TimeForCapture) - GameTime;
+MaxTime = Net_GoalHuntTM_TimeForCapture;
+
+Frame_PoleGauge.Visible = MaxTime > 1 && Time > 0;
+if (!Frame_PoleGauge.Visible) continue;
+
+// ---------------------------------- //
+// Set ratio
+declare Ratio = ML::ToReal(Time) / MaxTime;
+Quad_GaugeL.RelativeRotation = ML::Clamp(Ratio * 360., 0., 180.);
+Quad_GaugeR.RelativeRotation = 180 + ML::Clamp((Ratio - .5) * 360., 0., 180.);
+Quad_GaugeL.Visible = Quad_GaugeL.RelativeRotation > 1.5;
+Quad_GaugeR.Visible = Quad_GaugeR.RelativeRotation > 180;
+Label_Ratio.Value = ML::CeilingInteger(Time / 1000.)^"s";
+***
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create manialink for the markers module
+ *
+ *	@return		The markers manialink
+ */
+Text CreateManialinkMarkers() {
+	declare R = 9/16.;
+	
+	declare Text MarkersInstances;
+	for (I, 0, C_MaxNbPrevGoalsToCap)
+		MarkersInstances ^= "<frameinstance modelid='FrameModel_GoalMarker' id='Frame_GoalMarker#"^I^"' hidden='1' />";
+	
+	return """
+<manialink version="3" name="GoalHuntTM:Markers">
+<stylesheet>
+	<style class="text" halign="center" valign="center2" textsize="0" textemboss="1" textcolor="FFF" textfont="Eurostile_Bold" />
+</stylesheet>
+
+<framemodel id="FrameModel_GoalMarker">
+	<label pos="0 4" class="text" id="Label_MarkerDistance" />
+	<label pos="0 2" class="text" scale="1.5" id="Label_MarkerGoalName" />
+	<label class="text" id="Label_MarkerNbPoints" />
+	<quad pos="0 3" size="{{{8*R}}} 8" halign="center" autoscale="0" image="file://Media/Manialinks/ShootMania/Common/target.dds" id="Quad_MarkerIcon" />
+</framemodel>
+
+{{{MarkersInstances}}}
+
+<script><!--
+/**
+ *	GoalHuntTM: Markers
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_CheckpointsColors {{{C_CheckpointsColors}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load interface elements
+declare CMlFrame[] Frame_GoalsMarkers;
+for (I, 0, {{{C_MaxNbPrevGoalsToCap}}}) Frame_GoalsMarkers.add((Page.GetFirstChild("Frame_GoalMarker#"^I) as CMlFrame));
+
+declare CMlLabel[] Label_MarkersDistances;
+foreach (Frame in Frame_GoalsMarkers) Label_MarkersDistances.add((Frame.GetFirstChild("Label_MarkerDistance") as CMlLabel));
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer Net_GoalHuntTM_NbMaxGoals for Teams[0];
+declare netread Integer Net_GoalHuntTM_UpdateTime for Teams[0];
+declare netread Vec3[] Net_GoalHuntTM_GoalsOrder for Teams[0];
+declare netread Vec3[][Text] Net_GoalHuntTM_CapturedGoals for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare UpdateMarkers = 2;
+declare VisibleFrames = Integer[];
+
+declare PrevUpdateTime = -1;
+declare PrevGUIPlayerId = NullId;
+
+// Reset markers
+ClientUI.MarkersXML = "";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Server script called an update
+if (PrevUpdateTime != Net_GoalHuntTM_UpdateTime) {
+	PrevUpdateTime = Net_GoalHuntTM_UpdateTime;
+	UpdateMarkers = 2;
+}
+
+// ---------------------------------- //
+// Force update on spectated player change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerId != GUIPlayer.Id) {
+		PrevGUIPlayerId = GUIPlayer.Id;
+		UpdateMarkers = 2;
+	}
+}
+else if (PrevGUIPlayerId != NullId) {
+	PrevGUIPlayerId = NullId;
+	UpdateMarkers = 2;
+}
+
+// ---------------------------------- //
+// Update markers
+if (UpdateMarkers > 0) {
+	UpdateMarkers -= 1;
+	
+	// Reset markers
+	ClientUI.MarkersXML = "";
+	
+	declare Text Login;
+	if (GUIPlayer != Null && GUIPlayer.User != Null) Login = GUIPlayer.User.Login;
+	
+	// ---------------------------------- //
+	// Create marker for every Goal available
+	foreach (I => Frame in Frame_GoalsMarkers) {
+		Frame.Visible = Net_GoalHuntTM_GoalsOrder.existskey(I);
+		if (!Frame.Visible) continue;
+		
+		// Goal parameters
+		declare Position = Net_GoalHuntTM_GoalsOrder[I];
+		declare GoalOrder = Net_GoalHuntTM_GoalsOrder.count - I - 1;
+		declare Points = (Net_GoalHuntTM_NbMaxGoals - GoalOrder + 1) * {{{C_PointsPerCapturedGoal}}};
+		
+		// ---------------------------------- //
+		// Ignore goal if captured by the spectated player
+		declare Vec3[] GUIPlayerGoals;
+		if (Net_GoalHuntTM_CapturedGoals.existskey(Login)) GUIPlayerGoals = Net_GoalHuntTM_CapturedGoals[Login];
+		if (GUIPlayerGoals.exists(Position)) { Frame.Hide(); continue; }
+		
+		// ---------------------------------- //
+		// Get marker height depending on the Goal type
+		declare MarkerHeight = 16.;
+		declare MapLandmarkTag = "Checkpoint";
+		
+		// ---------------------------------- //
+		// Create marker
+		declare Pos = Position.X^" "^Position.Y + MarkerHeight^" "^Position.Z;
+		ClientUI.MarkersXML ^= "<marker manialinkframeid='Frame_GoalMarker#"^I^"' pos='"^Pos^"' minimapvisibility='Never' />";
+		// visibility='WhenInFrustum' 
+		
+		// ---------------------------------- //
+		// Load frame elements
+		declare Label_MarkerGoalName <=> (Frame.GetFirstChild("Label_MarkerGoalName") as CMlLabel);
+		declare Label_MarkerNbPoints <=> (Frame.GetFirstChild("Label_MarkerNbPoints") as CMlLabel);
+		declare Quad_MarkerIcon <=> (Frame.GetFirstChild("Quad_MarkerIcon") as CMlQuad);
+		
+		// ---------------------------------- //
+		// Configure marker text
+		Label_MarkerGoalName.Value = MarkerText("$n$t%1 #%2", _("Target"), TL::ToText(GoalOrder + 1));
+		Label_MarkerNbPoints.Value = MarkerText("$n$t%1 - %2", _("Points"), TL::ToText(Points));
+		
+		// ---------------------------------- //
+		// Set the marker color
+		declare Color = <.75, .75, .75>;
+		if (C_CheckpointsColors.existskey(GoalOrder)) Color = C_CheckpointsColors[GoalOrder];
+
+		Label_MarkerGoalName.TextColor = Brightness(Color, 2.);
+		Quad_MarkerIcon.Colorize = Color;
+		
+		// Configure distance label
+		Label_MarkersDistances[I].DataAttributeSet("Position", Position.X^" "^Position.Y^" "^Position.Z);
+	}
+}
+
+// ---------------------------------- //
+// Show the distance to a Goal
+foreach (Label in Label_MarkersDistances) {
+	Label.Visible = GUIPlayer != Null && GUIPlayer.Position != <0., 0., 0.>;
+	if (!Label.Visible) continue;
+	
+	// ---------------------------------- //
+	// Get the Goal position
+	declare Vec3 MapLandmarkPosition;
+	declare PositionText = TL::Split(" ", Label.DataAttributeGet("Position"));
+	foreach (I => SubText in PositionText) MapLandmarkPosition[I] = TL::ToReal(SubText);
+	
+	// Set the distance text
+	declare Distance = ML::Distance(GUIPlayer.Position, MapLandmarkPosition);
+	Label.Value = "$n"^ML::FloorInteger(Distance)^" M";
+}
+***
+
+{{{ManialinkTools::Functions(["Brightness"])}}}
+
+// ---------------------------------- //
+/** Simplified marker text creation
+ *
+ *	@param	_Attrib0	Marker text base
+ *	@param	_Attrib1	First attribute
+ *	@param	_Attrib2	Second attribute
+ *
+ *	@return		Marker text
+ */
+Text MarkerText(Text _Attrib0, Text _Attrib1, Text _Attrib2) {
+	return TL::GetTranslatedText(TL::Compose(_Attrib0, _Attrib1, _Attrib2));
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
+/** Create the manialink for the thieves counter module.
+ *
+ *	@return		The thieves counter manialink.
+ */
+Text CreateManialinkPointsCount() {
+	return """
+<manialink version="3" name="GoalHuntTM:PointsCount">
+<stylesheet>
+	<style class="Font" halign="center" valign="center2" textemboss="1" textcolor="FFF" textfont="RajdhaniMono" />
+</stylesheet>
+
+<framemodel id="FrameModel_PointsCount">
+	<label pos="0 5" class="Font" textsize="7" id="Label_NbPoints" opacity="0" />
+	<label size="32 3" class="Font" textsize="1.5" id="Label_Subtitle" opacity="0" />
+</framemodel>
+
+<frameinstance modelid="FrameModel_PointsCount" id="Frame_PointsCount#0" />
+<frameinstance modelid="FrameModel_PointsCount" id="Frame_PointsCount#1" />
+<frameinstance modelid="FrameModel_PointsCount" id="Frame_PointsCount#2" />
+<frameinstance modelid="FrameModel_PointsCount" id="Frame_PointsCount#3" />
+
+<script><!--
+/**
+ *	GoalHuntTM: PointsCount
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_AnimDuration 500
+
+{{{Translations::InsertToManialink(["Thieves left"])}}}
+{{{SplitScreen::Framework()}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load interface elements
+	declare CMlFrame[] Frame_PointsCount;
+	for (I, 0, 3) Frame_PointsCount.add((Page.GetFirstChild("Frame_PointsCount#"^I) as CMlFrame));
+	
+	// ---------------------------------- //
+	// Configure frames
+	foreach (I => Frame in Frame_PointsCount) {
+		Frame.Visible = I == 0 || I < SplitScreen_NbPlayers();
+		Frame.RelativePosition_V3 = SplitScreen_GetPosition(<0., -88.>, I, False);
+		Frame.RelativeScale = SplitScreen_GetScale(1.);
+
+		declare Label_NbPoints for Frame <=> (Frame.GetFirstChild("Label_NbPoints") as CMlLabel);
+		declare Label_Subtitle for Frame <=> (Frame.GetFirstChild("Label_Subtitle") as CMlLabel);
+
+		// Translations
+		Label_Subtitle.SetText(TL::ToUpperCase(_("Points")));
+	}
+
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+		
+		foreach (I => Frame in Frame_PointsCount) {
+			if (!Frame.Visible) continue;
+
+			declare Player <=> SplitScreen_GetTmPlayer(I);
+
+			declare NbPoints = -1;
+			declare PrevNbPoints for Frame = -1;
+
+			if (Player != Null && Player.IsSpawned && !IsSpectatorClient) NbPoints = Player.Score.Points;
+
+			// ---------------------------------- //
+			// Update amount label
+			if (PrevNbPoints != NbPoints) {
+				declare CMlLabel Label_NbPoints for Frame;
+				declare CMlLabel Label_Subtitle for Frame;
+
+				if (NbPoints >= 0) Label_NbPoints.SetText(TL::ToText(NbPoints));
+				
+				declare CAnimManager::EAnimManagerEasing Easing;
+				
+				// ---------------------------------- //
+				// Thieves amount has changed
+				if (NbPoints >= 0 && PrevNbPoints >= 0) {
+					Audio.PlaySoundEvent(CAudioManager::ELibSound::ScoreIncrease, 0, 0.);
+
+					declare Color = "F00";
+					if (NbPoints > PrevNbPoints) Color = "0F0";
+					
+					Label_NbPoints.Opacity = 1.;
+					Label_Subtitle.Opacity = 1.;
+					
+					AnimMgr.Add(Label_NbPoints, "<label scale='1.25' textcolor='"^Color^"' />", C_AnimDuration/2, CAnimManager::EAnimManagerEasing::SineOut);
+					AnimMgr.AddChain(Label_NbPoints, "<label scale='1' textcolor='FFF' />", C_AnimDuration/2, CAnimManager::EAnimManagerEasing::SineIn);
+				}
+				// ---------------------------------- //
+				// Show counter
+				else if (NbPoints >= 0 && PrevNbPoints < 0) {
+					Easing = CAnimManager::EAnimManagerEasing::CircOut;
+
+					Frame.RelativeScale = SplitScreen_GetScale(2.);
+					Label_NbPoints.Opacity = 0.;
+					Label_NbPoints.TextColor = <1., 1., 1.>;
+					Label_Subtitle.Opacity = 0.;
+					
+					AnimMgr.Add(Frame, "<frame scale='"^SplitScreen_GetScale(1.)^"' />", C_AnimDuration, Easing);
+					AnimMgr.Add(Label_NbPoints, "<label opacity='1' />", C_AnimDuration, Easing);
+					AnimMgr.Add(Label_Subtitle, "<label opacity='1' />", C_AnimDuration, Easing);
+				}
+				// ---------------------------------- //
+				// Hide counter
+				else if (NbPoints < 0 && PrevNbPoints >= 0) {
+					Easing = CAnimManager::EAnimManagerEasing::CircIn;
+
+					Frame.RelativeScale = SplitScreen_GetScale(1.);
+					Label_NbPoints.Opacity = 1.;
+					Label_NbPoints.TextColor = <1., 1., 1.>;
+					Label_Subtitle.Opacity = 1.;
+					
+					AnimMgr.Add(Frame, "<frame scale='"^SplitScreen_GetScale(.5)^"' />", C_AnimDuration, Easing);
+					AnimMgr.Add(Label_NbPoints, "<label opacity='0' />", C_AnimDuration, Easing);
+					AnimMgr.Add(Label_Subtitle, "<label opacity='0' />", C_AnimDuration, Easing);
+				}
+				
+				PrevNbPoints = NbPoints;
+			}
+		}
+	}
+}
+--></script>
+</manialink>""";
+}

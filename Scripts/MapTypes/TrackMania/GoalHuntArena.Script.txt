@@ -1,0 +1,144 @@
+// -------------------------------------- //
+//  GOAL HUNT TM ARENA by domino54        //
+//  script version: 2018-04-06            //
+// -------------------------------------- //
+
+#RequireContext CTmMapType
+
+#Const Version			"2018-04-06"
+#Const MapTypeVersion	1
+#Const ScriptName		"GoalHuntArena.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Anchor.Script.txt" as Anchor
+#Include "Libs/Nadeo/MapType.Script.txt" as MapType
+#Include "Libs/domino54/EditAnchors.Script.txt" as EditAnchors
+#Include "Libs/domino54/TrackMania/CheckpointsEdit.Script.txt" as Checkpoints
+
+#Const C_Rules "$<%11.$> Place exactly one StartFinish.\n$<%12.$> Place at least 5 Checkpoints.\n$<%13.$>Place exactly one Podium."
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/// Update the checkpoints list.
+Void UpdateNbCheckpoints() {
+	declare NbCheckpointsRequired = 5;
+	declare NbCheckpointsTotal = 0;
+	declare NbCheckpointsSupported = Checkpoints::NbCheckpointsSaved();
+	declare CheckpointsUnsupported = Text[];
+
+	foreach (Anchor in AnchorData) {
+		if (Anchor.DefaultTag != "Checkpoint") continue;
+
+		NbCheckpointsTotal += 1;
+
+		if (Anchor.Block != Null && Anchor.Block.BlockModel != Null && Checkpoints::IsSupported(Anchor.Block.BlockModel)) continue;
+
+		if (Anchor.Block == Null || Anchor.Block.BlockModel == Null) CheckpointsUnsupported.add("Item");
+		else CheckpointsUnsupported.add(Anchor.Block.BlockModel.Name);
+	}
+
+	// I agree, this is ugly
+	ManialinkText = """
+<manialink version="3" name="GoalHuntArena:CheckpointCounter">
+<label pos="-158 74" valign="center2" style="TextValueSmallSm" id="Label_CheckpointsCount" text="Checkpoints: {{{NbCheckpointsSupported}}} / {{{NbCheckpointsRequired}}}" />
+<label pos="-158 70" valign="center2" style="TextValueSmallSm" id="Label_CheckpointsUnsupported" textsize="1" textcolor="F00" text="Unsupported blocks:
+{{{TL::Join("\n", CheckpointsUnsupported)}}}" hidden="{{{CheckpointsUnsupported.count <= 0}}}" />
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/// Initialize the anchors
+Void InitAnchors() {
+	foreach (Anchor in AnchorData) {
+		Anchor.Order = Anchor.DefaultOrder;
+		Anchor.Tag = Anchor.DefaultTag;
+	}
+}
+
+// ---------------------------------- //
+/// Check if the map is valid
+Void UpdateValidability() {
+	ValidationStatus = CSmMapType::ValidationStatus::NotValidable;
+	InitAnchors();
+	Anchor::UpdateAnchorCounts();
+	
+	// Check if the map has a multilap spawn.
+	if (!Anchor::HasExactlyOneAnchor("StartFinish", 0, _("You must place exactly one StartFinish."))) return;
+
+	// Check if the map has enough checkpoints.
+	if (Checkpoints::NbCheckpointsSaved() < 5) {
+		ValidationStatus = CMapType::ValidationStatus::NotValidable;
+		ValidabilityRequirementsMessage = _("You must place at least 5 supported Checkpoints.");
+		return;
+	}
+	
+	declare HasPodium = False;
+	foreach (Block in Blocks) {
+		if (Block.BlockModel == Null || TL::Find("Podium", Block.BlockModel.Name, False, False)) continue;
+		HasPodium = True;
+	}
+	if (!HasPodium) return;
+	
+	// Map is valid
+	ValidationStatus = CSmMapType::ValidationStatus::Validated;	
+}
+
+// ---------------------------------- //
+/// Show the anchor edition manialink
+Void EditAnchorData(Ident _EditedAnchorDataId) {
+	if (_EditedAnchorDataId == NullId) return;
+	UpdateValidability();
+	EditAnchors::EditAnchor(_EditedAnchorDataId);
+	UpdateValidability();
+}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	MapType::SetVersion(MapTypeVersion);
+	Checkpoints::SaveCheckpointsData();
+	UpdateNbCheckpoints();
+
+	CustomEditAnchorData = True;
+	EditAnchors::SetRulesText(TL::Compose(C_Rules, "$o$070"));
+	EditAnchors::SetAvailableTags(["Checkpoint" => ["Checkpoint"]]);
+
+	UpdateValidability();
+
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+
+		// "Validate" the map
+		Map.TMObjective_AuthorTime = 1;
+		Map.TMObjective_GoldTime = 1;
+		Map.TMObjective_SilverTime = 1;
+		Map.TMObjective_BronzeTime = 1;
+		Map.TMObjective_NbLaps = 1;
+		Map.TMObjective_IsLapRace = False;
+		Map.ObjectiveTextAuthor = "N/A";
+		Map.ObjectiveTextGold = "N/A";
+		Map.ObjectiveTextSilver = "N/A";
+		Map.ObjectiveTextBronze = "N/A";
+
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			switch (Event.Type) {
+				case CPluginEvent::Type::EditAnchor : EditAnchorData(Event.EditedAnchorDataId);
+				case CPluginEvent::Type::StartValidation : { }
+				case CPluginEvent::Type::MapModified : Checkpoints::SaveCheckpointsData();
+			}
+			UpdateValidability();
+			UpdateNbCheckpoints();
+		}
+	}
+}

@@ -1,0 +1,284 @@
+// -------------------------------------- //
+//  LIBRARY OFFZONE EDIT by domino54      //
+//  script version: 2018-04-08            //
+// -------------------------------------- //
+
+#Const Version		"2018-04-08"
+#Const ScriptName	"Libs/domino54/TrackMania/OffZoneEdit.Script.txt"
+
+#Include "MathLib" as ML
+
+// ---------------------------------- //
+// Global Variables
+// ---------------------------------- //
+declare CUILayer G_LibOffZoneEdit_ManialinkLayer;
+declare Boolean G_LibOffZoneEdit_Initialized;
+declare Boolean G_LibOffZoneEdit_SelectionDragDragging;
+declare Boolean G_LibOffZoneEdit_SelectionDragSubtract;
+declare Int3 G_LibOffZoneEdit_SelectionDragOrigin;
+declare ::PlaceMode G_LibOffZoneEdit_PrevPlaceMode;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get layer OffZone button
+ *
+ *	@return		Manialink page with OffZone button
+ */
+Text Private_CreateManialinkOffZoneEdit() {
+	return """
+<manialink version="3" name="OffZoneEdit:Interface">
+<quad pos="38 -84 3" size="8 8" halign="center" valign="center2" style="UIConstruction_Buttons" substyle="OffZone" id="Quad_BtnSetOffZoneMode" tooltip="Edit OffZone [O]" ScriptEvents="1" />
+
+<frame id="Frame_OffZoneToolbar" pos="38 -72" hidden="1">
+	<quad pos="-8" size="8 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="CopyPaste" id="Quad_AlwaysDisplay" tooltip="Always show OffZone selection" ScriptEvents="1" />
+	<quad pos="0" size="8 8" halign="center" valign="center" style="Icons64x64_1" substyle="Close" id="Quad_ClearOffZone" tooltip="Clear OffZone" ScriptEvents="1" />
+	<quad pos="8" size="8 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="Challenge" id="Quad_EnableWater" tooltip="Enable OffZone below water level" ScriptEvents="1" />
+	<quad size="28 8" halign="center" valign="center" style="UIConstruction_Buttons" substyle="BgTools" />
+</frame>
+
+<script><!--
+/**
+ *	OffZoneEdit: Interface
+ */
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	wait (LocalUser != Null);
+	
+	// Load interface elements
+	declare Frame_OffZoneToolbar	<=> (Page.GetFirstChild("Frame_OffZoneToolbar")		as CMlFrame);
+	declare Quad_BtnSetOffZoneMode	<=> (Page.GetFirstChild("Quad_BtnSetOffZoneMode")	as CMlQuad);
+	declare Quad_AlwaysDisplay		<=> (Page.GetFirstChild("Quad_AlwaysDisplay")		as CMlQuad);
+	declare Quad_EnableWater		<=> (Page.GetFirstChild("Quad_EnableWater")			as CMlQuad);
+	
+	// Persistent settings
+	declare persistent Persistent_OffZonePlacing_AlwaysShow for LocalUser = False;
+	
+	// Variables
+	declare Boolean IsOffZonePlaceMode for Page;
+	declare Boolean WaterLevelOffZone for Page;
+
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		
+		// ---------------------------------- //
+		// Events management
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// Mouse click
+			if (Event.Type == CMlEvent::Type::MouseClick) {
+				if (Event.ControlId == "Quad_BtnSetOffZoneMode") {
+					SendCustomEvent("LibOffZoneEdit:EnterMode", Text[]);
+				}
+				
+				else if (Event.ControlId == "Quad_AlwaysDisplay") {
+					Persistent_OffZonePlacing_AlwaysShow = !Persistent_OffZonePlacing_AlwaysShow;
+				}
+
+				else if (Event.ControlId == "Quad_ClearOffZone") {
+					SendCustomEvent("LibOffZoneEdit:ClearOffZone", Text[]);
+				}
+
+				else if (Event.ControlId == "Quad_EnableWater") {
+					SendCustomEvent("LibOffZoneEdit:EnableWater", Text[]);
+				}
+			}
+			// ---------------------------------- //
+			// Key press
+			else if (Event.Type == CMlEvent::Type::KeyPress) {
+				if (Event.KeyName == "O") {
+					SendCustomEvent("LibOffZoneEdit:EnterMode", Text[]);
+				}
+			}
+		}
+
+		// Other
+		Quad_BtnSetOffZoneMode.StyleSelected = IsOffZonePlaceMode;
+		Frame_OffZoneToolbar.Visible = IsOffZonePlaceMode;
+		Quad_AlwaysDisplay.StyleSelected = Persistent_OffZonePlacing_AlwaysShow;
+		Quad_EnableWater.StyleSelected = WaterLevelOffZone;
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/// Initialize the library.
+Void Load() {
+	// Interface layer
+	G_LibOffZoneEdit_ManialinkLayer = UILayerCreate();
+	G_LibOffZoneEdit_ManialinkLayer.ManialinkPage = Private_CreateManialinkOffZoneEdit();
+
+	// Persistent settings
+	declare persistent Persistent_OffZonePlacing_AlwaysShow for LocalUser = False;
+
+	// Prepare the custom selection
+	if (!Persistent_OffZonePlacing_AlwaysShow) HideCustomSelection();
+	CustomSelectionCoords.clear();
+	CustomSelectionRGB = <.125, 0., .25>;
+
+	// Restore saved coords
+	declare metadata Int3[] TMOffZoneLocations for Map;
+
+	foreach (Position in TMOffZoneLocations) {
+		if (!CustomSelectionCoords.exists(Position)) CustomSelectionCoords.add(Position);
+	}
+
+	// Water level OffZone
+	declare metadata Boolean LibOffZone_WaterLevelOffZone for Map;
+	declare Boolean WaterLevelOffZone for G_LibOffZoneEdit_ManialinkLayer.LocalPage;
+	WaterLevelOffZone = LibOffZone_WaterLevelOffZone;
+
+	G_LibOffZoneEdit_Initialized = True;
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	if (!G_LibOffZoneEdit_Initialized) return;
+
+	// ---------------------------------- //
+	// Show or hide selection
+	if (G_LibOffZoneEdit_PrevPlaceMode != PlaceMode) {
+		G_LibOffZoneEdit_PrevPlaceMode = PlaceMode;
+
+		declare Boolean IsOffZonePlaceMode for G_LibOffZoneEdit_ManialinkLayer.LocalPage;
+		IsOffZonePlaceMode = PlaceMode == ::PlaceMode::CustomSelection;
+
+		if (IsOffZonePlaceMode) {
+			ShowCustomSelection();
+		}
+
+		else {
+			declare persistent Boolean Persistent_OffZonePlacing_AlwaysShow for LocalUser;
+			G_LibOffZoneEdit_SelectionDragDragging = False;
+			if (!Persistent_OffZonePlacing_AlwaysShow) HideCustomSelection();
+		}
+	}
+
+	// ---------------------------------- //
+	// Manage events
+	foreach (Event in PendingEvents) {
+		// ---------------------------------- //
+		// On cursor selection begin
+		if (Event.Type == CMapEditorPluginEvent::Type::CursorSelectionBegin) {
+			if (PlaceMode != ::PlaceMode::CustomSelection) continue;
+
+			G_LibOffZoneEdit_SelectionDragOrigin = CursorCoord;
+			G_LibOffZoneEdit_SelectionDragSubtract = !CustomSelectionCoords.exists(CursorCoord);
+			G_LibOffZoneEdit_SelectionDragDragging = True;
+		}
+		// ---------------------------------- //
+		// On cursor change
+		else if (Event.Type == CMapEditorPluginEvent::Type::CursorChange) {
+			if (!G_LibOffZoneEdit_SelectionDragDragging) continue;
+
+			declare metadata Int3[] TMOffZoneLocations for Map;
+			CustomSelectionCoords.clear();
+
+			foreach (Location in TMOffZoneLocations) {
+				CustomSelectionCoords.add(Location);
+			}
+
+			declare Int3 PosMin;
+			declare Int3 PosMax;
+
+			for (I, 0, 2) {
+				PosMin[I] = ML::Min(G_LibOffZoneEdit_SelectionDragOrigin[I], CursorCoord[I]);
+				PosMax[I] = ML::Max(G_LibOffZoneEdit_SelectionDragOrigin[I], CursorCoord[I]);
+			}
+
+			for (X, PosMin.X, PosMax.X)
+			for (Y, PosMin.Y, PosMax.Y)
+			for (Z, PosMin.Z, PosMax.Z) {
+				declare Coord = <X, Y, Z>;
+
+				// Subtract
+				if (G_LibOffZoneEdit_SelectionDragSubtract) {
+					if (CustomSelectionCoords.exists(Coord)) {
+						declare Removed = CustomSelectionCoords.remove(Coord);
+					}
+				}
+
+				// Add
+				else if (!CustomSelectionCoords.exists(Coord)) {
+					CustomSelectionCoords.add(Coord);
+				}
+			}
+		}
+		// ---------------------------------- //
+		// On cursor selection end
+		else if (Event.Type == CMapEditorPluginEvent::Type::CursorSelectionEnd) {
+			declare metadata Int3[] TMOffZoneLocations for Map;
+
+			TMOffZoneLocations.clear();
+			foreach (Location in CustomSelectionCoords) TMOffZoneLocations.add(Location);
+
+			G_LibOffZoneEdit_SelectionDragDragging = False;
+		}
+		// ---------------------------------- //
+		// Manialink custom event
+		else if (Event.Type == CManiaAppEvent::EType::LayerCustomEvent) {
+			if (Event.CustomEventLayer != G_LibOffZoneEdit_ManialinkLayer) continue;
+
+			switch (Event.CustomEventType) {
+				// ---------------------------------- //
+				// Enter OffZone placing mode
+				case "LibOffZoneEdit:EnterMode" : {
+					PlaceMode = ::PlaceMode::CustomSelection;
+				}
+
+				// ---------------------------------- //
+				// Clear all OffZone
+				case "LibOffZoneEdit:ClearOffZone" : {
+					declare metadata Int3[] TMOffZoneLocations for Map;
+
+					CustomSelectionCoords.clear();
+					TMOffZoneLocations.clear();
+				}
+
+				// ---------------------------------- //
+				// Enable water level OffZone
+				case "LibOffZoneEdit:EnableWater" : {
+					declare metadata Boolean LibOffZone_WaterLevelOffZone for Map;
+					LibOffZone_WaterLevelOffZone = !LibOffZone_WaterLevelOffZone;
+
+					declare Boolean WaterLevelOffZone for G_LibOffZoneEdit_ManialinkLayer.LocalPage;
+					WaterLevelOffZone = LibOffZone_WaterLevelOffZone;
+				}
+			}
+		}
+	}
+}

@@ -1,11 +1,11 @@
 // -------------------------------------- //
 //  PURSUIT MODE BASE by domino54         //
-//  script version: 2018-04-06            //
+//  script version: 2018-04-09            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
-#Const PUR_Version		"2018-04-06"
+#Const PUR_Version		"2018-04-09"
 #Const PUR_ScriptName	"Modes/TrackMania/ModePursuit.Script.txt"
 
 #Include "MathLib" as ML
@@ -19,6 +19,7 @@
 #Include "Libs/domino54/Chat.Script.txt" as Chat
 #Include "Libs/domino54/CupAdmin.Script.txt" as CupAdmin
 #Include "Libs/domino54/CustomNames.Script.txt" as Names
+#Include "Libs/domino54/DiscordWebhooks.Script.txt" as DiscordWebhooks
 #Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
 #Include "Libs/domino54/Killfeed.Script.txt" as Killfeed
@@ -33,7 +34,6 @@
 #Include "Libs/domino54/Streaks.Script.txt" as Streaks
 #Include "Libs/domino54/TopScores.Script.txt" as TopScores
 #Include "Libs/domino54/Translations.Script.txt" as Translations
-#Include "Libs/domino54/Webhook.Script.txt" as Webhook
 #Include "Libs/domino54/WebLayers.Script.txt" as WebLayers
 #Include "Libs/domino54/TrackMania/CylinderHitbox.Script.txt" as CylinderHitbox
 #Include "Libs/domino54/TrackMania/OffZone.Script.txt" as OffZone
@@ -100,6 +100,7 @@ Log::RegisterScript(Clans::GetScriptName(), Clans::GetScriptVersion());
 Log::RegisterScript(CupAdmin::GetScriptName(), CupAdmin::GetScriptVersion());
 Log::RegisterScript(CylinderHitbox::GetScriptName(), CylinderHitbox::GetScriptVersion());
 Log::RegisterScript(FakeUsers::GetScriptName(), FakeUsers::GetScriptVersion());
+Log::RegisterScript(DiscordWebhooks::GetScriptName(), DiscordWebhooks::GetScriptVersion());
 Log::RegisterScript(FancyMessages::GetScriptName(), FancyMessages::GetScriptVersion());
 Log::RegisterScript(Killfeed::GetScriptName(), Killfeed::GetScriptVersion());
 Log::RegisterScript(ManialinkTools::GetScriptName(), ManialinkTools::GetScriptVersion());
@@ -112,7 +113,6 @@ Log::RegisterScript(ServerManager::GetScriptName(), ServerManager::GetScriptVers
 Log::RegisterScript(StoragePlayer::GetScriptName(), StoragePlayer::GetScriptVersion());
 Log::RegisterScript(TopScores::GetScriptName(), TopScores::GetScriptVersion());
 Log::RegisterScript(Translations::GetScriptName(), Translations::GetScriptVersion());
-Log::RegisterScript(Webhook::GetScriptName(), Webhook::GetScriptVersion());
 Log::RegisterScript(WebLayers::GetScriptName(), WebLayers::GetScriptVersion());
 ***
 
@@ -216,7 +216,6 @@ Replay_AutoStart = False;
 RespawnBehaviour = CTmMode::ETMRespawnBehaviour::DoNothing;
 
 WarmUp::SetAvailability(False);
-Webhook::SetMapSwitching(True);
 
 /**
  *	Force round/lap synchro of the cars
@@ -292,7 +291,7 @@ TopScores::Build();
 // Load Killfeed library
 Killfeed::Load();
 Killfeed::SetPosition(C_DefaultKillfeedPosn + <0., S_KillfeedOffsetY, 0.>);
-Killfeed::AddTranslations(["$<%1$> rests in the OffZone", "$<%1$> tried to escape the arena", "$<%1$> somehow fell below map", "$<%1$> was forced into the Police team"]);
+Killfeed::AddTranslations(["$<%1$> rests in the OffZone", "$<%1$> tried to escape the arena", "$<%1$> somehow fell below map", "$<%1$> was forced into the Police team", "$<%1$> tried to swim"]);
 Killfeed::SetTextFont(C_InterfaceFont_Medium);
 Killfeed::SetMapSwitching(True);
 
@@ -324,7 +323,6 @@ Killfeed::Build();
 
 ***MB_Private_AfterLoadMap***
 ***
-Webhook::SetMapSwitching(False);
 Killfeed::SetMapSwitching(False);
 ***
 
@@ -387,6 +385,7 @@ Blacklist::Loop(S_CustomBlacklistURL);
 Characters::Loop();
 Chat::Loop(S_UseCustomChat, S_DiscordChatWebhhook);
 CupAdmin::Loop(S_AdminEnableCupMode, S_AdminPauseCompetition, S_AdminCupModeNbMaps, S_AdminCupName);
+DiscordWebhooks::Loop();
 FancyMessages::Loop();
 FakeUsers::UpdateAmount(S_NbFakeUsers);
 Killfeed::Loop();
@@ -395,7 +394,6 @@ PursuitUI::Loop();
 ServerManager::Loop();
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
 Streaks::Loop();
-Webhook::Loop(S_WebhookURL);
 WebLayers::Update(S_CustomLayersURLs);
 ***
 
@@ -535,7 +533,6 @@ if (!MM_IsMatchServer() && S_EnableMapSelection && MapSelection::SelectionStart(
 // ---------------------------------- //
 ***MB_Private_BeforeUnloadMap***
 ***
-Webhook::SetMapSwitching(True);
 Killfeed::SetMapSwitching(True);
 OffZone::EndMap();
 ***

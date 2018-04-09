@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY DISCORD WEBHOOKS by domino54  //
-//  script version: 2018-03-29            //
+//  script version: 2018-04-09            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
  *	messages and simplified creation of rich embeds. 
  */
 
-#Const Version		"2018-03-29"
+#Const Version		"2018-04-09"
 #Const ScriptName	"Libs/domino54/DiscordWebhooks.Script.txt"
 
 #Include "MathLib" as ML
@@ -40,6 +40,7 @@ declare Text[Text] G_LibWebhooks_CreatedWebhooks;
 declare Ident[] G_LibWebhooks_OngoingRequests;
 declare Ident[] G_LibWebhooks_RequestsToDestroy;
 declare Text[] G_LibWebhooks_EscapingMentions;
+declare Integer[Text] G_LibWebhooks_RateLimitExpires;
 
 // ---------------------------------- //
 // Functions
@@ -83,9 +84,15 @@ Void Private_Post(Text _WebhookId, Text _Resource) {
 
 	declare WebhookURL = Private_GetURL(_WebhookId);
 	if (WebhookURL == "") return;
+
+	// Webhook is rate limited
+	if (G_LibWebhooks_RateLimitExpires.existskey(_WebhookId) && Now < G_LibWebhooks_RateLimitExpires[_WebhookId]) return;
 	
 	declare Request = Http.CreatePost(WebhookURL, _Resource, C_LibWebhooks_AdditionalHeaders);
 	G_LibWebhooks_OngoingRequests.add(Request.Id);
+
+	declare Text LibWebhooks_WebhookId for Request;
+	LibWebhooks_WebhookId = _WebhookId;
 
 	declare Integer LibWebhooks_ExpirationTime for Request;
 	LibWebhooks_ExpirationTime = Now + C_LibWebhooks_RequestTimeout;
@@ -173,7 +180,7 @@ Text Private_EscapeMentions(Text _String) {
 	*/
 
 	// Temporary workaround
-	while (TL::Find("@", EscapedString, False, False)) {
+	if (TL::Find("@", EscapedString, False, False)) {
 		EscapedString = TL::Replace(EscapedString, "@", "");
 	}
 
@@ -331,6 +338,9 @@ Void Send(Text _WebhookId, Text _Content, Text[] _Embeds, Text _Username, Text _
 	// Escape all mentions in the content
 	declare Content = _Content;
 	if (EscapeMentions(_WebhookId)) Content = Private_EscapeMentions(Content);
+
+	if (Content == "" && _Embeds.count <= 0) return;
+	if (TL::Length(Content) > 2000) return;
 
 	// JSON stringify
 	declare Text[Text] Properties;
@@ -503,8 +513,28 @@ Void Loop() {
 		if (!G_LibWebhooks_OngoingRequests.exists(Request.Id)) continue;
 
 		declare Integer LibWebhooks_ExpirationTime for Request;
-		if (!Request.IsCompleted || Now < LibWebhooks_ExpirationTime) continue;
+		if (!Request.IsCompleted && Now < LibWebhooks_ExpirationTime) continue;
 		G_LibWebhooks_RequestsToDestroy.add(Request.Id);
+
+		// Extremely advanced JSON parsing
+		if (!TL::Find("retry_after", Request.Result, False, False)) continue;
+		declare Explode = TL::Split("retry_after", Request.Result);
+		if (!Explode.existskey(1)) continue;
+		declare Explode1 = Explode[1];
+		declare RawInteger = "";
+
+		for (I, 0, TL::Length(Explode1) - 1) {
+			declare Num = TL::ToInteger(TL::SubString(Explode1, I, 1));
+			if (RawInteger != "" && Num < 0) break;
+			if (Num < 0) continue;
+			RawInteger ^= Num;
+		}
+
+		// Rate limit
+		declare Text LibWebhooks_WebhookId for Request;
+		declare ValueInt = TL::ToInteger(RawInteger);
+		
+		G_LibWebhooks_RateLimitExpires[LibWebhooks_WebhookId] = Now + ValueInt;
 	}
 
 	// Destroy the requests

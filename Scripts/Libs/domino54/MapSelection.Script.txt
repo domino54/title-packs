@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY MAP SELECTION by domino54     //
-//  script version: 2017-09-07            //
+//  script version: 2018-04-09            //
 // -------------------------------------- //
 
-#Const Version		"2017-09-07"
+#Const Version		"2018-04-09"
 #Const ScriptName	"MapSelection.Script.txt"
 
 #Include "MathLib" as ML
@@ -623,6 +623,23 @@ Void Private_DestroyMXRequest() {
 }
 
 // ---------------------------------- //
+/// Violently get rid of the current MPWS requests.
+Void Private_DestroyMPWSRequests() {
+	declare Text[] RequestsToDestroy;
+
+	foreach (MapUID => Request in G_LibMapSelection_MPWSRequests) RequestsToDestroy.add(MapUID);
+
+	while (RequestsToDestroy.existskey(0)) {
+		declare MapUID = RequestsToDestroy[0];
+		Http.Destroy(G_LibMapSelection_MPWSRequests[MapUID]);
+
+		declare Boolean Removed;
+		Removed = G_LibMapSelection_MPWSRequests.removekey(MapUID);
+		Removed = RequestsToDestroy.removekey(0);
+	}
+}
+
+// ---------------------------------- //
 /** Parse the Mania Exchange API response.
  *
  *	@param	_Document	Mania Exchange response XML document.
@@ -738,17 +755,6 @@ Void Unload() {
 	declare netwrite Integer Net_LibMapSelection_ThumbnailsUpdate for Teams[0];
 	Net_LibMapSelection_MapsThumbnails.clear();
 	Net_LibMapSelection_ThumbnailsUpdate = -1;
-
-	declare Text[] RequestsToDestroy;
-	foreach (MapUID => Request in G_LibMapSelection_MPWSRequests) RequestsToDestroy.add(MapUID);
-	while (RequestsToDestroy.existskey(0)) {
-		declare MapUID = RequestsToDestroy[0];
-		Http.Destroy(G_LibMapSelection_MPWSRequests[MapUID]);
-
-		declare Boolean Removed;
-		Removed = G_LibMapSelection_MPWSRequests.removekey(MapUID);
-		Removed = RequestsToDestroy.removekey(0);
-	}
 }
 
 // ---------------------------------- //
@@ -887,19 +893,18 @@ Boolean SelectionStart(Integer _EndTime, Boolean _ListLeastPlayedMaps) {
 	RequestURL = TL::Replace(RequestURL, "%2", TL::Join(",", G_LibMapSelection_AvailableToVote));
 
 	// Create the request
-	G_LibMapSelection_MXRequest = Http.CreateGet(RequestURL, False);
-	G_LibMapSelection_MXRequestStart = Now;
+	if (Http.SlotsAvailable <= 0) {
+		G_LibMapSelection_MXRequest = Http.CreateGet(RequestURL, False);
+		G_LibMapSelection_MXRequestStart = Now;
+	}
 
 	// ---------------------------------- //
 	// ManiaPlanet web services maps data
-	declare Text[] OngoingRequests;
-	foreach (MapUID => Request in G_LibMapSelection_MPWSRequests) OngoingRequests.add(MapUID);
-	foreach (MapUID in OngoingRequests) {
-		Http.Destroy(G_LibMapSelection_MPWSRequests[MapUID]);
-		declare Removed = G_LibMapSelection_MPWSRequests.removekey(MapUID);
-	}
+	Private_DestroyMPWSRequests();
 
 	foreach (MapUID in G_LibMapSelection_AvailableToVote) {
+		if (Http.SlotsAvailable <= 0) continue;
+
 		RequestURL = C_LibMapSelection_MPWSMapInfoRoute^MapUID;
 		G_LibMapSelection_MPWSRequests[MapUID] = Http.CreateGet(RequestURL, False, "Accept: application/xml");
 	}
@@ -1072,6 +1077,7 @@ Void SelectionEnd() {
 	Private_SetSelectedMap("");
 	Private_SetMapsMXIDs(Integer[Text]);
 	Private_DestroyMXRequest();
+	Private_DestroyMPWSRequests();
 	
 	// Restore previous sequence
 	declare CUIConfig::EUISequence PrevUISequence for This;

@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  GOAL HUNT TM by domino54              //
-//  script version: 2018-04-06            //
+//  script version: 2018-04-09            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/ModePursuit.Script.txt"
 
 #Const CompatibleMapTypes	"GoalHuntArena"
-#Const Version				"2018-04-06"
+#Const Version				"2018-04-09"
 #Const ScriptName			"Modes/TrackMania/GoalHunt.Script.txt"
 
 #Include "Libs/domino54/SplitScreenLib.Script.txt" as SplitScreen
@@ -58,7 +58,7 @@ Log::RegisterScript(SplitScreen::GetScriptName(), SplitScreen::GetScriptVersion(
 // ---------------------------------- //
 // Initialize the server
 // ---------------------------------- //
-***Match_InitServer***
+***Match_StartServer***
 ***
 // ---------------------------------- //
 // Create custom interface
@@ -67,6 +67,7 @@ Layers::SetType("GoalHuntTM:Markers", CUILayer::EUILayerType::Markers);
 Layers::Create("GoalHuntTM:Countdown", CreateManialinkCountdown());
 Layers::Create("GoalHuntTM:PointsCount", CreateManialinkPointsCount());
 
+PursuitUI::SetSafeTimeDuration(0);
 UpdateInterface();
 ***
 
@@ -234,27 +235,13 @@ foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
 // Manage players functions
 foreach (Player in Players) {
 	// Respawn falling into OffZone
-	if (OffZone::IsInOffZone(Player)) {
-		PUR_AddPoints(Player, C_RespawnPenaltyPoints);
-		TM::WaitRace(Player);
-	}
-	
-	// Respawn leaving map area
-	if (OffZone::IsBeyondMapEdge(Player)) {
-		PUR_AddPoints(Player, C_RespawnPenaltyPoints);
-		TM::WaitRace(Player);
-	}
-	
-	// Respawn falling under map
-	if (OffZone::IsBelowMapBottom(Player)) {
+	if (OffZone::IsInOffZone(Player) || OffZone::IsBeyondMapEdge(Player) || OffZone::IsBelowMapBottom(Player) || OffZone::IsBelowWaterLevel(Player)) {
 		PUR_AddPoints(Player, C_RespawnPenaltyPoints);
 		TM::WaitRace(Player);
 	}
 
 	// Spawn players awaiting race
-	if (TM::IsWaiting(Player)) {
-		PUR_SpawnPlayer(Player);
-	}
+	if (TM::IsWaiting(Player)) PUR_SpawnPlayer(Player);
 }
 
 // ---------------------------------- //
@@ -713,6 +700,10 @@ declare CMlLabel[] Label_MarkersDistances;
 foreach (Frame in Frame_GoalsMarkers) Label_MarkersDistances.add((Frame.GetFirstChild("Label_MarkerDistance") as CMlLabel));
 
 // ---------------------------------- //
+// Persistent settings
+declare persistent Persistent_GoalHuntTM_GoalsOnScreen for LocalUser = False;
+
+// ---------------------------------- //
 // Netcode
 declare netread Integer Net_GoalHuntTM_NbMaxGoals for Teams[0];
 declare netread Integer Net_GoalHuntTM_UpdateTime for Teams[0];
@@ -726,6 +717,7 @@ declare VisibleFrames = Integer[];
 
 declare PrevUpdateTime = -1;
 declare PrevGUIPlayerId = NullId;
+declare PrevGoalsOnScreen = False;
 
 // Reset markers
 ClientUI.MarkersXML = "";
@@ -757,6 +749,13 @@ else if (PrevGUIPlayerId != NullId) {
 }
 
 // ---------------------------------- //
+// Goals visiblity change
+if (PrevGoalsOnScreen != Persistent_GoalHuntTM_GoalsOnScreen) {
+	PrevGoalsOnScreen = Persistent_GoalHuntTM_GoalsOnScreen;
+	UpdateMarkers = 2;
+}
+
+// ---------------------------------- //
 // Update markers
 if (UpdateMarkers > 0) {
 	UpdateMarkers -= 1;
@@ -766,6 +765,10 @@ if (UpdateMarkers > 0) {
 	
 	declare Text Login;
 	if (GUIPlayer != Null && GUIPlayer.User != Null) Login = GUIPlayer.User.Login;
+
+	// Visibility
+	declare Visibility = "Always";
+	if (Persistent_GoalHuntTM_GoalsOnScreen) Visibility = "WhenInFrustum";
 	
 	// ---------------------------------- //
 	// Create marker for every Goal available
@@ -786,14 +789,13 @@ if (UpdateMarkers > 0) {
 		
 		// ---------------------------------- //
 		// Get marker height depending on the Goal type
-		declare MarkerHeight = 16.;
+		declare MarkerHeight = 12.;
 		declare MapLandmarkTag = "Checkpoint";
-		
+
 		// ---------------------------------- //
 		// Create marker
 		declare Pos = Position.X^" "^Position.Y + MarkerHeight^" "^Position.Z;
-		ClientUI.MarkersXML ^= "<marker manialinkframeid='Frame_GoalMarker#"^I^"' pos='"^Pos^"' minimapvisibility='Never' />";
-		// visibility='WhenInFrustum' 
+		ClientUI.MarkersXML ^= "<marker manialinkframeid='Frame_GoalMarker#"^I^"' pos='"^Pos^"' minimapvisibility='Never' visibility='"^Visibility^"' />";
 		
 		// ---------------------------------- //
 		// Load frame elements

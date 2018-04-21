@@ -1,16 +1,11 @@
 // -------------------------------------- //
 //  PURSUIT UI LIB by domino54            //
-//  script version: 2018-04-09            //
+//  script version: 2018-04-21            //
 // -------------------------------------- //
 
 /**
  *	Pursuit UI Library
- *	This library allows to use TrackMania Pursuit and PursuitPRO interface elements. Server administrators can also modify
- *	elements placement through an XmlRpc callback with XML document containing customisation info. To get the sample,
- *	default configuration file, check the domino54's GitHub repository.
- *
- *	domino54's GitHub repository
- *	https://github.com/domino54/title-packs
+ *	This library allows you to use TrackMania Pursuit title interface elements.
  *
  *	Available modules:
  *	- Countdown			Replace default countdown with a custom one.
@@ -28,8 +23,8 @@
  *	- Detector			Display label showing distance to nearest policemen.
  */
 
-#Const	Version		"2018-04-09"
-#Const	ScriptName	"PursuitUI.Script.txt"
+#Const	Version		"2018-04-21"
+#Const	ScriptName	"Libs/domino54/TrackMania/PursuitUI.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
@@ -549,12 +544,14 @@ main() {
 
 	// ---------------------------------- //
 	// Persistent settings
+	declare persistent Persistent_LibPursuitUI_DisableSpeedometer for LocalUser = False;
 	declare persistent Persistent_LibPursuitUI_UseRetardedUnits for LocalUser = False;
 	declare persistent Persistent_LibPursuitUI_UseWideFormat for LocalUser = False;
 	
 	// ---------------------------------- //
 	// Variables
 	declare DisplaySpeedometer = False;
+	declare Camera7Forbidden = False;
 	declare SafeTimeDuration = 0;
 	declare GaugeRPMValue = 0.;
 	declare GlobalEngineMaxRPM = C_DefaultEngineMaxRPM;
@@ -570,10 +567,6 @@ main() {
 	// ---------------------------------- //
 	while (True) {
 		yield;
-		if (!PageIsVisible) continue;
-
-		// Disable Cam 1 and Cam 7
-		//if (CurPlayerCamera == 4 || CurPlayerCamera == 2) CurPlayerCamera = 5;
 		
 		// ---------------------------------- //
 		// Update settings
@@ -597,10 +590,19 @@ main() {
 						if (SafeTimeDuration >= 0) SafeTimeDuration = NewDuration;
 						else SafeTimeDuration = 0;
 					}
+					case "Camera7Forbidden" : Camera7Forbidden = SettingValue == "True";
 				}
 			}
 		}
 
+		// ---------------------------------- //
+		// Disable camera 7
+		if (CurPlayerCamera == 2 && Camera7Forbidden) CurPlayerCamera = 5;
+
+		if (!PageIsVisible) continue;
+
+		// ---------------------------------- //
+		// Split screen format change
 		if (PrevUseWideFormat != Persistent_LibPursuitUI_UseWideFormat) {
 			PrevUseWideFormat = Persistent_LibPursuitUI_UseWideFormat;
 			ConfigureFrames = True;
@@ -652,7 +654,7 @@ main() {
 
 			// ---------------------------------- //
 			// Update speedometer visibility
-			declare SpeedometerVisible = DisplaySpeedometer && Player != Null && Player.IsSpawned;
+			declare SpeedometerVisible = DisplaySpeedometer && !Persistent_LibPursuitUI_DisableSpeedometer && Player != Null && Player.IsSpawned;
 			declare PrevSpeedometerVisible for Frame = !SpeedometerVisible;
 
 			if (PrevSpeedometerVisible != SpeedometerVisible) {
@@ -1676,7 +1678,7 @@ main() {
 		declare Label_RespawnCampDist	for Frame <=> (Frame.GetFirstChild("Label_RespawnCampDist") as CMlLabel);
 
 		// Translations
-		Label_CampWarningText.Value = Translate(["Camper! Move %1 meters away to cancel!", "100"]);
+		Label_CampWarningText.Value = Translate(["Camper! Move %1 meters away to cancel!", "50"]);
 	}
 	
 	// ---------------------------------- //
@@ -2704,6 +2706,15 @@ Void SetRespawnDuration(Integer _RespawnDuration) {
  */
 Void SetGlobalEngineMaxRPM(Real _EngineMaxRPM) {
 	Private_SetModuleSetting("EngineMaxRPM", TL::ToText(_EngineMaxRPM));
+}
+
+// ---------------------------------- //
+/** Set  if the camera 7 is forbidden.
+ *
+ *	@param	_Camera7Forbidden	If True, camera will return to 2 if attempting to use camera 7.
+ */
+Void SetCamera7Forbidden(Boolean _Camera7Forbidden) {
+	Private_SetModuleSetting("Camera7Forbidden", TL::ToText(_Camera7Forbidden));
 }
 
 // ---------------------------------- //

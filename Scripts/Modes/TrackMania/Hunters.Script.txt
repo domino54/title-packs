@@ -1,0 +1,1326 @@
+// -------------------------------------- //
+//  HUNTERS by domino54                   //
+//  script version: 2018-04-21            //
+// -------------------------------------- //
+
+#Extends "Modes/TrackMania/ModePursuit.Script.txt"
+
+#Const Version		"2018-04-21"
+#Const ScriptName	"Modes/TrackMania/Hunters.Script.txt"
+
+#Include "Libs/domino54/LeaderDisplay.Script.txt" as LeaderDisplay
+
+// ---------------------------------- //
+// Settings
+// ---------------------------------- //
+#Setting S_TimeLimit			300		as _("Time limit")		///< Time limit on a map
+#Setting S_PointLimit			25		as _("Points limit")	///< Points limit on a map
+#Setting S_SafePhaseDuration	15		as _("Time before first targets are assigned")
+#Setting S_UseCampingDetection	True	as _("Prevent players from camping")
+#Setting S_AutoManageAFK		True	as _("Switch inactive players to spectator mode")
+#Setting S_RespawnOnCapture		False	as _("Respawn target when caught by their hunter")
+#Setting S_ShowHunterLocation	False	as _("Show the hunter location")
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_RequiredPlayersNb		3		///< Min number of players to start the game.
+#Const C_NbCapsForDomination	2		///< Nb of captures performed on one thief to dominate them.
+#Const C_RespawnDuration		5000	///< Time before thief will be respawned.
+#Const C_RespawnCancelSpeed		10.		///< Distance to be driven to cancel respawn.
+#Const C_PointsForCapture		1		///< Points awarded for catching a player.
+#Const C_PointsForBeingCaught	0		///< Points removed for being caught.
+#Const C_MinPlayerSpawnDist		8.		///< Distance required to drive away from spawn to be target.
+#Const C_MinPlayerTargetDist	5.		///< Min. distance needed for a player to be someones target.
+#Const C_AutoAssignPeriod		1000	///< Time between automatic targets assignment.
+#Const C_PlayerLockOnDistance	32.		///< Min distance for the cosmetic lock-on to start blinking. 
+
+/// Capture reasons
+#Const C_CaptureReason_Policeman	0
+#Const C_CaptureReason_OffZone		1
+#Const C_CaptureReason_Boundary		2
+#Const C_CaptureReason_Void			3
+#Const C_CaptureReason_Command		4
+#Const C_CaptureReason_Water		5
+
+/// Description of the mode displayed in the help window
+#Const Description _("""$FFFIn $<$F00Hunters$> mode, the goal is to catch random player being your own $<$0F0Target$>.
+
+Catching $<$0F0Target$> will give you $<$FF01 point$> and toss another player as the next $<$0F0Target$>.
+If you are caught by your $<$F00Hunter$>, you will lose $<$FF0-1 point$>.
+
+The first player to reach the points limit or the player with the highest score at the end of the time limit wins the map.""")
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text[Text] G_HuntersTargetsList;	///< List of all players with their target login.
+declare Boolean G_AssignHuntersTargets;		///< Tells the mode to assign new targets.
+declare Text[] G_CreatedMinimapMarkers;		///< Minimap markers created by the mode.
+
+// ---------------------------------- //
+// Extends
+// ---------------------------------- //
+***Match_LogVersions***
+***
+Log::RegisterScript(ScriptName, Version);
+Log::RegisterScript(LeaderDisplay::GetScriptName(), LeaderDisplay::GetScriptVersion());
+***
+
+// ---------------------------------- //
+// Init server
+// ---------------------------------- //
+***Match_InitServer***
+***
+declare StartTime = -1;
+declare IsSafePhase = False;
+declare PrevTimeLimit = S_TimeLimit;
+declare PrevPointsLimit = -1;
+declare PrevShowHunter = False;
+declare NextAutoAssignTime = -1;
+declare LeadId = NullId;
+***
+
+// ---------------------------------- //
+// Scores table
+// ---------------------------------- //
+***ScoresTable***
+***
+ST2::SetColWidth("LibST_Name", 22.);
+ST2::SetColWidth("LibST_TMPoints", 6.);
+TopScores::AddCategory("Hunters_Capture", "Most captures", "", 1.);
+TopScores::AddCategory("Hunters_Stunts", "Most stunts", "🔥", 2.);
+TopScores::SetFormat(2, 1);
+***
+
+// ---------------------------------- //
+// Rules
+// ---------------------------------- //
+***Match_Rules***
+***
+ModeInfo::SetName("Hunters");
+ModeInfo::SetType(ModeInfo::Type_FreeForAll());
+ModeInfo::SetRules(Description);
+ModeInfo::SetStatusMessage(_("Catch a maximum of players to win the game."));
+***
+
+// ---------------------------------- //
+// Start server
+// ---------------------------------- //
+***Match_StartServer***
+***
+UseForcedClans = True;
+EnableCollisions = S_EnableCollisions;
+
+// Dominations
+Streaks::SetNbKillsForDomination(C_NbCapsForDomination);
+
+// We have custom markers for the players
+UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::Never;
+
+PursuitUI::SetRespawnDuration(C_RespawnDuration);
+
+// Hunters interface
+Layers::Create("Hunters:Interface", CreateManialinkInterface());
+Layers::Attach("Hunters:Interface");
+
+Layers::Create("Hunters:Markers", CreateManialinkMarkers());
+Layers::SetType("Hunters:Markers", CUILayer::EUILayerType::Markers);
+Layers::Attach("Hunters:Markers");
+
+// Load leader display
+LeaderDisplay::Load();
+***
+
+// ---------------------------------- //
+// Initialize map
+// ---------------------------------- //
+***Match_StartMap***
+***
+MB_Private_SectionCount_Round = 1; // Hax
+
+IsSafePhase = True;
+G_HuntersTargetsList.clear();
+UpdateHuntersList();
+
+// Destroy all markers
+foreach (MarkerId in G_CreatedMinimapMarkers) Minimap::DestroyMarker(MarkerId);
+G_CreatedMinimapMarkers.clear();
+
+// ---------------------------------- //
+// Wait for enough players
+PUR_WaitForPlayers(C_RequiredPlayersNb);
+
+// Vehicle selection
+PUR_ShowCharSelection();
+
+// ---------------------------------- //
+// Initialize scores
+MB_Sleep(1); ///< Allow the scores array to be sorted
+foreach (Score in Scores) {
+	declare Integer LastPoint for Score;
+	LastPoint = 0;
+}
+if (Scores.existskey(0)) LeadId = Scores[0].User.Id;
+
+// ---------------------------------- //
+// Initialize players
+foreach (Player in Players) {
+	declare Ident PrevTargetId for Player;
+	declare Ident PrevHunterId for Player;
+	PrevTargetId = NullId;
+	PrevHunterId = NullId;
+}
+
+// ---------------------------------- //
+// Initialize race
+declare PlayerSpawnDuration = C_PlayerSpawnDuration;
+if (S_UseInstantRespawn) PlayerSpawnDuration = 0;
+StartTime = Now + S_SafePhaseDuration * 1000 + PlayerSpawnDuration;
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+UIManager.UIAll.CountdownEndTime = StartTime;
+PUR_DisableTimeLimit();
+
+// New round message
+Translations::SetStatusMessage("Drive far away!");
+PursuitUI::SetStartTime(StartTime);
+LeaderDisplay::Show();
+PUR_PlaySound(CUIConfig::EUISound::StartRound, 0);
+Replay_Start();
+***
+
+// ---------------------------------- //
+// Play loop
+// ---------------------------------- //
+***Match_PlayLoop***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	Discard(Event);
+	
+	// ---------------------------------- //
+	// Waypoint
+	if (Event.Type == CTmModeEvent::EType::WayPoint) {
+		if (Event.IsEndRace) TM::WaitRace(Event.Player);
+	}
+	// ---------------------------------- //
+	// Respawn
+	else if (Event.Type == CTmModeEvent::EType::GiveUp || Event.Type == CTmModeEvent::EType::Respawn) {
+		if (!IsSafePhase) {
+			declare Boolean RequestsRespawn for Event.Player;
+			
+			// Stop respawn countdown
+			if (RequestsRespawn) RequestsRespawn = False;
+			
+			// Respawn player not chased by anyone
+			else if (!IsHuntedBySomeone(Event.Player)) TM::WaitRace(Event.Player);
+			
+			// Start respawn countdown
+			else RequestsRespawn = True;
+		}
+		
+		// Respawn player during safe phase
+		else TM::WaitRace(Event.Player);
+	}
+	// ---------------------------------- //
+	// On stunt
+	else if (Event.Type == CTmModeEvent::EType::Stunt) {
+		TopScores::AddPoints(Event.Player.Score, "Hunters_Stunts", Event.Points);
+	}
+}
+
+// ---------------------------------- //
+// Detect hunters catching targets
+foreach (Hunter in Players) {
+	if (!HasTarget(Hunter) || !PUR_CanInteract(Hunter)) continue;
+	
+	// Get the player target
+	declare Target <=> GetTarget(Hunter);
+	if (Target == Null || !PUR_CanInteract(Target)) continue;
+	
+	// Catch the target
+	if (PUR_AreTouching(Hunter, Target)) CatchTarget(Target, C_CaptureReason_Policeman);
+}
+
+// ---------------------------------- //
+// Respawn players changing vehicles
+foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
+	if (!Players.existskey(PlayerId)) continue;
+	declare Player <=> Players[PlayerId];
+	if (IsHuntedBySomeone(Player)) continue;
+	TM::WaitRace(Player);
+}
+
+// ---------------------------------- //
+// Automatically assign targets every some seconds
+if (Now > NextAutoAssignTime) {
+	NextAutoAssignTime = Now + C_AutoAssignPeriod;
+	G_AssignHuntersTargets = True;
+}
+
+// ---------------------------------- //
+// Assign targets for the players
+if (G_AssignHuntersTargets && !IsSafePhase) {
+	G_AssignHuntersTargets = False;
+	
+	// ---------------------------------- //
+	// Remove targets and hunters that left the game
+	declare Text[] LoginsToRemove;
+	foreach (HunterLogin => TargetLogin in G_HuntersTargetsList) {
+		if (!PlayerExists(HunterLogin) && !LoginsToRemove.exists(HunterLogin)) LoginsToRemove.add(HunterLogin);
+		if (!PlayerExists(TargetLogin) && !LoginsToRemove.exists(TargetLogin)) LoginsToRemove.add(TargetLogin);
+	}
+	while (LoginsToRemove.existskey(0)) {
+		declare Login = LoginsToRemove[0];
+		declare Boolean Removed;
+		Removed = G_HuntersTargetsList.remove(Login);
+		Removed = G_HuntersTargetsList.removekey(Login);
+		Removed = LoginsToRemove.removekey(0);
+	}
+	
+	// ---------------------------------- //
+	// Assign targets for players without one
+	foreach (Hunter in Players) {
+		if (HasTarget(Hunter) || Hunter.Position == <0., 0., 0.>) continue;
+		if (ML::Distance(Hunter.Position, MapStartLinePos) <= C_MinPlayerSpawnDist) continue;
+
+		declare Ident PrevTargetId for Hunter;
+		declare Ident[] PossibleTargetsIds;
+		
+		// ---------------------------------- //
+		// Look for possible targets to assign
+		foreach (Target in Players) {
+			if (Target == Hunter || !Target.IsSpawned || Target.Position == <0., 0., 0.> || Target.Id == PrevTargetId || Now < Target.RaceStartTime + 1000) continue;
+
+			// Target already has a hunter or is hunting us
+			if (IsHuntedBySomeone(Target) || Target == GetHunter(Hunter)) continue;
+
+			// Target is yet in OffZone
+			if (OffZone::IsInOffZone(Target) || OffZone::IsBeyondMapEdge(Target) || OffZone::IsBelowMapBottom(Target) || OffZone::IsBelowWaterLevel(Target)) continue;
+
+			// Ignore player if they were our previous hunter
+			declare Ident PrevHunterId for Target;
+			declare WasPreviousHunter = Hunter.Id == PrevHunterId;
+			if (S_RespawnOnCapture) WasPreviousHunter = False;
+			// if (WasPreviousHunter) continue;
+
+			// Player is too close to us
+			if (ML::Distance(Target.Position, Hunter.Position) <= C_MinPlayerTargetDist) continue;
+
+			// Player is too close to the spawn
+			//if (ML::Distance(Target.Position, MapStartLinePos) <= C_MinPlayerSpawnDist) continue;
+			
+			// Add possible target
+			PossibleTargetsIds.add(Target.Id);
+		}
+		
+		// ---------------------------------- //
+		// Choose random player from possible targets
+		if (PossibleTargetsIds.count > 0) {
+			PrevTargetId = PossibleTargetsIds[ML::Rand(0, PossibleTargetsIds.count - 1)];
+			
+			if (Players.existskey(PrevTargetId)) {
+				declare Target <=> Players[PrevTargetId];
+				G_HuntersTargetsList[Hunter.User.Login] = Target.User.Login;
+				declare Ident PrevHunterId for Target;
+				PrevHunterId = Hunter.Id;
+
+				// Create marker
+				declare MarkerId = "Target#"^Hunter.User.Login;
+				Minimap::SetMarker(MarkerId, "Target.png", Vec3, Target.User.Login, Hunter, True);
+				G_CreatedMinimapMarkers.add(MarkerId);
+			}
+		}
+	}
+	
+	// Update interface
+	UpdateHuntersList();
+}
+
+// ---------------------------------- //
+// End of the safe phase
+if (IsSafePhase && Now >= UIManager.UIAll.CountdownEndTime) {
+	IsSafePhase = False;
+	UIManager.UIAll.CountdownEndTime = -1;
+	Translations::SetStatusMessage("");
+	PrevTimeLimit = -1;
+	G_AssignHuntersTargets = True;
+}
+
+// ---------------------------------- //
+// Update the map duration setting
+if (!IsSafePhase && PrevTimeLimit != S_TimeLimit) {
+	PrevTimeLimit = S_TimeLimit;
+	
+	if (S_TimeLimit > 0) PUR_SetTimeLimit(StartTime + S_TimeLimit * 1000);
+	else PUR_DisableTimeLimit();
+}
+
+// ---------------------------------- //
+// Server info change
+if (PrevPointsLimit != S_PointLimit) {
+	PrevPointsLimit = S_PointLimit;
+	ST2::SetFooterText(TL::Compose("%1 "^S_PointLimit, _("Points limit : ")));
+}
+
+// ---------------------------------- //
+// Play sound and notice if someone is taking the lead
+if (Scores.existskey(0) && Scores[0].User.Id != LeadId) {
+	LeadId = Scores[0].User.Id;
+	Message::SendBigMessage(TL::Compose(_("$<%1$> takes the lead!"), Scores[0].User.Name), 3000, 1);
+	PUR_PlaySound(CUIConfig::EUISound::PhaseChange, 1);
+}
+
+// ---------------------------------- //
+// Update hunter visibility
+if (PrevShowHunter != S_ShowHunterLocation) {
+	PrevShowHunter = S_ShowHunterLocation;
+
+	declare netwrite Boolean Net_Hunters_ShowHunter for Teams[0];
+	Net_Hunters_ShowHunter = S_ShowHunterLocation;
+}
+
+// ---------------------------------- //
+// Manage players functions
+foreach (Player in Players) {
+	// ---------------------------------- //
+	// Player variables
+	declare Boolean RequestsRespawn for Player;
+	declare Integer RespawnStartTime for Player;
+	declare Boolean ResetRespawnCounter for Player;
+	
+	declare Boolean DetectedCamping for Player;
+	declare Boolean PrevIsCamping for Player;
+	declare Vec3 PositionUpdate for Player;
+	
+	// ---------------------------------- //
+	// Respawn players camping at one spot
+	if (
+		S_UseCampingDetection && !IsSafePhase && IsHuntedBySomeone(Player) &&
+		Player.IsSpawned && Now >= Player.RaceStartTime
+	) {
+		declare Integer LastUpdateTime for Player;
+		if (!DetectedCamping) {
+			// ---------------------------------- //
+			// Update player position
+			if (ML::Distance(Player.Position, PositionUpdate) >= C_CamperUpdateDistance) {
+				PositionUpdate = Player.Position;
+				LastUpdateTime = Now;
+			}
+			// ---------------------------------- //
+			// Force player respawn
+			if (Now >= LastUpdateTime + C_CamperDetectionTime) {
+				DetectedCamping = True;
+				ResetRespawnCounter = False;
+				PositionUpdate = Player.Position;
+			}
+		}
+		// ---------------------------------- //
+		// Cancel automatic respawn
+		else if (ML::Distance(Player.Position, PositionUpdate) >= C_CamperAbortDistance) DetectedCamping = False;
+	}
+	
+	// Disable camping detection
+	else if (DetectedCamping) DetectedCamping = False;
+	
+	// ---------------------------------- //
+	// Update information about camping
+	if (PrevIsCamping != DetectedCamping) {
+		PrevIsCamping = DetectedCamping;
+		PursuitUI::SetPlayerRespawnIsCamping(Player, DetectedCamping, PositionUpdate);
+	}
+	
+	// ---------------------------------- //
+	// Respawn request
+	if (RequestsRespawn && DetectedCamping) RequestsRespawn = False;
+	if (RequestsRespawn || DetectedCamping) {
+		// Initialize respawn request
+		if (!ResetRespawnCounter) {
+			ResetRespawnCounter = True;
+			RespawnStartTime = Now;
+			PursuitUI::SetPlayerRespawnStartTime(Player, RespawnStartTime);
+		}
+		
+		// Respawn player after enough time
+		if (Now >= RespawnStartTime + C_RespawnDuration) TM::WaitRace(Player);
+
+		// Abort respawn if player has moved too far away
+		if (RequestsRespawn && Player.Speed > C_RespawnCancelSpeed) {
+			RequestsRespawn = False;
+			Translations::SendStatusMessage(Player, "Respawn aborted: you moved!", 3000, 0);
+		}
+	}
+	
+	// Reset respawn countdown
+	else if (ResetRespawnCounter) {
+		ResetRespawnCounter = False;
+		PursuitUI::SetPlayerRespawnStartTime(Player, -1);
+	}
+	
+	// ---------------------------------- //
+	// Respawn idle players
+	if (S_AutoManageAFK && Player.IsSpawned && Now >= Player.RaceStartTime) {
+		declare Integer IdleStartTime for Player;
+		declare Vec3 LastPosition for Player;
+		
+		// Update player position and reset idle timer
+		if (ML::Distance(Player.Position, LastPosition) >= 1.) {
+			LastPosition = Player.Position;
+			IdleStartTime = Now;
+		}
+		
+		// Switch player to spectator if inactive for too long
+		if (IdleStartTime > 0 && Now >= IdleStartTime + S_AFKIdleTimeLimit * 1000) {
+			//UIManager.UIAll.SendChat(TL::Compose(_("$<%1$> is inactive"), Player.User.Name));
+			Users_RequestSwitchToSpectator(Player.User);
+		}
+	}
+	
+	// ---------------------------------- //
+	// Catch targets falling into OffZone
+	if (OffZone::IsInOffZone(Player)) {
+		if (IsHuntedBySomeone(Player)) CatchTarget(Player, C_CaptureReason_OffZone);
+		TM::WaitRace(Player);
+	}
+	
+	// ---------------------------------- //
+	// Catch targets leaving map area
+	if (OffZone::IsBeyondMapEdge(Player)) {
+		if (IsHuntedBySomeone(Player)) CatchTarget(Player, C_CaptureReason_Boundary);
+		TM::WaitRace(Player);
+	}
+	
+	// ---------------------------------- //
+	// Catch targets falling under map
+	if (OffZone::IsBelowMapBottom(Player)) {
+		if (IsHuntedBySomeone(Player)) CatchTarget(Player, C_CaptureReason_Void);
+		TM::WaitRace(Player);
+	}
+
+	// ---------------------------------- //
+	// Catch targets below water level
+	if (OffZone::IsBelowWaterLevel(Player)) {
+		if (IsHuntedBySomeone(Player)) CatchTarget(Player, C_CaptureReason_Water);
+		TM::WaitRace(Player);
+	}
+	
+	// ---------------------------------- //
+	// Spawn players awaiting race
+	if (TM::IsWaiting(Player)) {
+		PUR_SpawnPlayer(Player);
+		if (!IsSafePhase) G_AssignHuntersTargets = True;
+	}
+	
+	// ---------------------------------- //
+	// Reassign target if the hunter of current target has left the game
+	if (IsHuntedBySomeone(Player) && GetHunter(Player) == Null) G_AssignHuntersTargets = True;
+	if (HasTarget(Player) && GetTarget(Player) == Null) G_AssignHuntersTargets = True;
+}
+
+// Round end conditions
+if (!IsSafePhase && PUR_TimeReachedLimit()) MB_StopMap();
+if (S_PointLimit > 0 && Scores.existskey(0) && Scores[0].Points >= S_PointLimit) MB_StopMap();
+***
+
+// ---------------------------------- //
+// Map end
+// ---------------------------------- //
+***Match_EndMap***
+***
+PUR_DisableTimeLimit();
+PursuitUI::SetStartTime(-1);
+UIManager.UIAll.UISequence = CUIConfig::EUISequence::EndRound;
+G_HuntersTargetsList.clear();
+UpdateHuntersList();
+TM::WaitRaceAll();
+LeaderDisplay::Hide();
+
+// Destroy all markers
+foreach (MarkerId in G_CreatedMinimapMarkers) Minimap::DestroyMarker(MarkerId);
+G_CreatedMinimapMarkers.clear();
+
+MB_Sleep(3000);
+PUR_PlaySound(CUIConfig::EUISound::EndRound, 0);
+***
+
+// ---------------------------------- //
+// End server
+// ---------------------------------- //
+***EndServer***
+***
+Layers::Detach("Hunters:Interface");
+Layers::Destroy("Hunters:Interface");
+LeaderDisplay::Unload();
+***
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Check if the player with the given login is playing.
+ *
+ *	@param	_Login		The player login to check.
+ *
+ *	@return		True, if the player is playing on the server.
+ */
+Boolean PlayerExists(Text _Login) {
+	foreach (Player in Players) if (Player.User != Null && Player.User.Login == _Login) return True;
+	return False;
+}
+
+// ---------------------------------- //
+/** Check if the player has their target.
+ *
+ *	@param	_Hunter		The player to check.
+ *
+ *	@return		True, if the player has target.
+ */
+Boolean HasTarget(CTmPlayer _Hunter) {
+	return _Hunter != Null && _Hunter.User != Null && G_HuntersTargetsList.existskey(_Hunter.User.Login);
+}
+
+// ---------------------------------- //
+/** Check if the player is hunted by someone.
+ *
+ *	@param	_Target		The player to check.
+ *
+ *	@return		True, if the player has hunter.
+ */
+Boolean IsHuntedBySomeone(CTmPlayer _Target) {
+	return _Target != Null && _Target.User != Null && G_HuntersTargetsList.exists(_Target.User.Login);
+}
+
+// ---------------------------------- //
+/** Get the target of the given player.
+ *
+ *	@param	_Hunter		The hunter to find target.
+ *
+ *	@return		Target of the given player.
+ */
+CTmPlayer GetTarget(CTmPlayer _Hunter) {
+	if (!HasTarget(_Hunter)) return Null;
+	declare TargetLogin = G_HuntersTargetsList[_Hunter.User.Login];
+	foreach (Player in Players) if (Player.User != Null && Player.User.Login == TargetLogin) return Player;
+	return Null;
+}
+
+// ---------------------------------- //
+/** Get the hunter of the given player.
+ *
+ *	@param	_Target		The target to find hunter.
+ *
+ *	@return		Hunter of the given player.
+ */
+CTmPlayer GetHunter(CTmPlayer _Target) {
+	if (!IsHuntedBySomeone(_Target)) return Null;
+	declare HunterLogin = G_HuntersTargetsList.keyof(_Target.User.Login);
+	foreach (Player in Players) if (Player.User != Null && Player.User.Login == HunterLogin) return Player;
+	return Null;
+}
+
+// ---------------------------------- //
+/** Catch a player.
+ *
+ *	@param	_Target		Caught target.
+ *	@param	_Reason		Reason ID, if not caught by hunter.
+ */
+Void CatchTarget(CTmPlayer _Target, Integer _Reason) {
+	declare Hunter <=> GetHunter(_Target);
+	if (Hunter == Null) return;
+
+	// Respawn the player if setting for that is enabled
+	if (S_RespawnOnCapture) TM::WaitRace(_Target);
+	
+	// ---------------------------------- //
+	// Get the catch reason
+	declare ReasonEnum = ML::Clamp(_Reason, 0, 4);
+	declare ReasonText = "";
+
+	switch (ReasonEnum) {
+		case C_CaptureReason_OffZone	: ReasonText = "$<%1$> rest in OffZone";
+		case C_CaptureReason_Boundary	: ReasonText = "$<%1$> tried to escape arena";
+		case C_CaptureReason_Void		: ReasonText = "$<%1$> somehow fell below map";
+	}
+	
+	// ---------------------------------- //
+	// Notify everyone with a custom message
+	if (ReasonText != "") {
+		if (S_UseKillfeedNotices) Killfeed::SendNotice([ReasonText, _Target.User.Name]);
+		else Translations::SendStatusMessage([ReasonText, _Target.User.Name], 4000, 1);
+	}
+	// ---------------------------------- //
+	// Notify everyone about the catch
+	else {
+		if (S_UseKillfeedNotices) Killfeed::SendNotice(_Target.User.Name, Hunter.User.Name, C_ImgBase^"IconCapture.png", "");
+		else {
+			Translations::SendStatusMessage(Hunter, ["You caught $<%1$>!", _Target.User.Name], 4000, 2);
+			Translations::SendStatusMessage(_Target, ["$<%1$> has caught you!", Hunter.User.Name], 4000, 2);
+			Translations::SendStatusMessage(["$<%1$> has caught $<%2$>", Hunter.User.Name, _Target.User.Name], 4000, 1);
+		}
+	}
+	
+	// Play interface sounds for players
+	PUR_PlaySound(Hunter, CUIConfig::EUISound::Checkpoint, 0);
+	PUR_PlaySound(_Target, CUIConfig::EUISound::Checkpoint, 1);
+	
+	// Give hunter a point for catching their target
+	PUR_AddPoints(Hunter, C_PointsForCapture);
+	if (S_ShowHunterLocation) PUR_AddPoints(_Target, C_PointsForBeingCaught);
+
+	// Destroy marker
+	declare MarkerId = "Target#"^Hunter.User.Login;
+	Minimap::DestroyMarker(MarkerId);
+	G_CreatedMinimapMarkers.add(MarkerId);
+	
+	// ---------------------------------- //
+	// Remove hunter and target from the array
+	declare Boolean Removed;
+	Removed = G_HuntersTargetsList.remove(_Target.User.Login);
+	Removed = G_HuntersTargetsList.removekey(Hunter.User.Login);
+	G_AssignHuntersTargets = True;
+	
+	// ---------------------------------- //
+	// Play sound and notice if hunter is close to win
+	if (Hunter.Score != Null && S_PointLimit > 0) {	
+		declare Integer LastPoint for Hunter.Score;
+		declare Gap = S_PointLimit - Hunter.Score.Points;
+		
+		// ---------------------------------- //
+		// Hunter is close to win
+		if (Gap > 0 && Gap <= 3) {
+			declare Msg = "";
+			if (Gap > 1) Msg = TL::Compose(_("$<%1$> is %2 points from victory!"), Hunter.Name, TL::ToText(Gap));
+			else Msg = TL::Compose(_("$<%1$> is 1 point from victory!"), Hunter.Name);
+			Message::SendBigMessage(Msg, 3000, 2);
+			PUR_PlaySound(CUIConfig::EUISound::TieBreakPoint, 4-Gap);
+		}
+		// ---------------------------------- //
+		// Hunter gets their final point
+		else if (Gap <= 0) {
+			Message::SendBigMessage(TL::Compose(_("$<%1$> gets the final hit!"), Hunter.Name), 3000, 3);
+			PUR_PlaySound(CUIConfig::EUISound::VictoryPoint, 0);
+		}
+		// ---------------------------------- //
+		// Display score progression
+		else {
+			declare SoundGap = S_PointLimit / 5;
+			if (SoundGap < 5) SoundGap = 5;
+			if (Hunter.Score.Points / SoundGap > LastPoint) {
+				LastPoint = Hunter.Score.Points / SoundGap;
+				declare Msg = TL::Compose("$666%1: $FFF"^Hunter.Score.Points^" / "^S_PointLimit, _("Score"));
+				declare Variant = Hunter.Score.Points / SoundGap;
+				Message::SendStatusMessage(Hunter, Msg, 3000, 0);
+				PUR_PlaySound(Hunter, CUIConfig::EUISound::ScoreProgress, Variant);
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Update interface hunters data
+Void UpdateHuntersList() {
+	declare netwrite Text[Text] Net_Hunters_TargetsList for Teams[0];
+	declare netwrite Integer Net_Hunters_TargetsListUpdate for Teams[0];
+	Net_Hunters_TargetsList = G_HuntersTargetsList;
+	Net_Hunters_TargetsListUpdate = Now;
+}
+
+// ---------------------------------- //
+/** Create manialink for the interface.
+ *
+ *	@return		The interface manialink.
+ */
+Text CreateManialinkInterface() {
+	return """
+<manialink version="3" name="Hunters:Interface">
+<stylesheet>
+	<style class="Font" halign="center" valign="center2" textemboss="1" textcolor="FFF" textfont="RajdhaniMono" />
+</stylesheet>
+
+<frame id="Frame_CurTargetName" pos="0 -88" hidden="1">
+	<label pos="0 4.5" size="60" class="Font" textsize="5" id="Label_CurTargetName" />
+	<label size="32 3" class="Font" textsize="1.5" textprefix="$t" id="Label_Subtitle" />
+</frame>
+
+<frame id="Frame_CurHunterName" pos="132 -88.5" hidden="1">
+	<label pos="0 3" size="40" class="Font" textsize="1.5" id="Label_CurHunterName" />
+	<label size="32 3" class="Font" textsize=".75" textprefix="$t" id="Label_Subtitle2" />
+</frame>
+
+<quad z-index="-1" size="320 180" halign="center" valign="center" image="{{{C_ImgBase}}}BonusEffect.dds" colorize="F00" id="Quad_HunterProxiWarning" hidden="1" />
+
+<script><!--
+/**
+ *	Hunters: Interface
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_PlayerLockOnDistance {{{C_PlayerLockOnDistance}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load UI elements
+declare Quad_HunterProxiWarning <=> (Page.GetFirstChild("Quad_HunterProxiWarning") as CMlQuad);
+declare Frame_CurTargetName <=> (Page.GetFirstChild("Frame_CurTargetName") as CMlFrame);
+declare Label_CurTargetName <=> (Page.GetFirstChild("Label_CurTargetName") as CMlLabel);
+declare Frame_CurHunterName <=> (Page.GetFirstChild("Frame_CurHunterName") as CMlFrame);
+declare Label_CurHunterName <=> (Page.GetFirstChild("Label_CurHunterName") as CMlLabel);
+
+Translate("Label_Subtitle", "Your Target");
+Translate("Label_Subtitle2", "Your Hunter");
+
+// Persistent settings
+declare persistent Boolean Persistent_Hunters_HunterProxiWarning for LocalUser = True;
+
+// Net variables
+declare netread Text[Text] Net_Hunters_TargetsList for Teams[0];
+declare netread Integer Net_Hunters_TargetsListUpdate for Teams[0];
+declare netread Boolean Net_Hunters_ShowHunter for Teams[0];
+
+// Variables
+declare UpdateInterface = True;
+declare CurHunterId = NullId;
+
+// Update
+declare PrevGUIPlayerId = NullId;
+declare PrevTargetsListUpdate = -1;
+declare PrevShowHunter = Net_Hunters_ShowHunter;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update labels on targets list change
+if (PrevTargetsListUpdate != Net_Hunters_TargetsListUpdate) {
+	PrevTargetsListUpdate = Net_Hunters_TargetsListUpdate;
+	UpdateInterface = True;
+}
+
+// ---------------------------------- //
+// On GUIPlayer change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerId != GUIPlayer.Id) {
+		PrevGUIPlayerId = GUIPlayer.Id;
+		UpdateInterface = True;
+	}
+} else if (PrevGUIPlayerId != NullId) {
+	PrevGUIPlayerId = NullId;
+	UpdateInterface = True;
+}
+
+// ---------------------------------- //
+// Hunter visibility change
+if (PrevShowHunter != Net_Hunters_ShowHunter) {
+	PrevShowHunter = Net_Hunters_ShowHunter;
+	UpdateInterface = True;
+}
+
+// ---------------------------------- //
+// Update the labels
+if (UpdateInterface) {
+	UpdateInterface = False;
+
+	// GUIPlayer target and hunter
+	declare GUIPlayerTarget = "";
+	declare GUIPlayerHunter = "";
+
+	if (GUIPlayer != Null) {
+		if (Net_Hunters_TargetsList.existskey(GUIPlayer.User.Login)) {
+			GUIPlayerTarget = Net_Hunters_TargetsList[GUIPlayer.User.Login];
+		}
+
+		if (Net_Hunters_TargetsList.exists(GUIPlayer.User.Login) && Net_Hunters_ShowHunter) {
+			GUIPlayerHunter = Net_Hunters_TargetsList.keyof(GUIPlayer.User.Login);
+		}
+	}
+
+	// Target name
+	Frame_CurTargetName.Visible = GUIPlayerTarget != "";
+	if (Frame_CurTargetName.Visible) Label_CurTargetName.Value = GetName(GUIPlayerTarget);
+
+	// Hunter name
+	Frame_CurHunterName.Visible = GUIPlayerHunter != "";
+	if (Frame_CurHunterName.Visible) Label_CurHunterName.Value = GetName(GUIPlayerHunter);
+
+	// Current hunter
+	CurHunterId = NullId;
+
+	if (GUIPlayerHunter != "") {
+		foreach (Player in Players) {
+			if (Player.User.Login == GUIPlayerHunter) CurHunterId = Player.Id;
+		}
+	}
+}
+
+// ---------------------------------- //
+// Hunter proximity warning
+Quad_HunterProxiWarning.Visible = False; // GUIPlayer != Null && GUIPlayer.IsSpawned && CurHunterId != NullId && Players.existskey(CurHunterId) && Persistent_Hunters_HunterProxiWarning;
+
+if (Quad_HunterProxiWarning.Visible) {
+	declare Player <=> Players[CurHunterId];
+	declare Distance = ML::Distance(GUIPlayer.Position, Player.Position);
+
+	if (Distance <= C_PlayerLockOnDistance)
+		Quad_HunterProxiWarning.Opacity = 1.;
+	else if (Distance <= C_PlayerLockOnDistance * 2)
+		Quad_HunterProxiWarning.Opacity = 1. - (Distance - C_PlayerLockOnDistance) / C_PlayerLockOnDistance;
+	else
+		Quad_HunterProxiWarning.Opacity = 0.;
+}
+***
+
+// ---------------------------------- //
+/** Get player name.
+ *
+ *	@param	_Login	Login of the player.
+ *
+ *	@return		Name of the player.
+ */
+Text GetName(Text _Login) {
+	foreach (Player in Players) if (Player.User.Login == _Login) return Player.User.Name;
+	return _Login;
+}
+
+{{{ManialinkTools::Functions(["Brightness", "Pulse"])}}}
+{{{Translations::InjectInManialink(["Your Target", "Your Hunter"])}}}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Create manialink for the markers.
+ *
+ *	@return		The markers manialink.
+ */
+Text CreateManialinkMarkers() {
+	declare R = 9/16.;
+	return """
+<manialink version="3" name="Hunters:Markers">
+<stylesheet>
+	<style class="text" valign="center2" style="StyleTextScriptEditor" textsize="1" textcolor="FFF" />
+</stylesheet>
+
+<framemodel id="FrameModel_PlayerMarker">
+	<frame id="Frame_MarkerBody" hidden="1">
+		<frame pos="0 -.3">
+			<label pos="{{{-5 * R}}} 2.5" class="text" id="Label_MarkerActivity" halign="right" textemboss="1" textprefix="$n$t" />
+			<label pos="{{{-5 * R}}} 0" class="text" id="Label_MarkerCountdown" halign="right" textemboss="1" textprefix="$n$t" />
+		</frame>
+
+		<label pos="0 6" class="text" id="Label_MarkerLockedOn" halign="center" textemboss="1" textprefix="$n$t" text="Lock" />
+		<quad halign="center" valign="center" size="{{{9 * R}}} 9" id="Quad_MarkerTargetIcon" />
+
+		<frame pos="0 -.3">
+			<label pos="{{{5 * R}}} 2.5" class="text" id="Label_MarkerObjectType" textemboss="1" textprefix="$n$t" text="Target" />
+			<label pos="{{{5 * R}}} 0" class="text" id="Label_MarkerPlayerName" textemboss="1" textprefix="$n$t" text="Player name" />
+			<label pos="{{{5 * R}}} -2.5" class="text" id="Label_MarkerDistance" textemboss="1" textprefix="$n$t" text="0 M" />
+		</frame>
+	</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_PlayerMarker" id="Frame_MarkerTarget" />
+<frameinstance modelid="FrameModel_PlayerMarker" id="Frame_MarkerHunter" />
+
+<script><!--
+/**
+ *	Hunters: Markers
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const C_PlayerLockOnDistance {{{C_PlayerLockOnDistance}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load UI elements
+declare Frame_MarkerTarget <=> ((Page.GetFirstChild("Frame_MarkerTarget") as CMlFrame).GetFirstChild("Frame_MarkerBody") as CMlFrame);
+declare Frame_MarkerHunter <=> ((Page.GetFirstChild("Frame_MarkerHunter") as CMlFrame).GetFirstChild("Frame_MarkerBody") as CMlFrame);
+
+// Persistent settings
+declare persistent Persistent_LibPursuitUI_UseRetardedUnits for LocalUser = False;
+declare persistent Persistent_GoalHuntTM_NamesVisibility for LocalUser = 0;
+
+// Net
+declare netread Text[Text] Net_Hunters_TargetsList for Teams[0];
+declare netread Integer Net_Hunters_TargetsListUpdate for Teams[0];
+declare netread Boolean Net_Hunters_ShowHunter for Teams[0];
+
+// Variables
+declare UpdatePlayerMarkers = 2;
+declare SpecialMarkers = [Frame_MarkerTarget, Frame_MarkerHunter];
+
+// Update
+declare PrevTargetsListUpdate = -1;
+declare PrevNbPlayers = -1;
+declare PrevGUIPlayerId = NullId;
+declare PrevShowHunter = Net_Hunters_ShowHunter;
+declare PrevNamesVisibility = Persistent_GoalHuntTM_NamesVisibility;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Update labels on targets list change
+if (PrevTargetsListUpdate != Net_Hunters_TargetsListUpdate) {
+	PrevTargetsListUpdate = Net_Hunters_TargetsListUpdate;
+	UpdatePlayerMarkers = 2;
+}
+
+// ---------------------------------- //
+// Names visibility change
+if (PrevNamesVisibility != Persistent_GoalHuntTM_NamesVisibility) {
+	PrevNamesVisibility = Persistent_GoalHuntTM_NamesVisibility;
+	UpdatePlayerMarkers = 2;
+}
+
+// ---------------------------------- //
+// Manage players
+foreach (Player in Players) {
+	// ---------------------------------- //
+	// Get player name ready to be put into an XML node
+	declare Text EscapedName for Player;
+
+	if (EscapedName == "") {
+		EscapedName = EscapeXML(Player.User.Name);
+		UpdatePlayerMarkers = 2;
+	}
+
+	// ---------------------------------- //
+	// Update label on interaction ability change
+	declare CanInteract = GameTime >= Player.RaceStartTime + {{{C_NoInteractionDuration}}};
+	declare Boolean PrevCanInteract for Player;
+
+	if (PrevCanInteract != CanInteract) {
+		PrevCanInteract = CanInteract;
+		UpdatePlayerMarkers = 2;
+	}
+
+	// ---------------------------------- //
+	// On spawn change
+	declare PrevIsSpawned for Player = False;
+
+	if (PrevIsSpawned != Player.IsSpawned) {
+		PrevIsSpawned = Player.IsSpawned;
+		UpdatePlayerMarkers = 2;
+	}
+}
+
+// Hunter visibility change
+if (PrevShowHunter != Net_Hunters_ShowHunter) {
+	PrevShowHunter = Net_Hunters_ShowHunter;
+	UpdatePlayerMarkers = 2;
+}
+
+// Players count change
+if (PrevNbPlayers != Players.count) {
+	PrevNbPlayers = Players.count;
+	UpdatePlayerMarkers = 2;
+}
+
+// ---------------------------------- //
+// On GUIPlayer change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerId != GUIPlayer.Id) {
+		PrevGUIPlayerId = GUIPlayer.Id;
+		UpdatePlayerMarkers = 2;
+	}
+} else if (PrevGUIPlayerId != NullId) {
+	PrevGUIPlayerId = NullId;
+	UpdatePlayerMarkers = 2;
+}
+
+// ---------------------------------- //
+// Update the players markers
+if (UpdatePlayerMarkers > 0) {
+	UpdatePlayerMarkers -= 1;
+
+	// Reset markers XML
+	ClientUI.MarkersXML = "";
+
+	// Hide special markers
+	Frame_MarkerTarget.Hide();
+	Frame_MarkerHunter.Hide();
+
+	// ---------------------------------- //
+	// GUIPlayer target and hunter
+	declare GUIPlayerTarget = "";
+	declare GUIPlayerHunter = "";
+
+	if (GUIPlayer != Null) {
+		if (Net_Hunters_TargetsList.existskey(GUIPlayer.User.Login)) {
+			GUIPlayerTarget = Net_Hunters_TargetsList[GUIPlayer.User.Login];
+		}
+
+		if (Net_Hunters_TargetsList.exists(GUIPlayer.User.Login) && Net_Hunters_ShowHunter) {
+			GUIPlayerHunter = Net_Hunters_TargetsList.keyof(GUIPlayer.User.Login);
+		}
+	}
+
+	// ---------------------------------- //
+	// Create markers
+	foreach (Player in Players) {
+		if (Player == GUIPlayer || !Player.IsSpawned || Player.RequestsSpectate) continue;
+
+		declare CMlFrame SpecialMarker;
+		declare Text EscapedName for Player;
+		declare Boolean PrevCanInteract for Player;
+
+		declare IsCurTarget = Player.User.Login == GUIPlayerTarget;
+		declare IsCurHunter = Player.User.Login == GUIPlayerHunter;
+
+		declare Text MarkerLabel;
+		declare Text MarkerImageURL;
+		declare Text MarkerFrameId;
+		declare Text MarkerVisibility;
+		declare Text MarkerBoxSize;
+
+		// Target marker
+		if (IsCurTarget) {
+			SpecialMarker = Frame_MarkerTarget;
+			MarkerFrameId = "Frame_MarkerTarget";
+		}
+		
+		// Hunter marker
+		else if (IsCurHunter) {
+			SpecialMarker = Frame_MarkerHunter;
+			MarkerFrameId = "Frame_MarkerHunter";
+		}
+		
+		// Standard marker
+		else {
+			MarkerLabel = EscapedName;
+			if (!PrevCanInteract) MarkerImageURL = "{{{C_ImgBase}}}IconPadlock.png";
+			// else MarkerImageURL = "file://Avatars/"^Player.User.Login^"/default";
+			
+			// Marker visibility
+			switch (PrevNamesVisibility) {
+				case 1 : MarkerVisibility = "WhenInFrustum";
+				case 2 : MarkerVisibility = "Never";
+				default : MarkerVisibility = "WhenVisible";
+			}
+		}
+
+		// ---------------------------------- //
+		// Format the special marker
+		if (SpecialMarker != Null) {
+			MarkerVisibility = "WhenInFrustum";
+			MarkerBoxSize = "0 .75 0";
+
+			// Save id in the frame, so we can update it dynamically later
+			declare Ident PlayerId for SpecialMarker;
+			PlayerId = Player.Id;
+
+			// ---------------------------------- //
+			// Get the marker elements
+			declare Label_MarkerObjectType <=> (SpecialMarker.GetFirstChild("Label_MarkerObjectType") as CMlLabel);
+			declare Label_MarkerPlayerName <=> (SpecialMarker.GetFirstChild("Label_MarkerPlayerName") as CMlLabel);
+
+			declare MarkerType = "Target";
+			if (IsCurHunter) MarkerType = "Hunter";
+
+			// Format the marker...
+			Label_MarkerObjectType.Value = Translate(MarkerType);
+			Label_MarkerPlayerName.Value = TL::StripFormatting(Player.User.Name);
+
+			// ...and then show it
+			SpecialMarker.Show();
+		}
+
+		// Create marker for the player
+		ClientUI.MarkersXML ^= CreateNode("marker", [
+			"playerlogin" => Player.User.Login,
+			"label" => MarkerLabel,
+			"imageurl" => MarkerImageURL,
+			"manialinkframeid" => MarkerFrameId,
+			"visibility" => MarkerVisibility,
+			"minimapvisibility" => "Never",
+			"box" => MarkerBoxSize
+		]);
+	}
+}
+
+// ---------------------------------- //
+// Manage the special markers
+foreach (Frame in SpecialMarkers) {
+	if (!Frame.Visible) continue;
+
+	// Ignore the frame if it has no player attached
+	declare Ident PlayerId for Frame;
+	if (PlayerId == NullId || !Players.existskey(PlayerId)) continue;
+	declare Player <=> Players[PlayerId];
+
+	// Marker components
+	declare Quad_MarkerTargetIcon <=> (Frame.GetFirstChild("Quad_MarkerTargetIcon") as CMlQuad);
+	declare Label_MarkerDistance <=> (Frame.GetFirstChild("Label_MarkerDistance") as CMlLabel);
+	declare Label_MarkerLockedOn <=> (Frame.GetFirstChild("Label_MarkerLockedOn") as CMlLabel);
+	declare Label_MarkerActivity <=> (Frame.GetFirstChild("Label_MarkerActivity") as CMlLabel);
+	declare Label_MarkerCountdown <=> (Frame.GetFirstChild("Label_MarkerCountdown") as CMlLabel);
+
+	// Player properties
+	declare NoInteractionTime = Player.RaceStartTime + {{{C_NoInteractionDuration}}} - GameTime;
+	declare netread Integer Net_LibPursuitUI_RespawnStartTime for Player;
+	declare TimeUntilRespawn = Net_LibPursuitUI_RespawnStartTime + {{{C_RespawnDuration}}} - GameTime;
+
+	// ---------------------------------- //
+	// Update the distance
+	declare PlayerDistance = 0.;
+	declare DistanceUnit = "M";
+
+	if (GUIPlayer != Null && GUIPlayer.IsSpawned) PlayerDistance = ML::Distance(Player.Position, GUIPlayer.Position);
+
+	// Convert meters to yards
+	declare DisplayDistance = PlayerDistance;
+	
+	if (Persistent_LibPursuitUI_UseRetardedUnits) {
+		DisplayDistance *= 0.9144;
+		DistanceUnit = "YD";
+	}
+
+	Label_MarkerDistance.Value = TL::FormatReal(DisplayDistance, 2, False, False) ^ " " ^ DistanceUnit;
+
+	// ---------------------------------- //
+	// Update the marker
+	declare MarkerColor = <0., 1., 0.>;
+	declare MarkerActivity = "";
+
+	Label_MarkerLockedOn.Visible = NoInteractionTime <= 0 && Frame != Frame_MarkerHunter && PlayerDistance < C_PlayerLockOnDistance * 2;
+	Quad_MarkerTargetIcon.ImageUrl = "{{{C_ImgBase}}}HuntersTarget.png";
+	Label_MarkerCountdown.Value = "";
+
+	// Hunter is always red
+	if (Frame == Frame_MarkerHunter) MarkerColor = <1., 0., 0.>;
+
+	// Format the target marker
+	else if (NoInteractionTime <= 0) {
+		// "Lock on"
+		if (PlayerDistance < C_PlayerLockOnDistance) {
+			MarkerColor = <1., 0., 0.>;
+			Label_MarkerLockedOn.Visible = Now % 100 < 50; // Rapid blinking
+			Quad_MarkerTargetIcon.ImageUrl = "{{{C_ImgBase}}}HuntersLock.png";
+		}
+
+		// Soft "lock on"
+		else if (Label_MarkerLockedOn.Visible) MarkerColor = <1., .75, 0.>;
+	}
+
+	// Player is respawning
+	if (TimeUntilRespawn > 0) {
+		MarkerActivity = "Respawning";
+		Label_MarkerCountdown.Value = TL::TimeToText(TimeUntilRespawn, True);
+	}
+
+	// Player is in non-interaction mode
+	if (NoInteractionTime > 0) {
+		MarkerColor = <.75, .75, .75>;
+		MarkerActivity = "No interaction";
+		Label_MarkerCountdown.Value = TL::TimeToText(NoInteractionTime, True);
+	}
+
+	// ---------------------------------- //
+	// Update the marker color
+	declare Vec3 PrevMarkerColor for Frame;
+
+	if (PrevMarkerColor != MarkerColor) {
+		PrevMarkerColor = MarkerColor;
+
+		declare Label_MarkerObjectType <=> (Frame.GetFirstChild("Label_MarkerObjectType") as CMlLabel);
+		declare Label_MarkerPlayerName <=> (Frame.GetFirstChild("Label_MarkerPlayerName") as CMlLabel);
+
+		Quad_MarkerTargetIcon.Colorize = MarkerColor;
+		Label_MarkerObjectType.TextColor = MarkerColor;
+		Label_MarkerPlayerName.TextColor = MarkerColor;
+		Label_MarkerDistance.TextColor = MarkerColor;
+		Label_MarkerLockedOn.TextColor = MarkerColor;
+		Label_MarkerActivity.TextColor = MarkerColor;
+		Label_MarkerCountdown.TextColor = MarkerColor;
+	}
+
+	// ---------------------------------- //
+	// Update the marker activity
+	declare Text PrevMarkerActivity for Frame;
+
+	if (PrevMarkerActivity != MarkerActivity) {
+		PrevMarkerActivity = MarkerActivity;
+		Label_MarkerActivity.Value = Translate(MarkerActivity);
+	}
+}
+***
+
+// ---------------------------------- //
+/** Escape a string for XML.
+ *
+ *	@param	_Text	The text to escape.
+ *
+ *	@return		Text with escaped characters.
+ */
+Text EscapeXML(Text _Text) {
+	declare Output = "";
+	declare ForbiddenChars = ["&" => "&amp;", "<" => "&lt;", ">" => "&gt;", "\"" => "&quot;", "'" => "&apos;"];
+	for (I, 0, TL::Length(_Text)) {
+		declare Char = TL::SubString(_Text, I, 1);
+		if (ForbiddenChars.existskey(Char)) Char = ForbiddenChars[Char];
+		Output ^= Char;
+	}
+	return Output;
+}
+
+// ---------------------------------- //
+/** Create an XML node.
+ *
+ *	@param	_Name			Name of the node.
+ *	@param	_Attributes		Node attributes.
+ *
+ *	@return		The created node.
+ */
+Text CreateNode(Text _Name, Text[Text] _Attributes) {
+	declare Node = "<"^_Name^" ";
+	foreach (Attrib => Value in _Attributes) {
+		if (Value == "") continue;
+		Node ^= Attrib^"=\""^Value^"\" ";
+	}
+	Node ^= "/>";
+	return Node;
+}
+
+{{{Translations::InjectInManialink(["Target", "Hunter", "No interaction", "Respawning"])}}}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>
+	""";
+}

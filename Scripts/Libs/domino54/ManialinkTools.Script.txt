@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY MANIALINK TOOLS by domino54   //
-//  script version: 2017-10-09            //
+//  script version: 2018-04-21            //
 // -------------------------------------- //
 
 /**
@@ -19,9 +19,12 @@
  *	-	TimeToText			Converts time Integer into formatted Text.
  *	-	GetEchelonImage		Returns path to an image of Echelon badle of specified level.
  *	-	SetQuadStyle		Sets the style of a quad - either ingame style or image URL.
+ *	-	RadToDeg			Convert angle in radians to degrees.
+ *	-	RotatePoint			Rotate a point around the origin.
+
  */
 
-#Const Version		"2017-10-09"
+#Const Version		"2018-04-21"
 #Const ScriptName	"Libs/domino54/ManialinkTools.Script.txt"
 
 // ---------------------------------- //
@@ -29,7 +32,8 @@
 // ---------------------------------- //
 #Const C_ManialinkTools_AvailableFunctions [
 	"Pulse", "SetGaugeRatio", "ComputeWidth", "Brightness",
-	"ReplaceChars", "ColorTransition", "HsvToRgb", "GetEchelonImage"
+	"ReplaceChars", "ColorTransition", "HsvToRgb", "GetEchelonImage",
+	"SetQuadStyle", "RadToDeg", "RotatePoint"
 ]
 
 /// Code of the Pulse() function
@@ -277,6 +281,46 @@ Void SetQuadStyle(CMlQuad _Quad, Text _Style) {
 }
 """
 
+/// Code of the RadToDeg() function
+#Const C_ManialinkTools_RadToDeg """
+// ---------------------------------- //
+/** Convert angle in radians to degrees.
+ *
+ *	@param	_Radians	Angle in radians.
+ *
+ *	@return		Angle in degrees.
+ */
+Real RadToDeg(Real _Radians) {
+	return _Radians * 180. / ML::PI();
+}
+"""
+
+/// Code of the RotatePoint() function
+#Const C_ManialinkTools_RotatePoint """
+// ---------------------------------- //
+/** Rotate a point around the origin.
+ *
+ *	@param	_Point		The point to rotate.
+ *	@param	_Origin		Origin of the rotation.
+ *	@param	_Angle		Angle to rotate the point by.
+ *
+ *	@return		Coordinates of the rotated point.
+ */
+Vec2 RotatePoint(Vec2 _Point, Vec2 _Origin, Real _Angle) {
+	declare Point = _Point - _Origin;
+	declare Diff = Point - _Point;
+
+	return <
+		Point.X * ML::Cos(_Angle) + Point.Y * ML::Sin(_Angle) + Diff.X,
+		-Point.X * ML::Sin(_Angle) + Point.Y * ML::Cos(_Angle) + Diff.Y
+	>;
+}
+
+Vec2 RotatePoint(Vec2 _Point, Real _Angle) {
+	return RotatePoint(_Point, <0., 0.>, _Angle);
+}
+"""
+
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
@@ -304,6 +348,8 @@ Text Private_GetFunctionCode(Text _FunctionName) {
 		case "TimeToText"		: return C_ManialinkTools_TimeToText;
 		case "GetEchelonImage"	: return C_ManialinkTools_GetEchelonImage;
 		case "SetQuadStyle"		: return C_ManialinkTools_SetQuadStyle;
+		case "RadToDeg"			: return C_ManialinkTools_RadToDeg;
+		case "RotatePoint"		: return C_ManialinkTools_RotatePoint;
 	}
 	return "";
 }

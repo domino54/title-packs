@@ -1,11 +1,11 @@
 // -------------------------------------- //
 //  PURSUIT MODE BASE by domino54         //
-//  script version: 2018-04-09            //
+//  script version: 2018-04-21            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
-#Const PUR_Version		"2018-04-09"
+#Const PUR_Version		"2018-04-21"
 #Const PUR_ScriptName	"Modes/TrackMania/ModePursuit.Script.txt"
 
 #Include "MathLib" as ML
@@ -47,10 +47,11 @@
 #Setting S_LagoonCarUnlockMode	0		as _("Lagoon Car availability [0 - Lagoon, 1 - unlocked, 2 - purchase]")
 #Setting S_EnableCollisions		True	as _("Enable collisions")
 #Setting S_ResetScoreLeavers	True	as _("Reset scores of players that left the game at the match end")
-#Setting S_UseLegacyHitbox		False	as _("Use old hit detection system")
+#Setting S_UseLegacyHitbox		True	as _("Use old hit detection system")
 #Setting S_NbFakeUsers			0		as _("Number of fake players")
 #Setting S_UseCustomChat		False	as _("Enable custom chat")
 #Setting S_UseInstantRespawn	True	as _("Use instant respawn")
+#Setting S_DisableCameraFree	False	as _("Disable free camera (Cam 7)")
 #Setting S_DiscordChatWebhhook	""		as "<hidden>" ///< Link to a Discord webhook used for chat logs. 
 #Setting S_AFKIdleTimeLimit		120		as "<hidden>" ///< AFK default idle time limit
 #Setting S_CustomLayersURLs		""		as "<hidden>" ///< Try to load custom layers from an URL
@@ -80,7 +81,7 @@
 #Const C_NoInteractionDuration	3000	///< Time after player respawn.
 #Const C_HitboxSphereDiameter	3.5		///< Diameter of player hitbox sphere (deprecated).
 #Const C_CamperDetectionTime	30000	///< Time before mode detects thief as a camper.
-#Const C_CamperAbortDistance	100.	///< Distance to drive to abort automatic respawn.
+#Const C_CamperAbortDistance	50.		///< Distance to drive to abort automatic respawn.
 #Const C_CamperUpdateDistance	32.		///< Distance to drive to reset camping timer.
 #Const C_LagoonCarDuration		1800	///< Duration for which Lagoon Car is available atfer purchase.
 #Const C_DefaultKillfeedPosn	<159., 89., -5.>	///< Default position of the Killfeed layer.
@@ -257,6 +258,7 @@ Characters::Build(C_InterfaceFont_Medium, C_InterfaceFont_Bold);
 PursuitUI::Load(["Countdown", "Speedometer", "Background", "SafeTime", "RespawnTimer", "SpecInfo", "321Go"]);
 PursuitUI::SetSafeTimeDuration(C_NoInteractionDuration);
 //PursuitUI::SetModuleVisibility("321Go", !S_UseInstantRespawn);
+PursuitUI::SetCamera7Forbidden(S_DisableCameraFree);
 MapSelection::Load(C_InterfaceFont_Medium, C_InterfaceFont_Bold);
 
 // Custom teams
@@ -342,6 +344,7 @@ PUR_DisableTimeLimit();
 
 declare PrevEnableCharSelection = S_EnableCharSelection;
 declare PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
+declare PrevDisableCameraFree = S_DisableCameraFree;
 ***
 
 ***Match_StartMap***
@@ -463,7 +466,7 @@ foreach (CommandId in Chat::PendingCommands()) {
 if (PrevEnableCharSelection != S_EnableCharSelection) {
 	PrevEnableCharSelection = S_EnableCharSelection;
 	
-	PauseMenu::SetButtonVisibility("GT_CharSelection", S_EnableCharSelection);
+	PauseMenu::SetButtonVisibility("PUR_CharSelection", S_EnableCharSelection);
 	if (S_EnableCharSelection) Characters::Manual();
 	else Characters::Hide();
 }
@@ -473,6 +476,13 @@ if (PrevEnableCharSelection != S_EnableCharSelection) {
 if (PrevLagoonCarUnlockMode != S_LagoonCarUnlockMode) {
 	PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
 	PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
+}
+
+// ---------------------------------- //
+// Update camera free availability
+if (PrevDisableCameraFree != S_DisableCameraFree) {
+	PrevDisableCameraFree = S_DisableCameraFree;
+	PursuitUI::SetCamera7Forbidden(S_DisableCameraFree);
 }
 ***
 
@@ -893,4 +903,138 @@ Void PUR_PlaySound(CTmPlayer _Player, CUIConfig::EUISound _Sound, Integer _Varia
 
 Void PUR_PlaySound(CUIConfig::EUISound _Sound, Integer _Variant) {
 	PUR_PlaySound(Null, _Sound, _Variant);
+}
+
+// ---------------------------------- //
+/** Automatic waiting for players sequence.
+ *
+ *	You can extend this sequence by adding code in labels below:
+ *	- Pursuit_StartWaiting
+ *	- Pursuit_WaitingYield
+ *	- Pursuit_WaitingLoop
+ *	- Pursuit_WaitingInitPlayer
+ *	- Pursuit_EndWaiting
+ *
+ *	@param	_MinimumNbPlayers	Minimum number of players required to start the game.
+ */
+Void PUR_WaitForPlayers(Integer _MinimumNbPlayers) {
+	if (_MinimumNbPlayers <= 0 || !MB_MapIsRunning()) return;
+
+	// Initialize waiting sequence
+	declare PUR_UseAutomaticSequence = True;
+	declare PUR_StopWaiting = False;
+	declare PUR_WasPaused = CupAdmin::IsCupPaused();
+	declare PUR_HasWaited = False;
+	declare PUR_PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
+	declare PUR_PrevDisableCameraFree = S_DisableCameraFree;
+	declare PUR_OldSequence = UIManager.UIAll.UISequence;
+
+	// ---------------------------------- //
+	// Waiting sequence loop
+	while (MB_MapIsRunning()) {
+		MB_Yield();
+
+		+++GalaxyTitles_WaitingYield+++
+
+		// Let the server sleep if there's no players on it
+		if (Players.count <= 0) continue;
+
+		// Stop waiting if there are enough players to start the game
+		if (Players.count >= _MinimumNbPlayers && !CupAdmin::IsCupPaused()) PUR_StopWaiting = True;
+		if (PUR_StopWaiting) break;
+
+		// ---------------------------------- //
+		// Initialize waiting sequence
+		if (!PUR_HasWaited) {
+			Translations::ResetMessages();
+			TM::WaitRaceAll();
+			Minimap::Show();
+
+			UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
+			PUR_PlaySound(CUIConfig::EUISound::PhaseChange, 0);
+			PUR_HasWaited = True;
+			
+			if (CupAdmin::IsCupPaused()) {
+				Translations::SetStatusMessage("Competition has been paused");
+				UIManager.UIAll.BigMessage = TL::Compose("$F90%1", _("Pause"));
+			} else {
+				UIManager.UIAll.BigMessage = _("Waiting for players...");
+				UIManager.UIAll.StatusMessage = "";
+			}
+
+			+++GalaxyTitles_StartWaiting+++
+		}
+
+		// ---------------------------------- //
+		// Update Lagoon Car availability
+		if (PUR_PrevLagoonCarUnlockMode != S_LagoonCarUnlockMode) {
+			PUR_PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
+			PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
+		}
+
+		// ---------------------------------- //
+		// Update camera free availability
+		if (PUR_PrevDisableCameraFree != S_DisableCameraFree) {
+			PUR_PrevDisableCameraFree = S_DisableCameraFree;
+			PursuitUI::SetCamera7Forbidden(S_DisableCameraFree);
+		}
+
+		+++GalaxyTitles_WaitingLoop+++
+
+		// ---------------------------------- //
+		// Automatic sequence
+		if (PUR_UseAutomaticSequence) {
+			OffZone::Loop();
+			
+			// ---------------------------------- //
+			// Respawn players changing characters
+			foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
+				if (!Players.existskey(PlayerId)) continue;
+				declare Player <=> Players[PlayerId];
+				TM::WaitRace(Player);
+			}
+
+			// ---------------------------------- //
+			// Manage events
+			foreach (Event in PendingEvents) {
+				Discard(Event);
+				
+				// Waypoint
+				if (Event.Type == CTmModeEvent::EType::WayPoint) {
+					if (Event.IsEndRace) TM::WaitRace(Event.Player);
+				}
+
+				// Respawn
+				else if (Event.Type == CTmModeEvent::EType::Respawn) TM::WaitRace(Event.Player);
+				
+				// GiveUp
+				else if (Event.Type == CTmModeEvent::EType::GiveUp) TM::WaitRace(Event.Player);
+			}
+			
+			// Spawn players
+			foreach (Player in Players) if (TM::IsWaiting(Player)) PUR_SpawnPlayer(Player);
+		}
+	}
+
+	// ---------------------------------- //
+	// Stop the waiting sequence
+	if (!ServerShutdownRequested && !MatchEndRequested && PUR_HasWaited) {
+		Translations::ResetMessages();
+		TM::WaitRaceAll();
+		Minimap::Hide();
+
+		declare Message = _("A new player joins the game.");
+		if (PUR_WasPaused) Message = "Competition has been resumed!";
+		
+		Translations::SendBigMessage(Message, 5000, 0);
+		PUR_PlaySound(CUIConfig::EUISound::Default, 0);
+
+		+++GalaxyTitles_EndWaiting+++
+
+		MB_Sleep(5000);
+
+		UIManager.UIAll.BigMessage = "";
+		UIManager.UIAll.StatusMessage = "";
+		UIManager.UIAll.UISequence = PUR_OldSequence;
+	}
 }

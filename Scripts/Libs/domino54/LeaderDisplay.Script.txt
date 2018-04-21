@@ -1,0 +1,323 @@
+// -------------------------------------- //
+//  LIBRARY LEADER DISPLAY by domino54    //
+//  script version: 2018-04-21            //
+// -------------------------------------- //
+
+/**
+ *	Create a simple overlay displaying the current match leader
+ *	compared to the player. If the player is leading, 2nd player
+ *	in the ranking is shown.
+ */
+
+#Const Version		"2018-04-21"
+#Const ScriptName	"Libs/domino54/LeaderDisplay.Script.txt"
+
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibLeaderDisplay_ManialinkLayerId	"LibLeaderDisplay"
+#Const C_LibLeaderDisplay_DefaultPosition	<0., 74.>
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink of the Leader Display library.
+ *
+ *	@param	_Font	The font applied to all texts.
+ *
+ *	@return		Leader Display manialink.
+ */
+Text Private_CreateManialinkLeaderDisplay(Text _Font) {
+	declare Pos = C_LibLeaderDisplay_DefaultPosition;
+	return """
+<manialink version="3" name="{{{C_LibLeaderDisplay_ManialinkLayerId}}}">
+<stylesheet>
+	<style class="Font" halign="center" valign="center2" textemboss="1" textsize="2.5" textcolor="FFF" textfont="{{{_Font}}}" />
+</stylesheet>
+
+<framemodel id="FrameModel_PlayerCard">
+	<label pos="-35 -.2" size="10" class="Font" id="Label_PlayerPosition" />
+	<label pos="-30 -.2" size="50" class="Font" halign="left" id="Label_PlayerUserName" />
+	<label pos="35 -.2" size="10" class="Font" id="Label_PlayerPoints" />
+
+	<quad size="80 6" halign="center" valign="center" bgcolor="FFF" opacity=".25" id="Quad_CardBackground" />
+	<quad size="80 6" halign="center" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+</framemodel>
+
+<frame id="Frame_LeaderDisplay" pos="{{{Pos.X^" "^Pos.Y}}}" idden="1">
+	<frameinstance modelid="FrameModel_PlayerCard" id="Frame_PlayerCardLeader" pos="0 3.25" z-index="1" />
+	<frameinstance modelid="FrameModel_PlayerCard" id="Frame_PlayerCardPlayer" pos="0 -3.25" />
+</frame>
+
+<script><!--
+/**
+ *	{{{C_LibLeaderDisplay_ManialinkLayerId}}}
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// Load UI elements
+declare Frame_LeaderDisplay <=> (Page.GetFirstChild("Frame_LeaderDisplay") as CMlFrame);
+declare Frame_PlayerCardLeader <=> (Page.GetFirstChild("Frame_PlayerCardLeader") as CMlFrame);
+declare Frame_PlayerCardPlayer <=> (Page.GetFirstChild("Frame_PlayerCardPlayer") as CMlFrame);
+
+// Persistent settings
+declare persistent Boolean Persistent_LibLeaderDisplay_HideLeaderDisplay for LocalUser = False;
+
+// Net
+declare netread Boolean Net_LibLeaderDisplay_LayerVisible for Teams[0];
+
+// Variables
+declare LeaderId = NullId;
+declare UpdateLeaderDisplay = True;
+
+// Update
+declare PrevGUIPlayerId = NullId;
+declare PrevGUIPlayerLeading = False;
+declare PrevAnimPlayerId = NullId;
+declare PrevNbPlayers = Players.count;
+
+// Init
+if (Scores.existskey(0)) LeaderId = Scores[0].Id;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// Set the frame visibility
+Frame_LeaderDisplay.Visible = Net_LibLeaderDisplay_LayerVisible && !Persistent_LibLeaderDisplay_HideLeaderDisplay;
+
+// Continue if hidden
+if (!Frame_LeaderDisplay.Visible) continue;
+
+// ---------------------------------- //
+// Leader change
+if (Scores.existskey(0) && LeaderId != Scores[0].Id) {
+	LeaderId = Scores[0].Id;
+	UpdateLeaderDisplay = True;
+}
+
+// ---------------------------------- //
+// Players count change
+if (PrevNbPlayers != Players.count) {
+	PrevNbPlayers = Players.count;
+	UpdateLeaderDisplay = True;
+}
+
+// ---------------------------------- //
+// Points change of the leader or GUIPlayer
+foreach (I => Score in Scores) {
+	if (I > 1 && (GUIPlayer == Null || Score != GUIPlayer.Score)) continue;
+
+	declare Integer LibLeaderDisplay_PrevPoints for Score;
+
+	if (LibLeaderDisplay_PrevPoints != Score.Points) {
+		LibLeaderDisplay_PrevPoints = Score.Points;
+		UpdateLeaderDisplay = True;
+	}
+}
+
+// ---------------------------------- //
+// GUIPlayer change
+if (GUIPlayer != Null) {
+	if (PrevGUIPlayerId != GUIPlayer.Id) {
+		PrevGUIPlayerId = GUIPlayer.Id;
+		UpdateLeaderDisplay = True;
+	}
+} else if (PrevGUIPlayerId != NullId) {
+	PrevGUIPlayerId = NullId;
+	UpdateLeaderDisplay = True;
+}
+
+// ---------------------------------- //
+// Update the frames
+if (UpdateLeaderDisplay) {
+	UpdateLeaderDisplay = False;
+
+	declare CScore LeaderScore;
+	declare CScore PlayerScore;
+	declare PlayerPosition = 2;
+
+	// Get the leader
+	if (Scores.existskey(LeaderId)) LeaderScore <=> Scores[LeaderId];
+
+	// ---------------------------------- //
+	// Get the second player
+	foreach (I => Score in Scores) {
+		if (I == 0) continue;
+
+		if (((GUIPlayer == Null || GUIPlayer.Score == LeaderScore) && I == 1) || Score.User == GUIPlayer.User) {
+			PlayerScore <=> Score;
+			PlayerPosition = I + 1;
+			break;
+		}
+	}
+
+	// Frames visibility
+	Frame_PlayerCardLeader.Visible = LeaderScore != Null;
+	Frame_PlayerCardPlayer.Visible = PlayerScore != Null;
+
+	// ---------------------------------- //
+	// Configure the frames
+	foreach (I => Frame in [Frame_PlayerCardLeader, Frame_PlayerCardPlayer]) {
+		if (!Frame.Visible) continue;
+		declare CScore Score;
+
+		// Get the target score
+		switch (I) {
+			case 0 : Score <=> LeaderScore;
+			case 1 : Score <=> PlayerScore;
+		}
+
+		// ---------------------------------- //
+		// Load frame elements
+		declare Quad_CardBackground <=> (Frame.GetFirstChild("Quad_CardBackground") as CMlQuad);
+		declare Label_PlayerUserName <=> (Frame.GetFirstChild("Label_PlayerUserName") as CMlLabel);
+		declare Label_PlayerPosition <=> (Frame.GetFirstChild("Label_PlayerPosition") as CMlLabel);
+		declare Label_PlayerPoints <=> (Frame.GetFirstChild("Label_PlayerPoints") as CMlLabel);
+
+		declare CardColor = <0., .5, 1.>;
+		declare PlayerPosition = 0;
+		declare PlayerPoints = 0;
+
+		// Opponent will be seen in red
+		if (GUIPlayer != Null && Score != GUIPlayer.Score) CardColor = <1., 0., 0.>;
+
+		// Get player position (can't search for CScore in this array)
+		foreach (I => OtherScore in Scores) {
+			PlayerPosition += 1;
+			if (Score == OtherScore) break;
+		}
+
+		// Get player points
+		switchtype (Score) {
+			case CTmScore : PlayerPoints = (Score as CTmScore).Points;
+			case CSmScore : PlayerPoints = (Score as CSmScore).Points;
+		}
+
+		// Configure the frame
+		Quad_CardBackground.BgColor = CardColor;
+		Label_PlayerUserName.Value = Score.User.Name;
+		Label_PlayerPosition.Value = "#"^PlayerPosition;
+		Label_PlayerPoints.Value = TL::ToText(PlayerPoints);
+	}
+
+	declare GUIPlayerLeading = GUIPlayer != Null && GUIPlayer.Score == LeaderScore;
+
+	// ---------------------------------- //
+	// "Swap" animation
+	if (PrevGUIPlayerLeading != GUIPlayerLeading) {
+		PrevGUIPlayerLeading = GUIPlayerLeading;
+
+		declare AnimPlayerId = NullId;
+		if (GUIPlayer != Null) AnimPlayerId = GUIPlayer.Id;
+
+		// Play it only if GUIPlayer was the same before the lead change
+		if (PrevAnimPlayerId == AnimPlayerId) {
+			Frame_PlayerCardLeader.RelativePosition_V3.Y = -3.25;
+			Frame_PlayerCardPlayer.RelativePosition_V3.Y = 3.25;
+
+			AnimMgr.Add(Frame_PlayerCardLeader, "<frame pos='0 3.25' />", 500, CAnimManager::EAnimManagerEasing::ElasticOut);
+			AnimMgr.Add(Frame_PlayerCardPlayer, "<frame pos='0 -3.25' />", 500, CAnimManager::EAnimManagerEasing::ElasticOut);
+		}
+
+		PrevAnimPlayerId = AnimPlayerId;
+	}
+}
+***
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/** Set the Leader Display visibility.
+ *
+ *	@param	_Visible	Leader Display visibility.
+ */
+Void SetVisibility(Boolean _Visible) {
+	declare netwrite Boolean Net_LibLeaderDisplay_LayerVisible for Teams[0];
+	Net_LibLeaderDisplay_LayerVisible = _Visible;
+}
+
+// ---------------------------------- //
+/// Hide the Leader Display.
+Void Hide() {
+	SetVisibility(False);
+}
+
+// ---------------------------------- //
+/// Show the Leader Display.
+Void Show() {
+	SetVisibility(True);
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	Hide();
+
+	Layers::Detach(C_LibLeaderDisplay_ManialinkLayerId);
+	Layers::Destroy(C_LibLeaderDisplay_ManialinkLayerId);
+}
+
+// ---------------------------------- //
+/** Load the library.
+ *
+ *	@param	_Font	The font used for all texts.
+ */
+Void Load(Text _Font) {
+	Unload();
+
+	Layers::Create(C_LibLeaderDisplay_ManialinkLayerId, Private_CreateManialinkLeaderDisplay(_Font));
+	Layers::Attach(C_LibLeaderDisplay_ManialinkLayerId);
+}
+
+// ---------------------------------- //
+/// Load the library with default font.
+Void Load() {
+	Load("RajdhaniMono");
+}

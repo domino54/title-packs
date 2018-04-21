@@ -1,12 +1,12 @@
 // -------------------------------------- //
 //  PURSUIT by domino54                   //
-//  script version: 2018-04-06            //
+//  script version: 2018-04-21            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/ModePursuit.Script.txt"
 
 #Const CompatibleMapTypes	"PursuitArena"
-#Const Version				"2018-04-06"
+#Const Version				"2018-04-21"
 #Const ScriptName			"Modes/TrackMania/Pursuit.Script.txt"
 
 // ---------------------------------- //
@@ -35,7 +35,7 @@
 #Const C_PointsForFirstPolice	5		///< Max points awarded for being the first policeman
 #Const C_PointsForLastThief		5		///< Max points awarded for being the last Thief
 #Const C_PointsForThiefEndMax	5		///< Max points awarded for being thief after game end
-#Const C_NbCapsForDomination		2		///< Nb of captures performed on one thief to dominate them.
+#Const C_NbCapsForDomination	2		///< Nb of captures performed on one thief to dominate them.
 #Const C_RespawnDuration		15000	///< Time before thief will be respawned.
 #Const C_RespawnCancelSpeed		10.		///< Distance to be driven to cancel respawn.
 
@@ -45,6 +45,7 @@
 #Const C_CaptureReason_Boundary		2
 #Const C_CaptureReason_Void			3
 #Const C_CaptureReason_Command		4
+#Const C_CaptureReason_Water		5
 
 /// Description of the mode displayed in the help window
 #Const Description _("""$fffIn $f00Pursuit$fff mode, Thieves have to escape the Police.
@@ -189,7 +190,7 @@ foreach (Score in Scores) {
 
 // ---------------------------------- //
 // Wait for enough players
-WaitForPlayers(C_RequiredPlayersNb);
+PUR_WaitForPlayers(C_RequiredPlayersNb);
 
 // Vehicle selection
 PUR_ShowCharSelection();
@@ -628,6 +629,12 @@ foreach (Player in Players) {
 		TM::WaitRace(Player);
 	}
 	
+	// Catch thieves below water level
+	if (OffZone::IsBelowWaterLevel(Player)) {
+		if (PUR_GetPlayerClan(Player) == 2 && !IsSafePhase) CatchThief(Player, C_CaptureReason_Water);
+		TM::WaitRace(Player);
+	}
+
 	// Spawn players awaiting race
 	if (TM::IsWaiting(Player) && !SuspendedPlayers.exists(Player.User.Login)) {
 		PUR_SpawnPlayer(Player);
@@ -947,6 +954,7 @@ Void CatchThief(CTmPlayer _Thief, CTmPlayer _Policeman, Integer _Reason) {
 		case C_CaptureReason_Boundary	: ReasonText = "$<%1$> tried to escape the arena";
 		case C_CaptureReason_Void		: ReasonText = "$<%1$> somehow fell below map";
 		case C_CaptureReason_Command	: ReasonText = "$<%1$> was forced into the Police team";
+		case C_CaptureReason_Water		: ReasonText = "$<%1$> tried to swim";
 	}
 	
 	// ---------------------------------- //
@@ -1011,97 +1019,6 @@ Void CatchThief(CTmPlayer _Thief, CTmPlayer _Policeman, Integer _Reason) {
 Void CatchThief(CTmPlayer _Thief, CTmPlayer _Policeman) { CatchThief(_Thief, _Policeman, C_CaptureReason_Policeman); }
 
 Void CatchThief(CTmPlayer _Thief, Integer _Reason) { CatchThief(_Thief, Null, _Reason); }
-
-// ---------------------------------- //
-/** Wait for enough players to start a round
- *
- *	@param	_MinimumNbPlayers	Minimum players required to start
- */
-Void WaitForPlayers(Integer _MinimumNbPlayers) {
-	declare HasWaited = False;
-	declare PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
-	
-	UIManager.UIAll.TeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
-	UIManager.UIAll.OpposingTeamLabelsVisibility = CUIConfig::ELabelsVisibility::WhenVisible;
-	
-	// ---------------------------------- //
-	// Waiting for players sequence
-	while (!ServerShutdownRequested && !MatchEndRequested) {
-		MB_Yield();
-		
-		// Let the server sleep if there are no players on it
-		if (Players.count <= 0) continue;
-		
-		// Stop waiting if there are enough players to start the game
-		if (Players.count >= _MinimumNbPlayers && !CupAdmin::IsCupPaused()) break;
-		
-		// ---------------------------------- //
-		// Display big message
-		if (!HasWaited) {
-			UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
-			Minimap::Show();
-			
-			if (CupAdmin::IsCupPaused()) {
-				UIManager.UIAll.StatusMessage = _("Waiting for admin to resume the competition...");
-				UIManager.UIAll.BigMessage = TL::Compose("$F90%1", _("Pause"));
-			} else {
-				UIManager.UIAll.BigMessage = _("Waiting for players...");
-			}
-			
-			HasWaited = True;
-		}
-		
-		OffZone::Loop();
-
-		// ---------------------------------- //
-		// Update Lagoon Car availability
-		if (PrevLagoonCarUnlockMode != S_LagoonCarUnlockMode) {
-			PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
-			PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
-		}
-
-		// ---------------------------------- //
-		// Respawn players changing characters
-		foreach (PlayerId => CharacterId in Characters::CharChangeRequests()) {
-			if (!Players.existskey(PlayerId)) continue;
-			declare Player <=> Players[PlayerId];
-			TM::WaitRace(Player);
-		}
-		
-		// ---------------------------------- //
-		// Manage events
-		foreach (Event in PendingEvents) {
-			Discard(Event);
-			
-			// Waypoint
-			if (Event.Type == CTmModeEvent::EType::WayPoint) {
-				if (Event.IsEndRace) TM::WaitRace(Event.Player);
-			}
-			
-			// Respawn
-			else if (Event.Type == CTmModeEvent::EType::Respawn) TM::WaitRace(Event.Player);
-			
-			// GiveUp
-			else if (Event.Type == CTmModeEvent::EType::GiveUp) TM::WaitRace(Event.Player);
-		}
-		
-		// Spawn players
-		foreach (Player in Players) if (TM::IsWaiting(Player)) PUR_SpawnPlayer(Player);
-	}
-
-	// ---------------------------------- //
-	// A new player joins the game
-	if (HasWaited) {
-		UIManager.UIAll.UISequence = CUIConfig::EUISequence::None;
-		TM::WaitRaceAll();
-		UIManager.UIAll.BigMessage = _("A new player joins the game.");
-		UIManager.UIAll.StatusMessage = "";
-		Minimap::Hide();
-		
-		if (!ServerShutdownRequested && !MatchEndRequested) MB_Sleep(5000);
-		UIManager.UIAll.BigMessage = "";
-	}
-}
 
 // ---------------------------------- //
 /** Set custom labels usage.

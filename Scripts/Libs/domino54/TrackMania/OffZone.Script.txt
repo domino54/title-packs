@@ -1,6 +1,6 @@
 // -------------------------------------- //
-//  OFFZONE LIB by domino54               //
-//  script version: 2016-11-14            //
+//  LIBRARY OFFZONE by domino54           //
+//  script version: 2018-04-21            //
 // -------------------------------------- //
 
 /**
@@ -13,8 +13,8 @@
  *	for free from domino54's GitHub repository.
  */
 
-#Const Version		"2016-11-14"
-#Const ScriptName	"OffZone.Script.txt"
+#Const Version		"2018-04-21"
+#Const ScriptName	"Libs/domino54/TrackMania/OffZone.Script.txt"
 
 #Include "MathLib" as ML
 #Include "Libs/Nadeo/TrackMania/TM2.Script.txt" as TM2
@@ -22,45 +22,49 @@
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_PlayerPositionFixOffset	<0., .01, 0.>	///< Offset added to the position
+#Const C_PlayerPositionFixOffset	<0., .1, 0.>	///< Offset added to the position.
 
-/// Size of the block in each environment
+/// Size of the block in each environment.
 #Const C_LibOffZone_ColBlockDimensions [
 	"Canyon" => <64., 16., 64.>,
 	"Stadium" => <32., 8., 32.>,
-	"Valley" => <32., 8., 32.>
+	"Valley" => <32., 8., 32.>,
+	"Lagoon" => <32., 8., 32.>
 ]
 
-/// Y index of the block in position 0 in each environment
+/// Y index of the block in position 0 in each environment.
 #Const C_LibOffZone_ColGroundCoordY [
-	"Canyon" => 15,
+	"Canyon" => 16,
 	"Stadium" => 9,
-	"Valley" => 5
+	"Valley" => 5,
+	"Lagoon" => 6
 ]
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Boolean	G_LibOffZone_IsLoaded;				///< True, if environment dimensions loaded correctly
-declare Vec3	G_LibOffZone_ColBlockDimensions;	///< Size of current environment blocks in meters
-declare Integer	G_LibOffZone_ColGroundCoordY;		///< Y index of block in position <0., 0., 0.>
-declare Int3[]	G_LibOffZone_OffZoneLocations;		///< Positions of the blocks containing OffZone triggers
+declare Boolean	G_LibOffZone_IsLoaded;				///< True, if environment dimensions loaded correctly.
+declare Vec3	G_LibOffZone_ColBlockDimensions;	///< Size of current environment blocks in meters.
+declare Integer	G_LibOffZone_ColGroundCoordY;		///< Y index of block in position <0., 0., 0.>.
+declare Int3[]	G_LibOffZone_OffZoneLocations;		///< Positions of the blocks containing OffZone triggers.
+declare Boolean	G_LibOffZone_WaterLevelOffZone;		///< Map has OffZone under the water level.
 
 /// Functions activity settings
-declare Boolean G_LibOffZone_DisableOffZone; ///< Disable event when Player touch OffZone block
-declare Boolean G_LibOffZone_DisableFalling; ///< Disable event when Player falls under construction area
-declare Boolean G_LibOffZone_DisableBorders; ///< Disable event when Player drives beyond map edge
+declare Boolean G_LibOffZone_DisableOffZone;	///< Disable event when Player touch OffZone block.
+declare Boolean G_LibOffZone_DisableFalling;	///< Disable event when Player falls under construction area.
+declare Boolean G_LibOffZone_DisableBorders;	///< Disable event when Player drives beyond map edge.
+declare Boolean G_LibOffZone_DisableWater;		///< Disable event when Player drives below water level.
 
 // ---------------------------------- //
 // Functions
 // ---------------------------------- //
 
 // ---------------------------------- //
-/** Get coordinates of the block Player is standing in
+/** Get coordinates of the block Player is standing in.
  *
- *	@param _Position	World position of the Player
+ *	@param _Position	World position of the Player.
  *
- *	@return		Coordinates of the block
+ *	@return		Coordinates of the block.
  */
 Int3 Private_GetPlayerBlockCoords(Vec3 _Position) {
 	if (!G_LibOffZone_IsLoaded) return Int3;
@@ -79,25 +83,21 @@ Int3 Private_GetPlayerBlockCoords(Vec3 _Position) {
 // ---------------------------------- //
 
 // ---------------------------------- //
-/** Return the version number of the script
+/** Return the version number of the script.
  *
- *	@return		The version number of the script
+ *	@return		The version number of the script.
  */
-Text GetScriptVersion() {
-	return Version;
-}
+Text GetScriptVersion() { return Version; }
 
 // ---------------------------------- //
-/** Return the name of the script
+/** Return the name of the script.
  *
- *	@return		The name of the script
+ *	@return		The name of the script.
  */
-Text GetScriptName() {
-	return ScriptName;
-}
+Text GetScriptName() { return ScriptName; }
 
 // ---------------------------------- //
-/// Unload map OffZone locations
+/// Unload map OffZone locations.
 Void EndMap() {
 	G_LibOffZone_IsLoaded = False;
 	G_LibOffZone_ColBlockDimensions = Vec3;
@@ -106,7 +106,7 @@ Void EndMap() {
 }
 
 // ---------------------------------- //
-/// Load map OffZone locations
+/// Load map OffZone locations.
 Void StartMap() {
 	if (Map == Null) return;
 	EndMap();
@@ -129,16 +129,19 @@ Void StartMap() {
 	// ---------------------------------- //
 	// Restore metadata from the map file
 	declare metadata Int3[] TMOffZoneLocations for Map;
-	if (TMOffZoneLocations.count == 0) return;
 	G_LibOffZone_OffZoneLocations = TMOffZoneLocations;
+
+	// Water respawn
+	declare metadata Boolean LibOffZone_WaterLevelOffZone for Map;
+	G_LibOffZone_WaterLevelOffZone = LibOffZone_WaterLevelOffZone;
 }
 
 // ---------------------------------- //
-/** Check if Player is in OffZone
+/** Check if Player is in OffZone.
  *
- *	@param _Player	Player to check status
+ *	@param _Player	Player to check status.
  *
- *	@return		True if Player is in OffZone, False otherwise
+ *	@return		True if Player is in OffZone, False otherwise.
  */
 Boolean IsInOffZone(CTmPlayer _Player) {
 	if (G_LibOffZone_DisableOffZone || _Player == Null) return False;
@@ -149,11 +152,11 @@ Boolean IsInOffZone(CTmPlayer _Player) {
 }
 
 // ---------------------------------- //
-/** Check if Player is below map construction zone
+/** Check if Player is below map construction zone.
  *
- *	@param _Player	Player to check status
+ *	@param _Player	Player to check status.
  *
- *	@return		True if Player is below construction area, False otherwise
+ *	@return		True if Player is below construction area, False otherwise.
  */
 Boolean IsBelowMapBottom(CTmPlayer _Player) {
 	if (!G_LibOffZone_IsLoaded || G_LibOffZone_DisableFalling || _Player == Null) return False;
@@ -163,11 +166,11 @@ Boolean IsBelowMapBottom(CTmPlayer _Player) {
 }
 
 // ---------------------------------- //
-/** Check if Player is beyond map border
+/** Check if Player is beyond map border.
  *
- *	@param _Player	Player to check status
+ *	@param _Player	Player to check status.
  *
- *	@return		True if Player is beyond map border, False otherwise
+ *	@return		True if Player is beyond map border, False otherwise.
  */
 Boolean IsBeyondMapEdge(CTmPlayer _Player) {
 	if (!G_LibOffZone_IsLoaded || G_LibOffZone_DisableBorders || _Player == Null) return False;
@@ -178,6 +181,20 @@ Boolean IsBeyondMapEdge(CTmPlayer _Player) {
 		_Player.Position.X > G_LibOffZone_ColBlockDimensions.X * Map.Size.X ||
 		_Player.Position.Z > G_LibOffZone_ColBlockDimensions.Z * Map.Size.Z
 	);
+}
+
+// ---------------------------------- //
+/** Check if Player is below water level.
+ *
+ *	@param _Player	Player to check status.
+ *
+ *	@return		True if Player is below water level border, False otherwise.
+ */
+Boolean IsBelowWaterLevel(CTmPlayer _Player) {
+	if (!G_LibOffZone_IsLoaded || G_LibOffZone_DisableWater || !G_LibOffZone_WaterLevelOffZone || _Player == Null) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || Now < _Player.RaceStartTime) return False;
+
+	return _Player.Position.Y < -1.;
 }
 
 // ---------------------------------- //
@@ -199,32 +216,45 @@ Void Loop() {
 		// ---------------------------------- //
 		// Unspawn players beyond map edges
 		if (!G_LibOffZone_DisableBorders && IsBeyondMapEdge(Player)) TM2::WaitRace(Player);
+
+		// ---------------------------------- //
+		// Unspawn players below water level
+		if (!G_LibOffZone_DisableWater && IsBelowWaterLevel(Player)) TM2::WaitRace(Player);
 	}
 }
 
 // ---------------------------------- //
-/** Change OffZone activity setting
+/** Change OffZone activity setting.
  *
- *	@param _UseOffZone	True if OffZone has to be active
+ *	@param _UseOffZone	True if OffZone has to be active.
  */
 Void SetUseOffZone(Boolean _UseOffZone) {
 	G_LibOffZone_DisableOffZone = !_UseOffZone;
 }
 
 // ---------------------------------- //
-/** Change falling protection setting
+/** Change falling protection setting.
  *
- *	@param _UseFallProtect	True if Players below map have to be unspawned
+ *	@param _UseFallProtect	True if Players below map have to be unspawned.
  */
 Void SetUseFallProtection(Boolean _UseFallProtect) {
 	G_LibOffZone_DisableFalling = !_UseFallProtect;
 }
 
 // ---------------------------------- //
+/** Change map edge crossing setting.
+ *
+ *	@param _UseMapEdges		True if Players beyond map edges have to be unspawned.
+ */
+Void SetUseMapEdges(Boolean _UseMapEdges) {
+	G_LibOffZone_DisableBorders = !_UseMapEdges;
+}
+
+// ---------------------------------- //
 /** Change map edge crossing setting
  *
- *	@param _UseMapEdges	True if Players beyond map edges have to be unspawned
+ *	@param _UseMapEdges		True if Players under the water level have to be unspawned
  */
-Void SetUseFallProtection(Boolean _UseMapEdges) {
-	G_LibOffZone_DisableBorders = !_UseMapEdges;
+Void SetUseWaterLevel(Boolean _UseWaterLevel) {
+	G_LibOffZone_DisableWater = !_UseWaterLevel;
 }

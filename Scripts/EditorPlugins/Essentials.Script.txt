@@ -1,32 +1,33 @@
 // -------------------------------------- //
 //  ESSENTIALS EDITOR PLUGIN by domino54  //
-//  script version: 2016-07-21            //
+//  script version: 2018-05-02            //
 // -------------------------------------- //
 
 /**
  *	This big editor plugin:
- *	-	Automatically enables Ghost Blocks and Air Mapping after opening editor
- *	-	Adds switch between Normal / Ghost modes on mouse wheel button
- *	-	Enables automatic switch to underground mode, depending on selected block
- *	-	Reminds user to palce podium block
- *	-	Enables automatic map save feature
- *	-	Allows to upgrade terrain to HD quality with oene click
- *	-	Displays current cursor coordinates and camera direction
+ *	-	Automatically enables Ghost Blocks and Air Mapping after opening editor.
+ *	-	Adds switch between Normal / Ghost modes on mouse wheel button.
+ *	-	Replaces default skin selection window with a custom one, featuring folders and previews.
+ *	-	Enables automatic switch to underground mode, depending on selected block.
+ *	-	Reminds user to palce podium block.
+ *	-	Enables automatic map save feature.
+ *	-	Allows to upgrade terrain to HD quality with oene click.
+ *	-	Displays current cursor coordinates and camera direction.
  */
 
 #RequireContext CEditorPlugin
 
-#Const	Version		"2016-07-21"
-#Const	ScriptName	"Essentials.Script.txt"
+#Const Version		"2018-05-02"
+#Const ScriptName	"EditorPlugins/Essentials.Script.txt"
 
 #Include "TextLib" as TL
-#Include "Libs/Nadeo/Manialink.Script.txt" as Manialink
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
 #Const C_HDTerrainModels	["DecoTerrainHD", "Cliff8HD"]
 #Const C_AutoSavePeriod		20000
+#Const C_NbBlocksListed		8
 
 // ---------------------------------- //
 // Main
@@ -38,13 +39,26 @@
 declare EssentialsLayer = UILayerCreate();
 EssentialsLayer.ManialinkPage = CreateLayerEssentials();
 EssentialsLayer.Type = CUILayer::EUILayerType::EditorPlugin;
-declare Page <=> EssentialsLayer.LocalPage;
+
+// ---------------------------------- //
+// Create layer for the skin selection modal
+declare SkinSelectionLayer = UILayerCreate();
+SkinSelectionLayer.ManialinkPage = CreateLayerSkinSelection();
+
+// ---------------------------------- //
+// Create latest blocks layer
+declare LatestBlocksLayer <=> UILayerCreate();
+LatestBlocksLayer.ManialinkPage = CreateLayerLatestBlocks();
+LatestBlocksLayer.IsVisible = False;
 
 // ---------------------------------- //
 // Persistent settings
 declare persistent Persistent_Essentials_EnableMixMapping for LocalUser = True;
+declare persistent Persistent_Essentials_EnableAirMapping for LocalUser = True;
 declare persistent Persistent_Essentials_AutoUnderground for LocalUser = True;
-declare persistent Persistent_Essentials_EnableAutoSave for LocalUser = True;
+declare persistent Persistent_Essentials_EnableAutoSave for LocalUser = False;
+declare persistent Persistent_Essentials_NewSkinSelection for LocalUser = True;
+declare persistent Persistent_Essentials_EnableLatestBlocks for LocalUser = True;
 
 // ---------------------------------- //
 // Get the HD terrain block
@@ -52,15 +66,34 @@ declare CBlockModel HDTerrainBlock;
 foreach (Block in BlockModels) if (C_HDTerrainModels.exists(Block.Name)) HDTerrainBlock = Block;
 
 // ---------------------------------- //
+// List all the available skins for all blocks
+declare Text[] AvailableBlockSkins for SkinSelectionLayer.LocalPage;
+AvailableBlockSkins.clear();
+
+foreach (BlockModel in BlockModels) {
+	if (BlockModel == Null || !IsBlockModelSkinnable(BlockModel)) continue;
+
+	for (I, 0, GetNbBlockModelSkins(BlockModel) - 1) {
+		AvailableBlockSkins.add(GetBlockModelSkin(BlockModel, I));
+	}
+}
+
+// ---------------------------------- //
 // Variables
-declare MapPodiumsCount for Page = GetPodiumsAmount();
-declare Real CameraRotation for Page;
-declare Int3 CursorPosition for Page;
+declare MapPodiumsCount for EssentialsLayer.LocalPage = GetPodiumsAmount();
 declare NextAutoSave = Now + C_AutoSavePeriod;
+
+// Skin selection
+declare ShowSkinSelection for SkinSelectionLayer.LocalPage = False;
+declare IsHybridSkinSelection = False;
+declare SkinnableBlockCoords = Int3[];
+declare SelectedSkinBlockId = NullId;
 
 /// Update
 declare PrevPlaceMode = PlaceMode;
 declare PrevCursorBlockModelId = NullId;
+declare PrevIsHybridSkinSelection = False;
+declare PrevEnableLatestBlocks = False;
 ***
 
 // ---------------------------------- //
@@ -78,6 +111,8 @@ foreach (Event in PendingEvents) {
 			// ---------------------------------- //
 			// Switch Ghost Blocks mode
 			case "SwitchGhostBlocks" : {
+				if (EditMode == ::EditMode::FreeLook) continue;
+				
 				// ---------------------------------- //
 				// Change mode to Ghost Blocks
 				if (PlaceMode != ::PlaceMode::GhostBlock) {
@@ -91,6 +126,7 @@ foreach (Event in PendingEvents) {
 					else PlaceMode = PrevPlaceMode;
 				}
 			}
+
 			// ---------------------------------- //
 			// Replace terrain with HD mountain block
 			case "PlaceHDTerrain" : {
@@ -100,21 +136,75 @@ foreach (Event in PendingEvents) {
 				foreach (Block in Blocks) if (Block.BlockModel.IsTerrain) BlocksToReplace.add(Block.Coord);
 				foreach (Position in BlocksToReplace) PlaceBlock(HDTerrainBlock, Position, ::CardinalDirections::North);
 			}
+
+			// ---------------------------------- //
+			// Compute very fast shadows
+			case "ComputeShadows" : ComputeShadows();
+
+			// ---------------------------------- //
+			// Set the skin of the selected block
+			case "SetBlockSkin" : {
+				if (SelectedSkinBlockId == NullId || !Blocks.existskey(SelectedSkinBlockId) || !Event.CustomEventData.existskey(0)) continue;
+
+				declare TargetSkinPath = Event.CustomEventData[0];
+				declare Block <=> Blocks[SelectedSkinBlockId];
+
+				SetBlockSkin(Block, TargetSkinPath);
+			}
+
+			// ---------------------------------- //
+			// Close the skin selection modal
+			case "CloseSkinDrawer" : {
+				ShowSkinSelection = False;
+				SelectedSkinBlockId = NullId;
+			}
 		}
 	}
+
 	// ---------------------------------- //
-	// Custom layer event
+	// Map modified
 	else if (Event.Type == CEditorPluginEvent::Type::MapModified) {
 		// ---------------------------------- //
 		// Update the amount of podiums
 		MapPodiumsCount = GetPodiumsAmount();
 	}
+
+	// ---------------------------------- //
+	// Cursor selection begin
+	else if (Event.Type == CEditorPluginEvent::Type::CursorSelectionBegin) {
+		// ---------------------------------- //
+		// Open skin selection for skinable block
+		if (IsHybridSkinSelection && SelectedSkinBlockId == NullId) {
+			declare SelectedBlock <=> GetBlock(CursorCoord);
+			if (SelectedBlock == Null || SelectedBlock.BlockModel == Null || !IsBlockModelSkinnable(SelectedBlock.BlockModel)) continue;
+			SelectedSkinBlockId = SelectedBlock.Id;
+
+			declare Text SelectedBlockSkin for SkinSelectionLayer.LocalPage;
+			declare Text[] SelectedBlockSkins for SkinSelectionLayer.LocalPage;
+
+			SelectedBlockSkin = GetBlockSkin(SelectedBlock);
+			SelectedBlockSkins.clear();
+
+			for (I, 0, GetNbBlockModelSkins(SelectedBlock.BlockModel) - 1) {
+				SelectedBlockSkins.add(GetBlockModelSkin(SelectedBlock.BlockModel, I));
+			}
+
+			ShowSkinSelection = True;
+		}
+	}
 }
 
 // ---------------------------------- //
 // Enable air mapping and ghost blocks
-EnableAirMapping = Persistent_Essentials_EnableMixMapping;
 EnableMixMapping = Persistent_Essentials_EnableMixMapping;
+EnableAirMapping = Persistent_Essentials_EnableAirMapping;
+
+// Enter hybrid skin selection
+if (PlaceMode == CEditorPlugin::PlaceMode::Skin) {
+	if (Persistent_Essentials_NewSkinSelection) PlaceMode = CEditorPlugin::PlaceMode::CustomSelection;
+}
+
+IsHybridSkinSelection = PlaceMode == CEditorPlugin::PlaceMode::CustomSelection;
 
 // ---------------------------------- //
 // Switch Underground Mode depending on selected block
@@ -122,11 +212,8 @@ if (CursorBlockModel == Null || PrevCursorBlockModelId != CursorBlockModel.Id) {
 	if (CursorBlockModel != Null) PrevCursorBlockModelId = CursorBlockModel.Id;
 	else PrevCursorBlockModelId = NullId;
 	
-	if (Persistent_Essentials_AutoUnderground)
-		UndergroundMode =
-			CursorBlockModel != Null &&
-			CursorBlockModel.VariantAir != Null &&
-			CursorBlockModel.VariantAir.IsAllUnderground;
+	if (CursorBlockModel != Null && Persistent_Essentials_AutoUnderground)
+		UndergroundMode = CursorBlockModel.VariantAir != Null && CursorBlockModel.VariantAir.IsAllUnderground;
 }
 
 // ---------------------------------- //
@@ -136,17 +223,79 @@ if (Persistent_Essentials_EnableAutoSave && Now >= NextAutoSave) {
 	NextAutoSave = Now + C_AutoSavePeriod;
 }
 
-// ---------------------------------- //
 // Revert normal block mode, if user disabled ghost blocks and is still in this mode
 if (!Persistent_Essentials_EnableMixMapping && PlaceMode == ::PlaceMode::GhostBlock) PlaceMode = ::PlaceMode::Block;
 
 // ---------------------------------- //
-// Update camera rotation
-if (CameraRotation != CameraHAngle) CameraRotation = CameraHAngle;
+// On hybrid skin selection change
+if (PrevIsHybridSkinSelection != IsHybridSkinSelection) {
+	PrevIsHybridSkinSelection = IsHybridSkinSelection;
+
+	// ---------------------------------- //
+	// Begin skin selection
+	if (IsHybridSkinSelection) {
+		EditMode = CEditorPlugin::EditMode::SelectionAdd;
+		CustomSelectionRGB = <0., .25, 0.>;
+
+		// ---------------------------------- //
+		// Highlight all skinable blocks via custom selection
+		foreach (Block in Blocks) {
+			if (Block.BlockModel == Null || !IsBlockModelSkinnable(Block.BlockModel)) continue;
+
+			// Get the existing variant
+			declare CBlockModelVariant Variant;
+			if (Block.BlockModel.VariantGround != Null) Variant <=> Block.BlockModel.VariantGround;
+			if (Block.BlockModel.VariantAir != Null) Variant <=> Block.BlockModel.VariantAir;
+			if (Variant == Null) continue;
+
+			// Highlight all units of the block
+			foreach (Unit in Variant.BlockUnitModels) {
+				declare Offset = <0, Unit.RelativeOffset.Y, 0>;
+
+				switch (Block.Direction) {
+					case CBlock::CardinalDirections::North : {
+						Offset.X = Unit.RelativeOffset.X;
+						Offset.Z = Unit.RelativeOffset.Z;
+					}
+					case CBlock::CardinalDirections::East : {
+						Offset.X = Unit.RelativeOffset.Z;
+						Offset.Z = Unit.RelativeOffset.X;
+					}
+					case CBlock::CardinalDirections::South : {
+						Offset.X = -Unit.RelativeOffset.X + Variant.OffsetBoundingBoxMax.X;
+						Offset.Z = -Unit.RelativeOffset.Z + Variant.OffsetBoundingBoxMax.Z;
+					}
+					case CBlock::CardinalDirections::West : {
+						Offset.X = -Unit.RelativeOffset.Z + Variant.OffsetBoundingBoxMax.Z;
+						Offset.Z = -Unit.RelativeOffset.X + Variant.OffsetBoundingBoxMax.X;
+					}
+				}
+
+				SkinnableBlockCoords.add(Block.Coord + Offset);
+			}
+		}
+	}
+
+	// ---------------------------------- //
+	// Disable skin selection
+	else {
+		SkinnableBlockCoords.clear();
+		ShowSkinSelection = False;
+		SelectedSkinBlockId = NullId;
+	}
+
+	// Update custom selection coords
+	CustomSelectionCoords.clear();
+	foreach (Coord in SkinnableBlockCoords) CustomSelectionCoords.add(Coord);
+}
 
 // ---------------------------------- //
-// Update cursor position
-if (CursorPosition != CursorCoord) CursorPosition = CursorCoord;
+// Update latest blocks
+if (PrevEnableLatestBlocks != Persistent_Essentials_EnableLatestBlocks) {
+	PrevEnableLatestBlocks = Persistent_Essentials_EnableLatestBlocks;
+
+	LatestBlocksLayer.IsVisible = Persistent_Essentials_EnableLatestBlocks;
+}
 ***
 
 // ---------------------------------- //
@@ -171,100 +320,116 @@ Integer GetPodiumsAmount() {
  */
 Text CreateLayerEssentials() {
 	return """
-<manialink version="2" name="EssentialsManialink">
+<manialink version="3" name="EssentialsManialink">
 <stylesheet>
-	<style class="CoordVal" halign="center" valign="center2" style="TextValueSmallSm" textsize="2" textcolor="FFF"/>
-	<style class="CoordDes" halign="center" valign="center2" style="TextValueSmallSm" scale=".5" textcolor="888"/>
-	<style class="Check" sizen="3.5 3.5" halign="center" valign="center" style="Icons64x64_1" substyle="Check"/>
+	<style class="CoordVal" halign="center" valign="center2" style="TextValueSmallSm" textsize="2" textcolor="FFF" />
+	<style class="CoordDes" halign="center" valign="center2" style="TextValueSmallSm" scale=".5" textcolor="888" />
+	<style class="Check" size="3.5 3.5" halign="center" valign="center" style="Icons64x64_1" substyle="Check" />
 </stylesheet>
 
-<!-- Help tooltip -->
-<label
-	posn="90 -88" sizen="46" halign="center" valign="bottom" style="TrackerText" autonewline="1"
-	id="Label_MouseHoverTooltip" hidden="1"
-/>
-
 <!-- Main widget frame -->
-<frame id="Frame_EssentialsWidget" posn="129 62">
-	<!-- Backgrounds -->
-	<quad
-		posn="30 0 -1" sizen="30 8" halign="right" valign="center"
-		bgcolor="000" opacity=".75" id="Quad_WindowBackground" ScriptEvents="1"
-	/>
-	<quad
-		posn="30 0 -2" sizen="30 8" halign="right" valign="center"
-		style="Bgs1" substyle="BgDialogBlur" opacity="0" id="Quad_WindowBgBlur"
-	/>
-	<quad
-		posn="32.5 0 -3" sizen="70 26" scale=".5" halign="right" valign="center"
-		style="Bgs1InRace" substyle="BgButtonShadow" id="Quad_WindowBgShadow"
-	/>
-	
+<frame id="Frame_EssentialsWidget" pos="129 62">
 	<!-- Map editor block position -->
-	<label posn="8 1.25" class="CoordVal" text="0" id="Label_CursorCoordX"/>
-	<label posn="14 1.25" class="CoordVal" text="0" id="Label_CursorCoordY"/>
-	<label posn="20 1.25" class="CoordVal" text="0" id="Label_CursorCoordZ"/>
-	
-	<label posn="8 -2" class="CoordDes" text="X"/>
-	<label posn="14 -2" class="CoordDes" text="Y"/>
-	<label posn="20 -2" class="CoordDes" text="Z"/>
+	<frame pos="8">
+		<label pos="0 1.25" class="CoordVal" text="0" id="Label_CursorCoordX" />
+		<label pos="6 1.25" class="CoordVal" text="0" id="Label_CursorCoordY" />
+		<label pos="12 1.25" class="CoordVal" text="0" id="Label_CursorCoordZ" />
+
+		<label pos="0 -2" class="CoordDes" text="X" />
+		<label pos="6 -2" class="CoordDes" text="Y" />
+		<label pos="12 -2" class="CoordDes" text="Z" />
+	</frame>
 	
 	<!-- Map editor camera direction -->
-	<frame id="Frame_DirectionArrow" posn="26" scale=".625">
-		<quad
-			sizen="8 8" halign="center" valign="center" image="file://Media/Manialinks/Common/Disc.dds" colorize="666"
-			data-tooltip="Camera direction" ScriptEvents="1"
-		/>
-		<quad posn="-1 0 1" sizen="5.5 4" valign="center" style="Icons64x64_1" substyle="ArrowRed"/>
-		<quad posn="1 0 1" sizen="5.5 4" valign="center" rot="180" style="Icons64x64_1" substyle="ArrowGreen" colorize="000"/>
+	<frame id="Frame_DirectionArrow" pos="26" scale=".625">
+		<quad pos="-1" size="5.5 4" valign="center" style="Icons64x64_1" substyle="ArrowRed" />
+		<quad pos="1" size="5.5 4" valign="center" rot="180" style="Icons64x64_1" substyle="ArrowGreen" colorize="000" />
+		<quad size="8 8" halign="center" valign="center" image="file://Media/Manialinks/Common/Disc.dds" colorize="666" tooltip="Camera direction" ScriptEvents="1" />
 	</frame>
 	
 	<!-- Hidden options menu -->
-	<frame clip="1" clipposn="-20" clipsizen="48 8"><frame id="Frame_AditionalIcons" posn="0">
+	<frame pos="4" size="78 8" halign="right" valign="center"><frame id="Frame_AditionalIcons" pos="-4">
 		<quad
-			posn="3" sizen="6 6" halign="center" valign="center"
+			pos="3" size="6 6" halign="center" valign="center"
 			style="UIConstruction_Buttons" substyle="Quit" colorize="888" id="Quad_IconCog"
 		/>
+
+		<quad pos="12 -2" class="Check" id="Check_GhostBlocks" />
 		<quad
-			posn="10 .5" sizen="8 8" halign="center" valign="center" ScriptEvents="1"
+			pos="10 .5" size="8 8" halign="center" valign="center" ScriptEvents="1"
 			style="UIConstruction_Buttons2" substyle="GhostBlocks"
-			data-tooltip="Enable Ghost Blocks and Air Mapping" id="Quad_GhostBlocks"
+			tooltip="Enable Ghost Blocks" id="Quad_GhostBlocks"
 		/>
+
+		<quad pos="20 -2" class="Check" id="Check_AirMapping" />
 		<quad
-			posn="18 .25" sizen="7 7" halign="center" valign="center" ScriptEvents="1"
+			pos="18" size="8 8" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstruction_Buttons2" substyle="AirMapping"
+			tooltip="Enable Air Mapping" id="Quad_AirMapping"
+		/>
+
+		<quad pos="28 -2" class="Check" id="Check_NewSkinSelection" />
+		<quad
+			pos="26 .25" size="7 7" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstruction_Buttons" substyle="Paint" styleselected="1"
+			tooltip="Enable improved skin selection window" id="Quad_NewSkinSelection"
+		/>
+
+		<quad pos="36 -2" class="Check" id="Check_EnableLatestBlocks" />
+		<quad
+			pos="34 .25" size="7 7" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstruction_Buttons" substyle="AuthorTime" styleselected="1"
+			tooltip="Enable latest blocks list" id="Quad_EnableLatestBlocks"
+		/>
+
+		<quad pos="44 -2" class="Check" id="Check_AutoUnderground" />
+		<quad
+			pos="42 .25" size="7 7" halign="center" valign="center" ScriptEvents="1"
 			style="UIConstruction_Buttons" substyle="Underground" styleselected="1"
-			data-tooltip="Automatically switch to the underground mode" id="Quad_AutoUnderground"
+			tooltip="Automatically switch to the underground mode" id="Quad_AutoUnderground"
 		/>
+
+		<quad pos="52 -2" class="Check" id="Check_RemindPodiums" />
 		<quad
-			posn="26" sizen="7 7" halign="center" valign="center" ScriptEvents="1"
+			pos="50" size="7 7" halign="center" valign="center" ScriptEvents="1"
 			style="UIConstructionBullet_Buttons" substyle="AnimMode"
-			data-tooltip="Remind to place podium" id="Quad_RemindPodiums"
+			tooltip="Remind to place podium" id="Quad_RemindPodiums"
 		/>
+
+		<quad pos="60 -2" class="Check" id="Check_AutoSave" />
 		<quad
-			posn="34" sizen="7 7" halign="center" valign="center" ScriptEvents="1"
+			pos="58" size="7 7" halign="center" valign="center" ScriptEvents="1"
 			style="UIConstruction_Buttons" substyle="Save"
-			data-tooltip="Enable auto-save" id="Quad_EnableAutoSave"
+			tooltip="Enable auto-save" id="Quad_EnableAutoSave"
 		/>
+
 		<quad
-			posn="42" sizen="7 7" halign="center" valign="center" ScriptEvents="1"
+			pos="66" size="7 7" halign="center" valign="center" ScriptEvents="1"
 			style="UIConstructionBullet_Buttons" substyle="ExplosionMode"
-			data-tooltip="Update terrain to HD quality" id="Quad_PlaceHDTerrain"
+			tooltip="Update terrain to HD quality" id="Quad_PlaceHDTerrain"
 		/>
-		<quad posn="12 -2 1" class="Check" id="Check_GhostBlocks"/>
-		<quad posn="20 -2 1" class="Check" id="Check_AutoUnderground"/>
-		<quad posn="28 -2 1" class="Check" id="Check_RemindPodiums"/>
-		<quad posn="36 -2 1" class="Check" id="Check_AutoSave"/>
+
+		<quad
+			pos="74" size="7 7" halign="center" valign="center" ScriptEvents="1"
+			style="UIConstructionBullet_Buttons" substyle="Power" styleselected="1"
+			tooltip="Compute very fast shadows" id="Quad_ComputeShadows"
+		/>
 	</frame></frame>
+
+	<!-- Backgrounds -->
+	<quad pos="30" size="30 8" halign="right" valign="center" bgcolor="000" opacity=".75" id="Quad_WindowBackground" ScriptEvents="1" />
+	<quad pos="30" size="30 8" halign="right" valign="center" style="Bgs1" substyle="BgDialogBlur" opacity="0" id="Quad_WindowBgBlur" />
+	<quad pos="32.5" size="70 26" scale=".5" halign="right" valign="center" style="Bgs1InRace" substyle="BgButtonShadow" id="Quad_WindowBgShadow" />
 </frame>
 
 <!-- Frame reminding podium placement -->
-<frame id="Frame_MissingPodium" posn="155 -84 10">
-	<quad sizen="10 10" halign="center" valign="center" bgcolor="000"/>
+<frame id="Frame_MissingPodium" pos="155 -84">
 	<quad
-		posn="0 0 1" sizen="10 10" halign="center" valign="center" id="Quad_MissingPodium"
+		size="10 10" halign="center" valign="center" id="Quad_MissingPodium"
 		style="UIConstruction_Buttons" substyle="Validate" colorize="F8D"
-		data-tooltip="$F00You have to place exactly one podium!" ScriptEvents="1"
+		tooltip="$F00You have to place exactly one podium!" ScriptEvents="1"
 	/>
+	<quad size="10 10" halign="center" valign="center" bgcolor="000" />
 </frame>
 
 <script><!--
@@ -285,7 +450,6 @@ declare Quad_WindowBgBlur <=> (Page.GetFirstChild("Quad_WindowBgBlur") as CMlQua
 declare Quad_WindowBgShadow <=> (Page.GetFirstChild("Quad_WindowBgShadow") as CMlQuad);
 declare Quad_IconCog <=> (Page.GetFirstChild("Quad_IconCog") as CMlQuad);
 
-// ---------------------------------- //
 // Cursor coordinates display
 declare Frame_DirectionArrow <=> (Page.GetFirstChild("Frame_DirectionArrow") as CMlFrame);
 declare Label_CursorCoords = [
@@ -294,16 +458,14 @@ declare Label_CursorCoords = [
 	(Page.GetFirstChild("Label_CursorCoordZ") as CMlLabel)
 ];
 
-// ---------------------------------- //
 // Settings checks
 declare Check_GhostBlocks <=> (Page.GetFirstChild("Check_GhostBlocks") as CMlQuad);
+declare Check_AirMapping <=> (Page.GetFirstChild("Check_AirMapping") as CMlQuad);
+declare Check_NewSkinSelection <=> (Page.GetFirstChild("Check_NewSkinSelection") as CMlQuad);
+declare Check_EnableLatestBlocks <=> (Page.GetFirstChild("Check_EnableLatestBlocks") as CMlQuad);
 declare Check_AutoUnderground <=> (Page.GetFirstChild("Check_AutoUnderground") as CMlQuad);
 declare Check_RemindPodiums <=> (Page.GetFirstChild("Check_RemindPodiums") as CMlQuad);
 declare Check_AutoSave <=> (Page.GetFirstChild("Check_AutoSave") as CMlQuad);
-
-// ---------------------------------- //
-// Help tooltip
-declare Label_MouseHoverTooltip <=> (Page.GetFirstChild("Label_MouseHoverTooltip") as CMlLabel);
 
 // ---------------------------------- //
 // Missing podium reminder
@@ -312,25 +474,30 @@ declare Frame_MissingPodium <=> (Page.GetFirstChild("Frame_MissingPodium") as CM
 // ---------------------------------- //
 // Persistent settings
 declare persistent Persistent_Essentials_EnableMixMapping for LocalUser = True;
+declare persistent Persistent_Essentials_EnableAirMapping for LocalUser = True;
 declare persistent Persistent_Essentials_AutoUnderground for LocalUser = True;
 declare persistent Persistent_Essentials_RemindPodiums for LocalUser = True;
-declare persistent Persistent_Essentials_EnableAutoSave for LocalUser = True;
+declare persistent Persistent_Essentials_EnableAutoSave for LocalUser = False;
+declare persistent Persistent_Essentials_NewSkinSelection for LocalUser = True;
+declare persistent Persistent_Essentials_EnableLatestBlocks for LocalUser = True;
 
 // ---------------------------------- //
 // Variables
 declare Integer MapPodiumsCount for Page;
-declare Real CameraRotation for Page;
-declare Int3 CursorPosition for Page;
 declare FrameVisible = False;
 
 /// Update
 declare PrevFrameVisible = False;
 declare PrevMouseMiddleButton = False;
-declare Int3 PrevCursorPosition;
+declare PrevCursorPosition = Int3;
+declare PrevCameraRotation = Real;
 
 // ---------------------------------- //
 // Init checks state
 Check_GhostBlocks.StyleSelected = Persistent_Essentials_EnableMixMapping;
+Check_AirMapping.StyleSelected = Persistent_Essentials_EnableAirMapping;
+Check_NewSkinSelection.StyleSelected = Persistent_Essentials_NewSkinSelection;
+Check_EnableLatestBlocks.StyleSelected = Persistent_Essentials_EnableLatestBlocks;
 Check_AutoUnderground.StyleSelected = Persistent_Essentials_AutoUnderground;
 Check_RemindPodiums.StyleSelected = Persistent_Essentials_RemindPodiums;
 Check_AutoSave.StyleSelected = Persistent_Essentials_EnableAutoSave;
@@ -348,66 +515,95 @@ foreach (Event in PendingEvents) {
 	// On mouse click
 	if (Event.Type == CMlEvent::Type::MouseClick) {
 		switch (Event.ControlId) {
-			// ---------------------------------- //
-			// Enable Ghost Blocks and Air Mapping
+			// Enable Ghost Blocks
 			case "Quad_GhostBlocks" : {
 				Persistent_Essentials_EnableMixMapping = !Persistent_Essentials_EnableMixMapping;
 				Check_GhostBlocks.StyleSelected = Persistent_Essentials_EnableMixMapping;
 			}
-			// ---------------------------------- //
+
+			// Enable Air Mapping
+			case "Quad_AirMapping" : {
+				Persistent_Essentials_EnableAirMapping = !Persistent_Essentials_EnableAirMapping;
+				Check_AirMapping.StyleSelected = Persistent_Essentials_EnableAirMapping;
+			}
+
+			// Enable improved skin selection window
+			case "Quad_NewSkinSelection" : {
+				Persistent_Essentials_NewSkinSelection = !Persistent_Essentials_NewSkinSelection;
+				Check_NewSkinSelection.StyleSelected = Persistent_Essentials_NewSkinSelection;
+			}
+
+			// Enable latest blocks list
+			case "Quad_EnableLatestBlocks" : {
+				Persistent_Essentials_EnableLatestBlocks = !Persistent_Essentials_EnableLatestBlocks;
+				Check_EnableLatestBlocks.StyleSelected = Persistent_Essentials_EnableLatestBlocks;
+			}
+
 			// Enable automatic underground mode
 			case "Quad_AutoUnderground" : {
 				Persistent_Essentials_AutoUnderground = !Persistent_Essentials_AutoUnderground;
 				Check_AutoUnderground.StyleSelected = Persistent_Essentials_AutoUnderground;
 			}
-			// ---------------------------------- //
+
 			// Enable podium placement reminder
 			case "Quad_RemindPodiums" : {
 				Persistent_Essentials_RemindPodiums = !Persistent_Essentials_RemindPodiums;
 				Check_RemindPodiums.StyleSelected = Persistent_Essentials_RemindPodiums;
 			}
-			// ---------------------------------- //
+
 			// Enable auto save
 			case "Quad_EnableAutoSave" : {
 				Persistent_Essentials_EnableAutoSave = !Persistent_Essentials_EnableAutoSave;
 				Check_AutoSave.StyleSelected = Persistent_Essentials_EnableAutoSave;
 			}
-			// ---------------------------------- //
+
 			// Place HD terrain
 			case "Quad_PlaceHDTerrain" : SendCustomEvent("PlaceHDTerrain", Text[]);
+			
+			// Compute very fast shadows
+			case "Quad_ComputeShadows" : SendCustomEvent("ComputeShadows", Text[]);
 		}
 	}
+
 	// ---------------------------------- //
 	// On mouse out
 	else if (Event.Type == CMlEvent::Type::MouseOut) {
 		FrameVisible = False;
-		Label_MouseHoverTooltip.Hide();
 	}
+
 	// ---------------------------------- //
 	// On mouse over
 	else if (Event.Type == CMlEvent::Type::MouseOver) {
 		if (Event.ControlId != "Quad_MissingPodium") FrameVisible = True;
-		Label_MouseHoverTooltip.Value = Event.Control.DataAttributeGet("tooltip");
-		Label_MouseHoverTooltip.Show();
 	}
 }
 
 // ---------------------------------- //
 // Trigger event on mouse wheel press
-if (PrevMouseMiddleButton != MouseMiddleButton) {
-	PrevMouseMiddleButton = MouseMiddleButton;
-	if (MouseMiddleButton && Persistent_Essentials_EnableMixMapping) SendCustomEvent("SwitchGhostBlocks", Text[]);
+if (PrevMouseMiddleButton != Input.MouseMiddleButton) {
+	PrevMouseMiddleButton = Input.MouseMiddleButton;
+
+	if (Input.MouseMiddleButton && Persistent_Essentials_EnableMixMapping) {
+		SendCustomEvent("SwitchGhostBlocks", Text[]);
+	}
 }
 
 // ---------------------------------- //
-// Set cursor position and direction rose
-if (PrevCursorPosition != CursorPosition) {
-	PrevCursorPosition = CursorPosition;
-	for (I, 0, 2) Label_CursorCoords[I].Value = TL::ToText(CursorPosition[I]);
+// Update cursor position
+if (PrevCursorPosition != Editor.CursorCoord) {
+	PrevCursorPosition = Editor.CursorCoord;
+
+	for (I, 0, 2) Label_CursorCoords[I].Value = TL::ToText(Editor.CursorCoord[I]);
 }
-Frame_DirectionArrow.RelativeRotation = RadToDeg(CameraRotation) - 90;
 
 // ---------------------------------- //
+// Update compass
+if (PrevCameraRotation != Editor.CameraHAngle) {
+	PrevCameraRotation = Editor.CameraHAngle;
+
+	Frame_DirectionArrow.RelativeRotation = RadToDeg(Editor.CameraHAngle) - 90;
+}
+
 // Set podium reminder visibility
 Frame_MissingPodium.Visible = Persistent_Essentials_RemindPodiums && MapPodiumsCount != 1;
 
@@ -416,27 +612,23 @@ Frame_MissingPodium.Visible = Persistent_Essentials_RemindPodiums && MapPodiumsC
 if (PrevFrameVisible != FrameVisible) {
 	PrevFrameVisible = FrameVisible;
 	
-	LibManialink_AnimStop(Frame_AditionalIcons);
-	LibManialink_AnimStop(Quad_WindowBackground);
-	LibManialink_AnimStop(Quad_WindowBgBlur);
-	LibManialink_AnimStop(Quad_WindowBgShadow);
-	
-	declare PositionX = 0.;
-	declare Easing = "EaseInSine";
+	declare PositionX = -4.;
+	declare Easing = CAnimManager::EAnimManagerEasing::SineIn;
 	declare SizeX = 30.;
 	declare Rotation = 0.;
 	
 	if (FrameVisible) {
-		PositionX -= 42.;
-		Easing = "EaseOutSine";
-		SizeX += 42.;
+		PositionX -= 74.;
+		Easing = CAnimManager::EAnimManagerEasing::SineOut;
+		SizeX += 74.;
 		Rotation = 180.;
 	}
 	
-	LibManialink_Anim(Frame_AditionalIcons, "<frame posn="^PositionX^"/>", 250, Easing);
-	LibManialink_Anim(Quad_WindowBackground, "<quad sizen='"^SizeX^" 8'/>", 250, Easing);
-	LibManialink_Anim(Quad_WindowBgBlur, "<quad sizen='"^SizeX^" 8'/>", 250, Easing);
-	LibManialink_Anim(Quad_WindowBgShadow, "<quad sizen='"^SizeX * 2 + 10^" 26'/>", 250, Easing);
+	AnimMgr.Add(Frame_AditionalIcons, "<frame pos='"^PositionX^" 0' />", 250, Easing);
+	AnimMgr.Add(Quad_WindowBackground, "<quad size='"^SizeX^" 8' />", 250, Easing);
+	AnimMgr.Add(Quad_WindowBgBlur, "<quad size='"^SizeX^" 8' />", 250, Easing);
+	AnimMgr.Add(Quad_WindowBgShadow, "<quad size='"^SizeX * 2 + 10^" 26' />", 250, Easing);
+	
 	Quad_IconCog.RelativeRotation = Rotation;
 }
 ***
@@ -454,8 +646,6 @@ if (PrevFrameVisible != FrameVisible) {
  */
 Real RadToDeg(Real _Rad) { return _Rad / ML::PI() * 180; }
 
-{{{Manialink::Animations(["EaseOutSine", "EaseInSine"])}}}
-
 // ---------------------------------- //
 // Main
 // ---------------------------------- //
@@ -463,12 +653,565 @@ main() {
 	+++Main+++
 	while (True) {
 		+++Yield+++
-		LibManialink_AnimLoop();
 		yield;
 	}
 }
 --></script>
 </manialink>""";
+}
+
+// ---------------------------------- //
+/** Create manialink for the skin selection window.
+ *
+ *	@return		The skin selection manialink.
+ */
+Text CreateLayerSkinSelection() {
+	declare Text FolderContentCards;
+	declare Layout = <6, 4, 0>;
+	
+	for (I, 0, Layout.X * Layout.Y - 1) {
+		declare X = I % Layout.X * 16.;
+		declare Y = I / Layout.X * -16.;
+		
+		FolderContentCards ^= "<frameinstance pos='"^X^" "^Y^"' modelid='FrameModel_FolderContentCard' id='Frame_FolderContentCard#"^I^"' hidden='1' />";
+	}
+
+	return """
+<manialink version="3" name="CustomSkinSelection">
+<stylesheet>
+	<style class="center" pos="8 -8" halign="center" valign="center" />
+	<style id="Label_ContentDirName" pos="8 -6" halign="center" valign="center2" size="14" textsize="1" textcolor="000" />
+</stylesheet>
+
+<frame id="Frame_SkinSelectionWindow" pos="-52 70" hidden="1">
+	<quad pos="-3.25 4.75" size="110.5 8" style="Bgs1InRace" substyle="BgGlow2" />
+	<label pos="52 -6" halign="center" valign="center2" style="TextTitle3" text="Choose skin" translate="1" />
+	<quad size="104 12" style="Bgs1InRace" substyle="BgTitle" />
+	
+	<frame pos="4 -16">
+		<label pos="7 -3" size="88" valign="center2" textsize="2" id="Label_CurDirectoryPath" />
+		<quad size="6 6" style="Icons64x64_1" substyle="ToolUp" id="Quad_DirectoryUp" ScriptEvents="1" />
+		<quad size="96 6" style="BgsPlayerCard" substyle="BgPlayerName" />
+	</frame>
+	
+	<frame id="Frame_FolderContents" pos="4 -26">
+		<framemodel id="FrameModel_FolderContentCard">
+			<quad class="center" pos="8 -6" size="14 14" style="UIConstruction_Buttons" substyle="CopyPaste" id="Quad_ContentCardZip" hidden="1" />
+			<quad class="center" pos="8 -6" size="14 14" style="UIConstruction_Buttons" substyle="Paint" id="Quad_ContentCardJpeg" hidden="1" />
+			<label id="Label_ContentDirName" hidden="1" />
+			<quad class="center" size="14 14" keepratio="Fit" id="Quad_ContentCardPreview" hidden="1" />
+			<quad class="center" size="16 16" style="UIConstruction_Buttons" substyle="Item" id="Quad_ContentCardButon" ScriptEvents="1" />
+		</framemodel>
+		{{{FolderContentCards}}}
+	</frame>
+
+	<frame pos="52 -95">
+		<label halign="center" valign="center" textsize="2" textcolor="FFF" id="Label_CurDirectoryPage" />
+		<quad halign="center" valign="center" size="8 8" style="Icons64x64_1" substyle="ArrowPrev" id="Quad_ButtonPagePrev" hidden="1" ScriptEvents="1" pos="-13" />
+		<quad halign="center" valign="center" size="8 8" style="Icons64x64_1" substyle="ArrowNext" id="Quad_ButtonPageNext" hidden="1" ScriptEvents="1" pos="13" />
+		<quad halign="center" valign="center" size="8 8" style="Icons64x64_1" substyle="ArrowDisabled" pos="-13" />
+		<quad halign="center" valign="center" size="8 8" style="Icons64x64_1" substyle="ArrowDisabled" pos="13" />
+		<quad halign="center" valign="center" size="18 6" style="Bgs1InRace" substyle="BgPager" />
+	</frame>
+
+	<entry pos="52 -107" size="94 6" halign="center" valign="center2" textsize="3" id="Entry_SelectedBlockSkin" />
+	
+	<frame pos="52 -118">
+		<label halign="center" valign="center2" style="CardButtonSmall" text="Default" translate="1" id="Label_RestoreDefault" ScriptEvents="1" />
+		<label pos="-20 -14" halign="center" valign="center2" style="CardButtonMedium" text="OK" translate="1" id="Label_Confirm" ScriptEvents="1" />
+		<label pos="20 -14" halign="center" valign="center2" style="CardButtonMedium" text="Cancel" translate="1" id="Label_Cancel" ScriptEvents="1" />
+	</frame>
+	
+	<quad size="104 140" style="Bgs1InRace" substyle="BgWindow2" ScriptEvents="1" />
+	<quad pos="0 -140" size="104 2" style="Bgs1InRace" substyle="BgMetalBar" />
+</frame>
+
+<script><!--
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// UI elements
+declare Frame_SkinSelectionWindow <=> (Page.GetFirstChild("Frame_SkinSelectionWindow") as CMlFrame);
+declare Label_CurDirectoryPath <=> (Page.GetFirstChild("Label_CurDirectoryPath") as CMlLabel);
+declare Entry_SelectedBlockSkin <=> (Page.GetFirstChild("Entry_SelectedBlockSkin") as CMlEntry);
+declare Label_CurDirectoryPage <=> (Page.GetFirstChild("Label_CurDirectoryPage") as CMlLabel);
+declare Quad_ButtonPagePrev <=> (Page.GetFirstChild("Quad_ButtonPagePrev") as CMlQuad);
+declare Quad_ButtonPageNext <=> (Page.GetFirstChild("Quad_ButtonPageNext") as CMlQuad);
+
+declare CMlFrame[] Frame_FolderContentCards;
+for (I, 0, {{{Layout.X * Layout.Y - 1}}}) Frame_FolderContentCards.add((Page.GetFirstChild("Frame_FolderContentCard#"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Variables
+declare Boolean ShowSkinSelection for Page;
+declare Text[] AvailableBlockSkins for Page;
+declare Text[] SelectedBlockSkins for Page;
+declare Text SelectedBlockSkin for Page;
+
+declare UpdateSkinSelector = True;
+declare CurDirectoryPath = "";
+declare CurDirectoryPage = 0;
+declare CurDirectoryNbPages = 1;
+
+// Update
+declare PrevSelectedBlockSkin = "";
+declare PrevShowSkinSelection = ShowSkinSelection;
+declare PrevEntryValue = Entry_SelectedBlockSkin.Value;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Page visibility change
+if (PrevShowSkinSelection != ShowSkinSelection) {
+	PrevShowSkinSelection = ShowSkinSelection;
+
+	EnableMenuNavigation(ShowSkinSelection, False, Null, 0);
+	Frame_SkinSelectionWindow.Visible = ShowSkinSelection;
+
+	if (ShowSkinSelection) {
+		UpdateSkinSelector = True;
+		PrevSelectedBlockSkin = SelectedBlockSkin;
+		CurDirectoryPage = 0;
+		Audio.PlaySoundEvent(CAudioManager::ELibSound::ShowDialog, 0, 0.);
+
+		// ---------------------------------- //
+		// Navigate to selected skin directory
+		if (SelectedBlockSkin != "") {
+			declare Explode = TL::Split("\\", SelectedBlockSkin);
+
+			CurDirectoryPath = "";
+
+			foreach (Directory in Explode) {
+				if (TL::Find(".", Directory, False, False)) break;
+				CurDirectoryPath ^= Directory ^ "\\";
+			}
+		}
+
+		// ---------------------------------- //
+		// Navigate to block skins directory
+		else {
+			CurDirectoryPath = "";
+			declare CurDirStep = 0;
+
+			while (True) {
+				declare Break = False;
+				declare IterationDir = "";
+
+				foreach (SkinPath in SelectedBlockSkins) {
+					declare Explode = TL::Split("\\", SkinPath);
+
+					if (!Explode.existskey(CurDirStep)) {
+						Break = True;
+						break;
+					}
+
+					declare Directory = Explode[CurDirStep];
+
+					if (IterationDir == "") IterationDir = Directory;
+
+					if (Directory != IterationDir || TL::Find(".", Directory, False, False)) {
+						Break = True;
+						break;
+					}
+				}
+
+				if (!Break) {
+					CurDirStep += 1;
+					CurDirectoryPath ^= IterationDir ^ "\\";
+				}
+
+				else break;
+			}
+
+			// Default directory
+			if (CurDirectoryPath == "") CurDirectoryPath = "Skins\\";
+		}
+	}
+
+	else {
+		Audio.PlaySoundEvent(CAudioManager::ELibSound::HideDialog, 0, 0.);
+	}
+}
+
+// Continue if the page is hidden
+if (!ShowSkinSelection) continue;
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// Go a directory up
+		if (Event.ControlId == "Quad_DirectoryUp") {
+			declare Explode = TL::Split("\\", CurDirectoryPath);
+			declare NbLevels = ML::Max(Explode.count - 1, 1);
+
+			CurDirectoryPath = "";
+			CurDirectoryPage = 0;
+
+			foreach (I => Directory in Explode) {
+				if (I >= NbLevels) break;
+				CurDirectoryPath ^= Directory ^ "\\";
+			}
+
+			UpdateSkinSelector = True;
+		}
+
+		// ---------------------------------- //
+		// Select an item from the list
+		else if (Event.ControlId == "Quad_ContentCardButon") {
+			declare Text ButtonItemName for Event.Control;
+			declare IsDirectory = TL::Find("\\", ButtonItemName, False, False);
+
+			// Navigate to a directory
+			if (IsDirectory) CurDirectoryPath ^= ButtonItemName;
+			
+			// Apply a skin to the block
+			else {
+				SelectedBlockSkin = CurDirectoryPath ^ ButtonItemName;
+				SendCustomEvent("SetBlockSkin", [SelectedBlockSkin]);
+			}
+
+			UpdateSkinSelector = True;
+		}
+
+		// ---------------------------------- //
+		// Previous list page
+		else if (Event.ControlId == "Quad_ButtonPagePrev") {
+			if (CurDirectoryPage <= 0) continue;
+			CurDirectoryPage -= 1;
+			UpdateSkinSelector = True;
+		}
+
+		// ---------------------------------- //
+		// Next list page
+		else if (Event.ControlId == "Quad_ButtonPageNext") {
+			if (CurDirectoryPage >= CurDirectoryNbPages - 1) continue;
+			CurDirectoryPage += 1;
+			UpdateSkinSelector = True;
+		}
+
+		// ---------------------------------- //
+		// Restore default skin
+		else if (Event.ControlId == "Label_RestoreDefault") {
+			SelectedBlockSkin = "";
+			SendCustomEvent("SetBlockSkin", [SelectedBlockSkin]);
+			UpdateSkinSelector = True;
+		}
+
+		// ---------------------------------- //
+		// Confirm selection
+		else if (Event.ControlId == "Label_Confirm") {
+			SelectedBlockSkin = "";
+			SendCustomEvent("CloseSkinDrawer", Text[]);
+		}
+
+		// ---------------------------------- //
+		// Cancel changes
+		else if (Event.ControlId == "Label_Cancel") {
+			SelectedBlockSkin = PrevSelectedBlockSkin;
+			SendCustomEvent("SetBlockSkin", [SelectedBlockSkin]);
+			SendCustomEvent("CloseSkinDrawer", Text[]);
+		}
+	}
+}
+
+// ---------------------------------- //
+// Update skin selector window
+if (UpdateSkinSelector) {
+	UpdateSkinSelector = False;
+
+	declare DirPathLength = TL::Length(CurDirectoryPath);
+
+	Label_CurDirectoryPath.Value = TL::Replace(CurDirectoryPath, "Skins\\", "$<$2BESkins\\$>");
+	Entry_SelectedBlockSkin.Value = SelectedBlockSkin;
+
+	// ---------------------------------- //
+	// List folders and files in the current directory
+	declare Text[] CurDirectoryFiles;
+	declare Text[] CurDirectoryFolders;
+
+	foreach (SkinPath in AvailableBlockSkins) {
+		if (TL::SubString(SkinPath, 0, DirPathLength) != CurDirectoryPath) continue;
+
+		declare RelativePath = TL::SubString(SkinPath, DirPathLength, TL::Length(SkinPath) - DirPathLength);
+		declare IsDirectory = TL::Find("\\", RelativePath, False, False);
+
+		if (IsDirectory) {
+			RelativePath = TL::Split("\\", RelativePath)[0] ^ "\\";
+
+			if (!CurDirectoryFolders.exists(RelativePath)) {
+				CurDirectoryFolders.add(RelativePath);
+			}
+		}
+
+		else if (!CurDirectoryFiles.exists(RelativePath)) {
+			CurDirectoryFiles.add(RelativePath);
+		}
+	}
+
+	// ---------------------------------- //
+	// Render the list items
+	declare Text[] CurDirectoryItems;
+	foreach (Folder in CurDirectoryFolders) CurDirectoryItems.add(Folder);
+	foreach (File in CurDirectoryFiles) CurDirectoryItems.add(File);
+
+	CurDirectoryNbPages = (CurDirectoryItems.count - 1) / Frame_FolderContentCards.count + 1;
+
+	// Page switch
+	Label_CurDirectoryPage.Value = (CurDirectoryPage + 1)^" / "^CurDirectoryNbPages;
+	Quad_ButtonPagePrev.Visible = CurDirectoryPage > 0;
+	Quad_ButtonPageNext.Visible = CurDirectoryPage < CurDirectoryNbPages - 1;
+
+	foreach (I => Frame in Frame_FolderContentCards) {
+		declare ItemOrder = I + CurDirectoryPage * Frame_FolderContentCards.count;
+		Frame.Visible = CurDirectoryItems.existskey(ItemOrder);
+		if (!Frame.Visible) continue;
+
+		// Item data
+		declare Item = CurDirectoryItems[ItemOrder];
+		declare IsDirectory = TL::Find("\\", Item, False, False);
+		declare IsZip = TL::Find(".zip", Item, False, False);
+		declare IsJpeg = False; // TL::Find(".jpg", Item, False, False) || TL::Find(".jpeg", Item, False, False);
+		declare ItemPath = CurDirectoryPath ^ Item;
+
+		// ---------------------------------- //
+		// Configure item frame
+		declare Quad_ContentCardButon <=> (Frame.GetFirstChild("Quad_ContentCardButon") as CMlQuad);
+		declare Quad_ContentCardPreview <=> (Frame.GetFirstChild("Quad_ContentCardPreview") as CMlQuad);
+		declare Label_ContentDirName <=> (Frame.GetFirstChild("Label_ContentDirName") as CMlLabel);
+		declare Quad_ContentCardZip <=> (Frame.GetFirstChild("Quad_ContentCardZip") as CMlQuad);
+		declare Quad_ContentCardJpeg <=> (Frame.GetFirstChild("Quad_ContentCardJpeg") as CMlQuad);
+
+		Quad_ContentCardPreview.Visible = !IsDirectory && (!IsZip && !IsJpeg);
+		Label_ContentDirName.Visible = IsDirectory || IsZip || IsJpeg;
+		Label_ContentDirName.Value = TL::Replace(Item, "\\", "");
+		Quad_ContentCardButon.StyleSelected = ItemPath == SelectedBlockSkin;
+		Quad_ContentCardZip.Visible = IsZip;
+		Quad_ContentCardJpeg.Visible = IsJpeg;
+
+		if (IsDirectory) {
+			Quad_ContentCardButon.Substyle = "Directory";
+			Label_ContentDirName.RelativePosition_V3.Y = -6.;
+		}
+		
+		else {
+			Quad_ContentCardButon.Substyle = "Item";
+			Quad_ContentCardPreview.ImageUrl = "file://" ^ TL::Replace(ItemPath, "\\", "/");
+			Label_ContentDirName.RelativePosition_V3.Y = -13.;
+		}
+
+		declare Text ButtonItemName for Quad_ContentCardButon;
+		ButtonItemName = Item;
+	}
+}
+
+// ---------------------------------- //
+// On entry value update
+if (PrevEntryValue != Entry_SelectedBlockSkin.Value) {
+	PrevEntryValue = Entry_SelectedBlockSkin.Value;
+
+	SelectedBlockSkin = Entry_SelectedBlockSkin.Value;
+	SendCustomEvent("SetBlockSkin", [SelectedBlockSkin]);
+	UpdateSkinSelector = True;
+}
+***
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Create manialink for the latest blocks plugin.
+ *
+ *	@return		The latest blocks manialink.
+ */
+Text CreateLayerLatestBlocks() {
+	declare LatestBlocksCards = "";
+	for (I, 0, C_NbBlocksListed - 1)
+		LatestBlocksCards ^= "<frameinstance modelid='FrameModel_PrevBlockCard' id='Frame_PrevBlockCard#"^I^"' pos='"^I * 16^" 0' hidden='1' />";
+	
+	return """
+<manialink version="3" name="Essentials:LatestBlocks">
+<frame id="Frame_LatestBlocksList" posn="0 88" hidden="1">
+	<framemodel id="FrameModel_PrevBlockCard">
+		<label posn="8 -13" size="14" halign="center" valign="center2" style="TextEditorArticle" id="Label_WaypointType" />
+		<quad posn="8 -8" size="12 12" halign="center" valign="center" id="Quad_BlockIcon" />
+		<quad size="16 16" style="UIConstruction_Buttons" substyle="Item" id="Quad_BlockButtonCard" ScriptEvents="1" />
+	</framemodel>
+	{{{LatestBlocksCards}}}
+</frame>
+
+<script><!--
+/**
+ *	Essentials:LatestBlocks
+ */
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// UI elements
+declare Frame_LatestBlocksList <=> (Page.GetFirstChild("Frame_LatestBlocksList") as CMlFrame);
+
+declare CMlFrame[] Frame_PrevBlockCards;
+for (I, 0, {{{C_NbBlocksListed - 1}}}) Frame_PrevBlockCards.add((Page.GetFirstChild("Frame_PrevBlockCard#"^I) as CMlFrame));
+
+// ---------------------------------- //
+// Variables
+declare Ident[] LatestBlockModels;
+
+declare UpdateBlocksCards = True;
+declare UpdateCurrentBlock = True;
+
+declare PrevPlaceMode = Editor.PlaceMode;
+declare PrevCursorBlockModelId = NullId;
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// Mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		// ---------------------------------- //
+		// Select a block
+		if (Event.ControlId == "Quad_BlockButtonCard") {
+			declare Ident CurBlockModelId for Event.Control;
+			if (!Editor.BlockModels.existskey(CurBlockModelId)) continue;
+			Editor.CursorBlockModel = Editor.BlockModels[CurBlockModelId];
+		}
+	}
+}
+
+// ---------------------------------- //
+// Place mode change
+if (PrevPlaceMode != Editor.PlaceMode) {
+	PrevPlaceMode = Editor.PlaceMode;
+
+	Frame_LatestBlocksList.Visible = Editor.PlaceMode == CEditorPlugin::PlaceMode::Block || Editor.PlaceMode == CEditorPlugin::PlaceMode::GhostBlock;
+}
+
+// ---------------------------------- //
+// Cursor block model change
+if (Editor.EditMode != CEditorPlugin::EditMode::Pick) {
+	if (Editor.CursorBlockModel == Null) {
+		if (PrevCursorBlockModelId != NullId) {
+			PrevCursorBlockModelId = NullId;
+			UpdateCurrentBlock = True;
+		}
+	}
+	else if (PrevCursorBlockModelId != Editor.CursorBlockModel.Id) {
+		PrevCursorBlockModelId = Editor.CursorBlockModel.Id;
+		
+		if (!LatestBlockModels.exists(PrevCursorBlockModelId)) LatestBlockModels.add(PrevCursorBlockModelId);
+		while (LatestBlockModels.count > Frame_PrevBlockCards.count) {
+			declare Removed = LatestBlockModels.removekey(0);
+		}
+		
+		UpdateBlocksCards = True;
+		UpdateCurrentBlock = True;
+	}
+}
+
+// ---------------------------------- //
+// Update blocks cards
+if (UpdateBlocksCards) {
+	UpdateBlocksCards = False;
+	
+	Frame_LatestBlocksList.RelativePosition_V3.X = (LatestBlockModels.count - 1) * -8. - 8.;
+	
+	foreach (I => Frame in Frame_PrevBlockCards) {
+		Frame.Visible = I < LatestBlockModels.count;
+		if (!Frame.Visible) continue;
+
+		declare CurBlockModel <=> Editor.BlockModels[LatestBlockModels[I]];
+		
+		// ---------------------------------- //
+		// Configure card
+		declare Quad_BlockIcon <=> (Frame.GetFirstChild("Quad_BlockIcon") as CMlQuad);
+		declare Label_WaypointType <=> (Frame.GetFirstChild("Label_WaypointType") as CMlLabel);
+		declare Quad_BlockButtonCard <=> (Frame.GetFirstChild("Quad_BlockButtonCard") as CMlQuad);
+		
+		declare Ident CurBlockModelId as CurBlockModelId_Frame for Frame;
+		declare Ident CurBlockModelId as CurBlockModelId_Quad for Quad_BlockButtonCard;
+
+		CurBlockModelId_Frame = CurBlockModel.Id;
+		CurBlockModelId_Quad = CurBlockModelId_Frame;
+
+		Quad_BlockIcon.Image = CurBlockModel.Icon;
+
+		switch (CurBlockModel.WaypointType) {
+			case CBlockModel::EWayPointType::Start : Label_WaypointType.Value = _("|BlockInfo|Start");
+			case CBlockModel::EWayPointType::Finish : Label_WaypointType.Value = _("|BlockInfo|Finish");
+			case CBlockModel::EWayPointType::Checkpoint : Label_WaypointType.Value = _("|BlockInfo|Checkpoint");
+			case CBlockModel::EWayPointType::StartFinish : Label_WaypointType.Value = _("|BlockInfo|Start/Finish");
+			case CBlockModel::EWayPointType::Dispenser : Label_WaypointType.Value = _("|BlockInfo|Dispenser");
+			default : {
+				if (CurBlockModel.IsRoad) Label_WaypointType.Value = _("|BlockInfo|Road");
+				else if (TL::Find("Turbo", CurBlockModel.Name, False, False)) Label_WaypointType.Value = _("|BlockInfo|Turbo");
+				else Label_WaypointType.Value = "";
+			}
+		}
+	}
+}
+
+// ---------------------------------- //
+// Highlight currently selected block
+if (UpdateCurrentBlock) {
+	UpdateCurrentBlock = False;
+	
+	foreach (I => Frame in Frame_PrevBlockCards) {
+		if (!Frame.Visible) continue;
+		
+		declare Ident CurBlockModelId for Frame;
+		declare Quad_BlockButtonCard <=> (Frame.GetFirstChild("Quad_BlockButtonCard") as CMlQuad);
+		Quad_BlockButtonCard.StyleSelected = Editor.CursorBlockModel != Null && Editor.CursorBlockModel.Id == CurBlockModelId;
+	}
+}
+***
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+--></script>
+</manialink>
+	""";
 }
 
 // ---------------------------------- //

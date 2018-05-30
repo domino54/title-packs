@@ -1,0 +1,239 @@
+// -------------------------------------- //
+//  LIBRARY OPENPLANET by Dommy           //
+//  script version: 2018-05-30            //
+// -------------------------------------- //
+
+/**
+ *	A simple framework library automating the process
+ *	of detecting Openplanet in game modes and game mode
+ *	manialinks.
+ *
+ *	Learn more about Openplanet platform by Miss here:
+ *	https://openplanet.nl/
+ */
+
+#Const Version		"2018-05-30"
+#Const ScriptName	"Libs/domino54/Openplanet.Script.txt"
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare CUILayer G_LibOpenplanet_TransportLayer;	///< Layer used to send user Openplanet status to the server.
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the Openplanet library.
+ *
+ *	@return		Openplanet lib manialink.
+ */
+Text Private_CreateManialinkOpenplanet() {
+	return """
+<manialink version="3" name="LibOpenplanet:Transport">
+<script><!--
+
+{{{IntoManialink}}}
+
+main() {
+	declare netwrite Boolean Net_LibOpenplanet_HasOpenplanet for UI;
+	Net_LibOpenplanet_HasOpenplanet = HasOpenplanet();
+}
+
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	if (G_LibOpenplanet_TransportLayer != Null) {
+		UIManager.UILayerDestroy(G_LibOpenplanet_TransportLayer);
+		G_LibOpenplanet_TransportLayer = Null;
+	}
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+
+	G_LibOpenplanet_TransportLayer = UIManager.UILayerCreate();
+	G_LibOpenplanet_TransportLayer.ManialinkPage = Private_CreateManialinkOpenplanet();
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	if (G_LibOpenplanet_TransportLayer == Null) return;
+
+	// Players Openplanet status
+	foreach (Player in AllPlayers) {
+		declare netwrite Boolean Net_LibOpenplanet_HasOpenplanet_Server for Player;
+		Net_LibOpenplanet_HasOpenplanet_Server = HasOpenplanet(Player);
+	}
+}
+
+// ---------------------------------- //
+/** Get a player by their login.
+ *
+ *	@param	_Login	Login of the player to find.
+ *
+ *	@return		Matching player.
+ */
+CPlayer GetPlayer(Text _Login) {
+	if (_Login == "") return Null;
+
+	foreach (Player in Players) {
+		if (Player.Login == _Login) return Player;
+	}
+
+	return Null;
+}
+
+// ---------------------------------- //
+/** Check if user has Openplanet installed.
+ *
+ *	@param	_UI		The UI to check.
+ *
+ * 	@return		True, if the user has Openplanet installed.
+ */
+Boolean HasOpenplanet(CUIConfig _UI) {
+	if (_UI == Null) return False;
+	declare netread Boolean Net_LibOpenplanet_HasOpenplanet for _UI;
+	return Net_LibOpenplanet_HasOpenplanet;
+}
+
+// ---------------------------------- //
+/** Check if user has Openplanet installed.
+ *
+ *	@param	_Player		The player to check.
+ *
+ * 	@return		True, if the user has Openplanet installed.
+ */
+Boolean HasOpenplanet(CPlayer _Player) {
+	if (_Player == Null) return False;
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return False;
+
+	return HasOpenplanet(UI);
+}
+
+// ---------------------------------- //
+/** Check if user has Openplanet installed.
+ *
+ *	@param	_User	The user to check.
+ *
+ * 	@return		True, if the user has Openplanet installed.
+ */
+Boolean HasOpenplanet(CUser _User) {
+	if (_User == Null) return False;
+
+	declare UI <=> UIManager.GetUI(_User);
+	if (UI == Null) return False;
+
+	return HasOpenplanet(UI);
+}
+
+// ---------------------------------- //
+/** Check if user has Openplanet installed.
+ *
+ *	@param	_Score	The score to check.
+ *
+ * 	@return		True, if the user has Openplanet installed.
+ */
+Boolean HasOpenplanet(CScore _Score) {
+	if (_Score == Null || _Score.User == Null) return False;
+
+	return HasOpenplanet(_Score.User);
+}
+
+// ---------------------------------- //
+/** Check if user has Openplanet installed.
+ *
+ *	@param	_Login	The login to check.
+ *
+ * 	@return		True, if the user has Openplanet installed.
+ */
+Boolean HasOpenplanet(Text _Login) {
+	if (_Login == "") return False;
+
+	declare Player <=> GetPlayer(_Login);
+	if (Player == Null) return False;
+
+	return HasOpenplanet(Player);
+}
+
+// ---------------------------------- //
+/** Get the number of connected Openplanet users.
+ *
+ *	@return		Number of connected users with Openplanet installed.
+ */
+Integer NbOpenplanetUsers() {
+	declare NbOpenplanetUsers = 0;
+
+	foreach (Player in AllPlayers) {
+		if (HasOpenplanet(Player)) NbOpenplanetUsers += 1;
+	}
+
+	return NbOpenplanetUsers;
+}
+
+// ---------------------------------- //
+/** Insert Openplanet detection methods to a manialink.
+ *
+ *	@return		Text body of methods returning Openplanet presence status.
+ */
+Text IntoManialink() {
+	return """
+Boolean HasOpenplanet() {
+	return SystemSkuIdentifier == CMlScript::ESystemSkuIdentifier::EU;
+}
+
+Boolean HasOpenplanet(CPlayer _Player) {
+	if (_Player == Null) return False;
+
+	declare netread Boolean Net_LibOpenplanet_HasOpenplanet_Server for Player;
+	return Net_LibOpenplanet_HasOpenplanet_Server;
+}
+
+Integer NbOpenplanetUsers() {
+	declare NbOpenplanetUsers = 0;
+
+	foreach (Player in Players) {
+		if (HasOpenplanet(Player)) NbOpenplanetUsers += 1;
+	}
+
+	return NbOpenplanetUsers;
+}
+	""";
+}

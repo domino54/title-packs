@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY CHAT by domino54              //
-//  script version: 2018-03-29            //
+//  script version: 2018-05-31            //
 // -------------------------------------- //
 
 /**
@@ -9,7 +9,7 @@
  *	and allows to send longer messages.
  */
 
-#Const Version		"2018-03-29"
+#Const Version		"2018-05-31"
 #Const ScriptName	"Libs/domino54/Chat.Script.txt"
 
 #Include "MathLib" as ML
@@ -27,13 +27,17 @@
 // Constants
 // ---------------------------------- //
 #Const C_LibChat_InterfaceLayerId	"LibChat:Chat"
-#Const C_LibChat_MessageMaxLength	64		///< Max. characters in one message before it's split.
+#Const C_LibChat_MessageMaxLength	128		///< Max. characters in one message before it's split.
 #Const C_LibChat_MaxNbMessagesSmall	7		///< Max. messages shown at one in small chat.
 #Const C_LibChat_MaxNbMessagesLarge	32		///< Max. messages shown at one in large chat.
 #Const C_LibChat_MaxCachedCommands	10		///< Amount of cached chat commands.
 #Const C_LibChat_ChatTextSize		1.5		///< Size of the chat message text.
 #Const C_LibChat_ChatLineHeight		4.		///< Height of the chat line.
-#Const C_LibChat_EmojisSpacing		0.		///< Space between emoji and text.
+#Const C_LibChat_MessageMaxEmoji	10		///< SMax number of emoji in a message.
+#Const C_LibChat_EmojisSpacing		.125	///< Space between emoji and text.
+#Const C_LibChat_EmojiReferenceURL	"file://Media/Emoji/emojis.xml"
+#Const C_LibChat_EmojiPickerColumns	10		///< Emoji picker width.
+#Const C_LibChat_EmojiPickerLines	6		///< Emoji picker height.
 
 // Messages formatting
 #Const C_LibChat_ChatLineColor_Default	<1., 1., 1.>
@@ -97,16 +101,16 @@ Text Private_CreateManialinkChat() {
 		ChatMessagesLabels ^= "<frameinstance pos='0 "^I*C_LibChat_ChatLineHeight^"' modelid='FrameModel_ChatLine' id='Frame_ChatMessage#"^I^"' hidden='1' />";
 
 	declare ChatMessageLine = "";
-	for (I, 0, 4) {
+	for (I, 0, C_LibChat_MessageMaxEmoji) {
 		ChatMessageLine ^= "<label id='Label_LineLabel#"^I^"' class='Message' size='90' />";
 		ChatMessageLine ^= "<quad id='Quad_LineEmoji#"^I^"' class='Emoji' ScriptEvents='1' />";
 	}
 
 	declare PickerEmojis = "";
-	for (I, 0, 47) {
-		declare X = I % 8;
-		declare Y = I / 8;
-		PickerEmojis ^= "<quad pos='"^X * 6^" "^Y * -6^"' size='4.5 4.5' class='Picker' id='Quad_PickerMoji#"^I^"' ScriptEvents='1' />";
+	for (I, 0, C_LibChat_EmojiPickerColumns * C_LibChat_EmojiPickerLines - 1) {
+		declare X = I % C_LibChat_EmojiPickerColumns;
+		declare Y = I / C_LibChat_EmojiPickerColumns;
+		PickerEmojis ^= "<quad pos='"^X * 6^" "^Y * -6^"' size='4.5 4.5' halign='center' valign='center' class='Picker' id='Quad_PickerMoji#"^I^"' keepratio='Fit' ScriptEvents='1' />";
 	}
 
 	declare Font = TL::MLEncode(G_LibChat_InterfaceFont);
@@ -138,18 +142,18 @@ Text Private_CreateManialinkChat() {
 			<label pos="3 -3" halign="center" valign="center2" textsize="1" textcolor="FFF" rot="180" text="►" id="Label_EmojiPickerPrev" />
 			<quad size="6 6" bgcolorfocus="FFF" opacity=".125" id="Quad_EmojiPickerPrev" ScriptEvents="1" />
 		</frame>
-		<frame pos="46">
+		<frame pos="58">
 			<label pos="3 -3" halign="center" valign="center2" textsize="1" textcolor="FFF" text="►" id="Label_EmojiPickerNext" />
 			<quad size="6 6" bgcolorfocus="FFF" opacity=".125" id="Quad_EmojiPickerNext" ScriptEvents="1" />
 		</frame>
 
-		<label pos="26 -3" size="32" halign="center" valign="center2" textsize="1" textcolor="FFF" textfont="{{{Font}}}" id="Label_PickerEmojiName" />
-		<quad size="52 6" bgcolor="000" opacity=".5" />
+		<label pos="32 -3" size="32" halign="center" valign="center2" textsize="1" textcolor="FFF" textfont="{{{Font}}}" id="Label_PickerEmojiName" />
+		<quad size="64 6" bgcolor="000" opacity=".5" />
 
-		<frame pos="3 -8.5">{{{PickerEmojis}}}</frame>
+		<frame pos="5 -10.5">{{{PickerEmojis}}}</frame>
 
-		<quad size="52 45.5" bgcolor="000" opacity=".625" ScriptEvents="1" />
-		<quad size="52 45.5" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+		<quad size="64 45.5" bgcolor="000" opacity=".625" ScriptEvents="1" />
+		<quad size="64 45.5" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
 	</frame>
 
 	<frame pos="1 {{{C_LibChat_ChatLineHeight*2-1.5}}}" id="Frame_ChatMessagesBox">
@@ -184,75 +188,9 @@ Text Private_CreateManialinkChat() {
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 
-#Const C_DefaultEmoji [
-	// Codes
-	":100:" => "file://Media/Emoji/hundred.png",
-	":angry:" => "file://Media/Emoji/angry.png",
-	":blush:" => "file://Media/Emoji/blush.png",
-	":clap:" => "file://Media/Emoji/clap.png",
-	":cry:" => "file://Media/Emoji/cry.png",
-	":fire:" => "file://Media/Emoji/fire.png",
-	":fist:" => "file://Media/Emoji/fist.png",
-	":frowning:" => "file://Media/Emoji/frowning.png",
-	":heart:" => "file://Media/Emoji/heart.png",
-	":heart_eyes:" => "file://Media/Emoji/heart_eyes.png",
-	":hundred:" => "file://Media/Emoji/hundred.png",
-	":joy:" => "file://Media/Emoji/joy.png",
-	":kissing_heart:" => "file://Media/Emoji/kiss.png",
-	":laughing:" => "file://Media/Emoji/laughing.png",
-	":nerd:" => "file://Media/Emoji/nerd.png",
-	":neutral_face:" => "file://Media/Emoji/neutral.png",
-	":ok:" => "file://Media/Emoji/ok.png",
-	":open_mouth:" => "file://Media/Emoji/open_mouth.png",
-	":poop:" => "file://Media/Emoji/poop.png",
-	":punch:" => "file://Media/Emoji/punch.png",
-	":rage:" => "file://Media/Emoji/rage.png",
-	":rolling_eyes:" => "file://Media/Emoji/rolling_eyes.png",
-	":scream:" => "file://Media/Emoji/scream.png",
-	":shrug:" => "file://Media/Emoji/shrug.png",
-	":slight_smile:" => "file://Media/Emoji/slight_smile.png",
-	":smile:" => "file://Media/Emoji/smile.png",
-	":smiley:" => "file://Media/Emoji/smiley.png",
-	":smirk:" => "file://Media/Emoji/smirk.png",
-	":sob:" => "file://Media/Emoji/sob.png",
-	":stuck_out_tongue:" => "file://Media/Emoji/stuck_out_tongue.png",
-	":thinking:" => "file://Media/Emoji/thinking.png",
-	":thumbsdown:" => "file://Media/Emoji/thumbsdown.png",
-	":thumbsup:" => "file://Media/Emoji/thumbsup.png",
-	":v:" => "file://Media/Emoji/v.png",
-	":wave:" => "file://Media/Emoji/wave.png",
-	":wink:" => "file://Media/Emoji/wink.png",
-	// Extras
-	":dommy:" => "file://Media/Emoji/dommy.png",
-	":facepalm:" => "file://Media/Emoji/facepalm.png",
-	":feelsbadman:" => "file://Media/Emoji/feelsbadman.png",
-	":hang:" => "file://Media/Emoji/hang.png",
-	":kappa:" => "file://Media/Emoji/kappa.png",
-	":kreygasm:" => "file://Media/Emoji/kreygasm.png",
-	":lul:" => "file://Media/Emoji/lul.png",
-	":miss:" => "file://Media/Emoji/miss.png",
-	":pogchamp:" => "file://Media/Emoji/pogchamp.png",
-	":seemsgood:" => "file://Media/Emoji/seemsgood.png",
-	":tomkek:" => "file://Media/Emoji/tomkek.png",
-	// ManiaPlanet
-	":mp:" => "Icons128x32_1|ManiaPlanet",
-	":lp:" => "Icons128x128_1|LadderPoints",
-	":planets:" => "ManiaPlanetLogos|IconPlanetsSmall",
-	// Standard
-	":)" => "file://Media/Emoji/smiley.png",
-	";)" => "file://Media/Emoji/wink.png",
-	":(" => "file://Media/Emoji/frowning.png",
-	":D" => "file://Media/Emoji/smile.png",
-	":P" => "file://Media/Emoji/stuck_out_tongue.png",
-	":o" => "file://Media/Emoji/open_mouth.png",
-	":O" => "file://Media/Emoji/open_mouth.png",
-	":|" => "file://Media/Emoji/neutral.png",
-	"xD" => "file://Media/Emoji/laughing.png",
-	"XD" => "file://Media/Emoji/laughing.png",
-	"<3" => "file://Media/Emoji/heart.png"
-]
-
-declare Text[Text] G_AvailableEmoji;
+declare Text[Text] G_LibChat_EmojiCodeToImage;
+declare Text[Text] G_LibChat_EmojiAliasToCode;
+declare Text[Text] G_LibChat_EmojiUnicodeToCode;
 
 // ---------------------------------- //
 // Main
@@ -286,7 +224,8 @@ declare Label_EmojiTooltip <=> (Page.GetFirstChild("Label_EmojiTooltip") as CMlL
 declare Quad_EmojiTooltip <=> (Page.GetFirstChild("Quad_EmojiTooltip") as CMlQuad);
 
 declare CMlQuad[] Quad_PickerMoji;
-for (I, 0, 47) Quad_PickerMoji.add((Page.GetFirstChild("Quad_PickerMoji#"^I) as CMlQuad));
+for (I, 0, {{{C_LibChat_EmojiPickerColumns * C_LibChat_EmojiPickerLines - 1}}})
+	Quad_PickerMoji.add((Page.GetFirstChild("Quad_PickerMoji#"^I) as CMlQuad));
 
 declare Frame_PlayerProfile <=> (Page.GetFirstChild("Frame_PlayerProfile") as CMlFrame);
 declare Quad_PlayerProfileBg <=> (Page.GetFirstChild("Quad_PlayerProfileBg") as CMlQuad);
@@ -327,6 +266,10 @@ declare CurrentPlayerClan = 0;
 declare PrevPlayerClan = -1;
 declare PrevIsSpectator = False;
 
+declare CHttpRequest EmojiReferenceRequest;
+declare Integer EmojiReferenceRequestStart;
+declare Boolean EmojiReferenceObtained;
+
 declare MessagesList = Integer[];
 declare MessagesBody = Text[][Integer];
 declare MessagesSender = Text[Integer];
@@ -344,15 +287,7 @@ declare PrevUserLastMessage = -1;
 declare PrevMaxNbMessagesDisplayed = -1;
 declare PrevEnableEmojiParser = !Persistent_LibChat_EnableEmojiParser;
 
-G_AvailableEmoji = C_DefaultEmoji;
-foreach (Code => URL in Net_LibChat_ServerEmoji) G_AvailableEmoji[Code] = URL;
-
-foreach (Name => URL in G_AvailableEmoji.sortkey()) {
-	if (TL::Length(Name) < 3) continue;
-	if (PickerEmojiURL.exists(URL)) continue;
-	PickerEmojiURL.add(URL);
-	PickerEmojiName.add(Name);
-}
+foreach (Code => URL in Net_LibChat_ServerEmoji) G_LibChat_EmojiCodeToImage[Code] = URL;
 ***
 
 // ---------------------------------- //
@@ -364,14 +299,81 @@ Frame_ChatWindow.Visible = Net_LibChat_UseCustomChat;
 ClientUI.OverlayHideChat = Frame_ChatWindow.Visible;
 
 // ---------------------------------- //
+// Obtain emoji reference
+if (!EmojiReferenceObtained) {
+	if (EmojiReferenceRequest == Null) {
+		EmojiReferenceRequest = Http.CreateGet("{{{C_LibChat_EmojiReferenceURL}}}", False);
+		EmojiReferenceRequestStart = Now;
+	}
+
+	// Time out
+	if (Now > EmojiReferenceRequestStart + 5000) {
+		Http.Destroy(EmojiReferenceRequest);
+		EmojiReferenceRequest = Null;
+	}
+
+	// Request finished
+	if (EmojiReferenceRequest != Null && EmojiReferenceRequest.IsCompleted) {
+		declare Document = Xml.Create(EmojiReferenceRequest.Result);
+
+		LoadEmojiReference(Document);
+		EmojiReferenceObtained = True;
+
+		PickerEmojiURL.clear();
+		PickerEmojiName.clear();
+
+		foreach (Name => URL in G_LibChat_EmojiCodeToImage) {
+			if (PickerEmojiURL.exists(URL)) continue;
+			PickerEmojiURL.add(URL);
+			PickerEmojiName.add(Name);
+		}
+
+		Xml.Destroy(Document);
+		Http.Destroy(EmojiReferenceRequest);
+		EmojiReferenceRequest = Null;
+	}
+}
+
+// ---------------------------------- //
 // Manage events
 foreach (Event in PendingEvents) {
 	// ---------------------------------- //
 	// Entry submit
 	if (Event.Type == CMlEvent::Type::EntrySubmit) {
 		if (Event.Control == Entry_ChatInput) {
+			declare Message = Entry_ChatInput.Value;
+
+			// Convert smileys into emoji
+			if (True) {
+				declare SplitMessage = TL::Split(" ", Message);
+				declare OutputMessage = Text[];
+
+				foreach (Segment in SplitMessage) {
+					declare Code = TL::ToLowerCase(Segment);
+
+					if (G_LibChat_EmojiAliasToCode.existskey(Code)) {
+						OutputMessage.add(":" ^ G_LibChat_EmojiAliasToCode[Code] ^ ":");
+					} else {
+						OutputMessage.add(Segment);
+					}
+				}
+
+				Message = TL::Join(" ", OutputMessage);
+			}
+
+
+			// Convert emoji code into Unicode character
+			foreach (Unicode => EmojiName in G_LibChat_EmojiUnicodeToCode) {
+				Message = TL::Replace(Message, ":" ^ EmojiName ^ ":", Unicode);
+			}
+
+			// Trim the message
+			Message = TL::SubString(Message, 0, {{{C_LibChat_MessageMaxLength}}});
+
+			// Send message
+			SendCustomEvent("LibChat_MessageSent", [Message]);
+
 			Entry_ChatInput.Hide();
-			SendCustomEvent("LibChat_MessageSent", [Entry_ChatInput.Value]);
 			Entry_ChatInput.Value = "";
 		}
 	}
@@ -387,7 +389,7 @@ foreach (Event in PendingEvents) {
 			if (!Frame_EmojiTooltip.Visible) continue;
 			Frame_EmojiTooltip.RelativePosition_V3 = Event.Control.AbsolutePosition_V3 + <0., 5.>;
 
-			Label_EmojiTooltip.Value = EmojiCode;
+			Label_EmojiTooltip.Value = ":" ^ EmojiCode ^ ":";
 			Quad_EmojiTooltip.Size.X = ComputeWidth(Label_EmojiTooltip) + 2.;
 		}
 
@@ -400,7 +402,7 @@ foreach (Event in PendingEvents) {
 		// Emoji picker emoji
 		else if (Event.Control.HasClass("Picker")) {
 			declare Text EmojiCode for Event.Control;
-			Label_PickerEmojiName.Value = EmojiCode;
+			Label_PickerEmojiName.Value = ":" ^ EmojiCode ^ ":";
 		}
 
 		// ---------------------------------- //
@@ -455,7 +457,7 @@ foreach (Event in PendingEvents) {
 			declare Text EmojiCode for Event.Control;
 
 			Entry_ChatInput.Visible = True;
-			Entry_ChatInput.Value ^= " "^EmojiCode^" ";
+			Entry_ChatInput.Value ^= " :" ^ EmojiCode ^ ": ";
 			Entry_ChatInput.StartEdition();
 			Frame_EmojiPicker.Hide();
 		}
@@ -716,7 +718,7 @@ if (UpdateMessagesList) {
 			}
 		}
 
-		FormatChatLine(Frame, MessageBody, MessageSender, MessageClan, SlideNewMessage && I == 0, !PrevSenderIsSame || !PrevClanIsSame);
+		FormatChatLine(Frame, MessageBody, MessageSender, MessageClan, SlideNewMessage && I == 0, True || !PrevSenderIsSame || !PrevClanIsSame);
 	}
 
 	SlideNewMessage = False;
@@ -738,7 +740,7 @@ if (UpdateProfileCard != "") {
 
 	declare PlayerEchelon = ML::Clamp(ML::FloorInteger(User.LadderPoints) / 10000, 0, 9);
 	Quad_PlayerEchelon.Visible = PlayerEchelon > 0;
-	if (Quad_PlayerEchelon.Visible) Quad_PlayerEchelon.ImageUrl = "file://Media/Manialinks/Common/Echelons/small_echelon"^PlayerEchelon^".dds";
+	if (Quad_PlayerEchelon.Visible) Quad_PlayerEchelon.ImageUrl = "file://Media/Manialinks/Common/Echelons/small_echelon" ^ PlayerEchelon ^ ".dds";
 	
 	Label_PlayerNickname.Value = User.Name;
 	Quad_PlayerAvatar.ImageUrl = "file://Avatars/"^User.Login^"/default";
@@ -758,11 +760,41 @@ foreach (I => Frame in Frame_ChatMessages) {
 
 {{{Translations::InjectInManialink(["Press '%1' to chat"])}}}
 {{{Bindings::Functions()}}}
-{{{ManialinkTools::Functions(["ComputeWidth", "SetQuadStyle", "ReplaceChars"])}}}
+{{{ManialinkTools::Functions(["ComputeWidth", "SetQuadStyle", "ReplaceChars", "SplitText"])}}}
 {{{Clans::Framework()}}}
 
-Integer GetCurrentClan() {
-	return 0;
+// ---------------------------------- //
+/** Load emojis.
+ *
+ *	@param	_Document	The document with emoji data.
+ */
+Void LoadEmojiReference(CXmlDocument _Document) {
+	if (_Document == Null || _Document.Root == Null || _Document.Root.Name != "emojis") return;
+
+	declare BaseURL = _Document.Root.GetAttributeText("baseurl", "");
+
+	G_LibChat_EmojiAliasToCode.clear();
+	G_LibChat_EmojiAliasToCode.clear();
+	G_LibChat_EmojiUnicodeToCode.clear();
+
+	foreach (Node in _Document.Root.Children) {
+		if (Node.Name != "emoji") continue;
+
+		declare EmojiURL = Node.GetAttributeText("file", "");
+		declare EmojiName = Node.GetAttributeText("name", "");
+		declare EmojiSmiley = TL::ToLowerCase(Node.GetAttributeText("smiley", ""));
+		declare EmojiUnicode = Node.GetAttributeText("unicode", "");
+
+		if (EmojiURL == "" || EmojiName == "") continue;
+
+		declare URL = BaseURL ^ EmojiURL;
+		if (TL::Find("|", EmojiURL, False, False)) URL = EmojiURL;
+
+		G_LibChat_EmojiCodeToImage[EmojiName] = URL;
+
+		if (EmojiSmiley != "") G_LibChat_EmojiAliasToCode[EmojiSmiley] = EmojiName;
+		if (EmojiUnicode != "") G_LibChat_EmojiUnicodeToCode[EmojiUnicode] = EmojiName;
+	}
 }
 
 // ---------------------------------- //
@@ -825,77 +857,58 @@ Boolean EndsWith(Text _Text, Text _Phrase) {
 Text[] ParseMessage(Text _Message, Boolean _FindEmoji) {
 	if (!_FindEmoji) return [_Message];
 
-	declare SplitMessage = TL::Split(" ", _Message);
-	declare Text[] OutputSegments;
-	declare Text[] OutputEmojis;
+	declare Message = _Message;
 
+	// Convert Unicode emoji into our format
+	foreach (Unicode => EmojiName in G_LibChat_EmojiUnicodeToCode) {
+		Message = TL::Replace(Message, Unicode, ":" ^ EmojiName ^ ":");
+	}
+
+	declare SplitMessage = SplitText(":", Message);
 	declare CurSegmentText = "";
-	declare CurSegmentCount = 0;
-	declare ToNextSegment = ""; // Copied text behind to next segment
+	declare PrevWasEmoji = False;
+	declare OutputMessage = Text[];
 
-	// ---------------------------------- //
-	// Fetch message words
-	foreach (I => _Segment in SplitMessage) {
-		declare Segment = ToNextSegment;
-		ToNextSegment = "";
-		Segment ^= _Segment;
-		declare SegmentEnd = I >= SplitMessage.count - 1;
-
-		// ---------------------------------- //
-		// Look for emojis inside segment
-		if (
+	foreach (I => Segment in SplitMessage) {
+		declare EmojiCode = "";
+		declare CanBeEmoji =
+			I > 0 && I < SplitMessage.count - 1 &&
+			!PrevWasEmoji && Segment != "" &&
+			!TL::Find(" ", Segment, True, False) &&
 			!TL::Find("$l", Segment, True, False) &&
 			!TL::Find("$h", Segment, True, False) &&
-			!TL::Find("$p", Segment, True, False)
-		) {
-			foreach (Code => URL in G_AvailableEmoji) {
-				if (OutputEmojis.count >= 4) break; 
-				if (!TL::Find(Code, Segment, False, True)) continue;
-				OutputEmojis.add(URL);
+			!TL::Find("$p", Segment, True, False);
 
-				declare Explode = TL::Split(Code, Segment);
-				if (Explode.existskey(0)) Segment = Explode[0];
-				if (Explode.existskey(1)) ToNextSegment = Explode[1]^" ";
-				
-				SegmentEnd = True;
-				break;
+		// Check if the segment has emoji code
+		if (CanBeEmoji && G_LibChat_EmojiCodeToImage.existskey(Segment)) EmojiCode = Segment;
+
+		// Add a new emoji
+		if (EmojiCode != "") {
+			PrevWasEmoji = True;
+
+			// Finish current text segment
+			if (CurSegmentText != "") {
+				OutputMessage.add(CurSegmentText);
+				CurSegmentText = "";
 			}
+
+			OutputMessage.add("emoji#" ^ EmojiCode);
 		}
-		
-		// Extend segment by a word
-		if (Segment != "") {
-			if (CurSegmentCount > 0) CurSegmentText ^= " ";
+
+		// Append to the current text segment
+		else {
+			if (I > 0 && !PrevWasEmoji) CurSegmentText ^= ":";
 			CurSegmentText ^= Segment;
-			CurSegmentCount += 1;
+			PrevWasEmoji = False;
 		}
 
-		// End a segment
-		if (SegmentEnd) {
-			if (CurSegmentText == "") {
-				if (OutputSegments.count > 0) CurSegmentText = " "; //< Separates emoji
-			} else {
-				if (!StartsWith(CurSegmentText, " ") && OutputSegments.count > 0) CurSegmentText = " "^CurSegmentText;
-				if (!EndsWith(CurSegmentText, " ")) CurSegmentText ^= " ";
-			}
-
-			OutputSegments.add(CurSegmentText);
-			CurSegmentText = "";
-			CurSegmentCount = 0;
-		}
+		PrevWasEmoji = EmojiCode != "";
 	}
 
-	if (ToNextSegment != "") {
-		if (!StartsWith(ToNextSegment, " ") && OutputSegments.count > 0) ToNextSegment = " "^ToNextSegment;
-		OutputSegments.add(ToNextSegment);
-	}
-
-	// Create output
-	declare Text[] OutputArray;
-	foreach (I => Segment in OutputSegments) {
-		OutputArray.add(Segment);
-		if (OutputEmojis.existskey(I)) OutputArray.add(OutputEmojis[I]);
-	}
-	return OutputArray;
+	// Finish segment after last emoji
+	if (CurSegmentText != "") OutputMessage.add(CurSegmentText);
+	
+	return OutputMessage;
 }
 
 // ---------------------------------- //
@@ -918,7 +931,7 @@ Void FormatChatLine(CMlFrame _Frame, Text[] _Message, Text _Sender, Integer _Cla
 	declare CMlLabel[] Label_LineLabels;
 	declare CMlQuad[] Quad_LineEmojis;
 
-	for (I, 0, 4) {
+	for (I, 0, {{{C_LibChat_MessageMaxEmoji}}}) {
 		Label_LineLabels.add((_Frame.GetFirstChild("Label_LineLabel#"^I) as CMlLabel));
 		Quad_LineEmojis.add((_Frame.GetFirstChild("Quad_LineEmoji#"^I) as CMlQuad));
 	}
@@ -946,52 +959,64 @@ Void FormatChatLine(CMlFrame _Frame, Text[] _Message, Text _Sender, Integer _Cla
 		UserLogin = _Sender;
 	}
 
-	// ---------------------------------- //
-	// Format the labels
-	foreach (I => Label in Label_LineLabels) {
-		declare Quad = Quad_LineEmojis[I];
-		Label.Visible = _Message.existskey(I*2);
-		Label.Opacity = 1.;
-		
-		if (Label.Visible) {
-			Label.RelativePosition_V3.X = TotalLineLength;
-			Label.Opacity = 1.;
+	// Format labels
+	foreach (Label in Label_LineLabels) Label.Value = "";
+	foreach (Quad in Quad_LineEmojis) Quad.Hide();
 
-			// Value
-			Label.Value = _Message[I*2];
-			Label.TextColor = LineColor;
+	declare NbLabelsDisplayed = 0;
+	declare NbEmotesDisplayed = 0;
 
-			// Length
-			TotalLineLength += ComputeWidth(Label) + {{{C_LibChat_EmojisSpacing}}};
-			Quad.RelativePosition_V3.X = TotalLineLength + Quad.Size.X / 2;
-			TotalLineLength += Quad.Size.X + {{{C_LibChat_EmojisSpacing}}};
+	foreach (I => Segment in _Message) {
+		declare IsEmote = TL::SubString(Segment, 0, 6) == "emoji#";
 
-			// Anim
-			if (_AnimIn) {
-				Label.Opacity = .125;
-				AnimMgr.Add(Label, "<label opacity='1' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+		// Format an emoji
+		if (IsEmote) {
+			if (NbEmotesDisplayed < Quad_LineEmojis.count - 1) {
+				declare Quad <=> Quad_LineEmojis[NbEmotesDisplayed];
+				declare EmojiID = TL::Replace(Segment, "emoji#", "");
+
+				// Position
+				TotalLineLength += {{{C_LibChat_EmojisSpacing}}};
+				Quad.RelativePosition_V3.X = TotalLineLength + Quad.Size.X / 2;
+				TotalLineLength += Quad.Size.X + {{{C_LibChat_EmojisSpacing}}};
+
+				// Format
+				SetQuadStyle(Quad, G_LibChat_EmojiCodeToImage[EmojiID]);
+				Quad.Opacity = 1.;
+				Quad.Show();
+
+				declare Text EmojiCode for Quad;
+				EmojiCode = EmojiID;
+
+				NbEmotesDisplayed += 1;
+
+				// Anim
+				if (_AnimIn) {
+					Quad.Opacity = .125;
+					AnimMgr.Add(Quad, "<quad opacity='1' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+				}
 			}
 		}
 
-		// Emojis
-		Quad.Visible = _Message.existskey(I*2 + 1);
-		Quad.Opacity = 1.;
+		// Format text segment
+		else {
+			declare Label <=> Label_LineLabels[NbLabelsDisplayed];
+			Label.Value ^= Segment;
 
-		if (Quad.Visible) {
-			declare URL = _Message[I*2 + 1];
-			declare Text EmojiCode for Quad;
-			SetQuadStyle(Quad, URL);
-			Quad.Opacity = 1.;
+			if (NbLabelsDisplayed < Label_LineLabels.count - 1) {
+				NbLabelsDisplayed += 1;
 
-			if (G_AvailableEmoji.exists(URL))
-				EmojiCode = G_AvailableEmoji.keyof(URL);
-			else
-				EmojiCode = "";
+				Label.RelativePosition_V3.X = TotalLineLength;
+				TotalLineLength += ComputeWidth(Label);
 
-			// Anim
-			if (_AnimIn) {
-				Quad.Opacity = .125;
-				AnimMgr.Add(Quad, "<quad opacity='1' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+				Label.Opacity = 1.;
+				Label.TextColor = LineColor;
+
+				// Anim
+				if (_AnimIn) {
+					Label.Opacity = .125;
+					AnimMgr.Add(Label, "<label opacity='1' />", 250, CAnimManager::EAnimManagerEasing::SineOut);
+				}
 			}
 		}
 	}

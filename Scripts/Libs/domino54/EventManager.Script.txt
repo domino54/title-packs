@@ -1,0 +1,1316 @@
+// -------------------------------------- //
+//  LIBRARY EVENT MANAGER by Dommy        //
+//  script version: 2018-05-31            //
+// -------------------------------------- //
+
+/**
+ *	Work in progress...
+ */
+
+#Const Version		"2018-05-31"
+#Const ScriptName	"Libs/domino54/EventManager.Script.txt"
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+#Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/AltTabs.Script.txt" as AltTabs
+#Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibEventManager_ManagerLayerId		"LibEventManager:Manager"
+#Const C_LibEventManager_ResultsLayerId		"LibEventManager:Results"
+#Const C_LibEventManager_HardcodedManagers	["domino54"]
+#Const C_LibEventManager_ResultsPerPage		20
+#Const C_LibEventManager_ResultsPageWidth	180.
+
+#Const C_LibEventManager_ColorPodiumFirst	<1., 1., 0.>
+#Const C_LibEventManager_ColorPodiumSecond	<.75, 1., 1.>
+#Const C_LibEventManager_ColorPodiumThird	<1., .5, .25>
+#Const C_LibEventManager_ColorPlanetPrize	<.5, .875, 1.>
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Boolean G_LibEventManager_ManagerEnabled;
+declare Boolean G_LibEventManager_CompetitionRunning;
+declare Boolean G_LibEventManager_CompetitionFinished;
+
+declare Text	G_LibEventManager_DataDownloadURL;
+declare Text[]	G_LibEventManager_ManagersLogins;
+declare Text[]	G_LibEventManager_CompetitionMapPool;
+declare Text	G_LibEventManager_CompetitionName;
+declare Text	G_LibEventManager_DataPayloadURL;
+
+declare Text[]	G_LibEventManager_EventFinishedMaps;
+declare Text	G_LibEventManager_NextMapUID;
+declare Boolean	G_LibEventManager_MapSkipNeeded;
+
+declare Integer[Text] G_LibEventManager_PlayersTotalPoints;
+declare Integer[Text][Text] G_LibEventManager_PlayersMapScores;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create manialink for the results layer.
+ *
+ *	@return		The results manialink.
+ */
+Text Private_CreateManialinkResults() {
+	declare Text PlayersResultCards;
+	for (I, 0, C_LibEventManager_ResultsPerPage - 1) PlayersResultCards ^= "<frameinstance modelid='FrameModel_PlayerResultCard' id='Frame_PlayerResultCard#"^I^"' pos='0 "^I * -6^"' hidden='1' />";
+
+	declare SizeX = C_LibEventManager_ResultsPageWidth;
+	declare PodiumX = (SizeX - 1) / 3;
+
+	declare Text PlayerMapScores;
+	declare NbMapScores = ML::FloorInteger((C_LibEventManager_ResultsPageWidth - 100) / 12.);
+	for (I, 0, NbMapScores - 1) PlayerMapScores ^= "<label size='8' class='FontB' halign='center' id='Label_MapNbPoints#"^I^"' pos='"^I * -12^"' hidden='1' />";
+
+	declare Text MapScoreHeaders;
+	for (I, 0, NbMapScores - 1) MapScoreHeaders ^= "<label class='FontB' textsize='1' halign='center' id='Label_MapScoresHeader#"^I^"' pos='"^I * -12^"' hidden='1' />";
+
+	return """
+<manialink version="3" name="{{{C_LibEventManager_ResultsLayerId}}}">
+<stylesheet>
+	<style class="FontM" valign="center2" textemboss="1" textsize="2" textcolor="FFF" textfont="Eurostile" />
+	<style class="FontB" valign="center2" textemboss="1" textsize="2" textcolor="FFF" textfont="Eurostile_Bold" />
+	<style class="Fullscreen" size="320 180" halign="center" valign="center" />
+</stylesheet>
+
+<frame id="Frame_CompetitionResults" pos="-{{{(SizeX + 4) / 2}}} 70" z-index="10">
+	<label pos="2 -2" size="{{{SizeX - 40}}}" class="FontM" textsize="4" textprefix="$t" id="Label_ResultsPageTitle" />
+	<quad pos="0 -6" size="{{{SizeX + 4}}} .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<frame id="Frame_InformationIcons" pos="{{{SizeX}}} -2">
+		<frame id="Frame_CurrentEventNbMaps">
+			<label pos="-2.5" halign="right" class="FontB" textsize="3.5" id="Label_CurrentEventNbMaps" text="0/0" />
+			<label pos="0 .125" class="FontM" halign="center" valign="center" text="" />
+		</frame>
+
+		<frame id="Frame_NbEventCompetitiors">
+			<label pos="-2.5" halign="right" class="FontB" textsize="3.5" id="Label_NbEventCompetitiors" text="0" />
+			<label pos="0 .125" class="FontM" halign="center" valign="center" text="👥" />
+		</frame>
+
+		<frame id="Frame_ResultsDisplayEnd">
+			<label pos="-2.5" halign="right" class="FontB" textsize="3.5" textcolor="FB0" id="Label_ResultsDisplayEnd" text="0:00" />
+			<label pos="0 .125" class="FontM" halign="center" valign="center" textcolor="FB0" text="⏰" />
+		</frame>
+	</frame>
+
+	<frame id="Frame_RankingTableHeaders" pos="2 -8">
+		<label pos="5 -2" class="FontB" textsize="1" halign="center" text="#" />
+		<label pos="10 -2" class="FontB" textsize="1" textprefix="$t" text="Player" translate="1" />
+		<label pos="{{{SizeX - 2}}} -2" size="12" class="FontB" halign="right" textsize="1" textprefix="$t" text="Total" translate="1" />
+		<frame pos="{{{SizeX - 20}}} -2">{{{MapScoreHeaders}}}</frame>
+		<quad size="{{{SizeX}}} 4" bgcolor="FFF" opacity=".125" />
+	</frame>
+
+	<frame id="Frame_PlayersResults" pos="2 -12.5">
+		<framemodel id="FrameModel_PlayerResultCard">
+			<quad pos="0 -2.75" size="1.5 5" scale="1.1" halign="right" valign="center" id="Quad_PlayerCardEchelon" />
+			<label pos="5 -2.75" size="8" class="FontB" halign="center" id="Label_CardPlayerPosition" />
+			<quad pos="10 -2.75" size="5.5 5.5" valign="center" id="Quad_PlayerCardAvatar" />
+			<label pos="16 -2.75" size="52" class="FontM" id="Label_CardPlayerNickname" />
+
+			<frame id="Frame_PlanetsPrizeCol" pos="86 -2.75" hidden="1">
+				<label pos="-5" class="FontB" halign="right" textcolor="{{{TL::ColorToText(C_LibEventManager_ColorPlanetPrize)}}}" id="Label_PlanetsPrizeVal" />
+				<quad size="4 4" halign="right" valign="center2" style="ManiaPlanetLogos" substyle="IconPlanetsSmall" />
+			</frame>
+
+			<frame pos="{{{SizeX - 20}}} -2.75">{{{PlayerMapScores}}}</frame>
+			<label pos="{{{SizeX - 2}}} -2.75" size="12" class="FontB" halign="right" textsize="2.5" id="Label_CardPlayerPointsTotal" />
+
+			<quad size="{{{SizeX}}} 5.5" bgcolor="FFF" opacity=".125" id="Quad_CardHighlightSelf" hidden="1" />
+			<quad size="{{{SizeX}}} 5.5" bgcolor="FFF" opacity=".125" />
+		</framemodel>
+
+		<!-- First page podium -->
+		<frame id="Frame_ResultsPodiumBox" size="{{{SizeX}}} 47.5" pos="0 4.5">
+			<framemodel id="FrameModel_PlayerPodiumCard">
+				<frame id="Frame_PodiumPlayerInfo" pos="{{{PodiumX / 2}}}" hidden="1">
+					<quad size="12 12" halign="center" valign="center" id="Quad_PodiumCardAvatar" />
+					<quad size="12 12" halign="center" valign="center" id="Quad_PodiumCardAvatarBg" />
+					<quad size="{{{PodiumX}}} .25" halign="center" valign="center" bgcolor="FFF" id="Quad_PodiumCardColorBar" />
+					<quad size="12 13" halign="center" valign="center" style="Bgs1InRace" substyle="BgColorContour" id="Quad_PodiumCardOutline" />
+					<label pos="{{{PodiumX / 2 - 1}}} -3" class="FontB" halign="right" textemboss="0" textsize="3" opacity=".5" id="Label_PodiumCardPosition" />
+
+					<frame id="Frame_PlanetsPrizeCol" pos="0 -20" hidden="1">
+						<label pos="-6" class="FontB" halign="right" textcolor="{{{TL::ColorToText(C_LibEventManager_ColorPlanetPrize)}}}" textsize="2.5" id="Label_PlanetsPrizeVal" />
+						<quad size="5 5" halign="right" valign="center2" style="ManiaPlanetLogos" substyle="IconPlanetsSmall" />
+					</frame>
+
+					<label pos="0 -10" class="FontM" halign="center" textsize="2.5" size="{{{PodiumX - 4}}}" id="Label_PodiumCardNickname" />
+					<label pos="0 -15" class="FontB" halign="center" textsize="1.5" size="{{{PodiumX - 4}}}" textprefix="$t" id="Label_PodiumCardNbPoints" />
+				</frame>
+
+				<quad size="{{{PodiumX}}} 20" image="file://Media/Images/Grad.png" opacity=".25" id="Quad_PodiumCardColor" />
+				<quad size="{{{PodiumX}}} 40" bgcolor="FFF" opacity=".125" id="Quad_PodiumHighlight" ideen="1" />
+				<quad size="{{{PodiumX}}} 40" bgcolor="FFF" opacity=".125" />
+			</framemodel>
+
+			<frameinstance modelid="FrameModel_PlayerPodiumCard" id="Frame_PlayerPodiumCard#0" pos="{{{(PodiumX * 3 + 1.5) * 1/3.}}} -12.5" />
+			<frameinstance modelid="FrameModel_PlayerPodiumCard" id="Frame_PlayerPodiumCard#1" pos="0 -17.5" />
+			<frameinstance modelid="FrameModel_PlayerPodiumCard" id="Frame_PlayerPodiumCard#2" pos="{{{(PodiumX * 3 + 1.5) * 2/3.}}} -20" />
+
+			<!-- Top gradient -->
+			<quad size="{{{PodiumX * 4}}} 10" image="file://Media/Images/Grad.png" colorize="FFF" opacity=".125" id="Quad_PodiumBoxShading" />
+		</frame>
+
+		{{{PlayersResultCards}}}
+	</frame>
+
+	<quad pos="0 -134" size="{{{SizeX + 4}}} .5" valign="center" bgcolor="FFF" opacity=".5" />
+
+	<!-- Page switch -->
+	<frame id="Frame_PlayersPageSwitch" pos="{{{SizeX - .5}}} -138.25">
+		<label pos="-15.5 .125" halign="right" class="FontB" textsize="2" text="1/1" id="Label_PlayersCurPage" />
+
+		<!-- Previous page -->
+		<frame pos="-12">
+			<label halign="center" valign="center2" textsize="2" text="►" textcolor="FFF" rot="-180" />
+			<label pos=".125 -.125" halign="center" valign="center2" textsize="2" text="►" textcolor="000" rot="-180" />
+			<quad size="5 5" halign="center" valign="center" bgcolor="FFF2" bgcolorfocus="FFF4" class="click" id="Quad_PlayersPagePrev" ScriptEvents="1" hidden="1" />
+		</frame>
+
+		<!-- Go find yourself -->
+		<frame pos="-6">
+			<label halign="center" valign="center2" textsize="2" text="🔍" textcolor="FFF" />
+			<label pos=".125 -.125" halign="center" valign="center2" textsize="2" text="🔍" textcolor="000" />
+			<quad size="5 5" halign="center" valign="center" bgcolor="FFF2" bgcolorfocus="FFF4" class="click" id="Quad_PlayersFindSelf" ScriptEvents="1" hidden="1" />
+		</frame>
+
+		<!-- Next page -->
+		<frame>
+			<label halign="center" valign="center2" textsize="2" text="►" textcolor="FFF" />
+			<label pos=".125 -.125" halign="center" valign="center2" textsize="2" text="►" textcolor="000" />
+			<quad size="5 5" halign="center" valign="center" bgcolor="FFF2" bgcolorfocus="FFF4" class="click" id="Quad_PlayersPageNext" ScriptEvents="1" hidden="1" />
+		</frame>
+	</frame>
+</frame>
+
+<frame id="Frame_ResultsBackground" z-index="9">
+	<quad class="Fullscreen" image="file://Media/Images/Effects/Vignette.dds" />
+	<quad class="Fullscreen" style="Bgs1" substyle="BgDialogBlur" opacity="0" />
+	<quad class="Fullscreen" bgcolor="000" opacity=".5" />
+</frame>
+
+<script><!--
+/**
+ *	{{{C_LibEventManager_ResultsLayerId}}}
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+declare Text[] G_SortedPlayersLogins;
+declare Integer[Text] G_PlayersScores;
+declare Integer[Text] G_PlayersPosition;
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+***Main***
+***
+// ---------------------------------- //
+// UI elements
+declare Frame_CompetitionResults	<=> (Page.GetFirstChild("Frame_CompetitionResults") as CMlFrame);
+declare Label_ResultsPageTitle		<=> (Page.GetFirstChild("Label_ResultsPageTitle") as CMlLabel);
+declare Frame_ResultsBackground		<=> (Page.GetFirstChild("Frame_ResultsBackground") as CMlFrame);
+declare Quad_PodiumBoxShading		<=> (Page.GetFirstChild("Quad_PodiumBoxShading") as CMlQuad);
+
+declare Label_PlayersCurPage		<=> (Page.GetFirstChild("Label_PlayersCurPage") as CMlLabel);
+declare Quad_PlayersPagePrev		<=> (Page.GetFirstChild("Quad_PlayersPagePrev") as CMlQuad);
+declare Quad_PlayersFindSelf		<=> (Page.GetFirstChild("Quad_PlayersFindSelf") as CMlQuad);
+declare Quad_PlayersPageNext		<=> (Page.GetFirstChild("Quad_PlayersPageNext") as CMlQuad);
+
+declare Frame_RankingTableHeaders	<=> (Page.GetFirstChild("Frame_RankingTableHeaders") as CMlFrame);
+declare Frame_CurrentEventNbMaps	<=> (Page.GetFirstChild("Frame_CurrentEventNbMaps") as CMlFrame);
+declare Label_CurrentEventNbMaps	<=> (Page.GetFirstChild("Label_CurrentEventNbMaps") as CMlLabel);
+declare Frame_NbEventCompetitiors	<=> (Page.GetFirstChild("Frame_NbEventCompetitiors") as CMlFrame);
+declare Label_NbEventCompetitiors	<=> (Page.GetFirstChild("Label_NbEventCompetitiors") as CMlLabel); 
+declare Frame_ResultsDisplayEnd		<=> (Page.GetFirstChild("Frame_ResultsDisplayEnd") as CMlFrame);
+declare Label_ResultsDisplayEnd		<=> (Page.GetFirstChild("Label_ResultsDisplayEnd") as CMlLabel);
+
+declare CMlFrame[] Frame_PlayersResultCards;
+for (I, 0, {{{C_LibEventManager_ResultsPerPage - 1}}}) Frame_PlayersResultCards.add((Page.GetFirstChild("Frame_PlayerResultCard#"^I) as CMlFrame));
+
+declare CMlFrame[] Frame_PlayersPodiumCards;
+for (I, 0, 2) Frame_PlayersPodiumCards.add((Page.GetFirstChild("Frame_PlayerPodiumCard#"^I) as CMlFrame));
+
+declare CMlLabel[] Label_MapScoresHeaders;
+for (I, 0, {{{NbMapScores - 1}}}) Label_MapScoresHeaders.add((Page.GetFirstChild("Label_MapScoresHeader#"^I) as CMlLabel));
+
+// ---------------------------------- //
+// Netcode
+declare netread Integer	Net_LibEventManager_LastScoresUpdate		for Teams[0];
+declare netread Boolean Net_LibEventManager_CompetitionFinished		for Teams[0];
+declare netread Boolean	Net_LibEventManager_CurrentMapRunning		for Teams[0];
+declare netread Text[]	Net_LibEventManager_CompetitionMapPool		for Teams[0];
+declare netread Text	Net_LibEventManager_CompetitionName			for Teams[0];
+declare netread Text[]	Net_LibEventManager_EventFinishedMaps		for Teams[0];
+declare netread Integer	Net_LibEventManager_ResultsDisplayEndTime	for Teams[0];
+
+declare netread Integer[Text][Text] Net_LibEventManager_PlayersMapScores for Teams[0];
+
+// ---------------------------------- //
+// Variables
+declare UpdatePlayersCards	= True;
+declare UpdateTopRowIcons	= True;
+declare CurResultsPage		= 1;
+declare MaxResultsPage		= 1;
+
+// Update
+declare LastScoresUpdate		= -1;
+declare PrevScoresCount			= -1;
+declare PrevFrameVisible		= False;
+declare PrevCompetitionFinished	= Net_LibEventManager_CompetitionFinished;
+declare PrevCurrentMapRunning	= Net_LibEventManager_CurrentMapRunning;
+declare PrevNbMapsInPool		= Net_LibEventManager_CompetitionMapPool.count;
+declare PrevNbFinishedMaps		= Net_LibEventManager_EventFinishedMaps.count;
+declare PrevCompetitionName		= "!";
+***
+
+// ---------------------------------- //
+// Yield
+// ---------------------------------- //
+***Yield***
+***
+if (!PageIsVisible) continue;
+
+// Results visibility
+Frame_CompetitionResults.Visible = Tabs_IsActive(Frame_ResultsBackground);
+
+if (PrevFrameVisible != Frame_CompetitionResults.Visible) {
+	PrevFrameVisible = Frame_CompetitionResults.Visible;
+
+	EnableMenuNavigation(Frame_CompetitionResults.Visible, False, Null, 0);
+}
+
+if (!Frame_CompetitionResults.Visible) continue;
+
+// ---------------------------------- //
+// Manage events
+foreach (Event in PendingEvents) {
+	// ---------------------------------- //
+	// On mouse click
+	if (Event.Type == CMlEvent::Type::MouseClick) {
+		if (Event.ControlId == "Quad_PlayersPagePrev") {
+			if (CurResultsPage <= 1) continue;
+			CurResultsPage -= 1;
+			UpdatePlayersCards = True;
+		}
+		else if (Event.ControlId == "Quad_PlayersPageNext") {
+			if (CurResultsPage >= MaxResultsPage) continue;
+			CurResultsPage += 1;
+			UpdatePlayersCards = True;
+		}
+		else if (Event.ControlId == "Quad_PlayersFindSelf") {
+			declare TargetLogin = LocalUser.Login;
+			if (GUIPlayer != Null) TargetLogin = GUIPlayer.User.Login;
+
+			declare Key = G_SortedPlayersLogins.keyof(TargetLogin);
+			if (Key < 0) continue;
+
+			CurResultsPage = (Key + 4) / Frame_PlayersResultCards.count + 1;
+			UpdatePlayersCards = True;
+		}
+	}
+	// ---------------------------------- //
+	// On menu navigation
+	else if (Event.Type == CMlEvent::Type::MenuNavigation) {
+		// ---------------------------------- //
+		// Prev page
+		if (
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::Up ||
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::Left ||
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::PageUp
+		) {
+			if (CurResultsPage <= 1) continue;
+			CurResultsPage -= 1;
+			UpdatePlayersCards = True;
+		}
+
+		// ---------------------------------- //
+		// Next page
+		else if (
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::Down ||
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::Right ||
+			Event.MenuNavAction == CMlEvent::EMenuNavAction::PageDown
+		) {
+			if (CurResultsPage >= MaxResultsPage) continue;
+			CurResultsPage += 1;
+			UpdatePlayersCards = True;
+		}
+	}
+}
+
+// Server scores update
+if (LastScoresUpdate != Net_LibEventManager_LastScoresUpdate) {
+	LastScoresUpdate = Net_LibEventManager_LastScoresUpdate;
+	UpdatePlayersCards = True;
+}
+
+// Competition status update
+if (PrevCompetitionFinished	!= Net_LibEventManager_CompetitionFinished) {
+	PrevCompetitionFinished	= Net_LibEventManager_CompetitionFinished;
+	UpdatePlayersCards = True;
+}
+
+// Map state update
+if (PrevCurrentMapRunning != Net_LibEventManager_CurrentMapRunning) {
+	PrevCurrentMapRunning = Net_LibEventManager_CurrentMapRunning;
+	UpdatePlayersCards = True;
+}
+
+// Map pool size update
+if (PrevNbMapsInPool != Net_LibEventManager_CompetitionMapPool.count) {
+	PrevNbMapsInPool = Net_LibEventManager_CompetitionMapPool.count;
+	UpdatePlayersCards = True;
+}
+
+// Finished maps count update
+if (PrevNbFinishedMaps != Net_LibEventManager_EventFinishedMaps.count) {
+	PrevNbFinishedMaps = Net_LibEventManager_EventFinishedMaps.count;
+	UpdatePlayersCards = True;
+}
+
+// Scores count update
+if (PrevScoresCount != Scores.count) {
+	PrevScoresCount = Scores.count;
+	UpdatePlayersCards = True;
+}
+
+// ---------------------------------- //
+// Score points change
+foreach (Score in Scores) {
+	declare Integer LibEventManager_PrevNbPoints for Score;
+	declare TotalPoints = GetCurrentMapPoints(Score);
+
+	if (LibEventManager_PrevNbPoints == TotalPoints) continue;
+	LibEventManager_PrevNbPoints = TotalPoints;
+	UpdatePlayersCards = True;
+}
+
+// ---------------------------------- //
+// Update the competition name
+if (PrevCompetitionName != Net_LibEventManager_CompetitionName) {
+	PrevCompetitionName = Net_LibEventManager_CompetitionName;
+
+	if (Net_LibEventManager_CompetitionName != "") {
+		Label_ResultsPageTitle.Value = Net_LibEventManager_CompetitionName;
+	}
+
+	else Label_ResultsPageTitle.Value = _("Unnamed competition");
+}
+
+// ---------------------------------- //
+// Update player cards
+if (UpdatePlayersCards) {
+	UpdatePlayersCards = False;
+
+	UpdateScores();
+	UpdateTopRowIcons = True;
+
+	declare CurPlayerLogin = LocalUser.Login;
+	declare NbMapsScores = Net_LibEventManager_PlayersMapScores.count;
+	declare CurMapOrder = 0;
+
+	if (Net_LibEventManager_CurrentMapRunning) {
+		NbMapsScores += 1;
+		CurMapOrder = NbMapsScores;
+	}
+
+	// ---------------------------------- //
+	// Map scores headers
+	foreach (I => Label in Label_MapScoresHeaders) {
+		declare MapOrder = NbMapsScores - I;
+		Label.Visible = MapOrder >= 1;
+		if (!Label.Visible) continue;
+
+		Label.Value = "M" ^ MapOrder;
+
+		if (MapOrder == CurMapOrder) Label.TextColor = {{{C_LibEventManager_ColorPlanetPrize}}};
+		else Label.TextColor = <1., 1., 1.>;
+	}
+
+	// ---------------------------------- //
+	// Results page
+	MaxResultsPage = (G_SortedPlayersLogins.count + 4) / Frame_PlayersResultCards.count + 1;
+	CurResultsPage = ML::Min(CurResultsPage, MaxResultsPage);
+
+	Quad_PlayersPagePrev.Visible	= CurResultsPage > 1;
+	Quad_PlayersPageNext.Visible	= CurResultsPage < MaxResultsPage;
+	Quad_PlayersFindSelf.Visible	= MaxResultsPage > 1;
+	Label_PlayersCurPage.Value		= CurResultsPage ^ "/" ^ MaxResultsPage;
+
+	Quad_PodiumBoxShading.Visible = CurResultsPage == 1;
+
+	// Table offset
+	declare Offset = (CurResultsPage - 1) * Frame_PlayersResultCards.count - 5;
+	Frame_RankingTableHeaders.RelativePosition_V3.Y = -8.;
+	if (Quad_PodiumBoxShading.Visible) Frame_RankingTableHeaders.RelativePosition_V3.Y -= 48.;
+
+	// ---------------------------------- //
+	// Format the podium
+	foreach (I => Frame in Frame_PlayersPodiumCards) {
+		Frame.Visible = Quad_PodiumBoxShading.Visible;
+
+		declare Frame_PodiumPlayerInfo	<=> (Frame.GetFirstChild("Frame_PodiumPlayerInfo") as CMlFrame);
+		declare Quad_PodiumCardColor	<=> (Frame.GetFirstChild("Quad_PodiumCardColor") as CMlQuad);
+		declare Quad_PodiumHighlight	<=> (Frame.GetFirstChild("Quad_PodiumHighlight") as CMlQuad);
+
+		Frame_PodiumPlayerInfo.Visible	= G_SortedPlayersLogins.existskey(I);
+		Quad_PodiumCardColor.Visible	= Frame_PodiumPlayerInfo.Visible;
+		Quad_PodiumHighlight.Visible	= False;
+
+		if (!Frame_PodiumPlayerInfo.Visible) continue;
+
+		// Player info
+		declare PlayerLogin		= G_SortedPlayersLogins[I];
+		declare PlayerPosition	= GetPlayerPosition(PlayerLogin);
+		declare PlayerPoints	= G_PlayersScores[PlayerLogin];
+		declare PlayerPrize		= GetPlanetPrize(PlayerPosition);
+
+		// ---------------------------------- //
+		// Card elements
+		declare Quad_PodiumCardColorBar		<=> (Frame.GetFirstChild("Quad_PodiumCardColorBar") as CMlQuad);
+		declare Quad_PodiumCardOutline		<=> (Frame.GetFirstChild("Quad_PodiumCardOutline") as CMlQuad);
+		declare Label_PodiumCardPosition	<=> (Frame.GetFirstChild("Label_PodiumCardPosition") as CMlLabel);
+		declare Label_PodiumCardNickname	<=> (Frame.GetFirstChild("Label_PodiumCardNickname") as CMlLabel);
+		declare Label_PodiumCardNbPoints	<=> (Frame.GetFirstChild("Label_PodiumCardNbPoints") as CMlLabel);
+		declare Quad_PodiumCardAvatar		<=> (Frame.GetFirstChild("Quad_PodiumCardAvatar") as CMlQuad);
+		declare Quad_PodiumCardAvatarBg		<=> (Frame.GetFirstChild("Quad_PodiumCardAvatarBg") as CMlQuad);
+		declare Frame_PlanetsPrizeCol		<=> (Frame.GetFirstChild("Frame_PlanetsPrizeCol") as CMlFrame);
+		declare Label_PlanetsPrizeVal		<=> (Frame.GetFirstChild("Label_PlanetsPrizeVal") as CMlLabel);
+
+		// Player info
+		Label_PodiumCardNickname.Value	= GetPlayerName(PlayerLogin);
+		Label_PodiumCardNbPoints.Value	= TL::Compose(PlayerPoints ^ " %1", _("Points"));
+		Label_PodiumCardPosition.Value	= TL::ToText(PlayerPosition + 1);
+		Quad_PodiumCardAvatar.Visible	= ShowAvatar(PlayerLogin);
+		Quad_PodiumCardAvatar.ImageUrl	= "file://Avatars/" ^ PlayerLogin ^ "/default";
+		Quad_PodiumHighlight.Visible	= CurPlayerLogin != "" && PlayerLogin == CurPlayerLogin;
+
+		// Planets reward
+		Frame_PlanetsPrizeCol.Visible = PlayerPrize > 0 && Net_LibEventManager_CompetitionFinished;
+		Label_PlanetsPrizeVal.Value = "+ " ^ PlayerPrize;
+		Frame_PlanetsPrizeCol.RelativePosition_V3.X = (ComputeWidth(Label_PlanetsPrizeVal) - Label_PlanetsPrizeVal.RelativePosition_V3.X) / 2;
+
+		// ---------------------------------- //
+		// Podium card color
+		declare Vec3 PodiumColor;
+
+		switch (PlayerPosition) {
+			case 0 : PodiumColor = {{{C_LibEventManager_ColorPodiumFirst}}};
+			case 1 : PodiumColor = {{{C_LibEventManager_ColorPodiumSecond}}};
+			case 2 : PodiumColor = {{{C_LibEventManager_ColorPodiumThird}}};
+		}
+
+		Quad_PodiumCardColor.Colorize		= PodiumColor;
+		Quad_PodiumCardOutline.Colorize		= PodiumColor;
+		Quad_PodiumCardColorBar.BgColor		= PodiumColor;
+		Label_PodiumCardPosition.TextColor	= PodiumColor;
+		Quad_PodiumCardAvatarBg.BgColor		= Brightness(PodiumColor, .25);
+	}
+
+	// ---------------------------------- //
+	// Format players cards
+	foreach (I => Frame in Frame_PlayersResultCards) {
+		declare PlayerOrder = Offset + I;
+		Frame.Visible = PlayerOrder >= 3 && G_SortedPlayersLogins.existskey(PlayerOrder);
+		if (!Frame.Visible) continue;
+
+		// Player info
+		declare PlayerLogin		= G_SortedPlayersLogins[PlayerOrder];
+		declare PlayerPoints	= G_PlayersScores[PlayerLogin];
+		declare PlayerPosition	= GetPlayerPosition(PlayerLogin);
+		declare PlayerEchelon	= GetPlayerEchelon(PlayerLogin);
+		declare PlayerConnected	= GetUser(PlayerLogin) != Null;
+		declare PlayerPrize		= GetPlanetPrize(PlayerPosition);
+
+		// ---------------------------------- //
+		// Compose the frame
+		declare Quad_PlayerCardEchelon		<=> (Frame.GetFirstChild("Quad_PlayerCardEchelon") as CMlQuad);
+		declare Label_CardPlayerPosition	<=> (Frame.GetFirstChild("Label_CardPlayerPosition") as CMlLabel);
+		declare Label_CardPlayerNickname	<=> (Frame.GetFirstChild("Label_CardPlayerNickname") as CMlLabel);
+		declare Quad_PlayerCardAvatar		<=> (Frame.GetFirstChild("Quad_PlayerCardAvatar") as CMlQuad);
+		declare Label_CardPlayerPointsTotal	<=> (Frame.GetFirstChild("Label_CardPlayerPointsTotal") as CMlLabel);
+		declare Quad_CardHighlightSelf		<=> (Frame.GetFirstChild("Quad_CardHighlightSelf") as CMlQuad);
+		declare Frame_PlanetsPrizeCol 		<=> (Frame.GetFirstChild("Frame_PlanetsPrizeCol") as CMlFrame);
+		declare Label_PlanetsPrizeVal 		<=> (Frame.GetFirstChild("Label_PlanetsPrizeVal") as CMlLabel);
+
+		Label_CardPlayerPosition.Value		= TL::ToText(PlayerPosition + 1);
+		Label_CardPlayerNickname.Value		= GetPlayerName(PlayerLogin);
+		Quad_PlayerCardAvatar.Visible		= ShowAvatar(PlayerLogin);
+		Quad_PlayerCardAvatar.ImageUrl		= "file://Avatars/" ^ PlayerLogin ^ "/default";
+		Quad_PlayerCardEchelon.Visible		= PlayerEchelon > 0;
+		Quad_PlayerCardEchelon.ImageUrl		= "file://Media/Manialinks/Common/Echelons/small_echelon" ^ PlayerEchelon ^ ".dds";
+		Quad_CardHighlightSelf.Visible		= CurPlayerLogin != "" && PlayerLogin == CurPlayerLogin;
+		Frame_PlanetsPrizeCol.Visible		= PlayerPrize > 0 && Net_LibEventManager_CompetitionFinished;
+		Label_PlanetsPrizeVal.Value			= "+ " ^ PlayerPrize;
+		Label_CardPlayerPointsTotal.Value	= TL::ToText(PlayerPoints);
+
+		// Nickname offset
+		Label_CardPlayerNickname.RelativePosition_V3.X = Quad_PlayerCardAvatar.RelativePosition_V3.X;
+		if (Quad_PlayerCardAvatar.Visible) Label_CardPlayerNickname.RelativePosition_V3.X += Quad_PlayerCardAvatar.Size.X + 1.;
+
+		// Transparent cards for not connected players
+		declare Opacity = 1.;
+		if (!PlayerConnected) Opacity /= 2.;
+
+		Label_CardPlayerPosition.Opacity	= Opacity;
+		Quad_PlayerCardAvatar.Opacity		= Opacity;
+		Label_CardPlayerNickname.Opacity	= Opacity;
+		Label_CardPlayerPointsTotal.Opacity	= Opacity;
+
+		// ---------------------------------- //
+		// Player map scores
+		for (I, 0, Label_MapScoresHeaders.count - 1) {
+			declare Label <=> (Frame.GetFirstChild("Label_MapNbPoints#"^I) as CMlLabel);
+			declare MapOrder = NbMapsScores - I;
+
+			Label.Visible = MapOrder >= 1;
+			if (!Label.Visible) continue;
+
+			declare PlayerMapPoints = 0;
+			if (MapOrder == CurMapOrder) PlayerMapPoints = GetCurrentMapPoints(GetScore(PlayerLogin));
+			else PlayerMapPoints = GetPlayerMapPoints(PlayerLogin, MapOrder - 1);
+
+			Label.Visible = PlayerMapPoints != 0;
+			if (!Label.Visible) continue;
+			Label.Value = TL::ToText(PlayerMapPoints);
+
+			if (MapOrder == CurMapOrder) Label.TextColor = {{{C_LibEventManager_ColorPlanetPrize}}};
+			else Label.TextColor = <1., 1., 1.>;
+
+			Label.Opacity = 1.;
+			if (!PlayerConnected) Label.Opacity /= 2.;
+		}
+	}
+}
+
+if (Net_LibEventManager_ResultsDisplayEndTime > 0) UpdateTopRowIcons = True;
+
+if (UpdateTopRowIcons) {
+	UpdateTopRowIcons = False;
+
+	declare IconsTotalWidth = 0.;
+
+	// Time to the display end
+	Frame_ResultsDisplayEnd.Visible = Net_LibEventManager_ResultsDisplayEndTime > 0 && GameTime <= Net_LibEventManager_ResultsDisplayEndTime;
+	if (Frame_ResultsDisplayEnd.Visible) {
+		Label_ResultsDisplayEnd.Value = TL::TimeToText(Net_LibEventManager_ResultsDisplayEndTime - GameTime);
+		IconsTotalWidth += 7. + ComputeWidth(Label_ResultsDisplayEnd);
+	}
+
+	// Amount of registered players
+	Frame_NbEventCompetitiors.RelativePosition.X = Frame_ResultsDisplayEnd.RelativePosition.X - IconsTotalWidth;
+	Label_NbEventCompetitiors.Value = TL::ToText(G_PlayersScores.count);
+	IconsTotalWidth += 7. + ComputeWidth(Label_NbEventCompetitiors);
+
+	// Current map numer and the amount of maps
+	declare CurMapNb = Net_LibEventManager_EventFinishedMaps.count;
+	if (Net_LibEventManager_CurrentMapRunning) CurMapNb += 1;
+	Frame_CurrentEventNbMaps.RelativePosition.X = Frame_ResultsDisplayEnd.RelativePosition.X - IconsTotalWidth;
+	Label_CurrentEventNbMaps.Value = CurMapNb ^ "/" ^ Net_LibEventManager_CompetitionMapPool.count;
+	IconsTotalWidth += 7. + ComputeWidth(Label_CurrentEventNbMaps);
+}
+***
+
+{{{ManialinkTools::Functions(["Brightness", "ComputeWidth"])}}}
+{{{AltTabs::Insert(C_LibEventManager_ResultsLayerId)}}}
+
+CScore GetScore(Text _Login) {
+	foreach (Score in Scores) if (Score.User.Login == _Login) return Score;
+	return Null;
+}
+
+CUser GetUser(Text _Login) {
+	foreach (Player in Players) if (Player.User.Login == _Login) return Player.User;
+	return Null;
+}
+
+Integer GetCurrentMapPoints(CScore _Score) {
+	if (_Score == Null) return 0;
+
+	switchtype (_Score) {
+		case CTmScore : {
+			declare Score <=> (_Score as CTmScore);
+			return Score.Points;
+		}
+		case CSmScore : {
+			declare Score <=> (_Score as CSmScore);
+			return Score.Points + Score.RoundPoints;
+		}
+	}
+
+	return 0;
+}
+
+Integer GetPlayerMapPoints(Text _Login, Integer _MapOrder) {
+	declare netread Integer[Text][Text] Net_LibEventManager_PlayersMapScores for Teams[0];
+	if (_MapOrder >= Net_LibEventManager_PlayersMapScores.count) return 0;
+
+	declare I = 0;
+	foreach (MapUID => PlayersPoints in Net_LibEventManager_PlayersMapScores) {
+		if (I == _MapOrder) {
+			if (PlayersPoints.existskey(_Login)) return PlayersPoints[_Login];
+			return 0;
+		}
+		I += 1;
+	}
+
+	return 0;
+}
+
+Integer GetPlayerPosition(Text _Login) {
+	declare Key = G_SortedPlayersLogins.keyof(_Login);
+	declare PlayerPoints = G_PlayersScores[_Login];
+
+	while (Key > 0) {
+		if (G_PlayersScores[G_SortedPlayersLogins[Key - 1]] > PlayerPoints) break;
+		Key -= 1;
+	}
+
+	return Key;
+}
+
+Void UpdateScores() {
+	declare netread Integer[Text] Net_LibEventManager_PlayersTotalPoints for Teams[0];
+	declare netread Boolean Net_LibEventManager_CurrentMapRunning for Teams[0];
+	declare Integer[Text] InvertedPoints;
+
+	// Total points
+	foreach (Login => Points in Net_LibEventManager_PlayersTotalPoints) InvertedPoints[Login] = -Points;
+
+	// Live scores
+	foreach (Score in Scores) {
+		if (!InvertedPoints.existskey(Score.User.Login)) InvertedPoints[Score.User.Login] = 0;
+		if (!Net_LibEventManager_CurrentMapRunning) continue;
+		InvertedPoints[Score.User.Login] -= GetCurrentMapPoints(Score);
+	}
+
+	// Sort descending
+	InvertedPoints = InvertedPoints.sort();
+
+	// Invert the points back
+	G_SortedPlayersLogins.clear();
+	G_PlayersScores.clear();
+	G_PlayersPosition.clear();
+
+	foreach (Login => Points in InvertedPoints) {
+		G_PlayersScores[Login] = -Points;
+		G_SortedPlayersLogins.add(Login);
+	}
+
+	foreach (I => Login in G_SortedPlayersLogins) {
+		G_PlayersPosition[Login] = GetPlayerPosition(Login);
+	}
+}
+
+Boolean IsConnected(Text _Login) {
+	foreach (Player in Players) if (Player.User.Login == _Login) return True;
+	return False;
+}
+
+Boolean ShowAvatar(Text _Login) {
+	if (!IsConnected(_Login)) return False;
+	foreach (Player in Players) if (Player.User.Login == _Login) return !Player.User.IsFakeUser;
+	return False;
+}
+
+Text GetPlayerName(Text _Login) {
+	foreach (Player in Players) if (Player.User.Login == _Login) return Player.User.Name;
+	return _Login;
+}
+
+Integer GetPlayerEchelon(Text _Login) {
+	foreach (Player in Players) if (Player.User.Login == _Login) return ML::FloorInteger(Player.User.LadderPoints / 10000);
+	return 0;
+}
+
+Integer GetPlanetPrize(Integer _Position) {
+	declare netread Integer[] Net_LibEventManager_PlanetPrizesList for Teams[0];
+
+	declare PositionRepeats = 0;
+
+	foreach (Login => Position in G_PlayersPosition) {
+		if (Position == _Position) PositionRepeats += 1;
+	}
+
+	if (PositionRepeats <= 0) return 0;
+
+	declare CumulatedPlanets = 0;
+
+	for (I, _Position, _Position + PositionRepeats - 1) {
+		if (!Net_LibEventManager_PlanetPrizesList.existskey(I)) continue;
+		CumulatedPlanets += Net_LibEventManager_PlanetPrizesList[I];
+	}
+
+	return CumulatedPlanets / PositionRepeats;
+}
+
+main() {
+	---Main---
+	while (True) {
+		yield;
+		---Yield---
+	}
+}
+
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Set if the results are forced visible.
+ *
+ *	@param	_Visible	Whether the results page is always visible or only as a tab.
+ */
+Void Private_SetResultsAlwaysVisible(Boolean _Visible) {
+	if (!Layers::Exists(C_LibEventManager_ResultsLayerId)) return;
+
+	declare netwrite Boolean Net_LibEventManager_ResultsAlwaysVisible for Teams[0];
+	Net_LibEventManager_ResultsAlwaysVisible = _Visible;
+
+	if (_Visible) {
+		Layers::SetType(C_LibEventManager_ResultsLayerId, CUILayer::EUILayerType::Normal);
+	} else {
+		Layers::SetType(C_LibEventManager_ResultsLayerId, CUILayer::EUILayerType::AltMenu);
+	}
+}
+
+// ---------------------------------- //
+/** Set the results layer activity.
+ *
+ *	@param	_Active		Whether the results tab is active or not.
+ */
+Void Private_SetResultsLayerActive(Boolean _Active) {
+	if (_Active) {
+		Layers::Create(C_LibEventManager_ResultsLayerId, Private_CreateManialinkResults());
+		Layers::Attach(C_LibEventManager_ResultsLayerId);
+		AltTabs::AddTab(C_LibEventManager_ResultsLayerId, _("Competition"), "🏁", <-(C_LibEventManager_ResultsPageWidth / 2) - 1, 62.>);
+		Private_SetResultsAlwaysVisible(False);
+	}
+	else {
+		Layers::Detach(C_LibEventManager_ResultsLayerId);
+		Layers::Destroy(C_LibEventManager_ResultsLayerId);
+		AltTabs::RemoveTab(C_LibEventManager_ResultsLayerId);
+	}
+}
+
+// ---------------------------------- //
+/// Update event innformation.
+Void Private_UpdateEventNetData() {
+	declare netwrite Integer	Net_LibEventManager_EventLastUpdate		for Teams[0];
+	declare netwrite Boolean	Net_LibEventManager_CompetitionRunning	for Teams[0];
+	declare netwrite Boolean	Net_LibEventManager_CompetitionFinished	for Teams[0];
+	declare netwrite Text[]		Net_LibEventManager_ManagersLogins		for Teams[0];
+	declare netwrite Text[]		Net_LibEventManager_CompetitionMapPool	for Teams[0];
+	declare netwrite Text		Net_LibEventManager_CompetitionName		for Teams[0];
+	declare netwrite Text		Net_LibEventManager_DataPayloadURL		for Teams[0];
+	declare netwrite Text[]		Net_LibEventManager_EventFinishedMaps	for Teams[0];
+
+	// This pretty much just copies all the data
+	Net_LibEventManager_EventLastUpdate		= Now;
+	Net_LibEventManager_CompetitionRunning	= G_LibEventManager_CompetitionRunning;
+	Net_LibEventManager_CompetitionFinished	= G_LibEventManager_CompetitionFinished;
+	Net_LibEventManager_ManagersLogins		= G_LibEventManager_ManagersLogins;
+	Net_LibEventManager_CompetitionMapPool	= G_LibEventManager_CompetitionMapPool;
+	Net_LibEventManager_CompetitionName		= G_LibEventManager_CompetitionName;
+	Net_LibEventManager_DataPayloadURL		= G_LibEventManager_DataPayloadURL;
+	Net_LibEventManager_EventFinishedMaps	= G_LibEventManager_EventFinishedMaps;
+}
+
+// ---------------------------------- //
+/// Update finished maps players scores.
+Void Private_UpdateEventNetScores() {
+	declare netwrite Integer				Net_LibEventManager_LastScoresUpdate	for Teams[0];
+	declare netwrite Integer[Text]			Net_LibEventManager_PlayersTotalPoints	for Teams[0];
+	declare netwrite Integer[Text][Text]	Net_LibEventManager_PlayersMapScores	for Teams[0];
+
+	Net_LibEventManager_LastScoresUpdate	= Now;
+	Net_LibEventManager_PlayersTotalPoints	= G_LibEventManager_PlayersTotalPoints;
+	Net_LibEventManager_PlayersMapScores	= G_LibEventManager_PlayersMapScores;
+}
+
+// ---------------------------------- //
+/** Set if the ranking should display current map as live.
+ *
+ *	@param	_Running	Whether the score points should be displayed a pending map or not.
+ */
+Void Private_SetIsCurrentMapRunning(Boolean _Running) {
+	declare netwrite Boolean Net_LibEventManager_CurrentMapRunning for Teams[0];
+	Net_LibEventManager_CurrentMapRunning = _Running;
+}
+
+// ---------------------------------- //
+/// Backup the competition data in persistent variables
+Void Private_BackupCommpetitionData() {
+	declare persistent Boolean Persistent_LibEventManager_BackupExists;
+	Persistent_LibEventManager_BackupExists = True;
+
+	// ---------------------------------- //
+	// Settings
+	declare persistent Boolean	Persistent_LibEventManager_CompetitionRunning;
+	declare persistent Boolean	Persistent_LibEventManager_CompetitionFinished;
+	declare persistent Text[]	Persistent_LibEventManager_ManagersLogins;
+	declare persistent Text[]	Persistent_LibEventManager_CompetitionMapPool;
+	declare persistent Text		Persistent_LibEventManager_CompetitionName;
+	declare persistent Text		Persistent_LibEventManager_DataPayloadURL;
+	declare persistent Text[]	Persistent_LibEventManager_EventFinishedMaps;
+
+	Persistent_LibEventManager_CompetitionRunning	= G_LibEventManager_CompetitionRunning;
+	Persistent_LibEventManager_CompetitionFinished	= G_LibEventManager_CompetitionFinished;
+	Persistent_LibEventManager_ManagersLogins		= G_LibEventManager_ManagersLogins;
+	Persistent_LibEventManager_CompetitionMapPool	= G_LibEventManager_CompetitionMapPool;
+	Persistent_LibEventManager_CompetitionName		= G_LibEventManager_CompetitionName;
+	Persistent_LibEventManager_DataPayloadURL		= G_LibEventManager_DataPayloadURL;
+	Persistent_LibEventManager_EventFinishedMaps	= G_LibEventManager_EventFinishedMaps;
+
+	// ---------------------------------- //
+	// Scores
+	declare persistent Integer[Text]		Persistent_LibEventManager_PlayersTotalPoints;
+	declare persistent Integer[Text][Text]	Persistent_LibEventManager_PlayersMapScores;
+
+	Persistent_LibEventManager_PlayersTotalPoints	= G_LibEventManager_PlayersTotalPoints;
+	Persistent_LibEventManager_PlayersMapScores		= G_LibEventManager_PlayersMapScores;
+}
+
+// ---------------------------------- //
+/** Load competition data backup.
+ *
+ *	@return		True, if there was a data backup available.
+ */
+Boolean Private_LoadCompetitionDataBackup() {
+	declare persistent Boolean Persistent_LibEventManager_BackupExists;
+	if (!Persistent_LibEventManager_BackupExists) return False;
+
+	// ---------------------------------- //
+	// Settings
+	declare persistent Boolean	Persistent_LibEventManager_CompetitionRunning;
+	declare persistent Boolean	Persistent_LibEventManager_CompetitionFinished;
+	declare persistent Text[]	Persistent_LibEventManager_ManagersLogins;
+	declare persistent Text[]	Persistent_LibEventManager_CompetitionMapPool;
+	declare persistent Text		Persistent_LibEventManager_CompetitionName;
+	declare persistent Text		Persistent_LibEventManager_DataPayloadURL;
+	declare persistent Text[]	Persistent_LibEventManager_EventFinishedMaps;
+
+	G_LibEventManager_CompetitionRunning	= Persistent_LibEventManager_CompetitionRunning;
+	G_LibEventManager_CompetitionFinished	= Persistent_LibEventManager_CompetitionFinished;
+	G_LibEventManager_ManagersLogins		= Persistent_LibEventManager_ManagersLogins;
+	G_LibEventManager_CompetitionMapPool	= Persistent_LibEventManager_CompetitionMapPool;
+	G_LibEventManager_CompetitionName		= Persistent_LibEventManager_CompetitionName;
+	G_LibEventManager_DataPayloadURL		= Persistent_LibEventManager_DataPayloadURL;
+	G_LibEventManager_EventFinishedMaps		= Persistent_LibEventManager_EventFinishedMaps;
+
+	// ---------------------------------- //
+	// Scores
+	declare persistent Integer[Text]		Persistent_LibEventManager_PlayersTotalPoints;
+	declare persistent Integer[Text][Text]	Persistent_LibEventManager_PlayersMapScores;
+
+	G_LibEventManager_PlayersTotalPoints	= Persistent_LibEventManager_PlayersTotalPoints;
+	G_LibEventManager_PlayersMapScores		= Persistent_LibEventManager_PlayersMapScores;
+
+	return True;
+}
+
+// ---------------------------------- //
+/// Enable the event.
+Void Private_EnableCompetition() {
+	if (G_LibEventManager_CompetitionRunning) return;
+
+	// Disable competition
+	G_LibEventManager_CompetitionRunning = True;
+	G_LibEventManager_CompetitionFinished = False;
+	G_LibEventManager_MapSkipNeeded = True;
+	Private_SetResultsLayerActive(True);
+}
+
+// ---------------------------------- //
+/// Disable the event.
+Void Private_DisableCompetition() {
+	if (!G_LibEventManager_CompetitionRunning) return;
+
+	// Disable competition
+	G_LibEventManager_CompetitionRunning = False;
+	G_LibEventManager_CompetitionFinished = False;
+
+	// Reset map handling
+	G_LibEventManager_EventFinishedMaps.clear();
+	G_LibEventManager_NextMapUID = "";
+	G_LibEventManager_MapSkipNeeded = False;
+
+	// Reset points
+	G_LibEventManager_PlayersTotalPoints.clear();
+	G_LibEventManager_PlayersMapScores.clear();
+
+	// Update stuff
+	Private_UpdateEventNetData();
+	Private_UpdateEventNetScores();
+	Private_BackupCommpetitionData();
+	Private_SetResultsLayerActive(False);
+
+	// Disable backup
+	declare persistent Boolean Persistent_LibEventManager_BackupExists;
+	Persistent_LibEventManager_BackupExists = False;
+}
+
+// ---------------------------------- //
+/** Get the list of upcoming maps UIDs.
+ *
+ *	@return		Upcoming maps UIDs.
+ */
+Text[] Private_GetUpcomingMaps() {
+	declare UpcomingMaps = G_LibEventManager_CompetitionMapPool;
+
+	foreach (MapUID in G_LibEventManager_EventFinishedMaps) {
+		if (!UpcomingMaps.exists(MapUID)) continue;
+		declare Removed = UpcomingMaps.remove(MapUID);
+	}
+
+	return UpcomingMaps;
+}
+
+// ---------------------------------- //
+/** Get the UID of the next map in the queue.
+ *
+ *	@return		Next map UID.
+ */
+Text Private_GetNextMapUID() {
+	declare UpcomingMaps = Private_GetUpcomingMaps();
+	if (UpcomingMaps.count <= 0) return "";
+	return UpcomingMaps[0];
+}
+
+// ---------------------------------- //
+/** Get user by their UI.
+ *
+ *	@param	_UI		The UI to get the user from.
+ *
+ *	@return		The matching user.
+ */
+CUser Private_GetUserByUI(CUIConfig _UI) {
+	foreach (Player in AllPlayers) {
+		declare UI <=> UIManager.GetUI(Player);
+		if (UI == _UI) return Player.User;
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/** Set the evenr managers logins.
+ *
+ *	@param	_Logins		Array of managers logins.
+ */
+Void SetManagersLogins(Text[] _Logins) {
+	G_LibEventManager_ManagersLogins = _Logins;
+}
+
+// ---------------------------------- //
+/** Check if the given user can manage events.
+ *
+ *	@param	_User	The user to check.
+ *
+ *	@return		True, the user is a manager.
+ */
+Boolean CanManageCompetition(CUser _User) {
+	if (_User == Null) return False;
+	if (C_LibEventManager_HardcodedManagers.exists(_User.Login)) return True;
+	return G_LibEventManager_ManagersLogins.exists(_User.Login);
+}
+
+// ---------------------------------- //
+/** Check if the manager is enabled.
+ *
+ *	@return		True, if the manager is enabled.
+ */
+Boolean IsEnabled() {
+	return G_LibEventManager_ManagerEnabled;
+}
+
+// ---------------------------------- //
+/** Check if there's an event running.
+ *
+ *	@return		True, if there's ongoing competition.
+ */
+Boolean IsCompetitionRunning() {
+	return G_LibEventManager_CompetitionRunning;
+}
+
+// ---------------------------------- //
+/** Check if the event has ended.
+ *
+ *	@return		True, if the event is over.
+ */
+Boolean IsCompetitionFinished() {
+	return IsCompetitionRunning() && G_LibEventManager_CompetitionFinished;
+}
+
+// ---------------------------------- //
+/** Check if the current map must be skipped.
+ *
+ *	@return		True, if the map should be skipped.
+ */
+Boolean SkipRequested() {
+	return IsEnabled() && G_LibEventManager_MapSkipNeeded;
+}
+
+// ---------------------------------- //
+/** Set the manager availability.
+ *
+ *	@param	_Available		Whether the manager is available or not.
+ */
+Void SetAvailability(Boolean _Available) {
+	G_LibEventManager_ManagerEnabled = _Available;
+
+	if (_Available) {
+		Layers::Create(C_LibEventManager_ManagerLayerId);
+		Layers::Attach(C_LibEventManager_ManagerLayerId);
+	}
+	else {
+		Layers::Detach(C_LibEventManager_ManagerLayerId);
+		Layers::Destroy(C_LibEventManager_ManagerLayerId);
+		Private_DisableCompetition();
+	}
+}
+
+// ---------------------------------- //
+/// Enable the manager.
+Void Enable() {
+	SetAvailability(True);
+}
+
+// ---------------------------------- //
+/// Disable the manager.
+Void Disable() {
+	SetAvailability(False);
+}
+
+// ---------------------------------- //
+/** Initialize the manager.
+ *
+ *	@param	_Enabled		Whether the manager should be available since launch or not.
+ *	@param	_DownloadURL	URL to the predefined event configuration XML file.
+ */
+Void Init(Boolean _Enabled, Text _DownloadURL) {
+	SetAvailability(_Enabled);
+	Private_LoadCompetitionDataBackup();
+
+	Private_UpdateEventNetData();
+	Private_UpdateEventNetScores();
+	Private_SetIsCurrentMapRunning(False);
+	Private_SetResultsLayerActive(G_LibEventManager_CompetitionRunning);
+
+	if (!IsCompetitionRunning() && Http.IsValidUrl(G_LibEventManager_DataDownloadURL)) {
+
+	}
+
+	Private_DisableCompetition();
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	foreach (Event in UIManager.PendingEvents) {
+		if (Event.Type != CUIConfigEvent::EType::OnLayerCustomEvent) continue;
+		if (Event.CustomEventLayer != Layers::Get(C_LibEventManager_ManagerLayerId)) continue;
+		if (!CanManageCompetition(Private_GetUserByUI(Event.UI))) continue;
+
+		switch (Event.CustomEventType) {
+			case "LibEventManager:UpdateMetadata" : {
+				
+			}
+
+			case "LibEventManager:AddMap" : {
+				
+			}
+
+			case "LibEventManager:RemoveMap" : {
+				
+			}
+
+			case "LibEventManager:StartCompetition" : {
+				
+			}
+
+			case "LibEventManager:StopCompetition" : {
+				Private_DisableCompetition();
+			}
+
+			case "LibEventManager:ModifyScore" : {
+				Private_UpdateEventNetScores();
+			}
+		}
+
+		Private_UpdateEventNetData();
+		Private_BackupCommpetitionData();
+	}
+}
+
+// ---------------------------------- //
+/// On map start.
+Void StartMap() {
+	if (!G_LibEventManager_CompetitionRunning) return;
+
+	declare CurrentMapUID = Map.MapInfo.MapUid;
+
+	// ---------------------------------- //
+	// Target map couldn't be loaded - remove from map pool
+	if (G_LibEventManager_NextMapUID != "" && CurrentMapUID != G_LibEventManager_NextMapUID) {
+		declare Removed = G_LibEventManager_CompetitionMapPool.remove(CurrentMapUID);
+
+		G_LibEventManager_NextMapUID = Private_GetNextMapUID();
+		
+		// No maps - end competition
+		if (G_LibEventManager_NextMapUID == "") {
+			
+		}
+	}
+
+	// ---------------------------------- //
+	// Jump to the first map of the competition
+	if (G_LibEventManager_NextMapUID == "") {
+		G_LibEventManager_NextMapUID = Private_GetNextMapUID();
+
+		// No maps - disable competition
+		if (G_LibEventManager_NextMapUID == "") {
+			Private_DisableCompetition();
+		}
+	}
+
+	G_LibEventManager_MapSkipNeeded = G_LibEventManager_NextMapUID != "" && CurrentMapUID != G_LibEventManager_NextMapUID;
+	declare CurrentMapRunning = !G_LibEventManager_MapSkipNeeded && !G_LibEventManager_EventFinishedMaps.exists(CurrentMapUID);
+
+	// Manager UI update
+	Private_UpdateEventNetData();
+	Private_SetIsCurrentMapRunning(CurrentMapRunning);
+	Private_BackupCommpetitionData();
+}
+
+// ---------------------------------- //
+/** On map end - begin sequence.
+ *
+ *	@return		Whether the map has been registered and event scores table should roll.
+ */
+Boolean EndMapStart() {
+	if (!G_LibEventManager_CompetitionRunning) return False;
+
+	declare WasMapSkipped = G_LibEventManager_MapSkipNeeded;
+	G_LibEventManager_MapSkipNeeded = False;
+
+	// UI
+	Private_SetIsCurrentMapRunning(False);
+
+	// ---------------------------------- //
+	// Manage map ending if not skipped
+	if (!WasMapSkipped) {
+		declare CurrentMapUID = Map.MapInfo.MapUid;
+
+		// Mark the map as finished
+		if (!G_LibEventManager_EventFinishedMaps.exists(CurrentMapUID)) {
+			G_LibEventManager_EventFinishedMaps.add(CurrentMapUID);
+		}
+
+		// Save players map scores
+		declare Integer[Text] PlayersMapScores;
+		foreach (Score in Scores) if (Score.Points != 0) PlayersMapScores[Score.User.Login] = Score.Points;
+		G_LibEventManager_PlayersMapScores[CurrentMapUID] = PlayersMapScores;
+
+		// Save total players points
+		foreach (ScoreLogin => ScorePoints in PlayersMapScores) {
+			if (!G_LibEventManager_PlayersTotalPoints.existskey(ScoreLogin)) {
+				G_LibEventManager_PlayersTotalPoints[ScoreLogin] = 0;
+			}
+			G_LibEventManager_PlayersTotalPoints[ScoreLogin] += ScorePoints;
+		}
+
+		// Sort players by their total event points, descending
+		declare Integer[Text] TempScores;
+		foreach (ScoreLogin => ScorePoints in G_LibEventManager_PlayersTotalPoints) TempScores[ScoreLogin] = -ScorePoints;
+		TempScores = TempScores.sort();
+		G_LibEventManager_PlayersTotalPoints.clear();
+		foreach (ScoreLogin => ScorePoints in TempScores) G_LibEventManager_PlayersTotalPoints[ScoreLogin] = -ScorePoints;
+
+		// Show the competition results
+		Private_SetResultsAlwaysVisible(True);
+		Private_UpdateEventNetScores();
+	}
+
+	// Manage the map skip
+	else {
+		
+	}
+
+	// Pick the next map
+	G_LibEventManager_NextMapUID = Private_GetNextMapUID();
+
+	// ---------------------------------- //
+	// No upcoming maps - stop the competition
+	if (G_LibEventManager_NextMapUID == "") {
+		G_LibEventManager_CompetitionFinished = True;
+
+
+	}
+
+	// ---------------------------------- //
+	// Set the next map
+	else foreach (I => MapInfo in MapList) {
+		if (G_LibEventManager_NextMapUID == "") break;
+		if (MapInfo.MapUid != G_LibEventManager_NextMapUID) continue;
+		NextMapIndex = I;
+		break;
+	}
+
+	// Backup
+	Private_BackupCommpetitionData();
+
+	// Manager UI update
+	Private_UpdateEventNetData();
+
+	return !WasMapSkipped;
+}
+
+// ---------------------------------- //
+/// Stop the end map sequence.
+Void EndMapStop() {
+	if (!G_LibEventManager_CompetitionRunning) return;
+
+	Private_SetResultsAlwaysVisible(False);
+
+	if (G_LibEventManager_CompetitionFinished) {
+		Private_DisableCompetition();
+	}
+}

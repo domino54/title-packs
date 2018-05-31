@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY OPENPLANET by Dommy           //
-//  script version: 2018-05-30            //
+//  script version: 2018-05-31            //
 // -------------------------------------- //
 
 /**
@@ -12,7 +12,7 @@
  *	https://openplanet.nl/
  */
 
-#Const Version		"2018-05-30"
+#Const Version		"2018-05-31"
 #Const ScriptName	"Libs/domino54/Openplanet.Script.txt"
 
 // ---------------------------------- //
@@ -38,11 +38,13 @@ Text Private_CreateManialinkOpenplanet() {
 <manialink version="3" name="LibOpenplanet:Transport">
 <script><!--
 
-{{{IntoManialink}}}
-
 main() {
 	declare netwrite Boolean Net_LibOpenplanet_HasOpenplanet for UI;
-	Net_LibOpenplanet_HasOpenplanet = HasOpenplanet();
+	Net_LibOpenplanet_HasOpenplanet = SystemSkuIdentifier == CMlScript::ESystemSkuIdentifier::EU;
+
+	while (True) {
+		yield;
+	}
 }
 
 --></script>
@@ -73,36 +75,6 @@ Text GetScriptName() {
 }
 
 // ---------------------------------- //
-/// Unload the library.
-Void Unload() {
-	if (G_LibOpenplanet_TransportLayer != Null) {
-		UIManager.UILayerDestroy(G_LibOpenplanet_TransportLayer);
-		G_LibOpenplanet_TransportLayer = Null;
-	}
-}
-
-// ---------------------------------- //
-/// Load the library.
-Void Load() {
-	Unload();
-
-	G_LibOpenplanet_TransportLayer = UIManager.UILayerCreate();
-	G_LibOpenplanet_TransportLayer.ManialinkPage = Private_CreateManialinkOpenplanet();
-}
-
-// ---------------------------------- //
-/// Library loop.
-Void Loop() {
-	if (G_LibOpenplanet_TransportLayer == Null) return;
-
-	// Players Openplanet status
-	foreach (Player in AllPlayers) {
-		declare netwrite Boolean Net_LibOpenplanet_HasOpenplanet_Server for Player;
-		Net_LibOpenplanet_HasOpenplanet_Server = HasOpenplanet(Player);
-	}
-}
-
-// ---------------------------------- //
 /** Get a player by their login.
  *
  *	@param	_Login	Login of the player to find.
@@ -128,6 +100,7 @@ CPlayer GetPlayer(Text _Login) {
  */
 Boolean HasOpenplanet(CUIConfig _UI) {
 	if (_UI == Null) return False;
+	
 	declare netread Boolean Net_LibOpenplanet_HasOpenplanet for _UI;
 	return Net_LibOpenplanet_HasOpenplanet;
 }
@@ -146,6 +119,22 @@ Boolean HasOpenplanet(CPlayer _Player) {
 	if (UI == Null) return False;
 
 	return HasOpenplanet(UI);
+}
+
+// ---------------------------------- //
+/** Check if user has Openplanet installed.
+ *
+ *	@param	_Login	The login to check.
+ *
+ * 	@return		True, if the user has Openplanet installed.
+ */
+Boolean HasOpenplanet(Text _Login) {
+	if (_Login == "") return False;
+
+	declare Player <=> GetPlayer(_Login);
+	if (Player == Null) return False;
+
+	return HasOpenplanet(Player);
 }
 
 // ---------------------------------- //
@@ -174,23 +163,7 @@ Boolean HasOpenplanet(CUser _User) {
 Boolean HasOpenplanet(CScore _Score) {
 	if (_Score == Null || _Score.User == Null) return False;
 
-	return HasOpenplanet(_Score.User);
-}
-
-// ---------------------------------- //
-/** Check if user has Openplanet installed.
- *
- *	@param	_Login	The login to check.
- *
- * 	@return		True, if the user has Openplanet installed.
- */
-Boolean HasOpenplanet(Text _Login) {
-	if (_Login == "") return False;
-
-	declare Player <=> GetPlayer(_Login);
-	if (Player == Null) return False;
-
-	return HasOpenplanet(Player);
+	return HasOpenplanet(_Score.User.Login);
 }
 
 // ---------------------------------- //
@@ -209,6 +182,38 @@ Integer NbOpenplanetUsers() {
 }
 
 // ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	if (G_LibOpenplanet_TransportLayer != Null) {
+		declare Removed = UIManager.UIAll.UILayers.remove(G_LibOpenplanet_TransportLayer);
+		UIManager.UILayerDestroy(G_LibOpenplanet_TransportLayer);
+		G_LibOpenplanet_TransportLayer = Null;
+	}
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+
+	G_LibOpenplanet_TransportLayer = UIManager.UILayerCreate();
+	G_LibOpenplanet_TransportLayer.ManialinkPage = Private_CreateManialinkOpenplanet();
+	UIManager.UIAll.UILayers.add(G_LibOpenplanet_TransportLayer);
+}
+
+// ---------------------------------- //
+/// Library loop.
+Void Loop() {
+	if (G_LibOpenplanet_TransportLayer == Null) return;
+
+	// Players Openplanet status
+	foreach (Player in AllPlayers) {
+		declare netwrite Boolean Net_LibOpenplanet_HasOpenplanet_Server for Player.Score;
+		Net_LibOpenplanet_HasOpenplanet_Server = HasOpenplanet(Player);
+	}
+}
+
+// ---------------------------------- //
 /** Insert Openplanet detection methods to a manialink.
  *
  *	@return		Text body of methods returning Openplanet presence status.
@@ -219,11 +224,22 @@ Boolean HasOpenplanet() {
 	return SystemSkuIdentifier == CMlScript::ESystemSkuIdentifier::EU;
 }
 
+Boolean HasOpenplanet(CScore _Score) {
+	if (_Score == Null) return False;
+
+	declare netread Boolean Net_LibOpenplanet_HasOpenplanet_Server for _Score;
+	return Net_LibOpenplanet_HasOpenplanet_Server;
+}
+
 Boolean HasOpenplanet(CPlayer _Player) {
 	if (_Player == Null) return False;
 
-	declare netread Boolean Net_LibOpenplanet_HasOpenplanet_Server for Player;
-	return Net_LibOpenplanet_HasOpenplanet_Server;
+	switchtype (_Player) {
+		case CTmMlPlayer : return HasOpenplanet((_Player as CTmMlPlayer).Score);
+		case CSmPlayer : return HasOpenplanet((_Player as CSmPlayer).Score);
+	}
+
+	return False;
 }
 
 Integer NbOpenplanetUsers() {

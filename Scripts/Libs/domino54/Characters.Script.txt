@@ -1,9 +1,9 @@
 // -------------------------------------- //
 //  LIBRARY CHARACTERS by domino54        //
-//  script version: 2018-04-21            //
+//  script version: 2018-05-31            //
 // -------------------------------------- //
 
-#Const Version		"2018-04-21"
+#Const Version		"2018-05-31"
 #Const ScriptName	"Libs/domino54/Characters.Script.txt"
 
 #Include "MathLib" as ML
@@ -11,6 +11,7 @@
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/domino54/Bindings.Script.txt" as Bindings
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/Openplanet.Script.txt" as Openplanet
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
@@ -619,7 +620,6 @@ declare netread Text Net_LibCharacters_WindowTitleText for Teams[0];
 declare netread Text Net_LibCharacters_SwitchCharNote for Teams[0];
 
 declare netwrite Integer Net_LibCharacters_PlayerCharacter for UI = 0;
-declare netwrite Boolean Net_LibCharacters_HasOpenplanet for UI = False;
 declare netwrite Integer[] Net_LibCharacters_PurchasedChars for UI;
 
 // ---------------------------------- //
@@ -634,7 +634,7 @@ declare WindowVisible = False;
 declare UserSettingWindowVisible = False;
 declare InterfaceColor = <1., 0., 0.>;
 declare CharactersMenuContext = C_MenuContext_CharsBrowser;
-declare OpenplanetEnabled = False;
+declare OpenplanetEnabled = HasOpenplanet();
 declare CurrentTimestamp = 0;
 
 declare CharactersPageCurrent = 1;
@@ -701,8 +701,6 @@ if (Frame_CharButtonsPageSwitch.Visible)
 	Frame_CharButtonsOffset.RelativePosition_V3.X = 12.5;
 else
 	Frame_CharButtonsOffset.RelativePosition_V3.X = 0.;
-
-Net_LibCharacters_HasOpenplanet = OpenplanetEnabled;
 ***
 
 // ---------------------------------- //
@@ -754,11 +752,11 @@ foreach (Event in PendingEvents) {
 			declare PlanetsCost = 0;
 			if (G_LibCharacters_CharactersPlanets.existskey(CurUnlockCharacter)) PlanetsCost = G_LibCharacters_CharactersPlanets[CurUnlockCharacter];
 
-			declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CurUnlockCharacter);
+			declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CurUnlockCharacter) && !OpenplanetEnabled;
 			declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0;
 
 			// Take user to Openplanet website
-			if (IsOpenplanetNeeded && !OpenplanetEnabled) OpenLink("openplanet.nl", CMlScript::LinkType::ExternalBrowser);
+			if (IsOpenplanetNeeded) OpenLink("openplanet.nl", CMlScript::LinkType::ExternalBrowser);
 
 			// Take user to Unlock manialink
 			else if (IsPurchaseable) {
@@ -778,24 +776,6 @@ foreach (Event in PendingEvents) {
 		}
 	}
 	// ---------------------------------- //
-	// On key press
-	else if (Event.Type == CMlEvent::Type::KeyPress) {
-		if (!WindowVisible) continue;
-
-		// Hack: mark Openplanet as installed
-		if (Event.KeyName == "F3") {
-			OpenplanetEnabled = True;
-			Net_LibCharacters_HasOpenplanet = OpenplanetEnabled;
-			UpdateCharactersList = True;
-			continue;
-		}
-
-		declare Order = TL::ToInteger(Event.KeyName);
-		if (Order < 0) continue;
-		if (Order == 0) Order = 10;
-		CurClickedCharacter = Order - 1;
-	}
-	// ---------------------------------- //
 	// On mouse over
 	else if (Event.Type == CMlEvent::Type::MouseOver) {
 		// ---------------------------------- //
@@ -812,6 +792,16 @@ foreach (Event in PendingEvents) {
 		if (Event.MenuNavAction == CMlEvent::EMenuNavAction::Cancel) {
 			UserSettingWindowVisible = False;
 		}
+	}
+	// ---------------------------------- //
+	// On key press
+	else if (Event.Type == CMlEvent::Type::KeyPress) {
+		if (!WindowVisible) continue;
+
+		declare Order = TL::ToInteger(Event.KeyName);
+		if (Order < 0) continue;
+		if (Order == 0) Order = 10;
+		CurClickedCharacter = Order - 1;
 	}
 }
 
@@ -871,9 +861,9 @@ if (CurClickedCharacter >= 0) {
 
 	// Locked character
 	declare IsDisabled = Net_LibCharacters_DisabledCharacters.exists(DesiredCharacter);
-	declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(DesiredCharacter);
-	declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0;
-	declare IsLocked = (IsDisabled && !IsPurchased) || (IsOpenplanetNeeded && !OpenplanetEnabled) || (IsPurchaseable && !IsPurchased);
+	declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(DesiredCharacter) && !OpenplanetEnabled;
+	declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0 && !IsPurchased;
+	declare IsLocked = IsDisabled || IsOpenplanetNeeded || IsPurchaseable;
 
 	// Can't access character
 	if (IsLocked) {
@@ -881,7 +871,7 @@ if (CurClickedCharacter >= 0) {
 		UserSettingWindowVisible = True;
 
 		// Request Openplanet installation or character Unlock
-		if ((IsOpenplanetNeeded && !OpenplanetEnabled) || IsPurchaseable) CharactersMenuContext = C_MenuContext_CharUnlock;
+		if (IsOpenplanetNeeded || IsPurchaseable) CharactersMenuContext = C_MenuContext_CharUnlock;
 		
 		continue;
 	}
@@ -1063,7 +1053,7 @@ switch (CharactersMenuContext) {
 			declare PlanetsCost = 0;
 			if (G_LibCharacters_CharactersPlanets.existskey(CharId)) PlanetsCost = G_LibCharacters_CharactersPlanets[CharId];
 
-			declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CharId);
+			declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CharId) && !OpenplanetEnabled;
 			declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0;
 
 			// ---------------------------------- //
@@ -1082,7 +1072,7 @@ switch (CharactersMenuContext) {
 			Label_UnlockCharName.Value = Translate(CurCharacterName);
 			Label_UnlockTitle.Value = Translate(["%1 %2", "Unlock", CurCharacterName]);
 
-			Label_UnlockOpenplanet.Visible = IsOpenplanetNeeded && !OpenplanetEnabled;
+			Label_UnlockOpenplanet.Visible = IsOpenplanetNeeded;
 			Frame_UnlockPlanets.Visible = !Label_UnlockOpenplanet.Visible && IsPurchaseable;
 
 			// Openplanet required
@@ -1246,21 +1236,21 @@ switch (CharactersMenuContext) {
 
 				// Locked character
 				declare IsDisabled = Net_LibCharacters_DisabledCharacters.exists(CharacterId);
-				declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CharacterId);
-				declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0;
-				declare IsLocked = (IsDisabled && !IsPurchased) || (IsOpenplanetNeeded && !OpenplanetEnabled) || (IsPurchaseable && !IsPurchased);
+				declare IsOpenplanetNeeded = Net_LibCharacters_OpenplanetRequired && G_LibCharacters_OpenplanetChars.exists(CharacterId) && !OpenplanetEnabled;
+				declare IsPurchaseable = PlanetsCost > 0 && Net_LibCharacters_PaywallUnlockTimeout > 0 && !IsPurchased;
+				declare IsLocked = IsDisabled || IsOpenplanetNeeded || IsPurchaseable;
 
 				// Configure the frame
 				Label_CharSelectionHotkey.Value = TL::ToText(Key + 1);
 				Quad_CharIsSelected.Visible = !IsSpectatorClient && CurSelectedCharacter == CharacterId;
-				Frame_CharOpenplanetLock.Visible = IsOpenplanetNeeded && !OpenplanetEnabled;
-				Frame_CharPlanetsLock.Visible = !Frame_CharOpenplanetLock.Visible && IsPurchaseable && !IsPurchased;
-				Quad_CharButtonLock.Visible = !Frame_CharOpenplanetLock.Visible && !Frame_CharPlanetsLock.Visible && IsDisabled && !IsPurchased;
+				Frame_CharOpenplanetLock.Visible = IsOpenplanetNeeded;
+				Frame_CharPlanetsLock.Visible = !Frame_CharOpenplanetLock.Visible && IsPurchaseable;
+				Quad_CharButtonLock.Visible = !Frame_CharOpenplanetLock.Visible && !Frame_CharPlanetsLock.Visible && IsDisabled;
 
 				// ---------------------------------- //
 				// Set the background color
 				declare BgColor = C_ButtonColorEnabled;
-				Quad_CharButtonCard.Visible = !IsDisabled || IsPurchaseable || IsOpenplanetNeeded || IsPurchased;
+				Quad_CharButtonCard.Visible = !IsDisabled || IsPurchaseable || IsOpenplanetNeeded;
 				if (IsLocked) BgColor = C_ButtonColorDisabled;
 				Quad_CharButtonBg.BgColor = BgColor;
 
@@ -1560,6 +1550,7 @@ switch (CharactersMenuContext) {
 {{{ManialinkTools::Functions(["SetGaugeRatio", "Brightness", "HsvToRgb", "ComputeWidth", "ReplaceChars"])}}}
 {{{Translations::InjectInManialink(RequiredTranslations)}}}
 {{{Bindings::Functions()}}}
+{{{Openplanet::IntoManialink()}}}
 
 Void SetInterfaceColor(Vec3 _Color) {
 	Page.GetClassChildren("Color", Page.MainFrame, True);
@@ -1871,6 +1862,19 @@ Boolean IsBeingImported() {
 }
 
 // ---------------------------------- //
+/** Check if a player has Openplanet.
+ *
+ *	@deprecated		Use Openplanet framework instead.
+ *
+ *	@param	_Player		The player to check.
+ *
+ *	@return		True, if player has Openplanet.
+ */
+Boolean HasOpenplanet(CPlayer _Player) {
+	return Openplanet::HasOpenplanet(_Player);
+}
+
+// ---------------------------------- //
 /** Check if a character exists.
  *
  *	@param	_CharId		Id of the character to check if exists.
@@ -1915,7 +1919,7 @@ Boolean IsCharAvailable(Integer _CharId) {
 	if (!CharExists(_CharId)) return False;
 
 	declare netwrite Integer[] Net_LibCharacters_DisabledCharacters for Teams[0];
-	if (Net_LibCharacters_DisabledCharacters.exists(_CharId)) return False;
+	return !Net_LibCharacters_DisabledCharacters.exists(_CharId);
 
 	if (G_LibCharacters_CharactersPlanets.existskey(_CharId) && G_LibCharacters_CharactersPlanets[_CharId] > 0) {
 		declare netwrite Integer Net_LibCharacters_PaywallUnlockTimeout for Teams[0];
@@ -1923,6 +1927,65 @@ Boolean IsCharAvailable(Integer _CharId) {
 	}
 
 	return True;
+}
+
+// ---------------------------------- //
+/** Check if player has purchased the character.
+ *
+ *	@param	_Player		The player to check.
+ *	@param	_CharId		Id of the character to check.
+ *
+ *	@return		True, if player has purchased the character.
+ */
+Boolean HasPurchasedCharacter(CPlayer _Player, Integer _CharId) {
+	if (!CharExists(_CharId) || _Player == Null) return False;
+
+	// Character available without a purchase
+	if (!G_LibCharacters_CharactersPlanets.existskey(_CharId)) return True;
+	if (G_LibCharacters_CharactersPlanets[_CharId] <= 0) return True;
+
+	// Purchases disabled, character available regardless
+	declare netwrite Integer Net_LibCharacters_PaywallUnlockTimeout for Teams[0];
+	if (Net_LibCharacters_PaywallUnlockTimeout <= 0) return True;
+
+	declare UI <=> UIManager.GetUI(_Player);
+	if (UI == Null) return False;
+
+	declare netread Integer[] Net_LibCharacters_PurchasedChars for UI;
+	return Net_LibCharacters_PurchasedChars.exists(_CharId);
+}
+
+// ---------------------------------- //
+/** Check the Openplanet requirement.
+ *
+ *	@return		True, if Openplanet is required.
+ */
+Boolean IsOpenplanetRequired() {
+	declare netwrite Boolean Net_LibCharacters_OpenplanetRequired for Teams[0];
+	return Net_LibCharacters_OpenplanetRequired;
+}
+
+// ---------------------------------- //
+/** Check if a character requires user to have Openplanet.
+ *
+ *	@param	_CharId		Id of the character to check for Openplanet requirement.
+ *
+ *	@return		True, if this character required Openplanet installed.
+ */
+Boolean RequiresOpenplanet(Integer _CharId) {
+	return IsOpenplanetRequired() && G_LibCharacters_OpenplanetChars.exists(_CharId);
+}
+
+// ---------------------------------- //
+/** Check if player can access the character with Openplanet.
+ *
+ *	@param	_Player		The player to check.
+ *	@param	_CharId		Id of the character to check for Openplanet requirement.
+ *
+ *	@return		True, if player can access the character.
+ */
+Boolean AllowedByOpenplanet(CPlayer _Player, Integer _CharId) {
+	return _Player != Null && CharExists(_CharId) && (!RequiresOpenplanet(_CharId) || Openplanet::HasOpenplanet(_Player));
 }
 
 // ---------------------------------- //
@@ -1934,30 +1997,7 @@ Boolean IsCharAvailable(Integer _CharId) {
  *	@return		True, if the given character is available.
  */
 Boolean CanAccessCharacter(CPlayer _Player, Integer _CharId) {
-	if (!CharExists(_CharId)) return False;
-	if (IsCharAvailable(_CharId)) return True;
-
-	declare UI <=> UIManager.GetUI(_Player);
-	if (UI == Null) return False;
-
-	declare netread Integer[] Net_LibCharacters_PurchasedChars for UI;
-	return Net_LibCharacters_PurchasedChars.exists(_CharId);
-}
-
-// ---------------------------------- //
-/** Check if a player has Openplanet.
- *
- *	@param	_Player		The player to check.
- *
- *	@return		True, if player has Openplanet.
- */
-Boolean HasOpenplanet(CPlayer _Player) {
-	if (_Player == Null) return False;
-	declare UI <=> UIManager.GetUI(_Player);
-	if (UI == Null) return False;
-
-	declare netread Boolean Net_LibCharacters_HasOpenplanet for UI;
-	return Net_LibCharacters_HasOpenplanet;
+	return _Player != Null && CharExists(_CharId) && IsCharAvailable(_CharId) && HasPurchasedCharacter(_Player, _CharId) && AllowedByOpenplanet(_Player, _CharId);
 }
 
 // ---------------------------------- //
@@ -1976,7 +2016,15 @@ Integer GetPlayerChar(CPlayer _Player) {
 	declare netread Integer Net_LibCharacters_PlayerCharacter for UI;
 	declare PlayerCharacter = ML::Max(Net_LibCharacters_PlayerCharacter, 0);
 
-	if (!CanAccessCharacter(_Player, PlayerCharacter)) return 0;
+	// Character is accessible for the player
+	if (CanAccessCharacter(_Player, PlayerCharacter)) return PlayerCharacter;
+
+	// Get first available character
+	foreach (CharId in G_LibCharacters_Characters) {
+		if (CanAccessCharacter(_Player, CharId)) return CharId;
+	}
+
+	// If nothing else is available...
 	return PlayerCharacter;
 }
 
@@ -1988,8 +2036,10 @@ Integer GetPlayerChar(CPlayer _Player) {
  */
 Void SendPlayerCharInfo(CPlayer _Player, Integer _CharId) {
 	if (_Player == Null) return;
+
 	declare netwrite Integer Net_LibCharacters_LastPlayerCharChange for Teams[0];
 	declare netwrite Integer Net_LibCharacters_ServerCharacter for _Player;
+
 	Net_LibCharacters_LastPlayerCharChange = Now;
 	Net_LibCharacters_ServerCharacter = _CharId;
 }
@@ -2145,16 +2195,6 @@ Void SetDisplayEndTime(Integer _EndTime) {
 Void SetOpenplanetRequired(Boolean _OpenplanetRequired) {
 	declare netwrite Boolean Net_LibCharacters_OpenplanetRequired for Teams[0];
 	Net_LibCharacters_OpenplanetRequired = _OpenplanetRequired;
-}
-
-// ---------------------------------- //
-/** Check the Openplanet requirement.
- *
- *	@return		True, if Openplanet is required.
- */
-Boolean IsOpenplanetRequired() {
-	declare netwrite Boolean Net_LibCharacters_OpenplanetRequired for Teams[0];
-	return Net_LibCharacters_OpenplanetRequired;
 }
 
 // ---------------------------------- //

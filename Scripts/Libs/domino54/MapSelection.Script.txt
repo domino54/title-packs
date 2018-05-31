@@ -1,14 +1,15 @@
 // -------------------------------------- //
 //  LIBRARY MAP SELECTION by domino54     //
-//  script version: 2018-04-09            //
+//  script version: 2018-05-31            //
 // -------------------------------------- //
 
-#Const Version		"2018-04-09"
+#Const Version		"2018-05-31"
 #Const ScriptName	"MapSelection.Script.txt"
 
 #Include "MathLib" as ML
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
+#Include "Libs/domino54/MapInfo.Script.txt" as LibMapInfo
 
 // ---------------------------------- //
 // Constants
@@ -16,9 +17,6 @@
 #Const C_LibMapSelection_MinNbMapsRequired	3	///< Minimal number of maps required on server to show map selection.
 #Const C_LibMapSelection_NbDisplayedMaps	6	///< Amount of maps displayed in the selection window.
 #Const C_LibMapSelection_LayerId "LibMapSelection:SelectionWindow"
-#Const C_LibMapSelection_MXAPIMapInfoRoute "https://api.mania-exchange.com/%1/maps/%2?format=xml"
-#Const C_LibMapSelection_MXAPIScreenshotRoute "https://%1.mania-exchange.com/tracks/screenshot/normal/%2?.png"
-#Const C_LibMapSelection_MPWSMapInfoRoute "http://v4.live.maniaplanet.com/webservices/maps/"
 
 // ---------------------------------- //
 // Global variables
@@ -29,9 +27,6 @@ declare Boolean G_LibMapSelection_UpdateVotes;		///< Trigger for updating the am
 declare Integer G_LibMapSelection_PrevNbPlayers;	///< Previous amount of players on the server.
 declare Integer G_LibMapSelection_SelectionEndTime;	///< End time of the map selection.
 declare Integer G_LibMapSelection_ChoosedMapIndex;	///< Index of the map choosed by the players.
-declare CHttpRequest G_LibMapSelection_MXRequest;	///< Mania Exchange maps data request.
-declare Integer G_LibMapSelection_MXRequestStart;	///< Mania Exchange maps data request start time.
-declare CHttpRequest[Text] G_LibMapSelection_MPWSRequests;
 
 // ---------------------------------- //
 // Functions
@@ -198,10 +193,6 @@ declare netread Integer Net_LibMapSelection_VoteEndTime for Teams[0];
 declare netread Text[Text] Net_LibMapSelection_PlayersVotes for Teams[0];
 declare netread Integer Net_LibMapSelection_LastVotesUpdate for Teams[0];
 declare netread Text Net_LibMapSelection_SelectedMap for Teams[0];
-declare netread Integer[Text] Net_LibMapSelection_MapsMXIDs for Teams[0];
-declare netread Integer Net_LibMapSelection_MapsMXIDUpdate for Teams[0];
-declare netread Text[Text] Net_LibMapSelection_MapsThumbnails for Teams[0];
-declare netread Integer Net_LibMapSelection_ThumbnailsUpdate for Teams[0];
 
 // ---------------------------------- //
 // Local user selection
@@ -209,10 +200,6 @@ declare netwrite Text Net_LibMapSelection_UserSelectedMap for UI;
 declare netwrite Integer Net_LibMapSelection_PrevVoteTime for UI;
 Net_LibMapSelection_UserSelectedMap = "";
 Net_LibMapSelection_PrevVoteTime = -1;
-
-// ---------------------------------- //
-// Persistent
-declare persistent Integer[Text] Persistent_LibMapSelection_MapsLocalMXIDs for LocalUser;
 
 // ---------------------------------- //
 // Variables
@@ -227,8 +214,7 @@ declare PrevUserSelectedMap = "!";
 declare PrevSelectedMap = "!";
 declare PrevIsSelectionOver = False;
 declare PrevReplayIsAvailable = False;
-declare PrevMapsMXIDUpdate = -1;
-declare PrevThumbnailsUpdate = -1;
+declare PrevMapInfoUpdate = -1;
 ***
 
 // ---------------------------------- //
@@ -289,22 +275,13 @@ if (!PageIsVisible) continue;
 Frame_MapSelectionWindow.Visible = !IsInGameMenuDisplayed;
 if (!Frame_MapSelectionWindow.Visible) continue;
 
-if (PrevMapsMXIDUpdate != Net_LibMapSelection_MapsMXIDUpdate) {
-	PrevMapsMXIDUpdate = Net_LibMapSelection_MapsMXIDUpdate;
-
-	foreach (MapUID => MXID in Net_LibMapSelection_MapsMXIDs)
-		Persistent_LibMapSelection_MapsLocalMXIDs[MapUID] = MXID;
-
-	UpdateMapsCards = True;
-}
-
 if (PrevMapsUpdateTime != Net_LibMapSelection_AvailableMapsUpdate) {
 	PrevMapsUpdateTime = Net_LibMapSelection_AvailableMapsUpdate;
 	UpdateMapsCards = True;
 }
 
-if (PrevThumbnailsUpdate != Net_LibMapSelection_ThumbnailsUpdate) {
-	PrevThumbnailsUpdate = Net_LibMapSelection_ThumbnailsUpdate;
+if (PrevMapInfoUpdate != MapInfo_LastUpdate()) {
+	PrevMapInfoUpdate = MapInfo_LastUpdate();
 	UpdateMapsCards = True;
 }
 
@@ -321,22 +298,13 @@ if (UpdateMapsCards) {
 		declare Text CurMapUID for Frame;
 		CurMapUID = Net_LibMapSelection_AvailableMaps[I];
 
-		// Get map MX ID
-		declare MapMXID = -1;
-		if (Net_LibMapSelection_MapsMXIDs.existskey(CurMapUID)) MapMXID = Net_LibMapSelection_MapsMXIDs[CurMapUID];
-		if (Persistent_LibMapSelection_MapsLocalMXIDs.existskey(CurMapUID)) MapMXID = Persistent_LibMapSelection_MapsLocalMXIDs[CurMapUID];
-		
-		// ---------------------------------- //
-		// Get the map thumbnail image
 		declare Quad_MapCardThumbnail <=> (Frame.GetFirstChild("Quad_MapCardThumbnail") as CMlQuad);
-		if (MapMXID > 0) Quad_MapCardThumbnail.ImageUrl = GetMapManiaExchangeScreenshotURL(MapMXID);
-		else if (Net_LibMapSelection_MapsThumbnails.existskey(CurMapUID))
-			Quad_MapCardThumbnail.ImageUrl = Net_LibMapSelection_MapsThumbnails[CurMapUID];
-		else Quad_MapCardThumbnail.ImageUrl = "file://Thumbnails/MapUid/"^CurMapUID;
-
-		// ---------------------------------- //
-		// Set name of the map
 		declare Label_MapCardName <=> (Frame.GetFirstChild("Label_MapCardName") as CMlLabel);
+
+		// Get the map thumbnail image
+		Quad_MapCardThumbnail.ImageUrl = MapInfo_GetThumbnail(CurMapUID);
+
+		// Set name of the map
 		declare CurMapName = "???";
 		if (Net_LibMapSelection_MapsNames.existskey(CurMapUID)) CurMapName = Net_LibMapSelection_MapsNames[CurMapUID];
 		Label_MapCardName.Value = CurMapName;
@@ -475,26 +443,7 @@ if (PrevIsSelectionOver != IsSelectionOver) {
 if (!IsSelectionOver) Label_SelectionEndTime.Value = TL::TimeToText(Net_LibMapSelection_VoteEndTime - GameTime + 1000);
 ***
 
-// ---------------------------------- //
-/** Get map Mania Exchange screenshot URL.
- *
- *	@param	_MXID	Mania Exchange map ID.
- *
- *	@return		The screenshot URL.
- */
-Text GetMapManiaExchangeScreenshotURL(Integer _MXID) {
-	declare Platform = "";
-	switchtype (This) {
-		case CTmMlScriptIngame : Platform = "tm";
-		case CSmMlScriptIngame : Platform = "sm";
-	}
-	if (Platform == "") return "";
-
-	declare URL = "{{{C_LibMapSelection_MXAPIScreenshotRoute}}}";
-	URL = TL::Replace(URL, "%1", Platform);
-	URL = TL::Replace(URL, "%2", TL::ToText(_MXID));
-	return URL;
-}
+{{{LibMapInfo::ManialinkFramework()}}}
 
 // ---------------------------------- //
 // Main
@@ -572,18 +521,6 @@ Void Private_SetSelectedMap(Text _SelectedMapUID) {
 }
 
 // ---------------------------------- //
-/** Set the maps Mania Exchange IDs.
- *
- *	@param	_MXIDs	Mania Exchange maps IDs.
- */
-Void Private_SetMapsMXIDs(Integer[Text] _MXIDs) {
-	declare netwrite Integer[Text] Net_LibMapSelection_MapsMXIDs for Teams[0];
-	declare netwrite Integer Net_LibMapSelection_MapsMXIDUpdate for Teams[0];
-	Net_LibMapSelection_MapsMXIDs = _MXIDs;
-	Net_LibMapSelection_MapsMXIDUpdate = Now;
-}
-
-// ---------------------------------- //
 /** Increase the play count of a selected map.
  *
  *	@param	_Map	The map to increase play count.
@@ -609,76 +546,6 @@ Integer Private_GetMapPlayCount(CMapInfo _Map) {
 
 	if (!Persistent_LibMapSelection_MapsPlayCount.existskey(MapUID)) return 0;
 	return Persistent_LibMapSelection_MapsPlayCount[MapUID];
-}
-
-// ---------------------------------- //
-/// Violently get rid of the current MX request.
-Void Private_DestroyMXRequest() {
-	G_LibMapSelection_MXRequestStart = -1;
-
-	if (G_LibMapSelection_MXRequest != Null) {
-		Http.Destroy(G_LibMapSelection_MXRequest);
-		G_LibMapSelection_MXRequest = Null;
-	}
-}
-
-// ---------------------------------- //
-/// Violently get rid of the current MPWS requests.
-Void Private_DestroyMPWSRequests() {
-	declare Text[] RequestsToDestroy;
-
-	foreach (MapUID => Request in G_LibMapSelection_MPWSRequests) RequestsToDestroy.add(MapUID);
-
-	while (RequestsToDestroy.existskey(0)) {
-		declare MapUID = RequestsToDestroy[0];
-		Http.Destroy(G_LibMapSelection_MPWSRequests[MapUID]);
-
-		declare Boolean Removed;
-		Removed = G_LibMapSelection_MPWSRequests.removekey(MapUID);
-		Removed = RequestsToDestroy.removekey(0);
-	}
-}
-
-// ---------------------------------- //
-/** Parse the Mania Exchange API response.
- *
- *	@param	_Document	Mania Exchange response XML document.
- */
-Void Private_ParseMXResults(CXmlDocument _Document) {
-	if (_Document == Null || _Document.Root == Null) return;
-
-	declare persistent Integer[Text] Persistent_LibMapSelection_MapsMXIDs;
-
-	foreach (MapNode in _Document.Root.Children) {
-		declare MapMXID = -1;
-		declare MapUID = "";
-
-		foreach (Property in MapNode.Children) {
-			if (Property.Name == "TrackID") MapMXID = TL::ToInteger(Property.TextContents);
-			if (Property.Name == "TrackUID") MapUID = Property.TextContents;
-			if (Property.Name == "MapID") MapMXID = TL::ToInteger(Property.TextContents);
-			if (Property.Name == "MapUID") MapUID = Property.TextContents;
-		}
-
-		if (MapMXID <= 0 || MapUID == "") continue;
-		Persistent_LibMapSelection_MapsMXIDs[MapUID] = MapMXID;
-	}
-}
-
-// ---------------------------------- //
-/** Parse the ManiaPlanet WS response.
- *
- *	@param	_Document	ManiaPlanet WS response XML document.
- *
- *	@return		Thumbnail URL.
- */
-Text Private_ParseMPWSResult(CXmlDocument _Document) {
-	if (_Document == Null || _Document.Root == Null) return "";
-	foreach (Node in _Document.Root.Children) {
-		if (Node.Name != "thumbnail_url") continue;
-		return Node.TextContents;
-	}
-	return "";
 }
 
 // ---------------------------------- //
@@ -725,20 +592,6 @@ Integer GetMapIndex(CMapInfo _Map) {
 }
 
 // ---------------------------------- //
-/** Get the map Mania Exchange ID.
- *
- *	@param	_MapUID		UID of the map to get the ID.
- *
- *	@return		The Mania Exchange ID of the map.
- */
-Integer GetMapManiaExchangeID(Text _MapUID) {
-	if (_MapUID == "") return -1;
-	declare persistent Integer[Text] Persistent_LibMapSelection_MapsMXIDs;
-	if (!Persistent_LibMapSelection_MapsMXIDs.existskey(_MapUID)) return -1;
-	return Persistent_LibMapSelection_MapsMXIDs[_MapUID];
-}
-
-// ---------------------------------- //
 /// Unload the library.
 Void Unload() {
 	Layers::Destroy(C_LibMapSelection_LayerId);
@@ -748,13 +601,6 @@ Void Unload() {
 	Private_SetPlayersVotes(Text[Text]);
 	Private_SetVotingEndTime(-1);
 	Private_SetSelectedMap("");
-	Private_SetMapsMXIDs(Integer[Text]);
-	Private_DestroyMXRequest();
-
-	declare netwrite Text[Text] Net_LibMapSelection_MapsThumbnails for Teams[0];
-	declare netwrite Integer Net_LibMapSelection_ThumbnailsUpdate for Teams[0];
-	Net_LibMapSelection_MapsThumbnails.clear();
-	Net_LibMapSelection_ThumbnailsUpdate = -1;
 }
 
 // ---------------------------------- //
@@ -810,7 +656,7 @@ Boolean SelectionStart(Integer _EndTime, Boolean _ListLeastPlayedMaps) {
 
 	// Copy the maps list without the current map
 	declare CMapInfo[] Maps;
-	foreach (MapInfo in MapList) if (MapInfo != Map.MapInfo) Maps.add(MapInfo);
+	foreach (MapInfo in MapList) if (MapInfo.MapUid != Map.MapInfo.MapUid) Maps.add(MapInfo);
 
 	// ---------------------------------- //
 	// Choose maps which were played the least
@@ -866,47 +712,6 @@ Boolean SelectionStart(Integer _EndTime, Boolean _ListLeastPlayedMaps) {
 	foreach (Player in Players) {
 		declare Text PrevSelectedMap for Player;
 		PrevSelectedMap = "";
-	}
-
-	// ---------------------------------- //
-	// Launch the Mania Exchange IDs request
-	Private_DestroyMXRequest();
-
-	// Send available cached data to the manialink
-	declare Integer[Text] MXIDs;
-	foreach (MapUID in G_LibMapSelection_AvailableToVote) {
-		declare MapMXID = GetMapManiaExchangeID(MapUID);
-		if (MapMXID > 0) MXIDs[MapUID] = MapMXID;
-	}
-	Private_SetMapsMXIDs(MXIDs);
-
-	// Get platform name
-	declare Platform = "";
-	switchtype (This) {
-		case CTmMode : Platform = "tm";
-		case CSmMode : Platform = "sm";
-	}
-
-	// Get request URL
-	declare RequestURL = C_LibMapSelection_MXAPIMapInfoRoute;
-	RequestURL = TL::Replace(RequestURL, "%1", Platform);
-	RequestURL = TL::Replace(RequestURL, "%2", TL::Join(",", G_LibMapSelection_AvailableToVote));
-
-	// Create the request
-	if (Http.SlotsAvailable <= 0) {
-		G_LibMapSelection_MXRequest = Http.CreateGet(RequestURL, False);
-		G_LibMapSelection_MXRequestStart = Now;
-	}
-
-	// ---------------------------------- //
-	// ManiaPlanet web services maps data
-	Private_DestroyMPWSRequests();
-
-	foreach (MapUID in G_LibMapSelection_AvailableToVote) {
-		if (Http.SlotsAvailable <= 0) continue;
-
-		RequestURL = C_LibMapSelection_MPWSMapInfoRoute^MapUID;
-		G_LibMapSelection_MPWSRequests[MapUID] = Http.CreateGet(RequestURL, False, "Accept: application/xml");
 	}
 
 	// ---------------------------------- //
@@ -1009,54 +814,6 @@ Boolean SelectionLoop() {
 		if (G_LibMapSelection_PlayersVotes.count >= Players.count) G_LibMapSelection_SelectionEndTime = -1;
 	}
 
-	// ---------------------------------- //
-	// Manage finished MX request
-	if (G_LibMapSelection_MXRequest != Null && G_LibMapSelection_MXRequest.IsCompleted) {
-		declare Document = Xml.Create(G_LibMapSelection_MXRequest.Result);
-		Private_ParseMXResults(Document);
-		Xml.Destroy(Document);
-		Private_DestroyMXRequest();
-
-		// Send updated data to the manialink
-		declare Integer[Text] MXIDs;
-		foreach (MapUID in G_LibMapSelection_AvailableToVote) {
-			declare MapMXID = GetMapManiaExchangeID(MapUID);
-			if (MapMXID > 0) MXIDs[MapUID] = MapMXID;
-		}
-		Private_SetMapsMXIDs(MXIDs);
-	}
-
-	// ---------------------------------- //
-	// Manage ManiaPlanet WS requests
-	declare Text[] RequestsToDestroy;
-	foreach (MapUID => Request in G_LibMapSelection_MPWSRequests) {
-		if (!Request.IsCompleted) continue;
-		declare Document = Xml.Create(Request.Result);
-		declare ThumbnailURL = Private_ParseMPWSResult(Document);
-
-		if (ThumbnailURL != "") {
-			declare netwrite Text[Text] Net_LibMapSelection_MapsThumbnails for Teams[0];
-			declare netwrite Integer Net_LibMapSelection_ThumbnailsUpdate for Teams[0];
-
-			if (!Net_LibMapSelection_MapsThumbnails.existskey(MapUID)) {
-				Net_LibMapSelection_MapsThumbnails[MapUID] = ThumbnailURL;
-				Net_LibMapSelection_ThumbnailsUpdate = Now;
-			}
-		}
-
-		Xml.Destroy(Document);
-		RequestsToDestroy.add(MapUID);
-	}
-
-	while (RequestsToDestroy.existskey(0)) {
-		declare MapUID = RequestsToDestroy[0];
-		Http.Destroy(G_LibMapSelection_MPWSRequests[MapUID]);
-
-		declare Boolean Removed;
-		Removed = G_LibMapSelection_MPWSRequests.removekey(MapUID);
-		Removed = RequestsToDestroy.removekey(0);
-	}
-	
 	// Continue if there is pending vote
 	if (Now < G_LibMapSelection_SelectionEndTime) return False;
 
@@ -1075,9 +832,6 @@ Void SelectionEnd() {
 	Private_SetPlayersVotes(Text[Text]);
 	Private_SetVotingEndTime(-1);
 	Private_SetSelectedMap("");
-	Private_SetMapsMXIDs(Integer[Text]);
-	Private_DestroyMXRequest();
-	Private_DestroyMPWSRequests();
 	
 	// Restore previous sequence
 	declare CUIConfig::EUISequence PrevUISequence for This;

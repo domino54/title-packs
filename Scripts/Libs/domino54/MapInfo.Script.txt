@@ -1,0 +1,622 @@
+// -------------------------------------- //
+//  LIBRARY MAP INFO by domino54          //
+//  script version: 2018-05-31            //
+// -------------------------------------- //
+
+/**
+ *	Automatically downloads information about the
+ *	server maps from Mania Exchange and ManiaPlanet
+ *	web services. Includes simple framework for
+ *	retrieving map thumbnail URLs in manialinks.
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+#Const Version		"2018-05-31"
+#Const ScriptName	"Libs/domino54/MapInfo.Script.txt"
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibMapInfos_ManiaExchangeRoute		"https://api.mania-exchange.com/{site}/maps/{ids}"
+#Const C_LibMapInfos_ManiaExchangeWebURL	"https://{site}.mania-exchange.com/s/tr/{id}"
+#Const C_LibMapInfos_ManiaExchangeImageURL	"https://{site}.mania-exchange.com/tracks/screenshot/normal/{id}?.png"
+#Const C_LibMapInfos_ManiaExchangeHeaders	"User-Agent: ManiaPlanet/4.0\nContent-Type: application/xml"
+#Const C_LibMapInfos_ManiaExchangeLimit		8
+#Const C_LibMapInfos_ManiaPlanetRoute		"https://www.maniaplanet.com/webservices/maps/{uid}?format=xml"
+#Const C_LibMapInfos_ManiaPlanetWebURL		"https://www.maniaplanet.com/maps/{uid}"
+#Const C_LibMapInfos_ManiaPlanetHeaders		"Accept: application/xml"
+#Const C_LibMapInfos_ManiaPlanetLimit		5
+#Const C_LibMapInfos_RequestTimeout			15000
+
+// Request type
+#Const C_LibMapInfos_RequestType_MX 	0
+#Const C_LibMapInfos_RequestType_MP 	1
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Text G_LibMapInfo_ManiaExchangeSite;
+declare Integer G_LibMapInfo_PrevNbMapsTotal;
+declare Ident[] G_LibMapInfo_OngoingRequests;
+declare Boolean G_LibMapInfo_PrevSlotsAvailable;
+declare Integer G_LibMapInfo_NbManiaExchangeRequests;
+declare Integer G_LibMapInfo_NbManiaPlanetRequests;
+
+declare Text[Text][Ident] G_LibMapInfo_ManiaExchangeInfo;
+declare Text[Text][Ident] G_LibMapInfo_ManiaPlanetInfo;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Get a map by its UID.
+ *
+ *	@param	_MapUID		UID of the map to get.
+ *
+ *	@return		Requested map.
+ */
+CMapInfo Private_GetMapByUID(Text _MapUID) {
+	foreach (MapInfo in MapList) {
+		if (MapInfo.MapUid == _MapUID) return MapInfo;
+	}
+	return Null;
+}
+
+// ---------------------------------- //
+/** Check if there's ongoing request for map info.
+ *
+ *	@param	_MapID	ID of the map to check.
+ *	@param	_Type	Type of the request.
+ *
+ *	@return		True, if there's an ongoing request.
+ */
+Boolean Private_RequestExistsForMap(Ident _MapID, Integer _Type) {
+	if (G_LibMapInfo_OngoingRequests.count <= 0) return False;
+
+	foreach (RequestID in G_LibMapInfo_OngoingRequests) {
+		if (!Http.Requests.existskey(RequestID)) continue;
+
+		declare Request <=> Http.Requests[RequestID];
+		declare Ident[] LibMapInfo_RequestMaps for Request;
+
+		if (!LibMapInfo_RequestMaps.exists(_MapID)) continue;
+
+		declare Integer LibMapInfo_RequestType for Request;
+		if (LibMapInfo_RequestType != _Type) continue;
+
+		return True;
+	}
+
+	return False;
+}
+
+// ---------------------------------- //
+/// Start Mania Exchange info requests.
+Void Private_LaunchManiaExchangeRequests() {
+	if (Http.SlotsAvailable <= 0 || G_LibMapInfo_NbManiaExchangeRequests >= 1) return;
+
+	declare Ident[] TargetIDs;
+	declare Text[] TargetUIDs;
+
+	// ---------------------------------- //
+	// List the maps, which need information
+	foreach (MapInfo in MapList) {
+		if (TargetIDs.count >= C_LibMapInfos_ManiaExchangeLimit) break;
+		if (G_LibMapInfo_ManiaExchangeInfo.existskey(MapInfo.Id)) continue;
+		if (Private_RequestExistsForMap(MapInfo.Id, C_LibMapInfos_RequestType_MX)) continue;
+
+		TargetIDs.add(MapInfo.Id);
+		TargetUIDs.add(MapInfo.MapUid);
+	}
+
+	if (TargetUIDs.count <= 0) return; 
+
+	// Compose request URL
+	declare RequestURL = C_LibMapInfos_ManiaExchangeRoute;
+	RequestURL = TL::Replace(RequestURL, "{site}", G_LibMapInfo_ManiaExchangeSite);
+	RequestURL = TL::Replace(RequestURL, "{ids}", TL::Join(",", TargetUIDs));
+
+	// ---------------------------------- //
+	// Create the request
+	declare Request <=> Http.CreateGet(RequestURL, False, C_LibMapInfos_ManiaExchangeHeaders);
+	G_LibMapInfo_OngoingRequests.add(Request.Id);
+
+	declare Integer LibMapInfo_RequestTimeout for Request;
+	declare Integer LibMapInfo_RequestType for Request;
+	declare Ident[] LibMapInfo_RequestMaps for Request;
+
+	LibMapInfo_RequestTimeout = Now + C_LibMapInfos_RequestTimeout;
+	LibMapInfo_RequestType = C_LibMapInfos_RequestType_MX;
+	LibMapInfo_RequestMaps = TargetIDs;
+}
+
+// ---------------------------------- //
+/// Start ManiaPlanet info requests.
+Void Private_LaunchManiaPlanetRequests() {
+	if (Http.SlotsAvailable <= 0 || G_LibMapInfo_NbManiaPlanetRequests >= C_LibMapInfos_ManiaPlanetLimit) return;
+
+	// Available requests slots
+	declare MapsLimit = ML::Clamp(C_LibMapInfos_ManiaPlanetLimit - G_LibMapInfo_NbManiaPlanetRequests, 0, Http.SlotsAvailable);
+	if (MapsLimit <= 0) return;
+
+	declare Ident[] TargetIDs;
+	declare Text[] TargetUIDs;
+
+	// ---------------------------------- //
+	// List the maps, which need information
+	foreach (MapInfo in MapList) {
+		if (TargetIDs.count >= MapsLimit) break;
+		if (G_LibMapInfo_ManiaPlanetInfo.existskey(MapInfo.Id)) continue;
+		if (Private_RequestExistsForMap(MapInfo.Id, C_LibMapInfos_RequestType_MP)) continue;
+
+		TargetIDs.add(MapInfo.Id);
+		TargetUIDs.add(MapInfo.MapUid);
+	}
+
+	if (TargetUIDs.count <= 0) return;
+
+	// ---------------------------------- //
+	// Create a separate request for every map
+	foreach (I => MapUID in TargetUIDs) {
+		declare RequestURL = C_LibMapInfos_ManiaPlanetRoute;
+		RequestURL = TL::Replace(RequestURL, "{uid}", MapUID);
+		
+		// Create the request
+		declare Request <=> Http.CreateGet(RequestURL, False, C_LibMapInfos_ManiaPlanetHeaders);
+		G_LibMapInfo_OngoingRequests.add(Request.Id);
+
+		declare Integer LibMapInfo_RequestTimeout for Request;
+		declare Integer LibMapInfo_RequestType for Request;
+		declare Ident[] LibMapInfo_RequestMaps for Request;
+
+		LibMapInfo_RequestTimeout = Now + C_LibMapInfos_RequestTimeout;
+		LibMapInfo_RequestType = C_LibMapInfos_RequestType_MP;
+		LibMapInfo_RequestMaps = [TargetIDs[I]];
+	}
+}
+
+// ---------------------------------- //
+/// Start map information requests.
+Void Private_LaunchRequests() {
+	Private_LaunchManiaExchangeRequests();
+	Private_LaunchManiaPlanetRequests();
+}
+
+// ---------------------------------- //
+/// Update manialink frameowrk shared data.
+Void Private_UpdateSharedMapsData() {
+	declare persistent Text[Text] Persistent_LibMapInfo_ManiaExchangeURLs;
+	declare persistent Text[Text] Persistent_LibMapInfo_ManiaExchangeThumbnails;
+	declare persistent Text[Text] Persistent_LibMapInfo_ManiaPlanetURLs;
+	declare persistent Text[Text] Persistent_LibMapInfo_ManiaPlanetThumbnails;
+
+	declare netwrite Integer Net_LibMapInfo_LastMapInfoUpdate			for Teams[0];
+	declare netwrite Text[Text] Net_LibMapInfo_ManiaExchangeURLs		for Teams[0];
+	declare netwrite Text[Text] Net_LibMapInfo_ManiaExchangeThumbnails	for Teams[0];
+	declare netwrite Text[Text] Net_LibMapInfo_ManiaPlanetURLs			for Teams[0];
+	declare netwrite Text[Text] Net_LibMapInfo_ManiaPlanetThumbnails	for Teams[0];
+
+	Net_LibMapInfo_LastMapInfoUpdate		= Now;
+	Net_LibMapInfo_ManiaExchangeURLs		= Persistent_LibMapInfo_ManiaExchangeURLs;
+	Net_LibMapInfo_ManiaExchangeThumbnails	= Persistent_LibMapInfo_ManiaExchangeThumbnails;
+	Net_LibMapInfo_ManiaPlanetURLs			= Persistent_LibMapInfo_ManiaPlanetURLs;
+	Net_LibMapInfo_ManiaPlanetThumbnails	= Persistent_LibMapInfo_ManiaPlanetThumbnails;
+}
+
+// ---------------------------------- //
+/** Parse the Mania Exchange request result.
+ *
+ *	@param	_MapsIDs	IDs of the maps the request was sent for.
+ *	@param	_Document	Document containing maps information.
+ */
+Void Private_ParseManiaExchangeResult(Ident[] _MapsIDs, CXmlDocument _Document) {
+	// Empty data for unavailable maps
+	foreach (MapID in _MapsIDs) {
+		if (!G_LibMapInfo_ManiaExchangeInfo.existskey(MapID)) {
+			G_LibMapInfo_ManiaExchangeInfo[MapID] = Text[Text];
+		}
+	}
+
+	if (_Document == Null || _Document.Root == Null) return;
+
+	foreach (MXInfo in _Document.Root.Children) {
+		declare Text[Text] ManiaExchangeInfo;
+		declare Text MapUID;
+
+		// Save all the data
+		foreach (Node in MXInfo.Children) {
+			ManiaExchangeInfo[Node.Name] = Node.TextContents;
+		}
+
+		// Get the UID by any means
+		if (ManiaExchangeInfo.existskey("TrackUID")) MapUID = ManiaExchangeInfo["TrackUID"];
+		if (ManiaExchangeInfo.existskey("MapUID")) MapUID = ManiaExchangeInfo["MapUID"];
+		if (MapUID == "") continue;
+		ManiaExchangeInfo["MapUID"] = MapUID;
+
+		// Get the map by UID
+		declare MapInfo <=> Private_GetMapByUID(MapUID);
+		if (MapInfo == Null) return;
+
+		// We always prefer MapID over TrackID
+		if (ManiaExchangeInfo.existskey("TrackID")) {
+			ManiaExchangeInfo["MapID"] = ManiaExchangeInfo["TrackID"];
+		}
+
+		// Save the info
+		G_LibMapInfo_ManiaExchangeInfo[MapInfo.Id] = ManiaExchangeInfo;
+
+		declare persistent Text[Text] Persistent_LibMapInfo_ManiaExchangeURLs;
+		declare persistent Text[Text] Persistent_LibMapInfo_ManiaExchangeThumbnails;
+
+		// Cache the map web URL
+		declare ManiaExchangeURL = C_LibMapInfos_ManiaExchangeWebURL;
+		ManiaExchangeURL = TL::Replace(ManiaExchangeURL, "{site}", G_LibMapInfo_ManiaExchangeSite);
+		ManiaExchangeURL = TL::Replace(ManiaExchangeURL, "{id}", ManiaExchangeInfo["MapID"]);
+		Persistent_LibMapInfo_ManiaExchangeURLs[MapUID] = ManiaExchangeURL;
+
+		// Cache the thumbnail URL
+		declare ThumbnailURL = C_LibMapInfos_ManiaExchangeImageURL;
+		ThumbnailURL = TL::Replace(ThumbnailURL, "{site}", G_LibMapInfo_ManiaExchangeSite);
+		ThumbnailURL = TL::Replace(ThumbnailURL, "{id}", ManiaExchangeInfo["MapID"]);
+		Persistent_LibMapInfo_ManiaExchangeThumbnails[MapUID] = ThumbnailURL;
+	}
+
+	// Update framework data
+	Private_UpdateSharedMapsData();
+}
+
+// ---------------------------------- //
+/** Parse the ManiaPlanet request result.
+ *
+ *	@param	_MapID		ID of the map the request was sent for.
+ *	@param	_Document	Document containing map information.
+ */
+Void Private_ParseManiaPlanetResult(Ident _MapID, CXmlDocument _Document) {
+	declare ManiaPlanetInfo = Text[Text];
+	G_LibMapInfo_ManiaPlanetInfo[_MapID] = ManiaPlanetInfo;
+
+	if (_Document == Null || _Document.Root == Null) return;
+
+	// Save the map information
+	foreach (Data in _Document.Root.Children) ManiaPlanetInfo[Data.Name] = Data.TextContents;
+
+	// Map info successfully obtained 
+	if (ManiaPlanetInfo.existskey("uid")) {
+		declare MapUID = ManiaPlanetInfo["uid"];
+		
+		// Cache the URL
+		declare persistent Text[Text] Persistent_LibMapInfo_ManiaPlanetURLs;
+		Persistent_LibMapInfo_ManiaPlanetURLs[MapUID] = TL::Replace(C_LibMapInfos_ManiaPlanetWebURL, "{uid}", MapUID);
+
+		// Cache the thumbnail
+		if (ManiaPlanetInfo.existskey("thumbnail_url")) {
+			declare persistent Text[Text] Persistent_LibMapInfo_ManiaPlanetThumbnails;
+			Persistent_LibMapInfo_ManiaPlanetThumbnails[MapUID] = ManiaPlanetInfo["thumbnail_url"];
+		}
+	}
+
+	// Update framework data
+	Private_UpdateSharedMapsData();
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() {
+	return Version;
+}
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() {
+	return ScriptName;
+}
+
+// ---------------------------------- //
+/// Unload the library.
+Void Unload() {
+	G_LibMapInfo_ManiaExchangeSite = "";
+	G_LibMapInfo_ManiaExchangeInfo.clear();
+	G_LibMapInfo_ManiaPlanetInfo.clear();
+	G_LibMapInfo_NbManiaExchangeRequests = 0;
+	G_LibMapInfo_NbManiaPlanetRequests = 0;
+
+	declare netwrite Integer Net_LibMapInfo_LastMapInfoUpdate			for Teams[0];
+	declare netwrite Text[Text] Net_LibMapInfo_ManiaExchangeURLs		for Teams[0];
+	declare netwrite Text[Text] Net_LibMapInfo_ManiaExchangeThumbnails	for Teams[0];
+	declare netwrite Text[Text] Net_LibMapInfo_ManiaPlanetURLs			for Teams[0];
+	declare netwrite Text[Text] Net_LibMapInfo_ManiaPlanetThumbnails	for Teams[0];
+
+	Net_LibMapInfo_LastMapInfoUpdate		= -1;
+	Net_LibMapInfo_ManiaExchangeURLs		.clear();
+	Net_LibMapInfo_ManiaExchangeThumbnails	.clear();
+	Net_LibMapInfo_ManiaPlanetURLs			.clear();
+	Net_LibMapInfo_ManiaPlanetThumbnails	.clear();
+
+	// Destroy all unfinished requests
+	while (G_LibMapInfo_OngoingRequests.existskey(0)) {
+		declare RequestID = G_LibMapInfo_OngoingRequests[0];
+	
+		if (Http.Requests.existskey(RequestID)) {
+			Http.Destroy(Http.Requests[RequestID]);
+		}
+
+		declare Removed = G_LibMapInfo_OngoingRequests.removekey(0);
+	}
+}
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	Unload();
+	Private_UpdateSharedMapsData();
+
+	switchtype (This) {
+		case CTmMode : G_LibMapInfo_ManiaExchangeSite = "tm";
+		case CSmMode : G_LibMapInfo_ManiaExchangeSite = "sm";
+	}
+}
+
+// ---------------------------------- //
+/// Library global loop.
+Void Loop() {
+	// ---------------------------------- //
+	// Map list length change
+	if (G_LibMapInfo_PrevNbMapsTotal != MapList.count) {
+		G_LibMapInfo_PrevNbMapsTotal = MapList.count;
+
+		Private_LaunchRequests();
+	}
+
+	declare HttpSlotsAvailable = Http.SlotsAvailable >= 0;
+
+	// ---------------------------------- //
+	// HTTP manager availability change
+	if (G_LibMapInfo_PrevSlotsAvailable != HttpSlotsAvailable) {
+		G_LibMapInfo_PrevSlotsAvailable = HttpSlotsAvailable;
+
+		if (HttpSlotsAvailable) Private_LaunchRequests();
+	}
+
+	// ---------------------------------- //
+	// Manage ongoing requests
+	if (G_LibMapInfo_OngoingRequests.count > 0) {
+		declare Ident[] RequestsToDestroy;
+		declare StartNewRequests = False;
+
+		foreach (RequestID in G_LibMapInfo_OngoingRequests) {
+			// Request was removed by other means
+			if (!Http.Requests.existskey(RequestID)) {
+				RequestsToDestroy.add(RequestID);
+				continue;
+			}
+
+			declare Request <=> Http.Requests[RequestID];
+			declare Integer LibMapInfo_RequestTimeout for Request;
+
+			// Request timed out
+			if (Now >= LibMapInfo_RequestTimeout) {
+				RequestsToDestroy.add(RequestID);
+				continue;
+			}
+
+			// Wait for it to complete
+			if (!Request.IsCompleted) continue;
+
+			declare ParsingDocument <=> Xml.Create(Request.Result);
+			declare Integer LibMapInfo_RequestType for Request;
+			declare Ident[] LibMapInfo_RequestMaps for Request;
+
+			// Parse request data
+			switch (LibMapInfo_RequestType) {
+				case C_LibMapInfos_RequestType_MX : Private_ParseManiaExchangeResult(LibMapInfo_RequestMaps, ParsingDocument);
+				case C_LibMapInfos_RequestType_MP : Private_ParseManiaPlanetResult(LibMapInfo_RequestMaps[0], ParsingDocument);
+			}
+
+			// Desroy the request
+			RequestsToDestroy.add(RequestID);
+			Xml.Destroy(ParsingDocument);
+		}
+
+		// ---------------------------------- //
+		// Destroy finished requests
+		while (RequestsToDestroy.existskey(0)) {
+			declare RequestID = RequestsToDestroy[0];
+			StartNewRequests = True;
+			
+			if (Http.Requests.existskey(RequestID)) {
+				declare Request <=> Http.Requests[RequestID];
+				declare Integer LibMapInfo_RequestType for Request;
+
+				switch (LibMapInfo_RequestType) {
+					case C_LibMapInfos_RequestType_MX : G_LibMapInfo_NbManiaExchangeRequests -= 1;
+					case C_LibMapInfos_RequestType_MP : G_LibMapInfo_NbManiaPlanetRequests -= 1;
+				}
+				
+				Http.Destroy(Request);
+			}
+
+			declare Boolean Removed;
+			Removed = G_LibMapInfo_OngoingRequests.remove(RequestID);
+			Removed = RequestsToDestroy.removekey(0);
+		}
+
+		// Start new requests as soon as some are finished
+		if (StartNewRequests) Private_LaunchRequests();
+	}
+}
+
+// ---------------------------------- //
+/** Get Mania Exchange map info.
+ *
+ *	@param	_MapID		ID of the map to get info.
+ *
+ *	@return		Map info array.
+ */
+Text[Text] GetManiaExchangeInfo(Ident _MapID) {
+	if (!G_LibMapInfo_ManiaExchangeInfo.existskey(_MapID)) return Text[Text];
+	return G_LibMapInfo_ManiaExchangeInfo[_MapID];
+}
+
+// ---------------------------------- //
+/** Get Mania Exchange map info.
+ *
+ *	@param	_MapInfo	The map to get info.
+ *
+ *	@return		Map info array.
+ */
+Text[Text] GetManiaExchangeInfo(CMapInfo _MapInfo) {
+	if (_MapInfo == Null) return Text[Text];
+	return GetManiaExchangeInfo(_MapInfo.Id);
+}
+
+// ---------------------------------- //
+/** Get Mania Exchange map info.
+ *
+ *	@param	_MapUID		UID of the map to get info.
+ *
+ *	@return		Map info array.
+ */
+Text[Text] GetManiaExchangeInfo(Text _MapUID) {
+	return GetManiaExchangeInfo(Private_GetMapByUID(_MapUID));
+}
+
+// ---------------------------------- //
+/** Get Mania Exchange current map info.
+ *
+ *	@return		Map info array.
+ */
+Text[Text] GetManiaExchangeInfo() {
+	if (Map == Null) return Text[Text];
+	return GetManiaExchangeInfo(Map.MapInfo.Id);
+}
+
+// ---------------------------------- //
+/** Get ManiaPlanet map info.
+ *
+ *	@param	_MapID		ID of the map to get info.
+ *
+ *	@return		Map info array.
+ */
+Text[Text] GetManiaPlanetInfo(Ident _MapID) {
+	if (!G_LibMapInfo_ManiaPlanetInfo.existskey(_MapID)) return Text[Text];
+	return G_LibMapInfo_ManiaPlanetInfo[_MapID];
+}
+
+// ---------------------------------- //
+/** Get ManiaPlanet map info.
+ *
+ *	@param	_MapInfo	The map to get info.
+ *
+ *	@return		Map info array.
+ */
+Text[Text] GetManiaPlanetInfo(CMapInfo _MapInfo) {
+	if (_MapInfo == Null) return Text[Text];
+	return GetManiaPlanetInfo(_MapInfo.Id);
+}
+
+// ---------------------------------- //
+/** Get ManiaPlanet map info.
+ *
+ *	@param	_MapUID		UID of the map to get info.
+ *
+ *	@return		Map info array.
+ */
+Text[Text] GetManiaPlanetInfo(Text _MapUID) {
+	return GetManiaPlanetInfo(Private_GetMapByUID(_MapUID));
+}
+
+// ---------------------------------- //
+/** Get ManiaPlanet current map info.
+ *
+ *	@return		Map info array.
+ */
+Text[Text] GetManiaPlanetInfo() {
+	if (Map == Null) return Text[Text];
+	return GetManiaPlanetInfo(Map.MapInfo.Id);
+}
+
+// ---------------------------------- //
+/** Return manialink framework functions.
+ *
+ *	@return		Functions.
+ */
+Text ManialinkFramework() {
+	return """
+Integer MapInfo_LastUpdate() {
+	declare netread Integer Net_LibMapInfo_LastMapInfoUpdate for Teams[0];
+	return Net_LibMapInfo_LastMapInfoUpdate;
+}
+
+Text MapInfo_GetManiaExchangeURL(Text _MapUID) {
+	declare netread Text[Text] Net_LibMapInfo_ManiaExchangeURLs for Teams[0];
+	if (!Net_LibMapInfo_ManiaExchangeURLs.existskey(_MapUID)) return "";
+	return Net_LibMapInfo_ManiaExchangeURLs[_MapUID];
+}
+
+Text MapInfo_GetManiaExchangeURL() {
+	return MapInfo_GetManiaExchangeURL(Map.MapInfo.MapUid);
+}
+
+Text MapInfo_GetManiaExchangeThumbnail(Text _MapUID) {
+	declare netread Text[Text] Net_LibMapInfo_ManiaExchangeThumbnails for Teams[0];
+	if (!Net_LibMapInfo_ManiaExchangeThumbnails.existskey(_MapUID)) return "";
+	return Net_LibMapInfo_ManiaExchangeThumbnails[_MapUID];
+}
+
+Text MapInfo_GetManiaExchangeThumbnail() {
+	return MapInfo_GetManiaExchangeThumbnail(Map.MapInfo.MapUid);
+}
+
+Text MapInfo_GetManiaPlanetURL(Text _MapUID) {
+	declare netread Text[Text] Net_LibMapInfo_ManiaPlanetURLs for Teams[0];
+	if (!Net_LibMapInfo_ManiaPlanetURLs.existskey(_MapUID)) return "";
+	return Net_LibMapInfo_ManiaPlanetURLs[_MapUID];
+}
+
+Text MapInfo_GetManiaPlanetURL() {
+	return MapInfo_GetManiaPlanetURL(Map.MapInfo.MapUid);
+}
+
+Text MapInfo_GetManiaPlanetThumbnail(Text _MapUID) {
+	declare netread Text[Text] Net_LibMapInfo_ManiaPlanetThumbnails for Teams[0];
+	if (!Net_LibMapInfo_ManiaPlanetThumbnails.existskey(_MapUID)) return "";
+	return Net_LibMapInfo_ManiaPlanetThumbnails[_MapUID];
+}
+
+Text MapInfo_GetManiaPlanetThumbnail() {
+	return MapInfo_GetManiaPlanetThumbnail(Map.MapInfo.MapUid);
+}
+
+Text MapInfo_GetThumbnail(Text _MapUID) {
+	declare ThumbnailMX = MapInfo_GetManiaExchangeThumbnail(_MapUID);
+	if (ThumbnailMX != "") return ThumbnailMX;
+
+	declare ThumbnailMP = MapInfo_GetManiaPlanetThumbnail(_MapUID);
+	if (ThumbnailMP != "") return ThumbnailMP;
+
+	return "file://Thumbnails/MapUid/" ^ _MapUID;
+}
+
+Text MapInfo_GetThumbnail() {
+	return MapInfo_GetThumbnail(Map.MapInfo.MapUid);
+}
+	""";
+}

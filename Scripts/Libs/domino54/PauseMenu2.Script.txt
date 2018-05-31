@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY PAUSE MENU 2 by domino54      //
-//  script version: 2018-02-15            //
+//  script version: 2018-05-31            //
 // -------------------------------------- //
 
 /**
@@ -15,23 +15,20 @@
  *	using multiple custom teams.
  */
 
-#Const Version		"2018-02-15"
+#Const Version		"2018-05-31"
 #Const ScriptName	"Libs/domino54/PauseMenu2.Script.txt"
 
 #Include "TextLib" as TL
 #Include "Libs/Nadeo/Layers2.Script.txt" as Layers
 #Include "Libs/domino54/Bindings.Script.txt" as Bindings
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/MapInfo.Script.txt" as LibMapInfo
 #Include "Libs/domino54/Translations.Script.txt" as Translations
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
 #Const C_LibPauseMenu_ManialinkLayerId		"PauseMenu:Manialink"
-#Const C_LibPauseMenu_MXAPIMapInfoRoute 	"https://api.mania-exchange.com/%1/maps/%2?format=xml"
-#Const C_LibPauseMenu_MXAPIScreenshotRoute	"https://%1.mania-exchange.com/tracks/screenshot/normal/%2?.png"
-#Const C_LibPauseMenu_MXMapShowcaseRoute	"exchange?g=%1&id=%2"
-#Const C_LibPauseMenu_MPWSMapInfoRoute 		"http://v4.live.maniaplanet.com/webservices/maps/"
 #Const C_LibPauseMenu_MPMapShowcaseRoute	"map?"
 
 // ---------------------------------- //
@@ -586,15 +583,6 @@ declare UpdateWindowButtons = True;
 declare UpdateTeamSelection = True;
 declare UpdateServerMgrButtons = True;
 
-// Current map information
-declare ThumbnailURL_MX = "";
-declare ThumbnailURL_MP = "";
-declare MapInfoURL_MX = "";
-declare MapInfoURL_MP = "";
-declare CHttpRequest CurMapRequestWS;
-declare CHttpRequest CurMapRequestMX;
-declare RequestStartTime = -1;
-
 // Settings groups
 declare UpdateSettingsGroupsList = True;
 declare ActiveSettingsGroup = "";
@@ -630,21 +618,7 @@ declare PrevNbCustomTeams = -1;
 declare PrevTeamsNames = [0 => "", 1 => ""];
 declare PrevTeamsColors = [0 => Vec3, 1 => Vec3];
 declare PrevHideMapInfo = False;
-
-// ---------------------------------- //
-// Download information about current map
-declare MXRequestURL = "{{{C_LibPauseMenu_MXAPIMapInfoRoute}}}";
-declare GameCode = "";
-switchtype (This) {
-	case CSmMlScriptIngame : GameCode = "sm";
-	case CTmMlScriptIngame : GameCode = "tm";
-}
-MXRequestURL = TL::Replace(MXRequestURL, "%1", GameCode);
-MXRequestURL = TL::Replace(MXRequestURL, "%2", Map.MapInfo.MapUid);
-
-CurMapRequestMX = Http.CreateGet(MXRequestURL, False);
-CurMapRequestWS = Http.CreateGet("{{{C_LibPauseMenu_MPWSMapInfoRoute}}}"^Map.MapInfo.MapUid, False, "Accept: application/xml");
-RequestStartTime = Now;
+declare PrevMapInfoUpdate = -1;
 
 // Init
 EnableMenuNavigation(False, False, Null, 0);
@@ -671,61 +645,6 @@ if (PrevPageIsVisible != PageIsVisible) {
 	EnableMenuNavigation(PageIsVisible, False, Null, 1);
 	ClientUI.AltMenuNoCustomScores = PageIsVisible;
 	PrevActiveContext = -1;
-}
-
-// ---------------------------------- //
-// Handle Mania Exchange response
-if (CurMapRequestMX != Null) {
-	declare Destroy = False;
-
-	if (CurMapRequestMX.IsCompleted) {
-		declare Document = Xml.Create(CurMapRequestMX.Result);
-		declare MapId = Private_ParseMXResults(Document);
-		Xml.Destroy(Document);
-
-		if (MapId > 0) {
-			ThumbnailURL_MX = "{{{C_LibPauseMenu_MXAPIScreenshotRoute}}}";
-			ThumbnailURL_MX = TL::Replace(ThumbnailURL_MX, "%1", GameCode);
-			ThumbnailURL_MX = TL::Replace(ThumbnailURL_MX, "%2", TL::ToText(MapId));
-			
-			MapInfoURL_MX = "{{{C_LibPauseMenu_MXMapShowcaseRoute}}}";
-			MapInfoURL_MX = TL::Replace(MapInfoURL_MX, "%1", GameCode);
-			MapInfoURL_MX = TL::Replace(MapInfoURL_MX, "%2", TL::ToText(MapId));
-		}
-
-		UpdateWindowButtons = True;
-		Destroy = True;
-	}
-
-	if (Now > RequestStartTime + 10000) Destroy = True;
-
-	if (Destroy) {
-		Http.Destroy(CurMapRequestMX);
-		CurMapRequestMX = Null;
-	}
-}
-
-// ---------------------------------- //
-// Handle ManiaPlanet WS response
-if (CurMapRequestWS != Null) {
-	declare Destroy = False;
-
-	if (CurMapRequestWS.IsCompleted) {
-		declare Document = Xml.Create(CurMapRequestWS.Result);
-		ThumbnailURL_MP = Private_ParseMPWSResult(Document);
-		if (ThumbnailURL_MP != "") MapInfoURL_MP = "{{{C_LibPauseMenu_MPMapShowcaseRoute}}}"^Map.MapInfo.MapUid;
-		Xml.Destroy(Document);
-
-		UpdateWindowButtons = True;
-		Destroy = True;
-	}
-
-	if (Now > RequestStartTime + 10000) Destroy = True;
-
-	if (Destroy) {
-		Http.Destroy(CurMapRequestWS);
-		CurMapRequestWS = Null;
-	}
 }
 
 if (!PageIsVisible) continue;
@@ -755,6 +674,7 @@ foreach (Event in PendingEvents) {
 				// ActionToTrigger = "maniaplanet:quitserver";
 			}
 		}
+
 		// ---------------------------------- //
 		// Change current team
 		else if (Event.ControlId == "Quad_TeamCardColorCard") {
@@ -914,12 +834,12 @@ foreach (Event in PendingEvents) {
 		// ---------------------------------- //
 		// Show map on Mania Exchange manialink
 		else if (Event.ControlId == "Quad_MapButtonMXCard") {
-			OpenLink(MapInfoURL_MX, CMlScript::LinkType::ManialinkBrowser);
+			OpenLink(MapInfo_GetManiaExchangeURL(), CMlScript::LinkType::ExternalBrowser);
 		}
 		// ---------------------------------- //
 		// Show map on ManiaPlanet maps manialink
 		else if (Event.ControlId == "Quad_MapButtonMPCard") {
-			OpenLink(MapInfoURL_MP, CMlScript::LinkType::ManialinkBrowser);
+			OpenLink("{{{C_LibPauseMenu_MPMapShowcaseRoute}}}" ^ Map.MapInfo.MapUid, CMlScript::LinkType::ManialinkBrowser);
 		}
 
 		// Play sounds
@@ -1384,6 +1304,13 @@ switch (PauseActiveContext) {
 		}
 
 		// ---------------------------------- //
+		// Map info update
+		if (PrevMapInfoUpdate != MapInfo_LastUpdate()) {
+			PrevMapInfoUpdate = MapInfo_LastUpdate();
+			UpdateWindowButtons = True;
+		}
+
+		// ---------------------------------- //
 		// Update the tiles
 		if (UpdateWindowButtons) {
 			UpdateWindowButtons = False;
@@ -1397,21 +1324,14 @@ switch (PauseActiveContext) {
 			if (Frame_MapInformation.Visible) {
 				TotalHeight += 22.;
 
-				Frame_MapButtonMX.Visible = MapInfoURL_MX != "";
-				Frame_MapButtonMP.Visible = MapInfoURL_MP != "";
+				Frame_MapButtonMX.Visible = MapInfo_GetManiaExchangeURL() != "";
+				Frame_MapButtonMP.Visible = MapInfo_GetManiaPlanetURL() != "";
 
 				Frame_MapButtonMP.RelativePosition_V3.X = 0.;
 				if (Frame_MapButtonMX.Visible) Frame_MapButtonMP.RelativePosition_V3.X = 37.;
 
-				// ---------------------------------- //
-				// Thumbnail
-				declare ThumbnailURL = "file://Thumbnails/MapUid/"^Map.MapInfo.MapUid;
-				if (ThumbnailURL_MP != "") ThumbnailURL = ThumbnailURL_MP;
-				if (ThumbnailURL_MX != "") ThumbnailURL = ThumbnailURL_MX;
-				Quad_CurMapThumbnail.ImageUrl = ThumbnailURL;
-
-				// ---------------------------------- //
 				// Map details
+				Quad_CurMapThumbnail.ImageUrl = MapInfo_GetThumbnail();
 				Label_CurMapName.Value = Map.MapName;
 				Label_CurMapAuthor.Value = Map.AuthorLogin;
 			}
@@ -1497,6 +1417,7 @@ switch (PauseActiveContext) {
 {{{Translations::InjectInManialink(RequiredTranslations)}}}
 {{{ManialinkTools::Functions(["SetQuadStyle"])}}}
 {{{Bindings::Functions()}}}
+{{{LibMapInfo::ManialinkFramework()}}}
 
 // ---------------------------------- //
 /** Get an user-friendly name of a key.
@@ -1643,42 +1564,6 @@ Text[] GetSettingEnumNames(Integer _SettingId) {
 	declare G_LibPauseMenu_TitleSettingsEnumName = {{{Dump_SettingsEnumName}}};
 	if (!G_LibPauseMenu_TitleSettingsEnumName.existskey(_SettingId)) return Text[];
 	return G_LibPauseMenu_TitleSettingsEnumName[_SettingId];
-}
-
-// ---------------------------------- //
-/** Parse the Mania Exchange API response.
- *
- *	@param	_Document	Mania Exchange response XML document.
- *
- *	@return		Thumbnail URL.
- */
-Integer Private_ParseMXResults(CXmlDocument _Document) {
-	if (_Document == Null || _Document.Root == Null) return 0;
-
-	foreach (MapNode in _Document.Root.Children) {
-		foreach (Property in MapNode.Children) {
-			if (Property.Name == "TrackID") return TL::ToInteger(Property.TextContents);
-			if (Property.Name == "MapID") return TL::ToInteger(Property.TextContents);
-		}
-	}
-
-	return 0;
-}
-
-// ---------------------------------- //
-/** Parse the ManiaPlanet WS response.
- *
- *	@param	_Document	ManiaPlanet WS response XML document.
- *
- *	@return		Thumbnail URL.
- */
-Text Private_ParseMPWSResult(CXmlDocument _Document) {
-	if (_Document == Null || _Document.Root == Null) return "";
-	foreach (Node in _Document.Root.Children) {
-		if (Node.Name != "thumbnail_url") continue;
-		return Node.TextContents;
-	}
-	return "";
 }
 
 main() {

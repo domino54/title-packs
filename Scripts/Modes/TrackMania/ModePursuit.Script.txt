@@ -1,11 +1,11 @@
 // -------------------------------------- //
 //  PURSUIT MODE BASE by domino54         //
-//  script version: 2018-04-21            //
+//  script version: 2018-05-31            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
-#Const PUR_Version		"2018-04-21"
+#Const PUR_Version		"2018-05-31"
 #Const PUR_ScriptName	"Modes/TrackMania/ModePursuit.Script.txt"
 
 #Include "MathLib" as ML
@@ -14,20 +14,22 @@
 #Include "Libs/Nadeo/Sound.Script.txt" as Sound
 // Custom libraries
 #Include "Libs/domino54/AltTabs.Script.txt" as AltTabs
-#Include "Libs/domino54/Blacklist.Script.txt" as Blacklist
 #Include "Libs/domino54/Characters.Script.txt" as Characters
 #Include "Libs/domino54/Chat.Script.txt" as Chat
 #Include "Libs/domino54/CupAdmin.Script.txt" as CupAdmin
+#Include "Libs/domino54/EventManager.Script.txt" as EventManager
 #Include "Libs/domino54/CustomNames.Script.txt" as Names
 #Include "Libs/domino54/DiscordWebhooks.Script.txt" as DiscordWebhooks
 #Include "Libs/domino54/FakeUsers.Script.txt" as FakeUsers
 #Include "Libs/domino54/FancyMessages.Script.txt" as FancyMessages
 #Include "Libs/domino54/Killfeed.Script.txt" as Killfeed
 #Include "Libs/domino54/ManialinkTools.Script.txt" as ManialinkTools
+#Include "Libs/domino54/MapInfo.Script.txt" as LibMapInfo
 #Include "Libs/domino54/MapSelection.Script.txt" as MapSelection
 #Include "Libs/domino54/Minimap2.Script.txt" as Minimap
 #Include "Libs/domino54/Models.Script.txt" as Models
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
+#Include "Libs/domino54/Openplanet.Script.txt" as Openplanet
 #Include "Libs/domino54/PauseMenu2.Script.txt" as PauseMenu
 #Include "Libs/domino54/ServerManager.Script.txt" as ServerManager
 #Include "Libs/domino54/StoragePlayer.Script.txt" as StoragePlayer
@@ -55,12 +57,12 @@
 #Setting S_DiscordChatWebhhook	""		as "<hidden>" ///< Link to a Discord webhook used for chat logs. 
 #Setting S_AFKIdleTimeLimit		120		as "<hidden>" ///< AFK default idle time limit
 #Setting S_CustomLayersURLs		""		as "<hidden>" ///< Try to load custom layers from an URL
-#Setting S_CustomBlacklistURL	""		as "<hidden>" ///< URL of the custom blacklist file
 #Setting S_UseKillfeedNotices	True	as "<hidden>" ///< For server hosters: defines if notices are Killfeed or messages
 #Setting S_KillfeedOffsetY		0.		as "<hidden>" ///< For server hosters: Killfeed Y offset
 #Setting S_MusicPlaylistURL		""		as "<hidden>" ///< URL of the server custom music playlist file
 #Setting S_EnableMapSelection	True	as "<hidden>" ///< Allow players to choose which map they want to play next
 #Setting S_WebhookURL			""		as "<hidden>" ///< URL of the webhook to send notifications
+#Setting S_ExperimentalGameplay	False	as "<hidden>"
 
 /// Competition settings
 #Setting S_AdminEnableCupMode		False	as "<hidden>"
@@ -88,13 +90,17 @@
 #Const C_SoundsBaseVolume		-5.
 
 // ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare Integer PUR_CurEscapingClan;	///< Currently escaping clan.
+
+// ---------------------------------- //
 // Extends
 // ---------------------------------- //
 ***Match_LogVersions***
 ***
 Log::RegisterScript(PUR_ScriptName, PUR_Version);
 Log::RegisterScript(AltTabs::GetScriptName(), AltTabs::GetScriptVersion());
-Log::RegisterScript(Blacklist::GetScriptName(), Blacklist::GetScriptVersion());
 Log::RegisterScript(Characters::GetScriptName(), Characters::GetScriptVersion());
 Log::RegisterScript(Chat::GetScriptName(), Chat::GetScriptVersion());
 Log::RegisterScript(Clans::GetScriptName(), Clans::GetScriptVersion());
@@ -104,10 +110,12 @@ Log::RegisterScript(FakeUsers::GetScriptName(), FakeUsers::GetScriptVersion());
 Log::RegisterScript(DiscordWebhooks::GetScriptName(), DiscordWebhooks::GetScriptVersion());
 Log::RegisterScript(FancyMessages::GetScriptName(), FancyMessages::GetScriptVersion());
 Log::RegisterScript(Killfeed::GetScriptName(), Killfeed::GetScriptVersion());
+Log::RegisterScript(LibMapInfo::GetScriptName(), LibMapInfo::GetScriptVersion());
 Log::RegisterScript(ManialinkTools::GetScriptName(), ManialinkTools::GetScriptVersion());
 Log::RegisterScript(MapSelection::GetScriptName(), MapSelection::GetScriptVersion());
 Log::RegisterScript(Models::GetScriptName(), Models::GetScriptVersion());
 Log::RegisterScript(OffZone::GetScriptName(), OffZone::GetScriptVersion());
+Log::RegisterScript(Openplanet::GetScriptName(), Openplanet::GetScriptVersion());
 Log::RegisterScript(PauseMenu::GetScriptName(), PauseMenu::GetScriptVersion());
 Log::RegisterScript(PursuitUI::GetScriptName(), PursuitUI::GetScriptVersion());
 Log::RegisterScript(ServerManager::GetScriptName(), ServerManager::GetScriptVersion());
@@ -152,9 +160,22 @@ ST2::SetColWidth("LibST_ManiaStars", 2.5);
 ST2::SetColWidth("LibST_Tools", 1.5);
 
 // ---------------------------------- //
+// Openplante
+ST2::CreateCol("PUR_Openplanet", "", "", 1.5, 30.);
+ST2::SetColTextSize("PUR_Openplanet", 1.);
+ST2::SetColScript("PUR_Openplanet", """
+declare netread Boolean Net_LibOpenplanet_HasOpenplanet_Server for _Score;
+
+if (Net_LibOpenplanet_HasOpenplanet_Server) {
+	Label_Col.Value = "$F39";
+} else {
+	Label_Col.Value = "";
+}""");
+
+// ---------------------------------- //
 // Score points
-ST2::CreateCol("LibST_TMPoints", _("Score"), "0", 5., 100.);
-ST2::CreateCol("PUR_Vehicle", "", "", 2., 50.);
+ST2::CreateCol("LibST_TMPoints", _("Score"), "0", 6., 100.);
+ST2::CreateCol("PUR_Vehicle", "", "", 1.75, 50.);
 ST2::SetColTextAlign("LibST_TMPoints", CMlControl::AlignHorizontal::Right);
 ST2::SetColTextSize("LibST_TMPoints", 3.);
 ST2::SetColScript("LibST_TMPoints", """
@@ -205,12 +226,20 @@ PauseMenu::SetButtonScript("PUR_JoinDiscord", """
 CloseInGameMenu(::EInGameMenuResult::Resume);
 OpenLink("https://discordapp.com/invite/BBHC3sT", CMlScript::LinkType::ExternalBrowser);
 """);
+
+/*
+// Competition manager
+PauseMenu::CreateButton("PUR_EventManager", "Event Manager", C_ImgBase^"Icons/Competition.png", 9.);
+PauseMenu::SetButtonScript("PUR_EventManager", """
+CloseInGameMenu(::EInGameMenuResult::Resume);
+""");
+*/
 ***
 
 // ---------------------------------- //
 // Start server
 // ---------------------------------- //
-***Match_StartServer***
+***Match_InitServer***
 ***
 IndependantLaps = True;
 Replay_AutoStart = False;
@@ -229,7 +258,13 @@ UiLaps = True;
 
 // Load models
 Models::Load();
-Models::LoadCanyonCar("Canyon Interceptor.Skin.Pack.Gbx");
+Models::LoadCanyonCar("Pursuit:Police", "Canyon Interceptor.Skin.Pack.Gbx");
+
+// External vehicles
+Models::LoadCustom("CanyonCar", "Vehicles\\CanyonCar.Item.Gbx");
+Models::LoadCustom("StadiumCar", "Vehicles\\StadiumCar.Item.Gbx");
+Models::LoadCustom("ValleyCar", "Vehicles\\ValleyCar.Item.Gbx");
+Models::LoadCustom("LagoonCar", "Vehicles\\LagoonCar.Item.Gbx");
 
 // ---------------------------------- //
 // Download translations
@@ -271,8 +306,6 @@ while (PauseMenu::LoadingLoop()) MB_Yield();
 +++Pursuit_PauseMenu+++
 PauseMenu::Build(C_InterfaceFont_Medium);
 
-ServerManager::Load();
-
 // ---------------------------------- //
 // Load custom tabs
 AltTabs::Load();
@@ -297,7 +330,15 @@ Killfeed::AddTranslations(["$<%1$> rests in the OffZone", "$<%1$> tried to escap
 Killfeed::SetTextFont(C_InterfaceFont_Medium);
 Killfeed::SetMapSwitching(True);
 
-// Load streaks
+// Controllers
+Openplanet::Load();
+LibMapInfo::Load();
+ServerManager::Load();
+EventManager::Init(True, "");
+
+// Add-ons
+Chat::Load(C_InterfaceFont_Medium);
+Minimap::Load(C_ImgBase^"/Minimap/");
 Streaks::Load(C_ImgBase^"/Streaks/");
 
 // ---------------------------------- //
@@ -310,16 +351,12 @@ FancyMessages::FormatStatusMessage(<0., 62., 0.>, "RajdhaniMono", 3);
 Sound::Load();
 Sound::Attach();
 
-// Cuatom chat
-Chat::Load(C_InterfaceFont_Medium);
-
 // ---------------------------------- //
 // Load the Storage Music Player
 StoragePlayer::Load(C_ImgBase, C_InterfaceFont_Medium, C_InterfaceFont_Bold);
 StoragePlayer::SetDefaultPlaylistURL("");
 
 // Other
-Minimap::Load(C_ImgBase^"/Minimap/");
 Killfeed::Build();
 ***
 
@@ -333,6 +370,7 @@ Killfeed::SetMapSwitching(False);
 // ---------------------------------- //
 ***Match_InitMap***
 ***
+EventManager::StartMap();
 ST2::ClearScores();
 TopScores::MatchBegin();
 TM::WaitRaceAll();
@@ -345,13 +383,15 @@ PUR_DisableTimeLimit();
 declare PrevEnableCharSelection = S_EnableCharSelection;
 declare PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
 declare PrevDisableCameraFree = S_DisableCameraFree;
+
+if (EventManager::SkipRequested()) MB_StopMatch();
 ***
 
 ***Match_StartMap***
 ***
 // ---------------------------------- //
 // Init characters menu
-Characters::SetOpenplanetRequired(Map.CollectionName == "Stadium");
+Characters::SetOpenplanetRequired(Map.CollectionName == "Stadium" && !S_ExperimentalGameplay);
 PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
 
 PauseMenu::SetButtonVisibility("PUR_CharSelection", S_EnableCharSelection);
@@ -379,12 +419,16 @@ ST2::ClearScores();
 TopScores::RoundBegin();
 ***
 
+***Match_StartRound***
+***
+PursuitUI::SetEscapingClan(PUR_CurEscapingClan);
+***
+
 // ---------------------------------- //
 // Mode global loop
 // ---------------------------------- //
 ***Match_Yield***
 ***
-Blacklist::Loop(S_CustomBlacklistURL);
 Characters::Loop();
 Chat::Loop(S_UseCustomChat, S_DiscordChatWebhhook);
 CupAdmin::Loop(S_AdminEnableCupMode, S_AdminPauseCompetition, S_AdminCupModeNbMaps, S_AdminCupName);
@@ -392,7 +436,9 @@ DiscordWebhooks::Loop();
 FancyMessages::Loop();
 FakeUsers::UpdateAmount(S_NbFakeUsers);
 Killfeed::Loop();
+LibMapInfo::Loop();
 Message::Loop();
+Openplanet::Loop();
 PursuitUI::Loop();
 ServerManager::Loop();
 StoragePlayer::UpdatePlaylistURL(S_MusicPlaylistURL);
@@ -484,6 +530,8 @@ if (PrevDisableCameraFree != S_DisableCameraFree) {
 	PrevDisableCameraFree = S_DisableCameraFree;
 	PursuitUI::SetCamera7Forbidden(S_DisableCameraFree);
 }
+
+if (EventManager::SkipRequested()) MB_StopMatch();
 ***
 
 ***Match_EndPlayLoop***
@@ -520,6 +568,12 @@ TopScores::MatchEnd();
 // ---------------------------------- //
 ***Match_AfterPodiumSequence***
 ***
+if (EventManager::EndMapStart()) {
+	if (!EventManager::IsCompetitionFinished()) MB_Sleep(8000);
+	else while (EventManager::IsCompetitionFinished() && !ServerShutdownRequested) MB_Yield();
+	EventManager::EndMapStop();
+}
+
 CupAdmin::EndMap();
 while (CupAdmin::IsCupEnd()) MB_Yield();
 ***
@@ -531,8 +585,8 @@ while (CupAdmin::IsCupEnd()) MB_Yield();
 ***
 // ---------------------------------- //
 // Let players vote for the next map
-if (!MM_IsMatchServer() && S_EnableMapSelection && MapSelection::SelectionStart(Now + 10750, True)) {
-	while (!MapSelection::SelectionLoop() && !MatchEndRequested && !ServerShutdownRequested) MB_Yield();
+if (!MM_IsMatchServer() && S_EnableMapSelection && !EventManager::IsCompetitionRunning() && MapSelection::SelectionStart(Now + 10750, True)) {
+	while (!MapSelection::SelectionLoop() && !ServerShutdownRequested) MB_Yield();
 	MB_Sleep(3000);
 	MapSelection::SelectionEnd();
 }
@@ -556,7 +610,9 @@ AltTabs::Unload();
 Characters::Unload();
 FancyMessages::Unload();
 Killfeed::Unload();
+LibMapInfo::Unload();
 MapSelection::Unload();
+Openplanet::Unload();
 PursuitUI::Unload();
 Sound::Unload();
 StoragePlayer::Unload();
@@ -804,49 +860,57 @@ Void PUR_SpawnPlayer(CTmPlayer _Player) {
 	declare PlayerCharacterId = 0;
 	if (S_EnableCharSelection) PlayerCharacterId = Characters::GetPlayerChar(_Player);
 
-	// Forced StadiumCar
-	if (Characters::IsOpenplanetRequired() && !Characters::HasOpenplanet(_Player)) PlayerCharacterId = 1;
-
 	Characters::SendPlayerCharInfo(_Player, PlayerCharacterId);
 	Minimap::SetVehicleType(_Player, PlayerCharacterId + 1);
+	
+	declare UseExternalModels = S_ExperimentalGameplay;
+	declare VehicleColumnCode = "";
+	declare TargetSkinName = "";
+	declare EngineMaxRPM = 10000.;
+
+	// Police skin for the chasing team
+	if (PUR_CurEscapingClan > 0 && PUR_GetPlayerClan(_Player) == 3 - PUR_CurEscapingClan) TargetSkinName = "Pursuit:Police";
 
 	switch (PlayerCharacterId) {
 		// ---------------------------------- //
 		// Canyon Car
 		case 0 : {
-			switch (PlayerClan) {
-				case 1 : ModelName = "Canyon Interceptor.Skin.Pack.Gbx";
-				default : ModelName = "";
-			}
-			Models::SetCanyonCar(_Player, ModelName);
-			ST2::SetColValue("PUR_Vehicle", _Player.Score, "$F00C");
+			if (UseExternalModels) Models::SetCustom(_Player, "CanyonCar");
+			else Models::SetCanyonCar(_Player, TargetSkinName);
+			VehicleColumnCode = "$F00C";
 		}
+		// ---------------------------------- //
+		// Stadium Car
 		case 1 : {
-			Models::SetStadiumCar(_Player);
-			ST2::SetColValue("PUR_Vehicle", _Player.Score, "$0F7S");
+			Models::SetStadiumCar(_Player, TargetSkinName);
+			VehicleColumnCode = "$0F7S";
+			EngineMaxRPM = 11000.;
 		}
+		// ---------------------------------- //
+		// Valley Car
 		case 2 : {
-			Models::SetValleyCar(_Player);
-			ST2::SetColValue("PUR_Vehicle", _Player.Score, "$7F0V");
+			if (UseExternalModels) Models::SetCustom(_Player, "ValleyCar");
+			else Models::SetValleyCar(_Player, TargetSkinName);
+			VehicleColumnCode = "$7F0V";
 		}
+		// ---------------------------------- //
+		// Lagoon Car
 		case 3 : {
-			Models::SetLagoonCar(_Player);
-			ST2::SetColValue("PUR_Vehicle", _Player.Score, "$07FL");
+			if (UseExternalModels) Models::SetCustom(_Player, "LagoonCar");
+			else Models::SetLagoonCar(_Player, TargetSkinName);
+			VehicleColumnCode = "$07FL";
 		}
+		// ---------------------------------- //
+		// Default
 		default : {
 			Models::SetDefault(_Player);
-			ST2::SetColValue("PUR_Vehicle", _Player.Score, "");
 		}
 	}
 
-	// ---------------------------------- //
+	// Vehicle icon in rankings
+	ST2::SetColValue("PUR_Vehicle", _Player.Score, VehicleColumnCode);
+
 	// Engine max RPM
-	declare EngineMaxRPM = 10000.;
-	switch (PlayerCharacterId) {
-		case 0 : if (MapPlayerModelName == "StadiumCar") EngineMaxRPM = 11000.;
-		case 1 : EngineMaxRPM = 11000.;
-		default : EngineMaxRPM = 10000.;
-	}
 	PursuitUI::SetPlayerEngineMaxRPM(_Player, EngineMaxRPM);
 
 	// Spawn the player

@@ -1,0 +1,528 @@
+// -------------------------------------- //
+//  PURSUIT ROPERTIES LIB by domino54     //
+//  script version: 2018-06-22            //
+// -------------------------------------- //
+
+#Const Version		"2018-06-22"
+#Const ScriptName	"MapTypes/TrackMania/PursuitArena.Script.txt"
+
+#Include "TextLib" as TL
+
+// ---------------------------------- //
+// Constants
+// ---------------------------------- //
+#Const C_LibProperties_Archetypes ["CanyonCar", "StadiumCar", "ValleyCar", "LagoonCar"]
+
+// ---------------------------------- //
+// Global variables
+// ---------------------------------- //
+declare CUILayer G_LibProperties_ManialinkLayer;
+
+// ---------------------------------- //
+// Functions
+// ---------------------------------- //
+
+// ---------------------------------- //
+// Private
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Create layer for the map properties window.
+ *
+ *	@return		Map properties manialink.
+ */
+Text Private_LayerMapProperties() {
+	return """
+<manialink version="3" name="Properties:MapProperties">
+<stylesheet>
+	<style class="separator" valign="center" size="116 .5" bgcolor="3AE" />
+</stylesheet>
+
+<frame pos="-113 81">
+	<quad halign="center" valign="center" size="5 5" style="Icons128x32_1" substyle="Settings" />
+	<quad id="Quad_ToggleMapProperties" halign="center" valign="center" size="6 6" style="Bgs1InRace" substyle="BgButton" tooltip="Pursuit properties" ScriptEvents="1" />
+</frame>
+
+<frame id="Frame_MapPropertiesWindow" pos="-60 76" z-index="10" hidden="1">
+	<quad pos="-3.25 4.75" size="126.5 8" style="Bgs1InRace" substyle="BgGlow2" />
+	<label pos="60 -6" halign="center" valign="center2" style="TextTitle3" text="Pursuit map properties" />
+	<quad size="120 12" style="Bgs1InRace" substyle="BgTitle" />
+
+	<frame id="Frame_ModelsList" pos="2 -16">
+		<label pos="0 -2" valign="center2" style="TextTitle3" text="Selectable vehicles" />
+		<label pos="0 -5" size="116" style="TextCardSmallScores2" autonewline="1" text="Define which vehicles players can use on your map." />
+
+		<framemodel id="FrameModel_ModelsListItem">
+			<label id="Label_ModelName" pos="2 -3" valign="center2" style="TextButtonSmall" textcolor="000" text="CanyonCar" />
+			<quad id="Quad_ModelForced" pos="26 -3" size="4 4" halign="center" valign="center" style="Icons64x64_1" substyle="Check" />
+			<quad id="Quad_ToggleModel" size="29 6" style="Bgs1InRace" substyle="BgCard" ScriptEvents="1" />
+		</framemodel>
+
+		<frameinstance modelid="FrameModel_ModelsListItem" id="Frame_ModelsListItem#0" pos="0 -10" />
+		<frameinstance modelid="FrameModel_ModelsListItem" id="Frame_ModelsListItem#1" pos="29 -10" />
+		<frameinstance modelid="FrameModel_ModelsListItem" id="Frame_ModelsListItem#2" pos="58 -10" />
+		<frameinstance modelid="FrameModel_ModelsListItem" id="Frame_ModelsListItem#3" pos="87 -10" />
+	</frame>
+
+	<quad class="separator" pos="2 -36" />
+
+	<frame id="Frame_TeamModels" pos="2 -40">
+		<label pos="0 -2" valign="center2" style="TextTitle3" text="Team forced vehicles" />
+		<label pos="0 -5" size="116" style="TextCardSmallScores2" autonewline="1" text="Force vehicles for both teams. Both teams must have a vehicle set. Servers can disable this setting." />
+
+		<framemodel id="FrameModel_TeamVehicleItem">
+			<label id="Label_TeamName" pos="2 -3" valign="center2" style="TextButtonSmall" textcolor="000" text="Police" />
+			<label id="Label_ModelName" pos="98 -3" halign="center" valign="center2" style="TextButtonSmall" textcolor="000" text="- - -" />
+			<quad id="Quad_TeamModelPrev" pos="84 -3" halign="center" valign="center" size="6 6" style="Icons64x64_1" substyle="ArrowPrev" ScriptEvents="1" />
+			<quad id="Quad_TeamModelNext" pos="112 -3" halign="center" valign="center" size="6 6" style="Icons64x64_1" substyle="ArrowNext" ScriptEvents="1" />
+			<quad size="116 6" style="Bgs1InRace" substyle="BgCard" />
+		</framemodel>
+
+		<frameinstance modelid="FrameModel_TeamVehicleItem" id="Frame_TeamModelItem#0" pos="0 -14" />
+		<frameinstance modelid="FrameModel_TeamVehicleItem" id="Frame_TeamModelItem#1" pos="0 -20" />
+	</frame>
+
+	<quad class="separator" pos="2 -70" />
+
+	<frame id="Frame_GameplaySettings" pos="2 -74">
+		<label pos="0 -2" valign="center2" style="TextTitle3" text="Gameplay settings" />
+		<label pos="0 -5" size="116" style="TextCardSmallScores2" autonewline="1" text="Tweak the basic gameplay settings of your map. Servers can override the map settings with own configuration." />
+
+		<frame pos="0 -12">
+			<label pos="88" halign="center" valign="center2" style="TextButtonSmall" text="None" />
+			<label pos="98" halign="center" valign="center2" style="TextButtonSmall" text="On" />
+			<label pos="108" halign="center" valign="center2" style="TextButtonSmall" text="Off" />
+		</frame>
+
+		<framemodel id="FrameModel_SettingsItem">
+			<label id="Label_SettingName" pos="2 -3" valign="center2" style="TextButtonSmall" textcolor="000" text="Setting name" />
+			<quad id="Quad_CheckOption1" pos="88 -3" size="4 4" halign="center" valign="center" style="Icons64x64_1" substyle="Check" ScriptEvents="1" />
+			<quad id="Quad_CheckOption2" pos="98 -3" size="4 4" halign="center" valign="center" style="Icons64x64_1" substyle="Check" ScriptEvents="1" />
+			<quad id="Quad_CheckOption3" pos="108 -3" size="4 4" halign="center" valign="center" style="Icons64x64_1" substyle="Check" ScriptEvents="1" />
+			<quad size="116 6" style="Bgs1InRace" substyle="BgCard" />
+		</framemodel>
+
+		<frameinstance modelid="FrameModel_SettingsItem" id="Frame_SettingsItem#0" pos="0 -14" />
+		<frameinstance modelid="FrameModel_SettingsItem" id="Frame_SettingsItem#1" pos="0 -20" />
+		<frameinstance modelid="FrameModel_SettingsItem" id="Frame_SettingsItem#2" pos="0 -26" />
+	</frame>
+
+	<quad class="separator" pos="2 -110" />
+
+	<frame id="Frame_GameplaySettings" pos="2 -114">
+		<label pos="0 -2" valign="center2" style="TextTitle3" text="Additional options" />
+		<label pos="0 -5" size="116" style="TextCardSmallScores2" autonewline="1" text="Set the behavior of special game mode features." />
+
+		<framemodel id="FrameModel_ExtraItem">
+			<label id="Label_SettingName" pos="2 -3" valign="center2" style="TextButtonSmall" textcolor="000" text="Setting name" />
+			<quad id="Quad_IsEnabled" pos="113 -3" size="4 4" halign="center" valign="center" style="Icons64x64_1" substyle="Check" />
+			<quad id="Quad_ExtraCard" size="116 6" style="Bgs1InRace" substyle="BgCard" ScriptEvents="1" />
+		</framemodel>
+
+		<frameinstance modelid="FrameModel_ExtraItem" id="Frame_ExtraItem#0" pos="0 -10" />
+	</frame>
+
+	<quad class="separator" pos="2 -134" />
+
+	<label pos="60 -142" style="CardButtonMedium" halign="center" valign="center" text="Close" class="close" ScriptEvents="1" />
+
+	<quad size="120 150" style="Bgs1InRace" substyle="BgWindow2" ScriptEvents="1" />
+	<quad pos="0 -150" size="120 2" style="Bgs1InRace" substyle="BgMetalBar" />
+</frame>
+
+<frame id="Frame_Background" z-index="9" hidden="1">
+	<quad id="Quad_Background" halign="center" valign="center" size="320 180" style="Bgs1" substyle="BgDialogBlur" class="close" ScriptEvents="1" />
+</frame>
+me>
+
+<script><!--
+/**
+ *	Pursuit Map Properties
+ */
+
+#Include "TextLib" as TL
+
+#Const C_LibProperties_Archetypes {{{dump(C_LibProperties_Archetypes)}}}
+
+// ---------------------------------- //
+/// Update models list.
+Void UpdateModelsList() {
+	declare metadata Text[] Pursuit_MapForcedModelsIds for Editor.Map;
+	declare SelectedNone = Pursuit_MapForcedModelsIds.count <= 0;
+
+	for (I, 0, 3) {
+		declare Frame <=> (Page.GetFirstChild("Frame_ModelsListItem#"^I) as CMlFrame);
+		declare Label_ModelName <=> (Frame.GetFirstChild("Label_ModelName") as CMlLabel);
+		declare Quad_ModelForced <=> (Frame.GetFirstChild("Quad_ModelForced") as CMlQuad);
+		declare Quad_ToggleModel <=> (Frame.GetFirstChild("Quad_ToggleModel") as CMlQuad);
+		declare ModelName = C_LibProperties_Archetypes[I];
+		
+		Label_ModelName.Value = ModelName;
+		Quad_ModelForced.StyleSelected = SelectedNone || Pursuit_MapForcedModelsIds.exists(ModelName);
+
+		declare Text ModelId for Quad_ToggleModel;
+		ModelId = ModelName;
+	}
+}
+
+// ---------------------------------- //
+/// Update team models.
+Void UpdateTeamModels() {
+	declare metadata Text Pursuit_ForcedModelPolice		for Editor.Map;
+	declare metadata Text Pursuit_ForcedModelThieves	for Editor.Map;
+
+	for (I, 0, 1) {
+		declare Frame <=> (Page.GetFirstChild("Frame_TeamModelItem#"^I) as CMlFrame);
+		declare Label_TeamName <=> (Frame.GetFirstChild("Label_TeamName") as CMlLabel);
+		declare Label_ModelName <=> (Frame.GetFirstChild("Label_ModelName") as CMlLabel);
+		declare Quad_TeamModelPrev <=> (Frame.GetFirstChild("Quad_TeamModelPrev") as CMlQuad);
+		declare Quad_TeamModelNext <=> (Frame.GetFirstChild("Quad_TeamModelNext") as CMlQuad);
+		declare Text ModelName;
+
+		switch (I) {
+			case 0 : {
+				Label_TeamName.Value = "Police";
+				ModelName = Pursuit_ForcedModelPolice;
+			}
+			case 1 : {
+				Label_TeamName.Value = "Thieves";
+				ModelName = Pursuit_ForcedModelThieves;
+			}
+		}
+
+		if (ModelName != "") {
+			Label_ModelName.Value = ModelName;
+		} else {
+			Label_ModelName.Value = _("<none>");
+		}
+
+		declare Integer TeamNum as TeamNum1 for Quad_TeamModelPrev;
+		declare Integer TeamNum as TeamNum2 for Quad_TeamModelNext;
+
+		foreach (Quad in [Quad_TeamModelPrev, Quad_TeamModelNext]) {
+			declare Integer TeamNum for Quad;
+			TeamNum = I;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Update settings list.
+Void UpdateSettingsList() {
+	declare metadata Integer Pursuit_SeeNamesThroughWalls	for Editor.Map;
+	declare metadata Integer Pursuit_DisableCameraFree		for Editor.Map;
+	declare metadata Integer Pursuit_UseCampingDetection	for Editor.Map;
+
+	for (I, 0, 2) {
+		declare Frame <=> (Page.GetFirstChild("Frame_SettingsItem#"^I) as CMlFrame);
+		declare Label_SettingName <=> (Frame.GetFirstChild("Label_SettingName") as CMlLabel);
+		declare Quad_CheckOption = [
+			(Frame.GetFirstChild("Quad_CheckOption1") as CMlQuad),
+			(Frame.GetFirstChild("Quad_CheckOption2") as CMlQuad),
+			(Frame.GetFirstChild("Quad_CheckOption3") as CMlQuad)
+		];
+		declare SettingValue = 0;
+
+		switch (I) {
+			case 0 : {
+				Label_SettingName.Value = "Always see player nametags";
+				SettingValue = Pursuit_SeeNamesThroughWalls;
+			}
+			case 1 : {
+				Label_SettingName.Value = "Disable free camera (Cam 7)";
+				SettingValue = Pursuit_DisableCameraFree;
+			}
+			case 2 : {
+				Label_SettingName.Value = "Use camping detection";
+				SettingValue = Pursuit_UseCampingDetection;
+			}
+		}
+
+		foreach (J => Quad in Quad_CheckOption) {
+			Quad.StyleSelected = SettingValue == J;
+
+			declare Integer SettingOrder for Quad;
+			SettingOrder = I;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Update extra settings.
+Void UpdateExtraSettings() {
+	declare metadata Boolean Pursuit_DisableMinimapRotation for Editor.Map;
+
+	for (I, 0, 0) {
+		declare Frame <=> (Page.GetFirstChild("Frame_ExtraItem#"^I) as CMlFrame);
+		declare Label_SettingName <=> (Frame.GetFirstChild("Label_SettingName") as CMlLabel);
+		declare Quad_IsEnabled <=> (Frame.GetFirstChild("Quad_IsEnabled") as CMlQuad);
+		declare Quad_ExtraCard <=> (Frame.GetFirstChild("Quad_ExtraCard") as CMlQuad);
+
+		switch (I) {
+			case 0 : {
+				Label_SettingName.Value = "Lock minimap rotation to North direction";
+				Quad_IsEnabled.StyleSelected = Pursuit_DisableMinimapRotation;
+			}
+		}
+
+		declare Integer SettingOrder for Quad_ExtraCard;
+		SettingOrder = I;
+	}
+}
+
+main() {
+	// ---------------------------------- //
+	// UI elements
+	declare Frame_MapPropertiesWindow <=> (Page.GetFirstChild("Frame_MapPropertiesWindow") as CMlFrame);
+	declare Frame_Background <=> (Page.GetFirstChild("Frame_Background") as CMlFrame);
+
+	// Map metadata
+	declare metadata Text Pursuit_ForcedModelPolice for Editor.Map;
+	declare metadata Text Pursuit_ForcedModelThieves for Editor.Map;
+	declare metadata Boolean Pursuit_DisableMinimapRotation for Editor.Map;
+
+	declare ModelsList = [""];
+	foreach (Model in C_LibProperties_Archetypes) ModelsList.add(Model);
+
+	// Init UIs
+	UpdateModelsList();
+	UpdateTeamModels();
+	UpdateSettingsList();
+	UpdateExtraSettings();
+
+	while (True) {
+		yield;
+
+		// ---------------------------------- //
+		// Manage events
+		foreach (Event in PendingEvents) {
+			// ---------------------------------- //
+			// Mouse click
+			if (Event.Type == CMlScriptEvent::Type::MouseClick) {
+				if (Event.ControlId == "Quad_ToggleMapProperties") {
+					Frame_MapPropertiesWindow.Visible = True;
+					Frame_Background.Visible = True;
+					Audio.PlaySoundEvent(CAudioManager::ELibSound::ShowDialog, 0, 0.);
+				}
+
+				else if (Event.Control.HasClass("close")) {
+					Frame_MapPropertiesWindow.Visible = False;
+					Frame_Background.Visible = False;
+					Audio.PlaySoundEvent(CAudioManager::ELibSound::HideDialog, 0, 0.);
+				}
+
+				else if (Event.ControlId == "Quad_ToggleModel") {
+					declare Text ModelId for Event.Control;
+					SendCustomEvent("Properties:ToggleForcedModel", [ModelId]);
+				}
+
+				else if (Event.ControlId == "Quad_TeamModelPrev") {
+					declare Integer TeamNum for Event.Control;
+					declare Text ModelName;
+
+					switch (TeamNum) {
+						case 0 : ModelName = Pursuit_ForcedModelPolice;
+						case 1 : ModelName = Pursuit_ForcedModelThieves;
+					}
+
+					declare Key = ModelsList.keyof(ModelName) - 1;
+					if (Key < 0) Key = ModelsList.count - 1;
+					ModelName = ModelsList[Key];
+
+					SendCustomEvent("Properties:SetTeamModel", [TL::ToText(TeamNum), ModelName]);
+				}
+
+				else if (Event.ControlId == "Quad_TeamModelNext") {
+					declare Integer TeamNum for Event.Control;
+					declare Text ModelName;
+
+					switch (TeamNum) {
+						case 0 : ModelName = Pursuit_ForcedModelPolice;
+						case 1 : ModelName = Pursuit_ForcedModelThieves;
+					}
+
+					declare Key = ModelsList.keyof(ModelName) + 1;
+					if (Key >= ModelsList.count) Key = 0;
+					ModelName = ModelsList[Key];
+
+					SendCustomEvent("Properties:SetTeamModel", [TL::ToText(TeamNum), ModelName]);
+				}
+
+				else if (Event.ControlId == "Quad_CheckOption1") {
+					declare Integer SettingOrder for Event.Control;
+					SendCustomEvent("Properties:SetSettingValue", [TL::ToText(SettingOrder), "0"]);
+				}
+
+				else if (Event.ControlId == "Quad_CheckOption2") {
+					declare Integer SettingOrder for Event.Control;
+					SendCustomEvent("Properties:SetSettingValue", [TL::ToText(SettingOrder), "1"]);
+				}
+
+				else if (Event.ControlId == "Quad_CheckOption3") {
+					declare Integer SettingOrder for Event.Control;
+					SendCustomEvent("Properties:SetSettingValue", [TL::ToText(SettingOrder), "2"]);
+				}
+
+				else if (Event.ControlId == "Quad_ExtraCard") {
+					declare Integer SettingOrder for Event.Control;
+					declare NewValue = "";
+
+					switch (SettingOrder) {
+						case 0 : NewValue = TL::ToText(!Pursuit_DisableMinimapRotation);
+					}
+
+					SendCustomEvent("Properties:SetExtraSetting", [TL::ToText(SettingOrder), NewValue]);
+				}
+			}
+
+			// ---------------------------------- //
+			// Plugin updates
+			else if (Event.Type == CMlEvent::Type::PluginCustomEvent) {
+				if (Event.CustomEventType == "Properties:UpdateModelsList") {
+					UpdateModelsList();
+				}
+
+				else if (Event.CustomEventType == "Properties:UpdateTeamModels") {
+					UpdateTeamModels();
+				}
+
+				else if (Event.CustomEventType == "Properties:UpdateSettingsList") {
+					UpdateSettingsList();
+				}
+
+				else if (Event.CustomEventType == "Properties:UpdateExtraSettings") {
+					UpdateExtraSettings();
+				}
+			}
+		}
+	}
+}
+--></script>
+</manialink>
+	""";
+}
+
+// ---------------------------------- //
+/** Send layer custom event.
+ *
+ *	@param	_Type	Event type.
+ */
+Void Private_SendEvent(Text _Type) {
+	LayerCustomEvent(G_LibProperties_ManialinkLayer, _Type, Text[]);
+}
+
+// ---------------------------------- //
+// Public
+// ---------------------------------- //
+
+// ---------------------------------- //
+/** Return the version number of the script.
+ *
+ *	@return		The version number of the script.
+ */
+Text GetScriptVersion() { return Version; }
+
+// ---------------------------------- //
+/** Return the name of the script.
+ *
+ *	@return		The name of the script.
+ */
+Text GetScriptName() { return ScriptName; }
+
+// ---------------------------------- //
+/// Load the library.
+Void Load() {
+	G_LibProperties_ManialinkLayer = UILayerCreate();
+	G_LibProperties_ManialinkLayer.ManialinkPage = Private_LayerMapProperties();
+}
+
+// ---------------------------------- //
+/// Loop.
+Void Loop() {
+	// ---------------------------------- //
+	// Manage events
+	foreach (Event in PendingEvents) {
+		if (Event.Type == CManiaAppEvent::EType::LayerCustomEvent) {
+			if (Event.CustomEventLayer != G_LibProperties_ManialinkLayer) continue;
+
+			// ---------------------------------- //
+			// Toggle forced model
+			if (Event.CustomEventType == "Properties:ToggleForcedModel") {
+				if (!Event.CustomEventData.existskey(0)) continue;
+
+				declare metadata Text[] Pursuit_MapForcedModelsIds for Map;
+				declare ModelId = Event.CustomEventData[0];
+
+				if (Pursuit_MapForcedModelsIds.exists(ModelId)) {
+					declare Removed = Pursuit_MapForcedModelsIds.remove(ModelId);
+				} else {
+					Pursuit_MapForcedModelsIds.add(ModelId);
+				}
+
+				// If all vehicles are selected, clear the list
+				if (Pursuit_MapForcedModelsIds.count == C_LibProperties_Archetypes.count) {
+					Pursuit_MapForcedModelsIds.clear();
+				}
+
+				Private_SendEvent("Properties:UpdateModelsList");
+			}
+
+			// ---------------------------------- //
+			// Team forced models
+			else if (Event.CustomEventType == "Properties:SetTeamModel") {
+				if (!Event.CustomEventData.existskey(1)) continue;
+
+				declare EventTeam	= TL::ToInteger(Event.CustomEventData[0]);
+				declare EventModel	= Event.CustomEventData[1];
+
+				declare metadata Text Pursuit_ForcedModelPolice		for Map;
+				declare metadata Text Pursuit_ForcedModelThieves	for Map;
+
+				switch (EventTeam) {
+					case 0 : Pursuit_ForcedModelPolice	= EventModel;
+					case 1 : Pursuit_ForcedModelThieves	= EventModel;
+				}
+
+				Private_SendEvent("Properties:UpdateTeamModels");
+			}
+
+			// ---------------------------------- //
+			// Setting value
+			else if (Event.CustomEventType == "Properties:SetSettingValue") {
+				if (!Event.CustomEventData.existskey(1)) continue;
+
+				declare EventSetting	= TL::ToInteger(Event.CustomEventData[0]);
+				declare EventValue		= TL::ToInteger(Event.CustomEventData[1]);
+
+				declare metadata Integer Pursuit_SeeNamesThroughWalls	for Map;
+				declare metadata Integer Pursuit_DisableCameraFree		for Map;
+				declare metadata Integer Pursuit_UseCampingDetection	for Map;
+
+				switch (EventSetting) {
+					case 0 : Pursuit_SeeNamesThroughWalls	= EventValue;
+					case 1 : Pursuit_DisableCameraFree		= EventValue;
+					case 2 : Pursuit_UseCampingDetection	= EventValue;
+				}
+
+				Private_SendEvent("Properties:UpdateSettingsList");
+			}
+			
+			// ---------------------------------- //
+			// Extra settings
+			else if (Event.CustomEventType == "Properties:SetExtraSetting") {
+				if (!Event.CustomEventData.existskey(1)) continue;
+
+				declare EventSetting	= TL::ToInteger(Event.CustomEventData[0]);
+				declare EventValue		= Event.CustomEventData[1];
+
+				declare metadata Boolean Pursuit_DisableMinimapRotation for Map;
+
+				switch (EventSetting) {
+					case 0 : Pursuit_DisableMinimapRotation = EventValue == "True";
+				}
+
+				Private_SendEvent("Properties:UpdateExtraSettings");
+			}
+		}
+	}
+}

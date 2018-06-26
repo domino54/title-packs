@@ -1,11 +1,11 @@
 // -------------------------------------- //
 //  PURSUIT MODE BASE by domino54         //
-//  script version: 2018-05-31            //
+//  script version: 2018-06-22            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/Base/ModeTrackmania.Script.txt"
 
-#Const PUR_Version		"2018-05-31"
+#Const PUR_Version		"2018-06-22"
 #Const PUR_ScriptName	"Modes/TrackMania/ModePursuit.Script.txt"
 
 #Include "MathLib" as ML
@@ -54,6 +54,7 @@
 #Setting S_UseCustomChat		False	as _("Enable custom chat")
 #Setting S_UseInstantRespawn	True	as _("Use instant respawn")
 #Setting S_DisableCameraFree	False	as _("Disable free camera (Cam 7)")
+#Setting S_MapGameplayModifiers	True	as _("Allow map to modify gameplay parameters")
 #Setting S_DiscordChatWebhhook	""		as "<hidden>" ///< Link to a Discord webhook used for chat logs. 
 #Setting S_AFKIdleTimeLimit		120		as "<hidden>" ///< AFK default idle time limit
 #Setting S_CustomLayersURLs		""		as "<hidden>" ///< Try to load custom layers from an URL
@@ -74,6 +75,7 @@
 // Constants
 // ---------------------------------- //
 #Const C_ImgBase "file://Media/Manialinks/TrackMania/Pursuit/"
+#Const C_AvailableArchetypes	["CanyonCar", "StadiumCar", "ValleyCar", "LagoonCar"]
 #Const C_OfflineTranslationsURL	"file://Media/Translations/Default.xml"
 #Const C_OnlineTranslationsURL	"http://raw.githubusercontent.com/domino54/title-packs/master/Media/Translations/Default.xml"
 #Const C_CharactersDataFileURL	"file://Media/Characters/Pursuit.xml"
@@ -86,13 +88,18 @@
 #Const C_CamperAbortDistance	50.		///< Distance to drive to abort automatic respawn.
 #Const C_CamperUpdateDistance	32.		///< Distance to drive to reset camping timer.
 #Const C_LagoonCarDuration		1800	///< Duration for which Lagoon Car is available atfer purchase.
+#Const C_DangerZoneTimeout		8000	///< Max. time player can spend in the DangerZone.
 #Const C_DefaultKillfeedPosn	<159., 89., -5.>	///< Default position of the Killfeed layer.
 #Const C_SoundsBaseVolume		-5.
 
 // ---------------------------------- //
 // Global variables
 // ---------------------------------- //
-declare Integer PUR_CurEscapingClan;	///< Currently escaping clan.
+declare Integer PUR_CurEscapingClan;		///< Currently escaping clan.
+declare Boolean PUR_AlternativeModels;		///< Use vehicle items instead of archetypes in Stadium.
+declare Text[] PUR_MapForcedModelsIds;		///< List of vehicles forced by the map.
+declare Integer PUR_ForcedCharPolice;		///< Vehicle forced for the Police team.
+declare Integer PUR_ForcedCharThieves;		///< Vehicle forced for the Thieves team.
 
 // ---------------------------------- //
 // Extends
@@ -290,7 +297,7 @@ Characters::Build(C_InterfaceFont_Medium, C_InterfaceFont_Bold);
 
 // ---------------------------------- //
 // Create custom interfaces
-PursuitUI::Load(["Countdown", "Speedometer", "Background", "SafeTime", "RespawnTimer", "SpecInfo", "321Go"]);
+PursuitUI::Load(["Countdown", "Speedometer", "Background", "SafeTime", "RespawnTimer", "SpecInfo", "321Go", "DangerZone"]);
 PursuitUI::SetSafeTimeDuration(C_NoInteractionDuration);
 //PursuitUI::SetModuleVisibility("321Go", !S_UseInstantRespawn);
 PursuitUI::SetCamera7Forbidden(S_DisableCameraFree);
@@ -366,7 +373,7 @@ Killfeed::SetMapSwitching(False);
 ***
 
 // ---------------------------------- //
-// Start map
+// Initialize map
 // ---------------------------------- //
 ***Match_InitMap***
 ***
@@ -379,25 +386,25 @@ CupAdmin::StartMap();
 FancyMessages::ResetData();
 MapSelection::StartMap();
 PUR_DisableTimeLimit();
+PUR_LoadMapVehicles();
+
+// Minimap rotation lock
+declare metadata Boolean Pursuit_DisableMinimapRotation for Map;
+Minimap::SetDisableRotation(Pursuit_DisableMinimapRotation);
 
 declare PrevEnableCharSelection = S_EnableCharSelection;
 declare PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
 declare PrevDisableCameraFree = S_DisableCameraFree;
+declare PrevMapGameplayModifiers = S_MapGameplayModifiers;
 
 if (EventManager::SkipRequested()) MB_StopMatch();
 ***
 
+// ---------------------------------- //
+// Map start
+// ---------------------------------- //
 ***Match_StartMap***
 ***
-// ---------------------------------- //
-// Init characters menu
-Characters::SetOpenplanetRequired(Map.CollectionName == "Stadium" && !S_ExperimentalGameplay);
-PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
-
-PauseMenu::SetButtonVisibility("PUR_CharSelection", S_EnableCharSelection);
-if (S_EnableCharSelection) Characters::Manual();
-else Characters::Hide();
-
 // ---------------------------------- //
 // Split screen players names
 foreach (Player in Players) {
@@ -438,6 +445,7 @@ FakeUsers::UpdateAmount(S_NbFakeUsers);
 Killfeed::Loop();
 LibMapInfo::Loop();
 Message::Loop();
+OffZone::Loop();
 Openplanet::Loop();
 PursuitUI::Loop();
 ServerManager::Loop();
@@ -511,24 +519,28 @@ foreach (CommandId in Chat::PendingCommands()) {
 // Characters setting change
 if (PrevEnableCharSelection != S_EnableCharSelection) {
 	PrevEnableCharSelection = S_EnableCharSelection;
-	
-	PauseMenu::SetButtonVisibility("PUR_CharSelection", S_EnableCharSelection);
-	if (S_EnableCharSelection) Characters::Manual();
-	else Characters::Hide();
+	PUR_LoadMapVehicles();
 }
 
 // ---------------------------------- //
 // Update Lagoon Car availability
 if (PrevLagoonCarUnlockMode != S_LagoonCarUnlockMode) {
 	PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
-	PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
+	PUR_LoadMapVehicles();
+}
+
+// ---------------------------------- //
+// Map gameplay modifiers enable/disable
+if (PrevMapGameplayModifiers != S_MapGameplayModifiers) {
+	PrevMapGameplayModifiers = S_MapGameplayModifiers;
+	PUR_LoadMapVehicles();
 }
 
 // ---------------------------------- //
 // Update camera free availability
-if (PrevDisableCameraFree != S_DisableCameraFree) {
-	PrevDisableCameraFree = S_DisableCameraFree;
-	PursuitUI::SetCamera7Forbidden(S_DisableCameraFree);
+if (PrevDisableCameraFree != PUR_IsCameraFreeDisabled()) {
+	PrevDisableCameraFree = PUR_IsCameraFreeDisabled();
+	PursuitUI::SetCamera7Forbidden(PrevDisableCameraFree);
 }
 
 if (EventManager::SkipRequested()) MB_StopMatch();
@@ -754,9 +766,25 @@ Boolean PUR_AreTouching(CTmPlayer _Player1, CTmPlayer _Player2) {
 }
 
 // ---------------------------------- //
+/** Check if the free camera is disabled.
+ *
+ *	@return		True, if the free camera is disabled.
+ */
+Boolean PUR_IsCameraFreeDisabled() {
+	if (Map != Null && S_MapGameplayModifiers) {
+		declare metadata Integer Pursuit_DisableCameraFree for Map;
+
+		if (Pursuit_DisableCameraFree == 1) return True;
+		if (Pursuit_DisableCameraFree == 2) return False;
+	}
+
+	return S_DisableCameraFree;
+}
+
+// ---------------------------------- //
 /// Display character selection screen.
 Void PUR_ShowCharSelection() {
-	if (!S_EnableCharSelection || S_CharSelectionTime <= 0) return;
+	if (!S_EnableCharSelection || S_CharSelectionTime <= 0 || PUR_MapForcedModelsIds.count == 1) return;
 	if (!MB_MapIsRunning() || MB_GetRoundCount() != 1) return;
 
 	declare SelectionEndTime = Now + S_CharSelectionTime * 1000;
@@ -773,6 +801,14 @@ Void PUR_ShowCharSelection() {
  *	@param	_LagoonCarMode		Lagoon Car mode.
  */
 Void PUR_UpdateLagoonCar(Integer _LagoonCarMode) {
+	declare LagoonCarMode = _LagoonCarMode;
+
+	// Forced by the map
+	if (PUR_MapForcedModelsIds.exists("LagoonCar")) LagoonCarMode = 1;
+
+	// Disabled by the map
+	else if (PUR_MapForcedModelsIds.count > 0 && LagoonCarMode == 1) LagoonCarMode = 0;
+
 	// Lagoon Car always available in Lagoon
 	if (Map != Null && Map.CollectionName == "Lagoon") {
 		Characters::SetPurchaseTimeout(-1);
@@ -780,7 +816,7 @@ Void PUR_UpdateLagoonCar(Integer _LagoonCarMode) {
 	}
 
 	// Apply the setting
-	else switch (_LagoonCarMode) {
+	else switch (LagoonCarMode) {
 		// Available
 		case 1 : {
 			Characters::SetPurchaseTimeout(-1);
@@ -802,17 +838,73 @@ Void PUR_UpdateLagoonCar(Integer _LagoonCarMode) {
 }
 
 // ---------------------------------- //
+/// Load map vehicles - selection and forced cars.
+Void PUR_LoadMapVehicles() {
+	if (Map == Null) return;
+
+	// Map metadata
+	declare metadata Text[] Pursuit_MapForcedModelsIds for Map;
+	declare metadata Text Pursuit_ForcedModelPolice for Map;
+	declare metadata Text Pursuit_ForcedModelThieves for Map;
+
+	// Filter the models list
+	PUR_MapForcedModelsIds.clear();
+
+	foreach (ModelId in Pursuit_MapForcedModelsIds) {
+		if (C_AvailableArchetypes.exists(ModelId)) PUR_MapForcedModelsIds.add(ModelId);
+	}
+
+	// Team forced models
+	if (S_MapGameplayModifiers) {
+		PUR_ForcedCharPolice	= C_AvailableArchetypes.keyof(Pursuit_ForcedModelPolice);
+		PUR_ForcedCharThieves	= C_AvailableArchetypes.keyof(Pursuit_ForcedModelThieves);
+	} else {
+		PUR_ForcedCharPolice	= -1;
+		PUR_ForcedCharThieves	= -1;
+	}
+
+	// Vehicle items for Stadium
+	PUR_AlternativeModels = PUR_MapForcedModelsIds.count > 0 || S_ExperimentalGameplay;
+
+	declare OpenplanetRequired	= !PUR_AlternativeModels && Map.CollectionName == "Stadium";
+	declare ForcedTeamVehicles	= PUR_ForcedCharPolice >= 0 && PUR_ForcedCharThieves >= 0;
+	declare MapForcesVehicles	= PUR_MapForcedModelsIds.count > 0;
+	declare SelectionEnabled	= S_EnableCharSelection && !ForcedTeamVehicles; // && PUR_MapForcedModelsIds.count != 1;
+
+	// Openplanet requirement
+	Characters::SetOpenplanetRequired(OpenplanetRequired);
+
+	// Characters availability
+	foreach (CharacterId in Characters::CharactersList()) {
+		if (!C_AvailableArchetypes.existskey(CharacterId)) continue;
+
+		declare ModelName = C_AvailableArchetypes[CharacterId];
+		Characters::SetCharAvailable(CharacterId, !MapForcesVehicles || PUR_MapForcedModelsIds.exists(ModelName));
+	}
+
+	// LagoonCar overrides
+	PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
+
+	// Character selection screen visibility
+	PauseMenu::SetButtonVisibility("PUR_CharSelection", SelectionEnabled);
+	if (SelectionEnabled) Characters::Manual();
+	else Characters::Hide();
+}
+
+// ---------------------------------- //
 /** Reset player respawn timer.
  *
  *	@param	_Player		The player to reset.
  */
 Void PUR_ResetRespawn(CTmPlayer _Player) {
 	if (_Player == Null) return;
+
 	PursuitUI::SetPlayerRespawnStartTime(_Player, -1);
 
 	declare Boolean RequestsRespawn for _Player;
 	declare Integer RespawnStartTime for _Player;
 	declare Boolean ResetRespawnCounter for _Player;
+
 	RequestsRespawn = False;
 	RespawnStartTime = -1;
 	ResetRespawnCounter = False;
@@ -825,10 +917,12 @@ Void PUR_ResetRespawn(CTmPlayer _Player) {
  */
 Void PUR_ResetCamping(CTmPlayer _Player) {
 	if (_Player == Null) return;
+
 	PursuitUI::SetPlayerRespawnIsCamping(_Player, False, Vec3);
 
 	declare Boolean DetectedCamping for _Player;
 	declare Vec3 PositionUpdate for _Player;
+
 	DetectedCamping = False;
 	PositionUpdate = Vec3;
 }
@@ -840,36 +934,59 @@ Void PUR_ResetCamping(CTmPlayer _Player) {
  */
 Void PUR_SpawnPlayer(CTmPlayer _Player) {
 	if (_Player == Null) return;
+
 	TM::WaitRace(_Player);
+	OffZone::ResetTimers(_Player);
 	PUR_ResetRespawn(_Player);
 	PUR_ResetCamping(_Player);
-	Streaks::CountElimination(_Player);
 
-	// Police special skins
 	declare PlayerClan = PUR_GetPlayerClan(_Player);
-	declare ModelName = "";
+	declare PlayerCharacterId = 0;
 
-	// Reset AFK checking
+	// Reset AFK timers
 	declare Integer IdleStartTime for _Player;
 	declare Vec3 LastPosition for _Player;
+
 	IdleStartTime = 0;
 	LastPosition = Vec3;
 
-	// ---------------------------------- //
-	// Set player model
-	declare PlayerCharacterId = 0;
+	// Character ID from map model
+	switch (MapPlayerModelName) {
+		case "CanyonCar"	: PlayerCharacterId = 0;
+		case "StadiumCar"	: PlayerCharacterId = 1;
+		case "ValleyCar"	: PlayerCharacterId = 2;
+		case "LagoonCar"	: PlayerCharacterId = 3;
+	}
+
+	// Character selected by the player
 	if (S_EnableCharSelection) PlayerCharacterId = Characters::GetPlayerChar(_Player);
 
 	Characters::SendPlayerCharInfo(_Player, PlayerCharacterId);
 	Minimap::SetVehicleType(_Player, PlayerCharacterId + 1);
 	
-	declare UseExternalModels = S_ExperimentalGameplay;
+	declare UseExternalModels = Map != Null && Map.CollectionName == "Stadium" && PUR_AlternativeModels;
 	declare VehicleColumnCode = "";
 	declare TargetSkinName = "";
 	declare EngineMaxRPM = 10000.;
 
 	// Police skin for the chasing team
 	if (PUR_CurEscapingClan > 0 && PUR_GetPlayerClan(_Player) == 3 - PUR_CurEscapingClan) TargetSkinName = "Pursuit:Police";
+
+	// ---------------------------------- //
+	// Pursuit team-dependent features
+	if (PUR_CurEscapingClan > 0) {
+		// Police
+		if (PlayerClan == 3 - PUR_CurEscapingClan) {
+			TargetSkinName = "Pursuit:Police";
+
+			if (PUR_ForcedCharPolice >= 0) PlayerCharacterId = PUR_ForcedCharPolice;
+		}
+
+		// Thieves
+		else {
+			if (PUR_ForcedCharThieves >= 0) PlayerCharacterId = PUR_ForcedCharThieves;
+		}
+	}
 
 	switch (PlayerCharacterId) {
 		// ---------------------------------- //
@@ -901,7 +1018,7 @@ Void PUR_SpawnPlayer(CTmPlayer _Player) {
 			VehicleColumnCode = "$07FL";
 		}
 		// ---------------------------------- //
-		// Default
+		// Default (if by any means other model is picked)
 		default : {
 			Models::SetDefault(_Player);
 		}
@@ -1033,14 +1150,14 @@ Void PUR_WaitForPlayers(Integer _MinimumNbPlayers) {
 		// Update Lagoon Car availability
 		if (PUR_PrevLagoonCarUnlockMode != S_LagoonCarUnlockMode) {
 			PUR_PrevLagoonCarUnlockMode = S_LagoonCarUnlockMode;
-			PUR_UpdateLagoonCar(S_LagoonCarUnlockMode);
+			PUR_LoadMapVehicles();
 		}
 
 		// ---------------------------------- //
 		// Update camera free availability
-		if (PUR_PrevDisableCameraFree != S_DisableCameraFree) {
-			PUR_PrevDisableCameraFree = S_DisableCameraFree;
-			PursuitUI::SetCamera7Forbidden(S_DisableCameraFree);
+		if (PUR_PrevDisableCameraFree != PUR_IsCameraFreeDisabled()) {
+			PUR_PrevDisableCameraFree = PUR_IsCameraFreeDisabled();
+			PursuitUI::SetCamera7Forbidden(PUR_PrevDisableCameraFree);
 		}
 
 		+++GalaxyTitles_WaitingLoop+++
@@ -1048,7 +1165,7 @@ Void PUR_WaitForPlayers(Integer _MinimumNbPlayers) {
 		// ---------------------------------- //
 		// Automatic sequence
 		if (PUR_UseAutomaticSequence) {
-			OffZone::Loop();
+			OffZone::AutoEvents();
 			
 			// ---------------------------------- //
 			// Respawn players changing characters
@@ -1076,7 +1193,10 @@ Void PUR_WaitForPlayers(Integer _MinimumNbPlayers) {
 			}
 			
 			// Spawn players
-			foreach (Player in Players) if (TM::IsWaiting(Player)) PUR_SpawnPlayer(Player);
+			foreach (Player in Players) {
+				if (TM::IsWaiting(Player)) PUR_SpawnPlayer(Player);
+				if (OffZone::DangerZoneDuration(Player) >= C_DangerZoneTimeout) TM::WaitRace(Player);
+			}
 		}
 	}
 

@@ -1,19 +1,19 @@
 // -------------------------------------- //
 //  PURSUIT by domino54                   //
-//  script version: 2018-05-31            //
+//  script version: 2018-06-22            //
 // -------------------------------------- //
 
 #Extends "Modes/TrackMania/ModePursuit.Script.txt"
 
-#Const CompatibleMapTypes	"PursuitArena"
-#Const Version				"2018-05-31"
+#Const CompatibleMapTypes	"PursuitArena, GoalHuntArena"
+#Const Version				"2018-06-22"
 #Const ScriptName			"Modes/TrackMania/Pursuit.Script.txt"
 
 // ---------------------------------- //
 // Settings
 // ---------------------------------- //
 #Setting S_MapRoundsLimit		2		as _("Map rounds limit")
-#Setting S_SafePhaseDuration	15		as _("Time before the Police team begins the Pursuit")
+#Setting S_SafePhaseDuration	15		as _("Time before the Police team begins the Pursuit (max. 60)")
 #Setting S_MaxFirstPolicemen	3		as _("Max. amount of first policemen")
 #Setting S_TimeLimitBase		120		as _("Minimum time limit")
 #Setting S_TimeLimitPerThief	15		as _("Time limit per every thief remaining")
@@ -46,6 +46,9 @@
 #Const C_CaptureReason_Void			3
 #Const C_CaptureReason_Command		4
 #Const C_CaptureReason_Water		5
+#Const C_CaptureReason_Ceiling		6
+#Const C_CaptureReason_DangerZone	7
+#Const C_CaptureReason_PoliceZone	8
 
 /// Description of the mode displayed in the help window
 #Const Description _("""$fffIn $f00Pursuit$fff mode, Thieves have to escape the Police.
@@ -58,8 +61,8 @@ Game is over when all Thieves are caught or time reach the limit.""")
 // Global variables
 // ---------------------------------- //
 declare Integer StartTime;
-declare Text[] G_PlayersBeenFirstPoliceman;
-declare Integer G_LAGOONCAR;
+declare Text[] G_PlayersBeenFirstPoliceman;	//< Players, who already were first policemen.
+declare Integer G_PursuitGameplayVariant;	//< Gameplay variant [0 -> Pursuit, 1 -> GoalHunt Pursuit]
 
 // ---------------------------------- //
 // Extends
@@ -155,6 +158,13 @@ foreach (Player in AllPlayers) {
 	declare Boolean NotifiedAboutSuspension for Player;
 	NotifiedAboutSuspension = False;
 }
+
+// ---------------------------------- //
+// Gameplay variant
+switch (Map.MapType) {
+	case "TrackMania\\GoalHuntArena" : G_PursuitGameplayVariant = 1;
+	default : G_PursuitGameplayVariant = 0;
+}
 ***
 
 // ---------------------------------- //
@@ -197,23 +207,26 @@ PUR_ShowCharSelection();
 
 // ---------------------------------- //
 // Initialize race
-StartTime = Now + S_SafePhaseDuration * 1000 + C_PlayerSpawnDuration;
+declare SafePhaseDuration = ML::Clamp(S_SafePhaseDuration, 0, 60) * 1000;
+StartTime = Now + SafePhaseDuration + C_PlayerSpawnDuration;
 UIManager.UIAll.UISequence = CUIConfig::EUISequence::Playing;
 UIManager.UIAll.CountdownEndTime = StartTime;
 PUR_DisableTimeLimit();
 
 // New round message
-Translations::SetStatusMessage("Drive far away!");
-ST2::SetFooterText(TL::Compose(_("Round %1"), MB_GetRoundCount()^" / "^S_MapRoundsLimit));
+declare RoundsText = TL::Compose(_("Round %1"), MB_GetRoundCount()^" / "^S_MapRoundsLimit);
+Message::SendBigMessage(RoundsText, 4000, 1);
+Translations::SendStatusMessage("Drive far away!", StartTime - Now, 1);
+ST2::SetFooterText(RoundsText);
 PursuitUI::SetModuleVisibility("JoinPolice", True);
 PursuitUI::SetStartTime(StartTime);
 
-PrevSeeNamesThroughWalls = !S_SeeNamesThroughWalls;
+PrevSeeNamesThroughWalls = !IsSeeNamesThroughWalls();
 PUR_PlaySound(CUIConfig::EUISound::StartRound, 0);
 UpdateFirstPolicemenList();
 UISetUseCustomLabels(!UseClans);
 Replay_Start();
-Minimap::SetClanVisibility(2, S_SeeNamesThroughWalls);
+Minimap::SetClanVisibility(2, PrevSeeNamesThroughWalls);
 ***
 
 // ---------------------------------- //
@@ -364,7 +377,7 @@ if (IsSafePhase && Now >= UIManager.UIAll.CountdownEndTime) {
 	IsSafePhase = False;
 	UIManager.UIAll.CountdownEndTime = -1;
 	PursuitUI::SetModuleVisibility("JoinPolice", False);
-	Translations::SetStatusMessage("");
+	Translations::SendStatusMessage("", 1000, 1);
 
 	// Move everyone to thieves team
 	if (!UseClans) foreach (Player in Players) PUR_SetPlayerClan(Player, PUR_CurEscapingClan);
@@ -461,7 +474,7 @@ if (!IsSafePhase && PUR_GetClanNbPlayers(3 - PUR_CurEscapingClan) <= 0) {
 // Detect policemen catching thieves
 if (PUR_GetClanNbPlayers(PUR_CurEscapingClan) > PUR_GetClanNbPlayers(3 - PUR_CurEscapingClan)) {
 	foreach (Policeman in Players) {
-		if (PUR_GetPlayerClan(Policeman) == PUR_CurEscapingClan || !PUR_CanInteract(Policeman)) continue;
+		if (PUR_GetPlayerClan(Policeman) != 3 - PUR_CurEscapingClan || !PUR_CanInteract(Policeman)) continue;
 		
 		foreach (Thief in Players) {
 			if (PUR_GetPlayerClan(Thief) != PUR_CurEscapingClan || !PUR_CanInteract(Thief)) continue;
@@ -476,7 +489,7 @@ else {
 		if (PUR_GetPlayerClan(Thief) != PUR_CurEscapingClan || !PUR_CanInteract(Thief)) continue;
 
 		foreach (Policeman in Players) {
-			if (PUR_GetPlayerClan(Policeman) == PUR_CurEscapingClan || !PUR_CanInteract(Policeman)) continue;
+			if (PUR_GetPlayerClan(Policeman) != 3 - PUR_CurEscapingClan || !PUR_CanInteract(Policeman)) continue;
 			if (PUR_AreTouching(Thief, Policeman)) CatchThief(Thief, Policeman);
 		}
 	}
@@ -490,8 +503,15 @@ if (!IsSafePhase && PrevThievesCount != PUR_GetClanNbPlayers(PUR_CurEscapingClan
 	// ---------------------------------- //
 	// Update time limit when a thief is caught
 	if (PrevThievesCount > 0) {
-		declare NewTimeLimit = Now + (S_TimeLimitBase + ML::Max(PrevThievesCount-1, 0) * S_TimeLimitPerThief) * 1000;
-		if (CutOffTimeLimit <= 0 || CutOffTimeLimit >= NewTimeLimit) PUR_SetTimeLimit(NewTimeLimit);
+		if (S_TimeLimitBase > 0 || S_TimeLimitPerThief > 0) {
+			declare NewTimeLimit = Now + (S_TimeLimitBase + ML::Max(PrevThievesCount - 1, 0) * S_TimeLimitPerThief) * 1000;
+			if (CutOffTimeLimit <= 0 || CutOffTimeLimit >= NewTimeLimit) PUR_SetTimeLimit(NewTimeLimit);
+		}
+
+		// Time limit is disabled
+		else {
+			PUR_DisableTimeLimit();
+		}
 	}
 	// ---------------------------------- //
 	// Police wictory when all Thieves are caught
@@ -515,9 +535,11 @@ foreach (Player in Players) {
 		}
 	}
 	else if (!IsSafePhase && PUR_GetPlayerClan(Player) <= 0) {
-		PUR_SetPlayerClan(Player, PUR_CurEscapingClan);
+		PUR_SetPlayerClan(Player, 3 - PUR_CurEscapingClan);
 		UpdateScoresTable();
 	}
+
+	declare PlayerCurrentClan = PUR_GetPlayerClan(Player);
 
 	// ---------------------------------- //
 	// Manage players respawning
@@ -532,7 +554,7 @@ foreach (Player in Players) {
 		
 		// ---------------------------------- //
 		// Respawn idle policemen
-		if (S_AutoManageAFK && PUR_GetPlayerClan(Player) != PUR_CurEscapingClan) {
+		if (S_AutoManageAFK && PlayerCurrentClan != PUR_CurEscapingClan) {
 			declare Integer IdleStartTime for Player;
 			declare Vec3 LastPosition for Player;
 			
@@ -552,7 +574,7 @@ foreach (Player in Players) {
 
 		// ---------------------------------- //
 		// Respawn thieves camping at one spot
-		if (S_UseCampingDetection && PUR_GetPlayerClan(Player) == PUR_CurEscapingClan) {
+		if (IsCampingDetectionEnabled() && PlayerCurrentClan == PUR_CurEscapingClan) {
 			declare Integer LastUpdateTime for Player;
 			if (!DetectedCamping) {
 				// Update player position
@@ -586,7 +608,7 @@ foreach (Player in Players) {
 		// ---------------------------------- //
 		// Thief respawn request
 		if (RequestsRespawn && DetectedCamping) RequestsRespawn = False;
-		if (PUR_GetPlayerClan(Player) == PUR_CurEscapingClan && (RequestsRespawn || DetectedCamping)) {
+		if (PlayerCurrentClan == PUR_CurEscapingClan && (RequestsRespawn || DetectedCamping)) {
 			// Initialize respawn request
 			if (!ResetRespawnCounter) {
 				ResetRespawnCounter = True;
@@ -612,26 +634,37 @@ foreach (Player in Players) {
 	}
 	
 	// Catch thieves falling into OffZone
-	if (OffZone::IsInOffZone(Player)) {
-		if (PUR_GetPlayerClan(Player) == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_OffZone);
+	if (OffZone::OffZoneDuration(Player) > 0) {
+		if (PlayerCurrentClan == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_OffZone);
 		TM::WaitRace(Player);
+	}
+
+	// Catch thieves spending too much time in DangerZone
+	if (OffZone::DangerZoneDuration(Player) >= C_DangerZoneTimeout) {
+		if (PlayerCurrentClan == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_DangerZone);
+		TM::WaitRace(Player);
+	}
+
+	// Catch thieves driving into PoliceZone
+	if (PlayerCurrentClan == PUR_CurEscapingClan && !IsSafePhase && OffZone::PoliceZoneDuration(Player) > 0) {
+		CatchThief(Player, C_CaptureReason_PoliceZone);
 	}
 	
 	// Catch thieves leaving map area
 	if (OffZone::IsBeyondMapEdge(Player)) {
-		if (PUR_GetPlayerClan(Player) == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_Boundary);
+		if (PlayerCurrentClan == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_Boundary);
 		TM::WaitRace(Player);
 	}
 	
 	// Catch thieves falling under map
 	if (OffZone::IsBelowMapBottom(Player)) {
-		if (PUR_GetPlayerClan(Player) == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_Void);
+		if (PlayerCurrentClan == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_Void);
 		TM::WaitRace(Player);
 	}
 	
 	// Catch thieves below water level
 	if (OffZone::IsBelowWaterLevel(Player)) {
-		if (PUR_GetPlayerClan(Player) == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_Water);
+		if (PlayerCurrentClan == PUR_CurEscapingClan && !IsSafePhase) CatchThief(Player, C_CaptureReason_Water);
 		TM::WaitRace(Player);
 	}
 
@@ -685,8 +718,9 @@ if (PrevPolicemenCount != PUR_GetClanNbPlayers(3 - PUR_CurEscapingClan)) {
 	PrevPolicemenCount = PUR_GetClanNbPlayers(3 - PUR_CurEscapingClan);
 
 	LatestPolicemanLogin = "";
-	if (PrevPolicemenCount == 1) foreach (Player in Players)
+	if (PrevPolicemenCount == 1) foreach (Player in Players) {
 		if (PUR_GetPlayerClan(Player) == 3 - PUR_CurEscapingClan) LatestPolicemanLogin = Player.User.Login;
+	}
 }
 
 // ---------------------------------- //
@@ -729,15 +763,15 @@ if (PrevMaxFirstPolicemen != S_MaxFirstPolicemen) {
 
 // ---------------------------------- //
 // Update names visibility
-if (PrevSeeNamesThroughWalls != S_SeeNamesThroughWalls) {
-	PrevSeeNamesThroughWalls = S_SeeNamesThroughWalls;
+if (PrevSeeNamesThroughWalls != IsSeeNamesThroughWalls()) {
+	PrevSeeNamesThroughWalls = IsSeeNamesThroughWalls();
 	UpdateLabelsVisibility = True;
 }
 
 if (UpdateLabelsVisibility) {
 	UpdateLabelsVisibility = False;
-	UISetLabelsAlwaysVisible(S_SeeNamesThroughWalls);
-	Minimap::SetClanVisibility(2, S_SeeNamesThroughWalls || (S_ShowLastThiefNametag && DisplayedLastThiefName));
+	UISetLabelsAlwaysVisible(IsSeeNamesThroughWalls());
+	Minimap::SetClanVisibility(2, IsSeeNamesThroughWalls() || (S_ShowLastThiefNametag && DisplayedLastThiefName));
 
 	// Custom nametags when using custom teams handling
 	if (!UseClans) {
@@ -787,6 +821,7 @@ PUR_PlaySound(CUIConfig::EUISound::EndRound, 0);
 
 // ---------------------------------- //
 // Give points for remaining thieves
+declare NbThievesSurvived = PUR_GetClanNbPlayers(PUR_CurEscapingClan);
 declare ThiefSurvivalPoints = ML::Min(PUR_GetClanNbPlayers(3 - PUR_CurEscapingClan), C_PointsForThiefEndMax);
 
 foreach (Player in Players) {
@@ -799,7 +834,7 @@ foreach (Player in Players) {
 
 // ---------------------------------- //
 // Adapt ending message to the amount of thieves
-switch (PUR_GetClanNbPlayers(PUR_CurEscapingClan)) {
+switch (NbThievesSurvived) {
 	// ---------------------------------- //
 	// One thief - round winner
 	case 1 : {
@@ -813,7 +848,7 @@ switch (PUR_GetClanNbPlayers(PUR_CurEscapingClan)) {
 	case 0 : Translations::SendBigMessage("All thieves caught", 5000, 1);
 	
 	// Multiple Thieves
-	default : Translations::SendBigMessage("Thieves have fled!", 5000, 1);
+	default : Translations::SendBigMessage(["%1 thieves have fled!", TL::ToText(NbThievesSurvived)], 5000, 1);
 }
 
 // Reset players clans
@@ -929,6 +964,38 @@ Void UpdateScoresTable() {
 }
 
 // ---------------------------------- //
+/** Check if the names are always visible.
+ *
+ *	@return		True, if the names are always visible.
+ */
+Boolean IsSeeNamesThroughWalls() {
+	if (Map != Null && S_MapGameplayModifiers) {
+		declare metadata Integer Pursuit_SeeNamesThroughWalls for Map;
+
+		if (Pursuit_SeeNamesThroughWalls == 1) return True;
+		if (Pursuit_SeeNamesThroughWalls == 2) return False;
+	}
+
+	return S_SeeNamesThroughWalls;
+}
+
+// ---------------------------------- //
+/** Check if the camping detection is enabled.
+ *
+ *	@return		True, if the camping detection is enabled.
+ */
+Boolean IsCampingDetectionEnabled() {
+	if (Map != Null && S_MapGameplayModifiers) {
+		declare metadata Integer Pursuit_UseCampingDetection for Map;
+
+		if (Pursuit_UseCampingDetection == 1) return True;
+		if (Pursuit_UseCampingDetection == 2) return False;
+	}
+
+	return S_UseCampingDetection;
+}
+
+// ---------------------------------- //
 /** Catch thief.
  *
  *	@param	_Thief			Caught Thief.
@@ -936,7 +1003,7 @@ Void UpdateScoresTable() {
  *	@param	_Reason			Reason ID, if not caught by Policeman.
  */
 Void CatchThief(CTmPlayer _Thief, CTmPlayer _Policeman, Integer _Reason) {
-	if (_Thief == Null || PUR_GetPlayerClan(_Thief) != PUR_CurEscapingClan || (_Policeman != Null && PUR_GetPlayerClan(_Policeman) == PUR_CurEscapingClan)) return;
+	if (_Thief == Null || PUR_GetPlayerClan(_Thief) != PUR_CurEscapingClan || (_Policeman != Null && PUR_GetPlayerClan(_Policeman) != 3 - PUR_CurEscapingClan)) return;
 
 	// Move player to the police team
 	PUR_SetPlayerClan(_Thief, 3 - PUR_CurEscapingClan);
@@ -944,17 +1011,21 @@ Void CatchThief(CTmPlayer _Thief, CTmPlayer _Policeman, Integer _Reason) {
 	// Respawn player using custom teams
 	if (!UseClans && S_RespawnOnCapture) TM::WaitRace(_Thief);
 
+	// Different forced cars for Police and Thieves
+	else if (PUR_ForcedCharPolice >= 0 && PUR_ForcedCharThieves >= 0 && PUR_ForcedCharPolice != PUR_ForcedCharThieves) TM::WaitRace(_Thief);
+
 	// ---------------------------------- //
 	// Get the catch reason
-	declare ReasonEnum = ML::Clamp(_Reason, 0, 4);
 	declare ReasonText = "";
-
-	switch (ReasonEnum) {
+	switch (_Reason) {
 		case C_CaptureReason_OffZone	: ReasonText = "$<%1$> rests in the OffZone";
 		case C_CaptureReason_Boundary	: ReasonText = "$<%1$> tried to escape the arena";
 		case C_CaptureReason_Void		: ReasonText = "$<%1$> somehow fell below map";
 		case C_CaptureReason_Command	: ReasonText = "$<%1$> was forced into the Police team";
 		case C_CaptureReason_Water		: ReasonText = "$<%1$> tried to swim";
+		case C_CaptureReason_Ceiling	: ReasonText = "$<%1$> aimed too high";
+		case C_CaptureReason_DangerZone	: ReasonText = "$<%1$> failed to lave the Danger Zone";
+		case C_CaptureReason_PoliceZone	: ReasonText = "$<%1$> thought they're a cop";
 	}
 	
 	// ---------------------------------- //
@@ -982,6 +1053,7 @@ Void CatchThief(CTmPlayer _Thief, CTmPlayer _Policeman, Integer _Reason) {
 	// Increase survival score of all remaining thieves
 	foreach (Player in Players) {
 		if (PUR_GetPlayerClan(Player) != PUR_CurEscapingClan) continue;
+		if (G_PursuitGameplayVariant != 0) continue; // Not a regular Pursuit
 		
 		if (PUR_GetClanNbPlayers(PUR_CurEscapingClan) > 1) PUR_AddPoints(Player, C_PointsForSurvival);
 		TopScores::AddPoints(Player.Score, "Pursuit_Survival", 1);

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  LIBRARY OFFZONE by domino54           //
-//  script version: 2018-04-21            //
+//  script version: 2018-06-22            //
 // -------------------------------------- //
 
 /**
@@ -13,16 +13,16 @@
  *	for free from domino54's GitHub repository.
  */
 
-#Const Version		"2018-04-21"
+#Const Version		"2018-06-22"
 #Const ScriptName	"Libs/domino54/TrackMania/OffZone.Script.txt"
 
 #Include "MathLib" as ML
-#Include "Libs/Nadeo/TrackMania/TM2.Script.txt" as TM2
+#Include "Libs/Nadeo/TrackMania/TM3.Script.txt" as TM
 
 // ---------------------------------- //
 // Constants
 // ---------------------------------- //
-#Const C_PlayerPositionFixOffset	<0., .1, 0.>	///< Offset added to the position.
+#Const C_PlayerPositionFixOffset	<0., .25, 0.>	///< Offset added to the position.
 
 /// Size of the block in each environment.
 #Const C_LibOffZone_ColBlockDimensions [
@@ -47,6 +47,8 @@ declare Boolean	G_LibOffZone_IsLoaded;				///< True, if environment dimensions l
 declare Vec3	G_LibOffZone_ColBlockDimensions;	///< Size of current environment blocks in meters.
 declare Integer	G_LibOffZone_ColGroundCoordY;		///< Y index of block in position <0., 0., 0.>.
 declare Int3[]	G_LibOffZone_OffZoneLocations;		///< Positions of the blocks containing OffZone triggers.
+declare Int3[]	G_LibOffZone_DangerZoneLocations;	///< Positions of the blocks containing DangerZone triggers.
+declare Int3[]	G_LibOffZone_PoliceZoneLocations;	///< Positions of the blocks containing PoliceZone triggers.
 declare Boolean	G_LibOffZone_WaterLevelOffZone;		///< Map has OffZone under the water level.
 
 /// Functions activity settings
@@ -97,12 +99,46 @@ Text GetScriptVersion() { return Version; }
 Text GetScriptName() { return ScriptName; }
 
 // ---------------------------------- //
+/** Reset OffZone duration for a player.
+ *
+ *	@param	_Player		The player to reset.
+ */
+Void ResetTimers(CTmPlayer _Player) {
+	if (_Player == Null) return;
+
+	declare netwrite Integer Net_LibOffZone_StartTime_OffZone for _Player;
+	declare netwrite Integer Net_LibOffZone_StartTime_DangerZone for _Player;
+	declare netwrite Integer Net_LibOffZone_StartTime_PoliceZone for _Player;
+
+	Net_LibOffZone_StartTime_OffZone = -1;
+	Net_LibOffZone_StartTime_DangerZone = -1;
+	Net_LibOffZone_StartTime_PoliceZone = -1;
+
+	declare Boolean LibOffZone_PrevIsInOffZone for _Player;
+	declare Boolean LibOffZone_PrevIsInDangerZone for _Player;
+	declare Boolean LibOffZone_PrevIsInPoliceZone for _Player;
+
+	LibOffZone_PrevIsInOffZone = False;
+	LibOffZone_PrevIsInDangerZone = False;
+	LibOffZone_PrevIsInPoliceZone = False;
+}
+
+// ---------------------------------- //
+/// Reset OffZone duration for all players.
+Void ResetTimers() {
+	foreach (Player in AllPlayers) ResetTimers(Player);
+}
+
+// ---------------------------------- //
 /// Unload map OffZone locations.
 Void EndMap() {
 	G_LibOffZone_IsLoaded = False;
 	G_LibOffZone_ColBlockDimensions = Vec3;
 	G_LibOffZone_ColGroundCoordY = -1;
 	G_LibOffZone_OffZoneLocations.clear();
+	G_LibOffZone_DangerZoneLocations.clear();
+	G_LibOffZone_PoliceZoneLocations.clear();
+	ResetTimers();
 }
 
 // ---------------------------------- //
@@ -129,7 +165,12 @@ Void StartMap() {
 	// ---------------------------------- //
 	// Restore metadata from the map file
 	declare metadata Int3[] TMOffZoneLocations for Map;
+	declare metadata Int3[] LibOffZone_DangerZoneLocations for Map;
+	declare metadata Int3[] LibOffZone_PoliceZoneLocations for Map;
+
 	G_LibOffZone_OffZoneLocations = TMOffZoneLocations;
+	G_LibOffZone_DangerZoneLocations = LibOffZone_DangerZoneLocations;
+	G_LibOffZone_PoliceZoneLocations = LibOffZone_PoliceZoneLocations;
 
 	// Water respawn
 	declare metadata Boolean LibOffZone_WaterLevelOffZone for Map;
@@ -149,6 +190,81 @@ Boolean IsInOffZone(CTmPlayer _Player) {
 	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || Now < _Player.RaceStartTime) return False;
 	
 	return G_LibOffZone_OffZoneLocations.exists(Private_GetPlayerBlockCoords(_Player.Position));
+}
+
+// ---------------------------------- //
+/** Check if Player is in DangerZone.
+ *
+ *	@param _Player	Player to check status.
+ *
+ *	@return		True if Player is in DangerZone, False otherwise.
+ */
+Boolean IsInDangerZone(CTmPlayer _Player) {
+	if (G_LibOffZone_DisableOffZone || _Player == Null) return False;
+	if (!G_LibOffZone_IsLoaded || G_LibOffZone_DangerZoneLocations.count == 0) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || Now < _Player.RaceStartTime) return False;
+	
+	return G_LibOffZone_DangerZoneLocations.exists(Private_GetPlayerBlockCoords(_Player.Position));
+}
+
+// ---------------------------------- //
+/** Check if Player is in PoliceZone.
+ *
+ *	@param _Player	Player to check status.
+ *
+ *	@return		True if Player is in PoliceZone, False otherwise.
+ */
+Boolean IsInPoliceZone(CTmPlayer _Player) {
+	if (G_LibOffZone_DisableOffZone || _Player == Null) return False;
+	if (!G_LibOffZone_IsLoaded || G_LibOffZone_PoliceZoneLocations.count == 0) return False;
+	if (_Player.IsSpawned == False || _Player.Position == <0., 0., 0.> || Now < _Player.RaceStartTime) return False;
+	
+	return G_LibOffZone_PoliceZoneLocations.exists(Private_GetPlayerBlockCoords(_Player.Position));
+}
+
+// ---------------------------------- //
+/** Check how long player is in OffZone.
+ *
+ *	@param _Player	Player to get OffZone duration.
+ *
+ *	@return		Player time spent in OffZone.
+ */
+Integer OffZoneDuration(CTmPlayer _Player) {
+	if (G_LibOffZone_DisableOffZone || _Player == Null) return 0;
+
+	declare netwrite Integer Net_LibOffZone_StartTime_OffZone for _Player;
+	if (Net_LibOffZone_StartTime_OffZone <= 0) return 0;
+	return Now - Net_LibOffZone_StartTime_OffZone;
+}
+
+// ---------------------------------- //
+/** Check how long player is in DangerZone.
+ *
+ *	@param _Player	Player to get DangerZone duration.
+ *
+ *	@return		Player time spent in DangerZone.
+ */
+Integer DangerZoneDuration(CTmPlayer _Player) {
+	if (G_LibOffZone_DisableOffZone || _Player == Null) return 0;
+
+	declare netwrite Integer Net_LibOffZone_StartTime_DangerZone for _Player;
+	if (Net_LibOffZone_StartTime_DangerZone <= 0) return 0;
+	return Now - Net_LibOffZone_StartTime_DangerZone;
+}
+
+// ---------------------------------- //
+/** Check how long player is in PoliceZone.
+ *
+ *	@param _Player	Player to get PoliceZone duration.
+ *
+ *	@return		Player time spent in PoliceZone.
+ */
+Integer PoliceZoneDuration(CTmPlayer _Player) {
+	if (G_LibOffZone_DisableOffZone || _Player == Null) return 0;
+
+	declare netwrite Integer Net_LibOffZone_StartTime_PoliceZone for _Player;
+	if (Net_LibOffZone_StartTime_PoliceZone <= 0) return 0;
+	return Now - Net_LibOffZone_StartTime_PoliceZone;
 }
 
 // ---------------------------------- //
@@ -206,20 +322,65 @@ Void Loop() {
 	// Events management
 	foreach (Player in Players) {
 		// ---------------------------------- //
+		// OffZone duration
+		declare PlayerIsInOffZone = IsInOffZone(Player);
+		declare Boolean LibOffZone_PrevIsInOffZone for Player;
+		declare netwrite Integer Net_LibOffZone_StartTime_OffZone for Player;
+
+		if (LibOffZone_PrevIsInOffZone != PlayerIsInOffZone) {
+			LibOffZone_PrevIsInOffZone = PlayerIsInOffZone;
+
+			if (PlayerIsInOffZone) Net_LibOffZone_StartTime_OffZone = Now;
+			else Net_LibOffZone_StartTime_OffZone = -1;
+		}
+
+		// ---------------------------------- //
+		// DangerZone duration
+		declare PlayerIsInDangerZone = IsInDangerZone(Player);
+		declare Boolean LibOffZone_PrevIsInDangerZone for Player;
+		declare netwrite Integer Net_LibOffZone_StartTime_DangerZone for Player;
+
+		if (LibOffZone_PrevIsInDangerZone != PlayerIsInDangerZone) {
+			LibOffZone_PrevIsInDangerZone = PlayerIsInDangerZone;
+
+			if (PlayerIsInDangerZone) Net_LibOffZone_StartTime_DangerZone = Now;
+			else Net_LibOffZone_StartTime_DangerZone = -1;
+		}
+
+		// ---------------------------------- //
+		// PoliceZone duration
+		declare PlayerIsInPoliceZone = IsInPoliceZone(Player);
+		declare Boolean LibOffZone_PrevIsInPoliceZone for Player;
+		declare netwrite Integer Net_LibOffZone_StartTime_PoliceZone for Player;
+
+		if (LibOffZone_PrevIsInPoliceZone != PlayerIsInPoliceZone) {
+			LibOffZone_PrevIsInPoliceZone = PlayerIsInPoliceZone;
+
+			if (PlayerIsInPoliceZone) Net_LibOffZone_StartTime_PoliceZone = Now;
+			else Net_LibOffZone_StartTime_PoliceZone = -1;
+		}
+	}
+}
+
+// ---------------------------------- //
+/// Automatic respawn events.
+Void AutoEvents() {
+	foreach (Player in Players) {
+		// ---------------------------------- //
 		// Unspawn players in OffZone
-		if (!G_LibOffZone_DisableOffZone && IsInOffZone(Player)) TM2::WaitRace(Player);
+		if (!G_LibOffZone_DisableOffZone && IsInOffZone(Player)) TM::WaitRace(Player);
 		
 		// ---------------------------------- //
 		// Unspawn players falling under map
-		if (!G_LibOffZone_DisableFalling && IsBelowMapBottom(Player)) TM2::WaitRace(Player);
+		if (!G_LibOffZone_DisableFalling && IsBelowMapBottom(Player)) TM::WaitRace(Player);
 
 		// ---------------------------------- //
 		// Unspawn players beyond map edges
-		if (!G_LibOffZone_DisableBorders && IsBeyondMapEdge(Player)) TM2::WaitRace(Player);
+		if (!G_LibOffZone_DisableBorders && IsBeyondMapEdge(Player)) TM::WaitRace(Player);
 
 		// ---------------------------------- //
 		// Unspawn players below water level
-		if (!G_LibOffZone_DisableWater && IsBelowWaterLevel(Player)) TM2::WaitRace(Player);
+		if (!G_LibOffZone_DisableWater && IsBelowWaterLevel(Player)) TM::WaitRace(Player);
 	}
 }
 
@@ -253,8 +414,50 @@ Void SetUseMapEdges(Boolean _UseMapEdges) {
 // ---------------------------------- //
 /** Change map edge crossing setting
  *
- *	@param _UseMapEdges		True if Players under the water level have to be unspawned
+ *	@param _UseWaterLevel	True if Players under the water level have to be unspawned
  */
 Void SetUseWaterLevel(Boolean _UseWaterLevel) {
 	G_LibOffZone_DisableWater = !_UseWaterLevel;
+}
+
+// ---------------------------------- //
+/** OffZone functions for manialinks.
+ *
+ *	@return		OffZone functions.
+ */
+Text ManialinkFramework() {
+	return """
+Integer OffZone_OffZoneDuration(CTmMlPlayer _Player) {
+	if (_Player == Null) return 0;
+	declare netread Integer Net_LibOffZone_StartTime_OffZone for _Player;
+	if (Net_LibOffZone_StartTime_OffZone <= 0) return 0;
+	return GameTime - Net_LibOffZone_StartTime_OffZone;
+}
+
+Boolean OffZone_IsInOffZone(CTmMlPlayer _Player) {
+	return OffZone_OffZoneDuration(_Player) > 0;
+}
+
+Integer OffZone_DangerZoneDuration(CTmMlPlayer _Player) {
+	if (_Player == Null) return 0;
+	declare netread Integer Net_LibOffZone_StartTime_DangerZone for _Player;
+	if (Net_LibOffZone_StartTime_DangerZone <= 0) return 0;
+	return GameTime - Net_LibOffZone_StartTime_DangerZone;
+}
+
+Boolean OffZone_IsInDangerZone(CTmMlPlayer _Player) {
+	return OffZone_DangerZoneDuration(_Player) > 0;
+}
+
+Integer OffZone_PoliceZoneDuration(CTmMlPlayer _Player) {
+	if (_Player == Null) return 0;
+	declare netread Integer Net_LibOffZone_StartTime_PoliceZone for _Player;
+	if (Net_LibOffZone_StartTime_PoliceZone <= 0) return 0;
+	return GameTime - Net_LibOffZone_StartTime_PoliceZone;
+}
+
+Boolean OffZone_IsInPoliceZone(CTmMlPlayer _Player) {
+	return OffZone_PoliceZoneDuration(_Player) > 0;
+}
+	""";
 }

@@ -1,6 +1,6 @@
 // -------------------------------------- //
 //  PURSUIT UI LIB by domino54            //
-//  script version: 2018-04-21            //
+//  script version: 2018-06-22            //
 // -------------------------------------- //
 
 /**
@@ -21,9 +21,10 @@
  *	- ShowPoints		Display message when and for what player receives points.
  *	- JoinPolice		Display police request window with help. FFA only.
  *	- Detector			Display label showing distance to nearest policemen.
+ *	- DangerZone		Shows a warning when player is in the DangerZone.
  */
 
-#Const	Version		"2018-04-21"
+#Const	Version		"2018-06-22"
 #Const	ScriptName	"Libs/domino54/TrackMania/PursuitUI.Script.txt"
 
 #Include "MathLib" as ML
@@ -35,6 +36,7 @@
 #Include "Libs/domino54/MultiClans.Script.txt" as Clans
 #Include "Libs/domino54/SplitScreenLib.Script.txt" as SplitScreen
 #Include "Libs/domino54/Translations.Script.txt" as Translations
+#Include "Libs/domino54/TrackMania/OffZone.Script.txt" as OffZone
 
 // ---------------------------------- //
 // Constants
@@ -52,6 +54,7 @@
 #Const C_LibPursuitUI_321GoPos			<0., 12., 0.>
 #Const C_LibPursuitUI_ShowPointsPos		<0., -72.>
 #Const C_LibPursuitUI_JoinPolicePos		<-160., 18.>
+#Const C_LibPursuitUI_DangerZonePos		<0., 32.>
 
 /// Function to obtain player's current clan.
 #Const C_LibPursuitUI_GetPlayerClan """
@@ -949,7 +952,7 @@ main() {
 				
 				// Play capture sound
 				if (PlayerClan == 1 && PrevPlayerClan == 2 && Player != Null && PrevPlayerLogin == Player.User.Login)
-					Audio.PlaySoundEvent("{{{C_ImgBase}}}Sounds/Captured.wav", 0.);
+					Audio.PlaySoundEvent("{{{C_ImgBase}}}Sounds/Captured.wav", 10.);
 				
 				PrevPlayerClan = PlayerClan;
 			}
@@ -2577,6 +2580,225 @@ main() {
 }
 
 // ---------------------------------- //
+/** Create manialink for the DangerZone module.
+ *
+ *	@return		The DangerZone manialink.
+ */
+Text Private_CreateManialinkDangerZone() {
+	return """
+<manialink version="3" name="LibPursuitUI:DangerZone">
+<stylesheet>
+	<style class="Font" valign="center2" textsize="1" textemboss="1" textcolor="FFF" textfont="RajdhaniMono" />
+</stylesheet>
+
+<framemodel id="FrameModel_DangerZone" z-index="-5">
+	<frame pos="{{{C_LibPursuitUI_DangerZonePos.X^" "^C_LibPursuitUI_DangerZonePos.Y}}}">
+		<frame id="Frame_DangerZoneAnim">
+			<gauge pos="0 -3" sizen="104 8" halign="center" valign="center" drawbg="0" id="Gauge_DangerZoneRatio" color="FF0" hidden="1" />
+			<quad pos="0 8" sizen="12 12" halign="center" valign="center" id="Quad_DangerZoneIcon" opacity="0" />
+			<label pos="-50" class="Font" textsize="3" id="Label_DangerZoneText" opacity="0" />
+			<label pos="50" class="Font" textsize="3" id="Label_DangerZoneTime" opacity="0" halign="right" />
+		</frame>
+	</frame>
+
+	<frame size="320 180" halign="center" valign="center">
+		<quad id="Quad_BorderColor" halign="center" valign="center" size="320 180" image="{{{C_ImgBase}}}BonusEffect.dds" colorize="FD0" opacity="0" />
+		<quad id="Quad_InnerColor" halign="center" valign="center" size="320 180" bgcolor="440" opacity="0" />
+	</frame>
+</framemodel>
+
+<frameinstance modelid="FrameModel_DangerZone" id="Frame_DangerZone#0" />
+<frameinstance modelid="FrameModel_DangerZone" id="Frame_DangerZone#1" />
+<frameinstance modelid="FrameModel_DangerZone" id="Frame_DangerZone#2" />
+<frameinstance modelid="FrameModel_DangerZone" id="Frame_DangerZone#3" />
+
+<script><!--
+/**
+ *	LibPursuitUI: DangerZone
+ */
+
+#Include "MathLib" as ML
+#Include "TextLib" as TL
+
+{{{Translations::InsertToManialink([
+	"Become an officer", "Do you want to join the Police team? Press %1 to increase your chances of being selected!",
+	"Your chance of being selected", "Number of players who want to join the Police team:"
+])}}}
+{{{SplitScreen::Framework()}}}
+{{{OffZone::ManialinkFramework()}}}
+{{{ManialinkTools::Functions(["Pulse", "SetGaugeRatio"])}}}
+{{{C_LibPursuitUI_GetPlayerClan}}}
+{{{C_LibPursuitUI_GetClanColor}}}
+
+// ---------------------------------- //
+// Main
+// ---------------------------------- //
+main() {
+	// ---------------------------------- //
+	// Load interface elements
+	declare CMlFrame[] Frame_DangerZone;
+	for (I, 0, 3) Frame_DangerZone.add((Page.GetFirstChild("Frame_DangerZone#"^I) as CMlFrame));
+	
+	// ---------------------------------- //
+	// Netcode
+	declare netread Integer Net_LibPursuitUI_SettingsUpdate for Teams[0];
+	declare netread Text[Text] Net_LibPursuitUI_Settings for Teams[0];
+	
+	// ---------------------------------- //
+	// Variables
+	declare DisplayDangerZone = False;
+	declare DangerZoneVisible = False;
+	declare DangerSoneStartTime = -1;
+	declare StartTime = Now;
+	
+	declare PrevSettingsUpdate = -1;
+
+	// ---------------------------------- //
+	// Initialize frames layout
+	foreach (I => Frame in Frame_DangerZone) {
+		Frame.Visible = I == 0 || I < SplitScreen_NbPlayers();
+		Frame.RelativePosition_V3 = SplitScreen_GetPosition(Vec2, I, False);
+		Frame.RelativeScale = SplitScreen_GetScale(1.);
+
+		declare Quad_BorderColor		for Frame <=> (Frame.GetFirstChild("Quad_BorderColor") as CMlQuad);
+		declare Quad_InnerColor			for Frame <=> (Frame.GetFirstChild("Quad_InnerColor") as CMlQuad);
+		declare Frame_DangerZoneAnim	for Frame <=> (Frame.GetFirstChild("Frame_DangerZoneAnim") as CMlFrame);
+		declare Label_DangerZoneText	for Frame <=> (Frame.GetFirstChild("Label_DangerZoneText") as CMlLabel);
+		declare Label_DangerZoneTime	for Frame <=> (Frame.GetFirstChild("Label_DangerZoneTime") as CMlLabel);
+		declare Quad_DangerZoneIcon		for Frame <=> (Frame.GetFirstChild("Quad_DangerZoneIcon") as CMlQuad);
+		declare Gauge_DangerZoneRatio	for Frame <=> (Frame.GetFirstChild("Gauge_DangerZoneRatio") as CMlGauge);
+
+		Label_DangerZoneText.Value = Translate("Leave the Danger Zone");
+	}
+
+	declare WindSound = Audio.CreateSound("file://Media/Sounds/FireBurningZoneBig1.wav", 0., False, True, False);
+	declare AudioStartTime = -1;
+
+	// ---------------------------------- //
+	// Yield
+	// ---------------------------------- //
+	while (True) {
+		yield;
+		if (!PageIsVisible) continue;
+
+		// ---------------------------------- //
+		// Update settings
+		if (PrevSettingsUpdate != Net_LibPursuitUI_SettingsUpdate) {
+			PrevSettingsUpdate = Net_LibPursuitUI_SettingsUpdate;
+			
+			foreach (SettingName => SettingValue in Net_LibPursuitUI_Settings) {
+				switch (SettingName) {
+					case "DangerZone_Display" : DisplayDangerZone = SettingValue == "True";
+				}
+			}
+		}
+		
+		foreach (I => Frame in Frame_DangerZone) {
+			if (!Frame.Visible) continue;
+			declare Player <=> SplitScreen_GetTmPlayer(I);
+
+			declare CMlFrame Frame_DangerZoneAnim	for Frame;
+			declare CMlLabel Label_DangerZoneText	for Frame;
+			declare CMlLabel Label_DangerZoneTime	for Frame;
+			declare CMlQuad Quad_DangerZoneIcon		for Frame;
+			declare CMlGauge Gauge_DangerZoneRatio	for Frame;
+
+			declare DangerZoneDuration = OffZone_DangerZoneDuration(Player);
+			declare IsInDangerZone = DangerZoneDuration > 0;
+			declare DangerZoneVisible = DisplayDangerZone && IsInDangerZone;
+
+			declare DangerZoneStartTime for Frame = -1;
+			declare DangerZoneEndTime for Frame = -1;
+
+			declare PrevDangerZoneVisible for Frame = False;
+			declare PrevIsInDangerZone for Frame = False;
+			declare PrevBorderIntensity for Frame = -1.;
+
+			if (PrevIsInDangerZone != IsInDangerZone) {
+				PrevIsInDangerZone = IsInDangerZone;
+
+				if (IsInDangerZone) {
+					DangerZoneStartTime = Now;
+					AudioStartTime = Now;
+					DangerZoneEndTime = -1;
+				} else {
+					DangerZoneStartTime = -1;
+					DangerZoneEndTime = Now;
+				}
+			}
+
+			if (PrevDangerZoneVisible != DangerZoneVisible) {
+				PrevDangerZoneVisible = DangerZoneVisible;
+
+				Gauge_DangerZoneRatio.Visible = DangerZoneVisible;
+				Frame_DangerZoneAnim.RelativePosition.Y = 0.;
+				Label_DangerZoneText.Opacity = 1.;
+				Label_DangerZoneTime.Opacity = 1.;
+				declare PositionY = -2.;
+				declare Opacity = 0.;
+				
+				if (DangerZoneVisible) {
+					Frame_DangerZoneAnim.RelativePosition.Y = -PositionY;
+					Label_DangerZoneText.Opacity = 0.;
+					Label_DangerZoneTime.Opacity = 0.;
+					PositionY = 0.;
+					Opacity = 1.;
+				}
+				
+				AnimMgr.Add(Frame_DangerZoneAnim, "<frame pos='0 "^PositionY^"'/>", 125, CAnimManager::EAnimManagerEasing::Linear);
+				AnimMgr.Add(Label_DangerZoneText, "<label opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+				AnimMgr.Add(Label_DangerZoneTime, "<label opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+				AnimMgr.Add(Quad_DangerZoneIcon, "<quad opacity='"^Opacity^"' />", 125, CAnimManager::EAnimManagerEasing::Linear);
+			}
+
+			if (DangerZoneVisible) {
+				declare GaugeRatio = ML::ToReal(Now - DangerZoneStartTime) / 8000;
+				declare TimeLeft = ML::Max((DangerZoneStartTime + 8000) - Now, 0);
+				Label_DangerZoneTime.Value = (TimeLeft / 1000) ^ "." ^ ((TimeLeft / 100) % 10);
+				SetGaugeRatio(Gauge_DangerZoneRatio, GaugeRatio);
+			}
+
+			declare BorderIntensity = 0.;
+
+			if (DangerZoneStartTime > 0) {
+				BorderIntensity = ML::Clamp((Now - DangerZoneStartTime) / 1000., 0., 1.);
+			}
+			else if (DangerZoneEndTime > 0) {
+				BorderIntensity = 1 - ML::Clamp((Now - DangerZoneEndTime) / 1000., 0., 1.);
+			}
+
+			declare CMlQuad Quad_BorderColor for Frame;
+			declare CMlQuad Quad_InnerColor for Frame;
+
+			Quad_BorderColor.Opacity = BorderIntensity;
+			Quad_InnerColor.Opacity = BorderIntensity * .5;
+			if (BorderIntensity > 0) Quad_BorderColor.RelativeScale = 1. + Pulse(Now, 1/3.) * 1/16.;
+
+			if (PrevBorderIntensity != BorderIntensity) {
+				PrevBorderIntensity = BorderIntensity;
+
+				if (BorderIntensity <= 0) {
+					WindSound.Stop();
+				} else {
+					WindSound.Play();
+				}
+
+				Audio.LimitSceneSoundVolumedB = -12.5 * BorderIntensity;
+				Audio.LimitMusicVolumedB = -25. * BorderIntensity;
+			}
+
+			if (WindSound.IsPlaying) {
+				WindSound.Volume = BorderIntensity * .5;
+				WindSound.Pitch = .5 + .5 * (Now - AudioStartTime) / 10000.;
+			}
+		}
+	}
+}
+--></script>
+</manialink>""";
+}
+
+// ---------------------------------- //
 // Public
 // ---------------------------------- //
 
@@ -2907,6 +3129,7 @@ Void LoadModule(Text _ModuleId) {
 		case "321Go"		: Layers::Create(_ModuleId, Private_CreateManialink321Go());
 		case "ShowPoints"	: Layers::Create(_ModuleId, Private_CreateManialinkShowPoints());
 		case "Detector"		: Layers::Create(_ModuleId, Private_CreateManialinkDetector());
+		case "DangerZone"	: Layers::Create(_ModuleId, Private_CreateManialinkDangerZone());
 		case "JoinPolice"	: {
 			Layers::Create(_ModuleId, Private_CreateManialinkJoinPolice());
 			SetModuleVisibility(_ModuleId, False);
